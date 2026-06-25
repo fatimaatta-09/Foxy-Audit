@@ -1,0 +1,2 @@
+-e ../sdk
+requests>=2.31

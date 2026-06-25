@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    container_name: foxy_pg
+    environment:
+      POSTGRES_USER: foxy
+      POSTGRES_PASSWORD: foxy
+      POSTGRES_DB: foxy
+    ports:
+      - "5432:5432"
+    volumes:
+      - foxy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foxy -d foxy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  foxy_pgdata:
