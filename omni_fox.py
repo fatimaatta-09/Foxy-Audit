@@ -11,10 +11,13 @@ import os
 import time
 import random
 
+import urllib.request
+import urllib.error
+
 import psutil
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QMenu
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QMenu, QSystemTrayIcon
 from PyQt6.QtCore import Qt, QTimer, QPoint, QRect, pyqtSignal, QThread
-from PyQt6.QtGui import QPixmap, QTransform, QCursor, QPainter, QColor
+from PyQt6.QtGui import QPixmap, QTransform, QCursor, QPainter, QColor, QIcon
 from pynput import keyboard, mouse
 
 from clay_chat_popup import ChatPopup
@@ -22,6 +25,8 @@ from fox_settings import FoxSettings
 from settings_dialog import SettingsDialog
 import window_tracker
 from eye_tracker import EyeOverlay
+from security_overlay import SecurityOverlay
+from sdk_bridge import SDKBridgeListener
 
 
 # ── Spritesheet layout ─────────────────────────────────────────────────────
@@ -99,6 +104,29 @@ class GlobalSensors(QThread):
         mouse_listener.stop()
 
 
+# ── Startup health check thread ────────────────────────────────────────────
+class StartupHealthWorker(QThread):
+    succeeded = pyqtSignal()
+    failed    = pyqtSignal(str)
+
+    def __init__(self, backend_url: str, org_key: str, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+
+    def run(self):
+        url = f"{self.backend_url}/v1/health"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.org_key}"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    self.succeeded.emit()
+                else:
+                    self.failed.emit(f"HTTP {resp.status}")
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 # ── Main fox widget ────────────────────────────────────────────────────────
 class OmniAwareFox(QWidget):
 
@@ -152,6 +180,10 @@ class OmniAwareFox(QWidget):
         self.label.setStyleSheet("background: transparent; border: none;")
         self.label.setFixedSize(CELL_WIDTH, CELL_HEIGHT)
 
+        # ── Security overlay ──────────────────────────────────────────────
+        self.security_overlay = SecurityOverlay(self, cell_size=(CELL_WIDTH, CELL_HEIGHT))
+        self.security_overlay.raise_()
+
         # ── Eye overlay ───────────────────────────────────────────────────
         self.eyes = EyeOverlay(self, cell_size=(CELL_WIDTH, CELL_HEIGHT))
         self.eyes.raise_()
@@ -193,8 +225,10 @@ class OmniAwareFox(QWidget):
         self._last_move_pos = QPoint()
         self._pat_wiggle  = 0.0
         self._user_placed = False   # True after user drags fox somewhere
+        self._is_hidden_in_tray = False
 
-        # ── Bottom-of-screen roaming ──────────────────────────────────────
+        # ── Debouncing for SDK events ─────────────────────────────────────
+        self._last_hash_ok = 0.0
         self.roam_target_x  = None
         self._roam_paused   = False
         self._roam_pause_until = 0.0
@@ -226,6 +260,24 @@ class OmniAwareFox(QWidget):
         self.sensors.scrolling_signal.connect(self.trigger_scrolling)
         self.sensors.hardware_update_signal.connect(self.process_hardware)
         self.sensors.start()
+
+        # ── SDK Bridge ────────────────────────────────────────────────────
+        self.sdk_bridge = SDKBridgeListener()
+        self.sdk_bridge.hash_confirmed.connect(self._on_sdk_hash_ok)
+        self.sdk_bridge.policy_breach.connect(self._on_policy_breach)
+        self.sdk_bridge.start()
+
+        # ── System Tray ───────────────────────────────────────────────────
+        self._setup_tray()
+
+        # ── Startup backend health check ──────────────────────────────────
+        url = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if url and key:
+            self._health_worker = StartupHealthWorker(url, key, self)
+            self._health_worker.succeeded.connect(self._on_health_ok)
+            self._health_worker.failed.connect(self._on_health_fail)
+            self._health_worker.start()
 
         # ── Animation timer: 100 ms ≈ 10 fps ─────────────────────────────
         self.anim_timer = QTimer(self)
@@ -469,6 +521,67 @@ class OmniAwareFox(QWidget):
         self.speech_bubble.show()
         QTimer.singleShot(4000, self._hide_speech)
 
+    # ── Startup Health Check Callbacks ─────────────────────────────────────
+    def _on_health_ok(self):
+        self._set_state("CHEERING", ROW_CHEERING, 2.0)
+        self.security_overlay.flash_green()
+        self.speech_bubble.setText("✓ Connected to Foxy Audit")
+        self.speech_bubble.adjustSize()
+        bw = self.speech_bubble.width()
+        self.speech_bubble.move(max(0, (CELL_WIDTH - bw) // 2), -self.speech_bubble.height() - 6)
+        self.speech_bubble.show()
+        QTimer.singleShot(3000, self._hide_speech)
+
+    def _on_health_fail(self, err: str):
+        self._set_state("ALERTING", ROW_ALERT, 3.0)
+        self.security_overlay.flash_amber()
+        self.speech_bubble.setText("⚠ Backend unreachable")
+        self.speech_bubble.adjustSize()
+        bw = self.speech_bubble.width()
+        self.speech_bubble.move(max(0, (CELL_WIDTH - bw) // 2), -self.speech_bubble.height() - 6)
+        self.speech_bubble.show()
+        QTimer.singleShot(3000, self._hide_speech)
+
+    # ── SDK Bridge Callbacks ───────────────────────────────────────────────
+    def _on_sdk_hash_ok(self, payload: dict):
+        now = time.time()
+        if now - self._last_hash_ok < 5.0:
+            return  # Debounce busy SDKs
+        self._last_hash_ok = now
+        
+        # Don't interrupt if in tray, unless we want to glow in tray (we can't).
+        if self._is_hidden_in_tray:
+            return
+
+        self._set_state("STANDING", ROW_STANDING, 1.5)
+        self.security_overlay.flash_green()
+
+    def _on_policy_breach(self, payload: dict):
+        # Force pop-back if hidden
+        if self._is_hidden_in_tray:
+            self._show_from_tray()
+
+        self._set_state("ALERTING", ROW_ALERT, 5.0)
+        self.security_overlay.flash_red(5000)
+
+        reason = payload.get("reason", "Unknown injection")
+        score = payload.get("risk_score", 100)
+
+        if self.chat_popup is None:
+            self.chat_popup = ChatPopup(self, settings=self.settings)
+            self.chat_popup.popup_closed.connect(self._on_chat_closed)
+            self.chat_popup._add_bubble(
+                f"🚨 **POLICY BREACH DETECTED** 🚨\n\n**Reason:** {reason}\n**Risk Score:** {score}/100",
+                is_user=False
+            )
+        else:
+            self.chat_popup._add_bubble(
+                f"🚨 **POLICY BREACH DETECTED** 🚨\n\n**Reason:** {reason}\n**Risk Score:** {score}/100",
+                is_user=False
+            )
+
+        self.open_chat()
+
     # ── Mouse interaction ──────────────────────────────────────────────────
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -584,6 +697,11 @@ class OmniAwareFox(QWidget):
 
         menu.addSeparator()
 
+        # ── System Tray ──
+        menu.addAction("🔽 Hide to Taskbar", self._hide_to_tray)
+
+        menu.addSeparator()
+
         # ── Roaming control ──
         if self._user_placed:
             menu.addAction("🦊 Resume Roaming", self._resume_roaming)
@@ -608,6 +726,46 @@ class OmniAwareFox(QWidget):
         # Snap back to the bottom of the screen
         self.move(self.x(), self._bottom_y)
 
+    # ── System Tray ────────────────────────────────────────────────────────
+    def _setup_tray(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        # Extract a single frame for the tray icon (e.g. frame 0 of SLEEP)
+        pixmap = self._get_frame(ROW_SLEEP, 0)
+        icon = QIcon(pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        self.tray_icon.setIcon(icon)
+        self.tray_icon.setToolTip("Foxy Audit — Compliance Officer")
+
+        tray_menu = QMenu(self)
+        tray_menu.setStyleSheet("""
+            QMenu { background: #1e1e2e; color: #cdd6f4; border: 1px solid rgba(203,166,247,0.4); border-radius: 6px; padding: 4px; font-family: 'Segoe UI', sans-serif; font-size: 13px; }
+            QMenu::item { padding: 6px 18px; border-radius: 4px; }
+            QMenu::item:selected { background: rgba(203,166,247,0.25); color: #cba6f7; }
+        """)
+        
+        tray_menu.addAction("🦊 Show Foxy", self._show_from_tray)
+        tray_menu.addAction("⚙️ Settings", self.open_settings)
+        tray_menu.addSeparator()
+        tray_menu.addAction("❌ Quit", QApplication.instance().quit)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._show_from_tray()
+
+    def _hide_to_tray(self):
+        self.hide()
+        self._is_hidden_in_tray = True
+        self.tray_icon.showMessage("Foxy Audit", "Hidden to taskbar. Monitoring active.", QSystemTrayIcon.MessageIcon.Information, 2000)
+
+    def _show_from_tray(self):
+        self.show()
+        self.raise_()
+        self._is_hidden_in_tray = False
+
     # ── Settings ───────────────────────────────────────────────────────────
     def open_settings(self):
         dlg = SettingsDialog(self.settings, self)
@@ -621,9 +779,18 @@ class OmniAwareFox(QWidget):
 
     # ── Shutdown ───────────────────────────────────────────────────────────
     def closeEvent(self, event):
+        if hasattr(self, "_health_worker") and self._health_worker.isRunning():
+            self._health_worker.quit()
+            self._health_worker.wait(600)
+            
+        self.sdk_bridge.stop()
+        
         self.sensors.requestInterruption()
         self.sensors.quit()
         self.sensors.wait(1000)
+        
+        self.tray_icon.hide()
+        
         super().closeEvent(event)
 
 

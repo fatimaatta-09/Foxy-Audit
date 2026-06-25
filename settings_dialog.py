@@ -25,6 +25,8 @@ Design rules
 from __future__ import annotations
 
 import sys
+import urllib.request
+import urllib.error
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QSlider, QCheckBox,
@@ -59,6 +61,38 @@ class _TestConnectionWorker(QThread):
             self.succeeded.emit(reply)
         except Exception as exc:
             self.failed.emit(str(exc))
+
+    def _cleanup(self):
+        try:
+            self.succeeded.disconnect()
+            self.failed.disconnect()
+        except RuntimeError:
+            pass
+
+
+class _FoxyBackendWorker(QThread):
+    succeeded = pyqtSignal()
+    failed    = pyqtSignal(str)
+
+    def __init__(self, backend_url: str, org_key: str, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+        self.finished.connect(self._cleanup)
+
+    def run(self):
+        url = f"{self.backend_url}/v1/health"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.org_key}"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    self.succeeded.emit()
+                else:
+                    self.failed.emit(f"HTTP {resp.status}")
+        except urllib.error.URLError as e:
+            self.failed.emit(str(e.reason))
+        except Exception as e:
+            self.failed.emit(str(e))
 
     def _cleanup(self):
         try:
@@ -381,6 +415,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings
         self._conn_worker: _TestConnectionWorker | None = None
+        self._foxy_worker: _FoxyBackendWorker | None = None
 
         self.setWindowTitle("Foxy — Settings")
         self.setWindowFlags(
@@ -423,7 +458,7 @@ class SettingsDialog(QDialog):
 
         # Tab bar
         self._tab_bar = PillTabBar(
-            ["🎨  Appearance", "🤖  AI Brain", "🦊  Behaviour"],
+            ["🎨  Appearance", "🤖  AI Brain", "🦊  Behaviour", "🔑  Foxy Audit"],
             self.settings.theme_tokens(),
         )
         tab_wrapper = QWidget()
@@ -443,6 +478,7 @@ class SettingsDialog(QDialog):
         self._stack.addWidget(self._build_appearance_tab())
         self._stack.addWidget(self._build_ai_tab())
         self._stack.addWidget(self._build_behaviour_tab())
+        self._stack.addWidget(self._build_foxy_audit_tab())
 
         # Footer
         self._footer = QWidget()
@@ -922,6 +958,117 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return page
 
+    # ─────────────────────────────── Foxy Audit tab ───────────────
+    def _build_foxy_audit_tab(self) -> QWidget:
+        tokens = self.settings.theme_tokens()
+        page   = QWidget()
+        page.setObjectName("foxyAuditPage")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 16, 20, 20)
+        layout.setSpacing(18)
+
+        layout.addWidget(_section_label("Organization Settings", tokens))
+        layout.addWidget(_divider(tokens))
+
+        info = QLabel(
+            "Foxy Audit telemetry requires an active organization API key. "
+            "Get this from your Foxy Audit dashboard."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet(
+            f"color: {tokens.get('text_muted', tokens['text'])};"
+            f"font-size: 12px; font-family: '{tokens.get('font','Segoe UI')}';"
+        )
+        layout.addWidget(info)
+
+        # API key
+        self._org_key_field = QLineEdit()
+        self._org_key_field.setEchoMode(QLineEdit.EchoMode.Password)
+        self._org_key_field.setText(self.settings.org_api_key())
+        self._org_key_field.setPlaceholderText("org_key_...")
+        layout.addWidget(self._make_field_row("Org API Key", self._org_key_field))
+
+        # Backend URL
+        self._backend_url_field = QLineEdit()
+        self._backend_url_field.setText(self.settings.backend_url())
+        self._backend_url_field.setPlaceholderText("https://api.foxyaudit.dev")
+        layout.addWidget(self._make_field_row("Backend URL", self._backend_url_field))
+
+        # Test button + status label
+        test_row = QHBoxLayout()
+        self._foxy_test_btn = QPushButton("⚡  Test Backend")
+        self._foxy_test_btn.setObjectName("foxyTestBtn")
+        self._foxy_test_btn.setFixedHeight(36)
+        self._foxy_test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._foxy_test_btn.clicked.connect(self._test_foxy_backend)
+        test_row.addWidget(self._foxy_test_btn)
+        
+        self._foxy_test_status = QLabel("")
+        self._foxy_test_status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        test_row.addWidget(self._foxy_test_status, stretch=1)
+        layout.addLayout(test_row)
+
+        # Reuse the test button styling logic
+        acc  = tokens["accent"]
+        acc_d = tokens["accent_dark"]
+        r    = min(tokens["radius"], 18)
+        font = tokens.get("font", "Segoe UI")
+        self._foxy_test_btn.setStyleSheet(f"""
+            QPushButton#foxyTestBtn {{
+                background-color: {tokens['panel']};
+                color: {tokens['text']};
+                border: 1px solid {acc};
+                border-radius: {r}px;
+                font-size: 13px; font-weight: 600;
+                font-family: '{font}';
+                padding: 0 16px;
+            }}
+            QPushButton#foxyTestBtn:hover {{ background-color: {acc}; color: #ffffff; border: none; }}
+            QPushButton#foxyTestBtn:disabled {{ color: {tokens.get('text_muted', '#888')}; border-color: {tokens['panel']}; }}
+        """)
+
+        layout.addStretch()
+        return page
+
+    def _test_foxy_backend(self):
+        org_key = self._org_key_field.text().strip()
+        url = self._backend_url_field.text().strip()
+        
+        self.settings.set_org_api_key(org_key)
+        self.settings.set_backend_url(url)
+
+        self._foxy_test_btn.setEnabled(False)
+        self._foxy_test_btn.setText("Testing…")
+        tokens = self.settings.theme_tokens()
+        self._foxy_test_status.setStyleSheet(
+            f"color: {tokens.get('text_muted', '#888')}; font-size: 12px;"
+        )
+        self._foxy_test_status.setText("Connecting…")
+
+        if self._foxy_worker and self._foxy_worker.isRunning():
+            return
+
+        self._foxy_worker = _FoxyBackendWorker(url, org_key, self)
+        self._foxy_worker.succeeded.connect(self._on_foxy_ok)
+        self._foxy_worker.failed.connect(self._on_foxy_fail)
+        self._foxy_worker.finished.connect(self._reset_foxy_btn)
+        self._foxy_worker.start()
+
+    def _reset_foxy_btn(self):
+        self._foxy_test_btn.setEnabled(True)
+        self._foxy_test_btn.setText("⚡  Test Backend")
+
+    def _on_foxy_ok(self):
+        tokens = self.settings.theme_tokens()
+        self._foxy_test_status.setStyleSheet(
+            f"color: {tokens['accent']}; font-size: 12px; font-weight: 600;"
+        )
+        self._foxy_test_status.setText("✓ Organization active")
+
+    def _on_foxy_fail(self, err: str):
+        self._foxy_test_status.setStyleSheet("color: #FF4C4C; font-size: 12px; font-weight: 600;")
+        self._foxy_test_status.setText(f"✗ {err[:60]}")
+
     # ─────────────────────────────────── Save ─────────────────────
     def _save(self):
         provider = self._current_provider()
@@ -935,6 +1082,9 @@ class SettingsDialog(QDialog):
         self.settings.set_roaming_enabled(self._roam_check.isChecked())
         self.settings.set_proximity_glance_enabled(self._glance_check.isChecked())
 
+        self.settings.set_org_api_key(self._org_key_field.text().strip())
+        self.settings.set_backend_url(self._backend_url_field.text().strip())
+
         self.settings_saved.emit()
         self.accept()
 
@@ -942,6 +1092,9 @@ class SettingsDialog(QDialog):
         if self._conn_worker and self._conn_worker.isRunning():
             self._conn_worker.quit()
             self._conn_worker.wait(600)
+        if self._foxy_worker and self._foxy_worker.isRunning():
+            self._foxy_worker.quit()
+            self._foxy_worker.wait(600)
         super().closeEvent(event)
 
 

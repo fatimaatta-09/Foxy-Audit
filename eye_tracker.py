@@ -32,7 +32,7 @@ from PyQt6.QtGui import QPainter, QColor, QCursor
 
 # States where painted-on pupils make sense (character is facing roughly
 # forward/calm and isn't already doing a big expressive eye animation).
-EYE_VISIBLE_STATES = {"IDLE", "WALKING", "STANDING", "SPEAKING"}
+EYE_VISIBLE_STATES = {"IDLE", "WALKING", "STANDING", "SPEAKING", "ALERTING"}
 
 # Anchor point (within the 192x208 cell) where the two eyes sit on the
 # default forward-facing pose. Tune these to match your art's eye position.

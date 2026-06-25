@@ -401,6 +401,19 @@ class FoxSettings:
     def set_base_url(self, provider: str, url: str):
         self._s.setValue(f"ai/url/{provider}", url)
 
+    # ── Foxy Audit platform ──
+    def org_api_key(self) -> str:
+        return self._s.value("foxy/org_key", "", type=str)
+
+    def set_org_api_key(self, key: str):
+        self._s.setValue("foxy/org_key", key)
+
+    def backend_url(self) -> str:
+        return self._s.value("foxy/backend_url", "https://api.foxyaudit.dev", type=str)
+
+    def set_backend_url(self, url: str):
+        self._s.setValue("foxy/backend_url", url)
+
     # ── behaviour tuning ──
     def reaction_cooldown(self) -> float:
         return self._s.value("behavior/cooldown", 1.5, type=float)
