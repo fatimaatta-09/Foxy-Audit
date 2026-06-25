@@ -27,6 +27,7 @@ import window_tracker
 from eye_tracker import EyeOverlay
 from security_overlay import SecurityOverlay
 from sdk_bridge import SDKBridgeListener
+from dashboard import DashboardWindow
 
 
 # ── Spritesheet layout ─────────────────────────────────────────────────────
@@ -219,6 +220,7 @@ class OmniAwareFox(QWidget):
         # ── Chat popup ────────────────────────────────────────────────────
         self.chat_popup   = None
         self._chat_open   = False
+        self.dashboard    = None
         self.is_dragging  = False
         self.drag_offset  = QPoint()
         self._press_pos   = QPoint()
@@ -523,6 +525,8 @@ class OmniAwareFox(QWidget):
 
     # ── Startup Health Check Callbacks ─────────────────────────────────────
     def _on_health_ok(self):
+        if self.dashboard is not None:
+            self.dashboard.set_connected(True)
         self._set_state("CHEERING", ROW_CHEERING, 2.0)
         self.security_overlay.flash_green()
         self.speech_bubble.setText("✓ Connected to Foxy Audit")
@@ -533,6 +537,8 @@ class OmniAwareFox(QWidget):
         QTimer.singleShot(3000, self._hide_speech)
 
     def _on_health_fail(self, err: str):
+        if self.dashboard is not None:
+            self.dashboard.set_connected(False)
         self._set_state("ALERTING", ROW_ALERT, 3.0)
         self.security_overlay.flash_amber()
         self.speech_bubble.setText("⚠ Backend unreachable")
@@ -650,6 +656,43 @@ class OmniAwareFox(QWidget):
     def _on_chat_closed(self):
         self._chat_open = False
 
+    # ── Dashboard ──────────────────────────────────────────────────────────
+    def open_dashboard(self):
+        """Open (or re-focus) the Compliance Command Center, wiring it to the
+        same live telemetry the fox reacts to."""
+        if self.dashboard is None:
+            self.dashboard = DashboardWindow(
+                self,
+                settings=self.settings,
+                sprite_sheet_path=resource_path("ultimate_fox_spritesheet.png"),
+            )
+            # Live feeds (Qt signals support multiple receivers)
+            self.sensors.hardware_update_signal.connect(self.dashboard.on_hardware)
+            self.sdk_bridge.hash_confirmed.connect(self.dashboard.on_hash_ok)
+            self.sdk_bridge.policy_breach.connect(self.dashboard.on_policy_breach)
+            self.dashboard.refresh_requested.connect(self._recheck_backend)
+
+        # Push the current snapshot so gauges aren't empty on first open
+        self.dashboard.on_hardware(self.latest_hw)
+        self.dashboard.show_animated()
+        self.dashboard.raise_()
+        self.dashboard.activateWindow()
+        self._recheck_backend()
+
+    def _recheck_backend(self):
+        """Re-run the startup health probe and reflect the result on the
+        dashboard's connection pill (if the dashboard is open)."""
+        url = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if not (url and key):
+            if self.dashboard is not None:
+                self.dashboard.set_connected(False)
+            return
+        self._health_worker = StartupHealthWorker(url, key, self)
+        self._health_worker.succeeded.connect(self._on_health_ok)
+        self._health_worker.failed.connect(self._on_health_fail)
+        self._health_worker.start()
+
     # ── Context menu ───────────────────────────────────────────────────────
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -674,6 +717,7 @@ class OmniAwareFox(QWidget):
         """)
 
         # ── Compliance actions ──
+        menu.addAction("📊 Open Dashboard",     self.open_dashboard)
         menu.addAction("📋 Compliance Status", self.show_compliance_status)
         menu.addAction("🖥️ PC Health",          self.ask_pc_health)
         menu.addAction("💬 Open Chat",          self.open_chat)
@@ -744,6 +788,7 @@ class OmniAwareFox(QWidget):
         """)
         
         tray_menu.addAction("🦊 Show Foxy", self._show_from_tray)
+        tray_menu.addAction("📊 Dashboard", self.open_dashboard)
         tray_menu.addAction("⚙️ Settings", self.open_settings)
         tray_menu.addSeparator()
         tray_menu.addAction("❌ Quit", QApplication.instance().quit)
@@ -782,7 +827,10 @@ class OmniAwareFox(QWidget):
         if hasattr(self, "_health_worker") and self._health_worker.isRunning():
             self._health_worker.quit()
             self._health_worker.wait(600)
-            
+
+        if self.dashboard is not None:
+            self.dashboard.close()
+
         self.sdk_bridge.stop()
         
         self.sensors.requestInterruption()
