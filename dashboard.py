@@ -1,30 +1,36 @@
 """
-Foxy Audit — Compliance Command Center (Dashboard)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A full enterprise dashboard window for the Foxy Audit desktop copilot.
-Opens from the fox's context menu / system tray and visualises the same
+Foxy Audit — Auditor Console
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The enterprise dashboard a compliance officer / auditor actually works in.
+It renders the platform's "Blind Audit Log": a real-time, tamper-evident
+stream of AI-interaction *metadata* (hashes, policy tags, Gemini verdicts,
+risk scores) — never raw prompt/response text, in keeping with the
+zero-knowledge payload design.
+
+Opens from the desktop fox (context menu / tray) and is fed by the same
 live telemetry the fox reacts to:
 
-  • System vitals          ← GlobalSensors  (CPU / RAM / battery)
-  • Audit-chain integrity  ← SDKBridge      (hash_ok events)
-  • Policy breaches        ← SDKBridge      (policy_breach events)
-  • Backend connectivity   ← StartupHealthWorker
+  • System health        ← GlobalSensors  (CPU / RAM / battery)
+  • Hash confirmations   ← SDKBridge      (hash_ok  → compliant log rows)
+  • Policy breaches      ← SDKBridge      (policy_breach → flagged rows)
+  • Backend connectivity ← StartupHealthWorker
 
-Design notes
+Design goals
 ────────────
-• 100 % token-driven: every colour, radius, border, shadow and font comes
-  from FoxSettings.theme_tokens(), so all 14 themes skin the dashboard for
-  free — exactly like clay_chat_popup.py.  apply_theme() re-skins in place.
-• Frameless + custom draggable header to stay consistent with the fox and
-  the chat popup, plus a fade/slide entrance.
-• All heavy widgets (gauges, ring, stat cards) are custom-painted and
-  animate via QPropertyAnimation so the dashboard feels alive even when the
-  backend is quiet.
-• Metrics that the local app can observe directly (CPU/RAM/battery, hash
-  counts, breach counts, risk scores, uptime) are real.  A few presentation
-  figures derived for the auditor view — the rolling block height and the
-  Merkle root preview — are computed locally from the live hash stream so
-  they stay self-consistent without needing the full PostgreSQL ledger.
+• Reads as professional B2B software, not a desktop toy: left nav rail,
+  top bar, KPI tiles, a real data table, hairline borders, restrained
+  status colour, monospaced hashes, and no emoji.
+• Still fully token-driven, so all 14 FoxSettings themes apply — but the
+  structure is flattened (small radii, 1px borders, minimal shadow) so it
+  looks clean in every palette.
+• Public slots are unchanged from the previous version, so the omni_fox
+  wiring (on_hardware / on_hash_ok / on_policy_breach / set_connected /
+  refresh_requested / show_animated) needs no edits.
+
+Note on derived figures: counts, risk, score, uptime and CPU/RAM/battery
+are real. The ledger block height + chain-hash preview are recomputed
+locally from the live hash stream so the auditor view stays self-consistent
+until the FastAPI ledger endpoints are wired in.
 """
 
 from __future__ import annotations
@@ -36,21 +42,21 @@ from datetime import datetime
 from collections import deque
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QFrame, QScrollArea, QGraphicsDropShadowEffect, QApplication, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QFrame, QStackedWidget, QTableWidget, QTableWidgetItem, QHeaderView,
+    QApplication, QSizePolicy, QButtonGroup, QAbstractItemView,
 )
 from PyQt6.QtCore import (
-    Qt, QPoint, QRectF, QTimer, QPropertyAnimation, QParallelAnimationGroup,
-    QEasingCurve, pyqtSignal, pyqtProperty,
+    Qt, QPoint, QRectF, QTimer, QPropertyAnimation,
+    QParallelAnimationGroup, QEasingCurve, pyqtSignal, pyqtProperty,
 )
-from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
+from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPixmap
 
 from fox_settings import FoxSettings
 
 
 # ── Colour helpers ──────────────────────────────────────────────────────────
 def _is_dark(color_str: str) -> bool:
-    """Crude luminance check — True for colours darker than mid-grey."""
     s = color_str.strip().lstrip("#")
     if len(s) == 6:
         try:
@@ -62,7 +68,6 @@ def _is_dark(color_str: str) -> bool:
 
 
 def _with_alpha(color: str, alpha: int) -> str:
-    """Return a `rgba(...)` string for a `#RRGGBB` colour, else pass through."""
     s = color.strip()
     if s.startswith("#") and len(s) == 7:
         r, g, b = int(s[1:3], 16), int(s[3:5], 16), int(s[5:7], 16)
@@ -78,132 +83,188 @@ def _qcolor(color: str, fallback=(136, 136, 136)) -> QColor:
     return c if c.isValid() else QColor(*fallback)
 
 
-# Status palette (kept independent of theme so red always reads as danger).
-OK_GREEN   = "#2ECC71"
-WARN_AMBER = "#F4B740"
-BAD_RED    = "#FF4D4D"
+def _mix(a: str, b: str, t: float) -> str:
+    """Linear blend of two #RRGGBB colours, t in [0,1]."""
+    ca, cb = _qcolor(a), _qcolor(b)
+    r = int(ca.red() * (1 - t) + cb.red() * t)
+    g = int(ca.green() * (1 - t) + cb.green() * t)
+    bl = int(ca.blue() * (1 - t) + cb.blue() * t)
+    return f"#{r:02X}{g:02X}{bl:02X}"
 
 
-def _make_shadow(tokens: dict) -> QGraphicsDropShadowEffect:
-    eff = QGraphicsDropShadowEffect()
-    eff.setBlurRadius(tokens.get("shadow_blur", 20))
-    eff.setOffset(tokens.get("shadow_dx", 0), tokens.get("shadow_dy", 8))
-    r, g, b = tokens.get("shadow_color", (60, 40, 20))
-    eff.setColor(QColor(r, g, b, min(tokens.get("shadow_alpha", 80), 120)))
-    return eff
+# Status palette — fixed, theme-independent, so danger always reads as danger.
+OK_GREEN   = "#22C55E"
+WARN_AMBER = "#F59E0B"
+BAD_RED    = "#EF4444"
+INFO_BLUE  = "#3B82F6"
 
 
-# ── Base card ───────────────────────────────────────────────────────────────
-class Card(QFrame):
-    """A themed surface with an optional title row."""
-
-    def __init__(self, tokens: dict, title: str = "", icon: str = "",
-                 parent=None):
-        super().__init__(parent)
-        self._title_text = title
-        self._icon = icon
-        self.title_lbl: QLabel | None = None
-        self.body = QVBoxLayout()
-        self.body.setContentsMargins(0, 0, 0, 0)
-        self.body.setSpacing(8)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(10)
-
-        if title:
-            self.title_lbl = QLabel(f"{icon}  {title}".strip())
-            self.title_lbl.setObjectName("cardTitle")
-            root.addWidget(self.title_lbl)
-
-        root.addLayout(self.body)
-        self.apply_tokens(tokens)
-
-    def apply_tokens(self, tokens: dict):
-        border = tokens.get("border", "none")
-        self.setStyleSheet(f"""
-            Card {{
-                background-color: {tokens['panel']};
-                border-radius: {min(tokens['radius'], 22)}px;
-                border: {border};
-            }}
-            QLabel#cardTitle {{
-                color: {tokens.get('text_muted', '#888')};
-                font-family: '{tokens.get('font', 'Segoe UI')}';
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 1px;
-                text-transform: uppercase;
-                background: transparent;
-                border: none;
-            }}
-        """)
-        self.setGraphicsEffect(_make_shadow(tokens))
+def _hairline(tokens: dict, alpha: int = 38) -> str:
+    return _with_alpha(tokens.get("text_muted", "#888"), alpha)
 
 
-# ── KPI stat card ───────────────────────────────────────────────────────────
-class StatCard(Card):
-    """Big number + caption, with a coloured accent strip."""
+# ── Minimal line-icon painter (replaces emoji throughout) ───────────────────
+def paint_icon(p: QPainter, rect: QRectF, name: str, color: QColor,
+               weight: float = 1.8):
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, weight)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
 
-    def __init__(self, tokens, icon, caption, value="0", accent=None):
-        super().__init__(tokens)
-        self.setMinimumHeight(96)
-        self._caption_text = caption
-        self._icon = icon
+    if name == "overview":      # 2x2 grid
+        s = w * 0.36
+        gap = w * 0.10
+        for cx in (x + w * 0.16, x + w * 0.16 + s + gap):
+            for cy in (y + h * 0.16, y + h * 0.16 + s + gap):
+                p.drawRoundedRect(QRectF(cx, cy, s, s), 2, 2)
+    elif name == "log":         # list rows
+        for i in range(3):
+            ly = y + h * (0.30 + i * 0.20)
+            p.setBrush(QBrush(color))
+            p.drawEllipse(QRectF(x + w * 0.14, ly - w * 0.035, w * 0.07, w * 0.07))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawLine(int(x + w * 0.32), int(ly), int(x + w * 0.84), int(ly))
+    elif name == "system":      # sliders
+        for i, knob in zip(range(3), (0.7, 0.35, 0.6)):
+            ly = y + h * (0.30 + i * 0.20)
+            p.drawLine(int(x + w * 0.14), int(ly), int(x + w * 0.84), int(ly))
+            p.setBrush(QBrush(color))
+            p.drawEllipse(QRectF(x + w * (0.14 + knob * 0.70) - w * 0.05,
+                                 ly - w * 0.05, w * 0.10, w * 0.10))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+    elif name == "shield":
+        path = QPainterPath()
+        path.moveTo(x + w * 0.5, y + h * 0.12)
+        path.lineTo(x + w * 0.84, y + h * 0.26)
+        path.lineTo(x + w * 0.84, y + h * 0.55)
+        path.cubicTo(x + w * 0.84, y + h * 0.78, x + w * 0.66, y + h * 0.86,
+                     x + w * 0.5, y + h * 0.92)
+        path.cubicTo(x + w * 0.34, y + h * 0.86, x + w * 0.16, y + h * 0.78,
+                     x + w * 0.16, y + h * 0.55)
+        path.lineTo(x + w * 0.16, y + h * 0.26)
+        path.closeSubpath()
+        p.drawPath(path)
+    elif name == "link":        # chain links
+        p.drawRoundedRect(QRectF(x + w * 0.12, y + h * 0.36, w * 0.44, h * 0.28),
+                          h * 0.14, h * 0.14)
+        p.drawRoundedRect(QRectF(x + w * 0.44, y + h * 0.36, w * 0.44, h * 0.28),
+                          h * 0.14, h * 0.14)
+    elif name == "refresh":
+        p.drawArc(QRectF(x + w * 0.22, y + h * 0.22, w * 0.56, h * 0.56),
+                  55 * 16, 250 * 16)
+        p.setBrush(QBrush(color))
+        ax, ay = x + w * 0.74, y + h * 0.26
+        p.drawPolygon(QPoint(int(ax), int(ay - h * 0.05)),
+                      QPoint(int(ax + w * 0.06), int(ay + h * 0.12)),
+                      QPoint(int(ax - w * 0.12), int(ay + h * 0.06)))
+    elif name == "close":
+        p.drawLine(int(x + w * 0.3), int(y + h * 0.3),
+                   int(x + w * 0.7), int(y + h * 0.7))
+        p.drawLine(int(x + w * 0.7), int(y + h * 0.3),
+                   int(x + w * 0.3), int(y + h * 0.7))
+    elif name == "min":
+        p.drawLine(int(x + w * 0.3), int(y + h * 0.6),
+                   int(x + w * 0.7), int(y + h * 0.6))
+    p.restore()
+
+
+# ── Status badge (pill) ─────────────────────────────────────────────────────
+class Badge(QLabel):
+    def __init__(self, text: str, color: str, parent=None):
+        super().__init__(text, parent)
+        self._color = color
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.restyle(color)
+
+    def restyle(self, color: str | None = None):
+        if color:
+            self._color = color
+        c = self._color
+        self.setStyleSheet(
+            f"QLabel {{ color: {c};"
+            f" background: {_with_alpha(c, 28)};"
+            f" border: 1px solid {_with_alpha(c, 90)};"
+            f" border-radius: 5px; padding: 2px 9px;"
+            f" font-size: 10px; font-weight: 700; }}")
+
+
+# ── KPI tile ────────────────────────────────────────────────────────────────
+class KpiTile(QFrame):
+    def __init__(self, tokens: dict, label: str, value="—", sub="", accent=None):
+        super().__init__()
         self._accent = accent
-
-        self.icon_lbl = QLabel(icon)
-        self.icon_lbl.setObjectName("statIcon")
+        self.setObjectName("kpiTile")
+        self.label_lbl = QLabel(label.upper())
+        self.label_lbl.setObjectName("kpiLabel")
         self.value_lbl = QLabel(value)
-        self.value_lbl.setObjectName("statValue")
-        self.caption_lbl = QLabel(caption)
-        self.caption_lbl.setObjectName("statCaption")
+        self.value_lbl.setObjectName("kpiValue")
+        self.sub_lbl = QLabel(sub)
+        self.sub_lbl.setObjectName("kpiSub")
+        self.accent_bar = QFrame()
+        self.accent_bar.setObjectName("kpiAccent")
+        self.accent_bar.setFixedWidth(3)
 
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.addWidget(self.icon_lbl)
-        top.addStretch()
-        self.body.addLayout(top)
-        self.body.addWidget(self.value_lbl)
-        self.body.addWidget(self.caption_lbl)
+        body = QVBoxLayout()
+        body.setContentsMargins(15, 13, 13, 13)
+        body.setSpacing(5)
+        body.addWidget(self.label_lbl)
+        body.addWidget(self.value_lbl)
+        body.addWidget(self.sub_lbl)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addWidget(self.accent_bar)
+        row.addLayout(body)
         self.restyle(tokens)
 
     def restyle(self, tokens: dict):
-        self.apply_tokens(tokens)
         acc = self._accent or tokens["accent"]
-        self.icon_lbl.setStyleSheet(
-            f"font-size: 20px; background: {_with_alpha(acc, 38)};"
-            f" border-radius: 10px; padding: 4px 8px; border: none;")
-        self.value_lbl.setStyleSheet(
-            f"color: {tokens['text']}; font-size: 30px; font-weight: 800;"
-            f" font-family: '{tokens.get('font_mono', 'Consolas')}';"
-            f" background: transparent; border: none;")
-        self.caption_lbl.setStyleSheet(
-            f"color: {tokens.get('text_muted', '#888')}; font-size: 12px;"
-            f" font-family: '{tokens.get('font', 'Segoe UI')}';"
-            f" background: transparent; border: none;")
+        self.setStyleSheet(f"""
+            QFrame#kpiTile {{
+                background: {tokens['panel']};
+                border: 1px solid {_hairline(tokens)};
+                border-radius: 8px; }}
+            QFrame#kpiAccent {{
+                background: {acc};
+                border-top-left-radius: 8px; border-bottom-left-radius: 8px; }}
+            QLabel#kpiLabel {{
+                color: {tokens.get('text_muted', '#888')};
+                font-size: 10px; font-weight: 700; letter-spacing: 1px;
+                background: transparent; border: none; }}
+            QLabel#kpiValue {{
+                color: {tokens['text']}; font-size: 26px; font-weight: 800;
+                background: transparent; border: none; }}
+            QLabel#kpiSub {{
+                color: {tokens.get('text_muted', '#888')}; font-size: 11px;
+                background: transparent; border: none; }}
+        """)
 
-    def set_value(self, text: str):
-        self.value_lbl.setText(text)
+    def set_value(self, value: str, sub: str | None = None,
+                  accent: str | None = None):
+        self.value_lbl.setText(value)
+        if sub is not None:
+            self.sub_lbl.setText(sub)
+        if accent is not None:
+            self._accent = accent
+            self.accent_bar.setStyleSheet(
+                f"background: {accent}; border-top-left-radius: 8px;"
+                f" border-bottom-left-radius: 8px;")
 
 
-# ── Animated horizontal gauge ───────────────────────────────────────────────
-class GaugeBar(QWidget):
-    """Rounded track + animated fill, colour-coded by threshold."""
-
-    def __init__(self, label: str, tokens: dict, higher_is_better=False,
-                 unit="%", parent=None):
+# ── Compliance-score ring (thin, restrained) ────────────────────────────────
+class ScoreRing(QWidget):
+    def __init__(self, tokens: dict, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(40)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding,
-                           QSizePolicy.Policy.Fixed)
-        self._label = label
-        self._unit = unit
-        self._higher_better = higher_is_better
+        self.setMinimumSize(132, 132)
         self._tokens = tokens
-        self._value = 0.0
+        self._value = 100.0
         self._anim = QPropertyAnimation(self, b"value", self)
-        self._anim.setDuration(650)
+        self._anim.setDuration(800)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
     @pyqtProperty(float)
@@ -226,9 +287,78 @@ class GaugeBar(QWidget):
         self._tokens = tokens
         self.update()
 
-    def _fill_color(self) -> str:
+    def _color(self) -> str:
+        return OK_GREEN if self._value >= 85 else WARN_AMBER if self._value >= 60 else BAD_RED
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        t = self._tokens
+        side = min(self.width(), self.height())
+        thick = 9
+        m = thick / 2 + 3
+        rect = QRectF((self.width() - side) / 2 + m, (self.height() - side) / 2 + m,
+                      side - 2 * m, side - 2 * m)
+        track = QPen(_qcolor(_mix(t["panel"], t["text"], 0.14)), thick)
+        track.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(track)
+        p.drawArc(rect, 0, 360 * 16)
+        arc = QPen(_qcolor(self._color()), thick)
+        arc.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(arc)
+        p.drawArc(rect, 90 * 16, int(-self._value / 100.0 * 360 * 16))
+
+        p.setPen(_qcolor(t["text"]))
+        f1 = QFont(t.get("font", "Segoe UI"), int(side / 5.2))
+        f1.setBold(True)
+        p.setFont(f1)
+        p.drawText(QRectF(rect.x(), rect.y() - side * 0.04, rect.width(), rect.height()),
+                   Qt.AlignmentFlag.AlignCenter, f"{self._value:.0f}")
+        p.setPen(_qcolor(t.get("text_muted", "#888")))
+        f2 = QFont(t.get("font", "Segoe UI"), max(7, int(side / 16)))
+        f2.setBold(True)
+        p.setFont(f2)
+        p.drawText(QRectF(rect.x(), rect.center().y() + side * 0.12, rect.width(), side / 5),
+                   Qt.AlignmentFlag.AlignHCenter, "COMPLIANT")
+        p.end()
+
+
+# ── Slim labelled meter (system vitals) ─────────────────────────────────────
+class MiniMeter(QWidget):
+    def __init__(self, label: str, tokens: dict, higher_is_better=False, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(46)
+        self._label = label
+        self._tokens = tokens
+        self._higher = higher_is_better
+        self._value = 0.0
+        self._anim = QPropertyAnimation(self, b"value", self)
+        self._anim.setDuration(600)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    @pyqtProperty(float)
+    def value(self) -> float:
+        return self._value
+
+    @value.setter
+    def value(self, v: float):
+        self._value = v
+        self.update()
+
+    def set_value(self, v: float):
+        v = max(0.0, min(100.0, float(v)))
+        self._anim.stop()
+        self._anim.setStartValue(self._value)
+        self._anim.setEndValue(v)
+        self._anim.start()
+
+    def set_tokens(self, tokens: dict):
+        self._tokens = tokens
+        self.update()
+
+    def _color(self) -> str:
         v = self._value
-        if self._higher_better:
+        if self._higher:
             return OK_GREEN if v >= 50 else WARN_AMBER if v >= 20 else BAD_RED
         return OK_GREEN if v < 70 else WARN_AMBER if v < 85 else BAD_RED
 
@@ -236,224 +366,237 @@ class GaugeBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         t = self._tokens
-        w, h = self.width(), self.height()
-        track_h = 10
-        track_y = h - track_h - 2
-        radius = track_h / 2
-
-        font = QFont(t.get("font", "Segoe UI"), 9)
-        font.setBold(True)
-        p.setFont(font)
-
-        # Labels
+        w = self.width()
+        f = QFont(t.get("font", "Segoe UI"), 9)
+        f.setBold(True)
+        p.setFont(f)
         p.setPen(_qcolor(t.get("text_muted", "#888")))
-        p.drawText(QRectF(0, 0, w * 0.7, h - track_h - 4),
-                   Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                   self._label)
+        p.drawText(QRectF(0, 4, w * 0.7, 16), Qt.AlignmentFlag.AlignLeft, self._label)
         p.setPen(_qcolor(t["text"]))
-        p.drawText(QRectF(w * 0.3, 0, w * 0.7, h - track_h - 4),
-                   Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                   f"{self._value:.0f}{self._unit}")
-
-        # Track
+        p.drawText(QRectF(w * 0.3, 4, w * 0.7, 16),
+                   Qt.AlignmentFlag.AlignRight, f"{self._value:.0f}%")
+        track_y, track_h = 30, 6
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(_qcolor(t["bg"])))
-        p.drawRoundedRect(QRectF(0, track_y, w, track_h), radius, radius)
-
-        # Fill
-        fill_w = max(track_h, w * self._value / 100.0)
-        p.setBrush(QBrush(_qcolor(self._fill_color())))
-        p.drawRoundedRect(QRectF(0, track_y, fill_w, track_h), radius, radius)
+        p.setBrush(QBrush(_qcolor(_mix(t["panel"], t["text"], 0.14))))
+        p.drawRoundedRect(QRectF(0, track_y, w, track_h), 3, 3)
+        p.setBrush(QBrush(_qcolor(self._color())))
+        p.drawRoundedRect(QRectF(0, track_y, max(track_h, w * self._value / 100.0),
+                                 track_h), 3, 3)
         p.end()
 
 
-# ── Circular trust-score ring ───────────────────────────────────────────────
-class RingGauge(QWidget):
-    """Animated arc with a value + caption in the centre."""
-
-    def __init__(self, tokens: dict, caption="TRUST SCORE", parent=None):
+# ── Card container ──────────────────────────────────────────────────────────
+class Card(QFrame):
+    def __init__(self, tokens: dict, title: str = "", parent=None):
         super().__init__(parent)
-        self.setMinimumSize(168, 168)
+        self.setObjectName("card")
+        self._title = title
+        self.title_lbl = QLabel(title.upper()) if title else None
+        self.body = QVBoxLayout()
+        self.body.setContentsMargins(0, 0, 0, 0)
+        self.body.setSpacing(10)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 16)
+        root.setSpacing(12)
+        if self.title_lbl is not None:
+            self.title_lbl.setObjectName("cardTitle")
+            root.addWidget(self.title_lbl)
+        root.addLayout(self.body)
+        self.restyle(tokens)
+
+    def restyle(self, tokens: dict):
+        self.setStyleSheet(f"""
+            QFrame#card {{
+                background: {tokens['panel']};
+                border: 1px solid {_hairline(tokens)};
+                border-radius: 8px; }}
+            QLabel#cardTitle {{
+                color: {tokens.get('text_muted', '#888')};
+                font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+                background: transparent; border: none; }}
+        """)
+
+
+# ── Audit-log data table ────────────────────────────────────────────────────
+class AuditTable(QTableWidget):
+    MAX_ROWS = 250
+    COLS = ["TIME", "POLICY", "PROMPT HASH", "TOKENS", "VERDICT", "RISK"]
+
+    def __init__(self, tokens: dict, parent=None):
+        super().__init__(0, len(self.COLS), parent)
         self._tokens = tokens
-        self._caption = caption
-        self._value = 0.0
-        self._anim = QPropertyAnimation(self, b"value", self)
-        self._anim.setDuration(900)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.setHorizontalHeaderLabels(self.COLS)
+        self.verticalHeader().setVisible(False)
+        self.setShowGrid(False)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAlternatingRowColors(True)
+        self.setWordWrap(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        hh = self.horizontalHeader()
+        hh.setHighlightSections(False)
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self.verticalHeader().setDefaultSectionSize(38)
+        self.restyle(tokens)
 
-    @pyqtProperty(float)
-    def value(self) -> float:
-        return self._value
+    def restyle(self, tokens: dict):
+        t = tokens
+        self._tokens = t
+        alt = _mix(t["panel"], t["bg"], 0.45)
+        self.setStyleSheet(f"""
+            QTableWidget {{
+                background: {t['panel']}; alternate-background-color: {alt};
+                color: {t['text']}; border: none; outline: none;
+                font-size: 12px; gridline-color: transparent; }}
+            QTableWidget::item {{ padding: 4px 10px; border: none; }}
+            QHeaderView::section {{
+                background: {t['panel']}; color: {t.get('text_muted', '#888')};
+                padding: 8px 10px; border: none;
+                border-bottom: 1px solid {_hairline(t, 55)};
+                font-size: 10px; font-weight: 700; letter-spacing: 0.6px; }}
+            QScrollBar:vertical {{ width: 7px; background: transparent; margin: 0; }}
+            QScrollBar::handle:vertical {{
+                background: {_with_alpha(t['accent'], 120)};
+                border-radius: 3px; min-height: 24px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        for r in range(self.rowCount()):
+            cell = self.cellWidget(r, 4)
+            if cell is not None:
+                for b in cell.findChildren(Badge):
+                    b.restyle()
 
-    @value.setter
-    def value(self, v: float):
-        self._value = v
-        self.update()
+    def _item(self, text: str, color: str, mono=False, align=None) -> QTableWidgetItem:
+        it = QTableWidgetItem(text)
+        it.setForeground(_qcolor(color))
+        if mono:
+            it.setFont(QFont(self._tokens.get("font_mono", "Consolas"), 10))
+        if align:
+            it.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+        else:
+            it.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        return it
 
-    def set_value(self, v: float):
-        v = max(0.0, min(100.0, float(v)))
-        self._anim.stop()
-        self._anim.setStartValue(self._value)
-        self._anim.setEndValue(v)
-        self._anim.start()
+    def add_event(self, ev: dict):
+        t = self._tokens
+        self.insertRow(0)
+        muted = t.get("text_muted", "#888")
+        self.setItem(0, 0, self._item(ev["time"], muted, mono=True))
+        self.setItem(0, 1, self._item(ev["policy"], t["text"]))
+        self.setItem(0, 2, self._item(ev["hash"][:22] + "…", muted, mono=True))
+        self.setItem(0, 3, self._item(str(ev.get("tokens", "")), t["text"],
+                                      align=Qt.AlignmentFlag.AlignRight))
+        ok = ev["kind"] == "ok"
+        badge = Badge("COMPLIANT" if ok else "FLAGGED", OK_GREEN if ok else BAD_RED)
+        cell = QWidget()
+        lay = QHBoxLayout(cell)
+        lay.setContentsMargins(8, 0, 8, 0)
+        lay.addWidget(badge)
+        lay.addStretch()
+        self.setCellWidget(0, 4, cell)
+        risk = ev.get("risk")
+        rc = (OK_GREEN if (risk or 0) < 40 else WARN_AMBER if (risk or 0) < 70 else BAD_RED)
+        self.setItem(0, 5, self._item("—" if risk is None else str(risk),
+                                      muted if risk is None else rc,
+                                      align=Qt.AlignmentFlag.AlignRight))
+        while self.rowCount() > self.MAX_ROWS:
+            self.removeRow(self.rowCount() - 1)
+
+
+# ── Sidebar nav button ──────────────────────────────────────────────────────
+class NavButton(QPushButton):
+    def __init__(self, icon: str, text: str, tokens: dict, parent=None):
+        super().__init__(parent)
+        self.icon_name = icon
+        self.text_label = text
+        self._tokens = tokens
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(42)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def set_tokens(self, tokens: dict):
         self._tokens = tokens
         self.update()
 
-    def _arc_color(self) -> str:
-        v = self._value
-        return OK_GREEN if v >= 85 else WARN_AMBER if v >= 60 else BAD_RED
+    def enterEvent(self, e):
+        self.update()
+
+    def leaveEvent(self, e):
+        self.update()
 
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         t = self._tokens
-        side = min(self.width(), self.height())
-        thick = max(12, side // 12)
-        margin = thick / 2 + 4
-        rect = QRectF(
-            (self.width() - side) / 2 + margin,
-            (self.height() - side) / 2 + margin,
-            side - 2 * margin, side - 2 * margin,
-        )
-
-        # Background ring
-        pen = QPen(_qcolor(t["bg"]), thick)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(pen)
-        p.drawArc(rect, 0, 360 * 16)
-
-        # Progress arc (start at top, sweep clockwise)
-        pen.setColor(_qcolor(self._arc_color()))
-        p.setPen(pen)
-        span = int(-self._value / 100.0 * 360 * 16)
-        p.drawArc(rect, 90 * 16, span)
-
-        # Centre text
-        p.setPen(_qcolor(t["text"]))
-        f1 = QFont(t.get("font_mono", "Consolas"), int(side / 6))
-        f1.setBold(True)
-        p.setFont(f1)
-        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{self._value:.0f}")
-
-        p.setPen(_qcolor(t.get("text_muted", "#888")))
-        f2 = QFont(t.get("font", "Segoe UI"), max(7, int(side / 22)))
-        f2.setBold(True)
-        p.setFont(f2)
-        cap_rect = QRectF(rect.x(), rect.center().y() + side / 7,
-                          rect.width(), side / 6)
-        p.drawText(cap_rect, Qt.AlignmentFlag.AlignHCenter, self._caption)
+        acc = t["accent"]
+        active = self.isChecked()
+        hover = self.underMouse()
+        r = QRectF(0, 2, self.width(), self.height() - 4)
+        if active:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(_qcolor(_with_alpha(acc, 32))))
+            p.drawRoundedRect(r, 7, 7)
+            p.setBrush(QBrush(_qcolor(acc)))
+            p.drawRoundedRect(QRectF(0, r.center().y() - 9, 3, 18), 1.5, 1.5)
+        elif hover:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(_qcolor(_with_alpha(t.get("text_muted", "#888"), 22))))
+            p.drawRoundedRect(r, 7, 7)
+        col = _qcolor(acc if active else t["text"] if hover else t.get("text_muted", "#888"))
+        paint_icon(p, QRectF(14, r.center().y() - 9, 18, 18), self.icon_name, col, 1.7)
+        p.setPen(col)
+        f = QFont(t.get("font", "Segoe UI"), 10)
+        f.setBold(active)
+        p.setFont(f)
+        p.drawText(QRectF(44, 0, self.width() - 50, self.height()),
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                   self.text_label)
         p.end()
 
 
-# ── Compliance framework chip ───────────────────────────────────────────────
-class ComplianceChip(QFrame):
-    """A single framework row: name + status pill."""
-
-    OK, REVIEW, FAIL = "ok", "review", "fail"
-
-    def __init__(self, name: str, tokens: dict, status="ok", parent=None):
+# ── Window control button (min / close / refresh) ───────────────────────────
+class CtrlButton(QPushButton):
+    def __init__(self, icon: str, tokens: dict, danger=False, parent=None):
         super().__init__(parent)
-        self.name = name
-        self._status = status
-        self.name_lbl = QLabel(name)
-        self.status_lbl = QLabel()
-        row = QHBoxLayout(self)
-        row.setContentsMargins(12, 9, 12, 9)
-        row.addWidget(self.name_lbl)
-        row.addStretch()
-        row.addWidget(self.status_lbl)
-        self.restyle(tokens)
-
-    def set_status(self, status: str, tokens: dict):
-        self._status = status
-        self.restyle(tokens)
-
-    def restyle(self, tokens: dict):
-        icon, col, text = {
-            self.OK:     ("✓", OK_GREEN,   "Compliant"),
-            self.REVIEW: ("◐", WARN_AMBER, "Review"),
-            self.FAIL:   ("✕", BAD_RED,    "Breach"),
-        }[self._status]
-        self.setStyleSheet(
-            f"ComplianceChip {{ background: {_with_alpha(tokens['bg'], 140)};"
-            f" border-radius: {min(tokens['radius'], 12)}px;"
-            f" border: 1px solid {_with_alpha(col, 90)}; }}")
-        self.name_lbl.setStyleSheet(
-            f"color: {tokens['text']}; font-size: 12px; font-weight: 600;"
-            f" font-family: '{tokens.get('font', 'Segoe UI')}';"
-            f" background: transparent; border: none;")
-        self.status_lbl.setText(f"{icon} {text}")
-        self.status_lbl.setStyleSheet(
-            f"color: {col}; font-size: 11px; font-weight: 700;"
-            f" background: transparent; border: none;")
-
-
-# ── Live event feed ─────────────────────────────────────────────────────────
-class EventFeed(QScrollArea):
-    """Newest-first, colour-coded stream of audit events."""
-
-    MAX_ROWS = 60
-
-    def __init__(self, tokens: dict, parent=None):
-        super().__init__(parent)
+        self.icon_name = icon
         self._tokens = tokens
-        self._rows: deque[QWidget] = deque()
-        self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setFrameShape(QFrame.Shape.NoFrame)
+        self._danger = danger
+        self.setFixedSize(30, 26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self._container = QWidget()
-        self._vbox = QVBoxLayout(self._container)
-        self._vbox.setContentsMargins(2, 2, 2, 2)
-        self._vbox.setSpacing(5)
-        self._vbox.addStretch()
-        self.setWidget(self._container)
-        self.restyle(tokens)
-
-    def restyle(self, tokens: dict):
+    def set_tokens(self, tokens):
         self._tokens = tokens
-        acc = tokens["accent"]
-        self.setStyleSheet(f"""
-            QScrollArea {{ background: transparent; border: none; }}
-            QScrollBar:vertical {{ width: 5px; background: transparent; }}
-            QScrollBar::handle:vertical {{
-                background: {acc}; border-radius: 2px; min-height: 20px; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px; }}
-        """)
-        self._container.setStyleSheet("background: transparent;")
+        self.update()
 
-    def add_event(self, icon: str, text: str, color: str):
-        ts = datetime.now().strftime("%H:%M:%S")
+    def enterEvent(self, e): self.update()
+    def leaveEvent(self, e): self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         t = self._tokens
-        row = QLabel(f"<span style='color:{t.get('text_muted', '#888')};'>"
-                     f"{ts}</span>&nbsp;&nbsp;{icon}&nbsp; {text}")
-        row.setTextFormat(Qt.TextFormat.RichText)
-        row.setWordWrap(True)
-        row.setStyleSheet(
-            f"QLabel {{ color: {t['text']};"
-            f" background: {_with_alpha(color, 28)};"
-            f" border-left: 3px solid {color};"
-            f" border-radius: {min(t['radius'], 8)}px;"
-            f" padding: 7px 10px; font-size: 11px;"
-            f" font-family: '{t.get('font_mono', 'Consolas')}'; }}")
-
-        self._vbox.insertWidget(0, row)
-        self._rows.appendleft(row)
-        while len(self._rows) > self.MAX_ROWS:
-            old = self._rows.pop()
-            old.setParent(None)
-            old.deleteLater()
+        if self.underMouse():
+            p.setPen(Qt.PenStyle.NoPen)
+            hl = BAD_RED if self._danger else _with_alpha(t.get("text_muted", "#888"), 40)
+            p.setBrush(QBrush(_qcolor(hl)))
+            p.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 5, 5)
+            col = _qcolor("#FFFFFF" if self._danger else t["text"])
+        else:
+            col = _qcolor(t.get("text_muted", "#888"))
+        paint_icon(p, QRectF(7, 4, 16, 18), self.icon_name, col, 1.6)
+        p.end()
 
 
-# ── The dashboard window ─────────────────────────────────────────────────────
+# ── The console window ──────────────────────────────────────────────────────
 class DashboardWindow(QWidget):
-    """Compliance Command Center.  Subscribe its on_* slots to the fox's
-    GlobalSensors / SDKBridge signals (the fox does this in open_dashboard)."""
-
-    refresh_requested = pyqtSignal()   # fox re-pings the backend
+    refresh_requested = pyqtSignal()
     closed           = pyqtSignal()
 
     def __init__(self, fox_widget=None, settings: FoxSettings | None = None,
@@ -461,18 +604,18 @@ class DashboardWindow(QWidget):
         super().__init__(parent)
         self.fox_widget = fox_widget
         self.settings = settings or FoxSettings()
-        self._sprite_path = sprite_sheet_path
 
         # ── live state ──
-        self._start_ts        = time.time()
-        self._hashes_total    = 0
-        self._breaches_total  = 0
-        self._risk_scores: deque[int] = deque(maxlen=64)
-        self._trust_score     = 100.0
-        self._last_hash_hex   = "—"
-        self._block_height    = 0
-        self._connected       = None      # None = unknown / connecting
-        self._drag_pos        = QPoint()
+        self._start_ts       = time.time()
+        self._logs_total     = 0
+        self._flagged_total  = 0
+        self._risk_scores: deque[int] = deque(maxlen=128)
+        self._score          = 100.0
+        self._last_hash      = hashlib.sha256(b"foxy-genesis").hexdigest()
+        self._block_height   = 0
+        self._connected      = None
+        self._drag_pos       = QPoint()
+        self._recent: deque[QWidget] = deque()
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -480,368 +623,499 @@ class DashboardWindow(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setWindowTitle("Foxy Audit — Compliance Command Center")
+        self.setWindowTitle("Foxy Audit — Auditor Console")
 
-        screen = QApplication.primaryScreen().geometry()
-        w = min(960, int(screen.width() * 0.82))
-        h = min(660, int(screen.height() * 0.86))
-        self.setFixedSize(w, h)
+        scr = QApplication.primaryScreen().geometry()
+        self.setFixedSize(min(1140, int(scr.width() * 0.88)),
+                          min(710, int(scr.height() * 0.9)))
 
         tokens = self.settings.theme_tokens()
-        self._build_ui(tokens)
+        self._build(tokens)
         self.apply_theme(tokens)
 
-        # 1 Hz tick for uptime + slow trust recovery
         self._tick = QTimer(self)
         self._tick.timeout.connect(self._on_tick)
         self._tick.start(1000)
+        self._refresh_stats()
 
-        self._seed_demo_chain()
-
-    # ── UI construction ─────────────────────────────────────────────────────
-    def _build_ui(self, tokens: dict):
+    # ── construction ────────────────────────────────────────────────────────
+    def _build(self, t: dict):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        self.shell = QFrame()
+        self.shell.setObjectName("shell")
+        outer.addWidget(self.shell)
 
-        self.root = QFrame()
-        self.root.setObjectName("dashRoot")
-        outer.addWidget(self.root)
+        h = QHBoxLayout(self.shell)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(0)
+        h.addWidget(self._build_sidebar(t))
 
-        root_v = QVBoxLayout(self.root)
-        root_v.setContentsMargins(18, 14, 18, 18)
-        root_v.setSpacing(14)
+        main = QVBoxLayout()
+        main.setContentsMargins(0, 0, 0, 0)
+        main.setSpacing(0)
+        main.addWidget(self._build_topbar(t))
 
-        root_v.addWidget(self._build_header(tokens))
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self._page_overview(t))   # 0
+        self.stack.addWidget(self._page_audit(t))      # 1
+        self.stack.addWidget(self._page_system(t))     # 2
+        self.stack.currentChanged.connect(self._sync_title)
+        main.addWidget(self.stack, stretch=1)
+        h.addLayout(main, stretch=1)
 
-        # ── KPI row ──
-        kpi = QHBoxLayout()
-        kpi.setSpacing(12)
-        self.card_hashes = StatCard(tokens, "🔗", "Hashes Logged", "0",
-                                    accent=OK_GREEN)
-        self.card_breaches = StatCard(tokens, "🛡️", "Breaches Blocked", "0",
-                                      accent=BAD_RED)
-        self.card_risk = StatCard(tokens, "📊", "Avg Risk Score", "—",
-                                  accent=WARN_AMBER)
-        self.card_uptime = StatCard(tokens, "⏱️", "Session Uptime", "00:00:00",
-                                    accent=tokens["accent"])
-        for c in (self.card_hashes, self.card_breaches,
-                  self.card_risk, self.card_uptime):
-            kpi.addWidget(c)
-        root_v.addLayout(kpi)
+    def _build_sidebar(self, t: dict) -> QWidget:
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("sidebar")
+        self.sidebar.setFixedWidth(212)
+        v = QVBoxLayout(self.sidebar)
+        v.setContentsMargins(16, 18, 16, 16)
+        v.setSpacing(6)
 
-        # ── main two-column area ──
-        cols = QHBoxLayout()
-        cols.setSpacing(14)
-        cols.addLayout(self._build_left_col(tokens), stretch=3)
-        cols.addLayout(self._build_right_col(tokens), stretch=2)
-        root_v.addLayout(cols, stretch=1)
+        brand = QHBoxLayout()
+        brand.setSpacing(10)
+        self.logo = QLabel()
+        self.logo.setObjectName("logo")
+        self.logo.setFixedSize(30, 30)
+        brand.addWidget(self.logo)
+        name_box = QVBoxLayout()
+        name_box.setSpacing(0)
+        self.brand_name = QLabel("Foxy Audit")
+        self.brand_name.setObjectName("brandName")
+        self.brand_sub = QLabel("AUDITOR CONSOLE")
+        self.brand_sub.setObjectName("brandSub")
+        name_box.addWidget(self.brand_name)
+        name_box.addWidget(self.brand_sub)
+        brand.addLayout(name_box)
+        brand.addStretch()
+        v.addLayout(brand)
+        v.addSpacing(18)
 
-        # ── footer ──
-        self.footer = QLabel(
-            "Foxy Audit · CipherTrail engine · tamper-evident audit ledger")
-        self.footer.setObjectName("footer")
-        self.footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        root_v.addWidget(self.footer)
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.setExclusive(True)
+        self.nav_buttons = []
+        for i, (icon, label) in enumerate(
+                [("overview", "Overview"), ("log", "Audit Log"),
+                 ("system", "System")]):
+            btn = NavButton(icon, label, t)
+            btn.clicked.connect(lambda _c, idx=i: self.stack.setCurrentIndex(idx))
+            self.nav_group.addButton(btn, i)
+            self.nav_buttons.append(btn)
+            v.addWidget(btn)
+        self.nav_buttons[0].setChecked(True)
+        v.addStretch()
 
-    def _build_header(self, tokens: dict) -> QWidget:
-        bar = QWidget()
-        bar.setObjectName("headerBar")
-        bar.setFixedHeight(56)
-        h = QHBoxLayout(bar)
-        h.setContentsMargins(8, 4, 8, 4)
-        h.setSpacing(10)
+        self.org_lbl = QLabel("ORGANIZATION")
+        self.org_lbl.setObjectName("navMeta")
+        self.org_val = QLabel("acme-health-ai")
+        self.org_val.setObjectName("navMetaVal")
+        v.addWidget(self.org_lbl)
+        v.addWidget(self.org_val)
+        return self.sidebar
 
-        self.avatar = QLabel("🦊")
-        self.avatar.setObjectName("dashAvatar")
-        self.avatar.setFixedSize(40, 40)
-        self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if self._sprite_path:
-            pix = QPixmap(self._sprite_path)
-            if not pix.isNull():
-                from PyQt6.QtCore import QRect
-                frame = pix.copy(QRect(0, 0, 192, 208)).scaled(
-                    40, 40, Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation)
-                self.avatar.setPixmap(frame)
-        h.addWidget(self.avatar)
+    def _build_topbar(self, t: dict) -> QWidget:
+        self.topbar = QFrame()
+        self.topbar.setObjectName("topbar")
+        self.topbar.setFixedHeight(58)
+        h = QHBoxLayout(self.topbar)
+        h.setContentsMargins(22, 0, 14, 0)
+        h.setSpacing(12)
 
-        titles = QVBoxLayout()
-        titles.setSpacing(0)
-        self.title = QLabel("Foxy Audit")
-        self.title.setObjectName("dashTitle")
-        self.subtitle = QLabel("Compliance Command Center")
-        self.subtitle.setObjectName("dashSubtitle")
-        titles.addWidget(self.title)
-        titles.addWidget(self.subtitle)
-        h.addLayout(titles)
+        self.page_title = QLabel("Overview")
+        self.page_title.setObjectName("pageTitle")
+        self.stack_titles = ["Overview", "Blind Audit Log", "System Health"]
+        h.addWidget(self.page_title)
         h.addStretch()
 
-        self.conn_pill = QLabel("◌ Connecting…")
-        self.conn_pill.setObjectName("connPill")
-        h.addWidget(self.conn_pill)
+        self.conn_dot = QLabel()
+        self.conn_dot.setObjectName("connBadge")
+        h.addWidget(self.conn_dot)
 
-        self.refresh_btn = self._icon_btn("⟳", self._on_refresh_clicked)
-        self.close_btn = self._icon_btn("×", self.close_animated)
+        self.refresh_btn = CtrlButton("refresh", t)
+        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         h.addWidget(self.refresh_btn)
+        self.min_btn = CtrlButton("min", t)
+        self.min_btn.clicked.connect(self.hide)
+        self.close_btn = CtrlButton("close", t, danger=True)
+        self.close_btn.clicked.connect(self.close_animated)
+        h.addWidget(self.min_btn)
         h.addWidget(self.close_btn)
-        return bar
+        return self.topbar
 
-    def _build_left_col(self, tokens: dict) -> QVBoxLayout:
-        col = QVBoxLayout()
-        col.setSpacing(14)
+    # ── pages ──
+    def _page_overview(self, t: dict) -> QWidget:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(22, 20, 22, 20)
+        v.setSpacing(16)
 
-        # System vitals
-        self.vitals_card = Card(tokens, "System Vitals", "🖥️")
-        self.gauge_cpu = GaugeBar("CPU", tokens)
-        self.gauge_ram = GaugeBar("Memory", tokens)
-        self.gauge_batt = GaugeBar("Battery", tokens, higher_is_better=True)
-        for g in (self.gauge_cpu, self.gauge_ram, self.gauge_batt):
-            self.vitals_card.body.addWidget(g)
-        col.addWidget(self.vitals_card)
+        kpis = QHBoxLayout()
+        kpis.setSpacing(14)
+        self.kpi_logs = KpiTile(t, "Interactions Logged", "0", "session total", INFO_BLUE)
+        self.kpi_flagged = KpiTile(t, "Policy Breaches", "0", "flagged by AI judge", BAD_RED)
+        self.kpi_risk = KpiTile(t, "Avg Risk Score", "—", "across flagged events", WARN_AMBER)
+        self.kpi_chain = KpiTile(t, "Ledger Blocks", "0", "hash-chained", OK_GREEN)
+        for w in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
+            kpis.addWidget(w)
+        v.addLayout(kpis)
 
-        # Compliance frameworks
-        self.frameworks_card = Card(tokens, "Compliance Frameworks", "📋")
-        grid = QGridLayout()
-        grid.setSpacing(8)
-        self.chips: dict[str, ComplianceChip] = {}
-        names = ["SOC 2", "HIPAA", "EU AI Act",
-                 "NIST AI RMF", "PCI DSS v4.0", "GDPR"]
-        for i, name in enumerate(names):
-            chip = ComplianceChip(name, tokens)
-            self.chips[name] = chip
-            grid.addWidget(chip, i // 2, i % 2)
-        self.frameworks_card.body.addLayout(grid)
-        col.addWidget(self.frameworks_card)
-        col.addStretch()
-        return col
+        body = QHBoxLayout()
+        body.setSpacing(16)
 
-    def _build_right_col(self, tokens: dict) -> QVBoxLayout:
-        col = QVBoxLayout()
-        col.setSpacing(14)
+        self.recent_card = Card(t, "Recent Activity")
+        self.recent_box = QVBoxLayout()
+        self.recent_box.setSpacing(0)
+        self.recent_box.setContentsMargins(0, 0, 0, 0)
+        self.recent_empty = QLabel("No interactions yet — waiting for SDK telemetry…")
+        self.recent_empty.setObjectName("emptyState")
+        self.recent_box.addWidget(self.recent_empty)
+        self.recent_box.addStretch()
+        self.recent_card.body.addLayout(self.recent_box, stretch=1)
+        body.addWidget(self.recent_card, stretch=3)
 
-        # Trust ring + chain integrity, side by side
-        top = QHBoxLayout()
-        top.setSpacing(14)
+        right = QVBoxLayout()
+        right.setSpacing(16)
 
-        self.ring_card = Card(tokens, "Trust Index", "🦊")
-        self.ring = RingGauge(tokens)
-        ring_wrap = QHBoxLayout()
-        ring_wrap.addStretch()
-        ring_wrap.addWidget(self.ring)
-        ring_wrap.addStretch()
-        self.ring_card.body.addLayout(ring_wrap)
-        top.addWidget(self.ring_card, stretch=1)
-        col.addLayout(top)
+        self.score_card = Card(t, "Compliance Score")
+        self.score_ring = ScoreRing(t)
+        ring_row = QHBoxLayout()
+        ring_row.addStretch()
+        ring_row.addWidget(self.score_ring)
+        ring_row.addStretch()
+        self.score_card.body.addLayout(ring_row)
+        right.addWidget(self.score_card)
 
-        # Audit chain integrity
-        self.chain_card = Card(tokens, "Audit Chain Integrity", "🔐")
-        self.chain_status = QLabel("🔗  Hash chain: VERIFIED")
-        self.chain_status.setObjectName("chainStatus")
-        self.chain_blocks = QLabel("Blocks: 0")
-        self.chain_root = QLabel("Merkle root: —")
-        self.chain_last = QLabel("Last hash: —")
-        for lbl in (self.chain_blocks, self.chain_root, self.chain_last):
-            lbl.setObjectName("chainMeta")
-            lbl.setWordWrap(True)
-        self.chain_card.body.addWidget(self.chain_status)
-        self.chain_card.body.addWidget(self.chain_blocks)
-        self.chain_card.body.addWidget(self.chain_root)
-        self.chain_card.body.addWidget(self.chain_last)
-        col.addWidget(self.chain_card)
+        self.chain_card = Card(t, "Ledger Integrity")
+        state_row = QHBoxLayout()
+        self.chain_icon = QLabel()
+        self.chain_icon.setFixedSize(16, 16)
+        self.chain_state = QLabel("VERIFIED")
+        self.chain_state.setObjectName("chainState")
+        state_row.addWidget(self.chain_icon)
+        state_row.addWidget(self.chain_state)
+        state_row.addStretch()
+        self.chain_meta = QLabel("0 blocks · chain intact")
+        self.chain_meta.setObjectName("chainMeta")
+        self.chain_hash = QLabel("root —")
+        self.chain_hash.setObjectName("chainHash")
+        self.chain_hash.setWordWrap(True)
+        self.verify_btn = QPushButton("Verify chain")
+        self.verify_btn.setObjectName("verifyBtn")
+        self.verify_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.verify_btn.clicked.connect(self._verify_chain)
+        self.chain_card.body.addLayout(state_row)
+        self.chain_card.body.addWidget(self.chain_meta)
+        self.chain_card.body.addWidget(self.chain_hash)
+        self.chain_card.body.addWidget(self.verify_btn)
+        right.addWidget(self.chain_card)
+        right.addStretch()
+        body.addLayout(right, stretch=2)
+        v.addLayout(body, stretch=1)
+        return page
 
-        # Live event feed
-        self.feed_card = Card(tokens, "Live Audit Feed", "📡")
-        self.feed = EventFeed(tokens)
-        self.feed_card.body.addWidget(self.feed, stretch=1)
-        col.addWidget(self.feed_card, stretch=1)
-        return col
+    def _page_audit(self, t: dict) -> QWidget:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(22, 20, 22, 20)
+        v.setSpacing(12)
+        head = QHBoxLayout()
+        cap = QLabel("BLIND AUDIT LOG")
+        cap.setObjectName("tableCap")
+        self.audit_count = QLabel("0 records")
+        self.audit_count.setObjectName("tableCount")
+        head.addWidget(cap)
+        head.addStretch()
+        head.addWidget(self.audit_count)
+        v.addLayout(head)
+        self.table_card = Card(t)
+        self.table = AuditTable(t)
+        self.table_card.body.addWidget(self.table, stretch=1)
+        v.addWidget(self.table_card, stretch=1)
+        return page
 
-    def _icon_btn(self, glyph: str, slot) -> QPushButton:
-        btn = QPushButton(glyph)
-        btn.setObjectName("iconBtn")
-        btn.setFixedSize(34, 34)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.clicked.connect(slot)
-        return btn
+    def _page_system(self, t: dict) -> QWidget:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(22, 20, 22, 20)
+        v.setSpacing(16)
+        row = QHBoxLayout()
+        row.setSpacing(16)
 
-    # ── Theming ──────────────────────────────────────────────────────────────
-    def apply_theme(self, tokens: dict):
-        t = tokens
+        self.vitals_card = Card(t, "Host Resources")
+        self.m_cpu = MiniMeter("CPU", t)
+        self.m_ram = MiniMeter("Memory", t)
+        self.m_batt = MiniMeter("Battery", t, higher_is_better=True)
+        for m in (self.m_cpu, self.m_ram, self.m_batt):
+            self.vitals_card.body.addWidget(m)
+        self.vitals_card.body.addStretch()
+        row.addWidget(self.vitals_card, stretch=1)
+
+        self.conn_card = Card(t, "Backend Connection")
+        self.conn_state = QLabel("Connecting…")
+        self.conn_state.setObjectName("connState")
+        self.conn_url = QLabel(self.settings.backend_url())
+        self.conn_url.setObjectName("connUrl")
+        self.conn_url.setWordWrap(True)
+        self.uptime_lbl = QLabel("Uptime 00:00:00")
+        self.uptime_lbl.setObjectName("connUrl")
+        self.conn_card.body.addWidget(self.conn_state)
+        self.conn_card.body.addWidget(self.conn_url)
+        self.conn_card.body.addWidget(self.uptime_lbl)
+        self.conn_card.body.addStretch()
+        row.addWidget(self.conn_card, stretch=1)
+        v.addLayout(row)
+        v.addStretch()
+        return page
+
+    # ── theming ──────────────────────────────────────────────────────────────
+    def apply_theme(self, t: dict):
         font = t.get("font", "Segoe UI")
-        acc = t["accent"]
-        border = t.get("border", "none")
-
-        self.root.setStyleSheet(f"""
-            QFrame#dashRoot {{
-                background-color: {t['bg']};
-                border-radius: {min(t['radius'], 26)}px;
-                border: {border};
-            }}
-            QWidget#headerBar {{ background: transparent; }}
-            QLabel#dashTitle {{
-                color: {t['text']}; font-size: 19px; font-weight: 800;
-                font-family: '{font}'; background: transparent; border: none; }}
-            QLabel#dashSubtitle {{
-                color: {t.get('text_muted', '#888')}; font-size: 11px;
-                font-weight: 600; letter-spacing: 1px;
-                font-family: '{font}'; background: transparent; border: none; }}
-            QLabel#dashAvatar {{
-                font-size: 26px;
-                background: {_with_alpha(acc, 38)};
-                border-radius: 12px; border: none; }}
-            QLabel#chainStatus {{
-                color: {OK_GREEN}; font-size: 14px; font-weight: 800;
-                font-family: '{font}'; background: transparent; border: none; }}
-            QLabel#chainMeta {{
-                color: {t.get('text_muted', '#888')}; font-size: 11px;
-                font-family: '{t.get('font_mono', 'Consolas')}';
-                background: transparent; border: none; }}
-            QLabel#footer {{
-                color: {t.get('text_muted', '#888')}; font-size: 10px;
-                font-family: '{font}'; background: transparent; border: none; }}
-            QPushButton#iconBtn {{
-                background-color: {t['panel']}; color: {t['text']};
-                border-radius: 10px; font-size: 17px; font-weight: bold;
-                border: none; }}
-            QPushButton#iconBtn:hover {{
-                background-color: {acc};
-                color: {'#000' if not _is_dark(acc) else '#FFF'}; }}
+        self.shell.setStyleSheet(f"""
+            QFrame#shell {{
+                background: {t['bg']};
+                border: 1px solid {_hairline(t, 60)};
+                border-radius: 10px; }}
+            QFrame#sidebar {{
+                background: {_mix(t['bg'], t['panel'], 0.5)};
+                border: none;
+                border-right: 1px solid {_hairline(t, 45)};
+                border-top-left-radius: 10px; border-bottom-left-radius: 10px; }}
+            QFrame#topbar {{
+                background: transparent;
+                border-bottom: 1px solid {_hairline(t, 45)}; }}
+            QLabel#brandName {{ color: {t['text']}; font-size: 15px; font-weight: 800;
+                background: transparent; }}
+            QLabel#brandSub {{ color: {t.get('text_muted', '#888')}; font-size: 8px;
+                font-weight: 700; letter-spacing: 1.4px; background: transparent; }}
+            QLabel#logo {{ background: transparent; }}
+            QLabel#navMeta {{ color: {t.get('text_muted', '#888')}; font-size: 8px;
+                font-weight: 700; letter-spacing: 1.2px; background: transparent; }}
+            QLabel#navMetaVal {{ color: {t['text']}; font-size: 12px; font-weight: 600;
+                font-family: '{t.get('font_mono', 'Consolas')}'; background: transparent; }}
+            QLabel#pageTitle {{ color: {t['text']}; font-size: 17px; font-weight: 800;
+                background: transparent; }}
+            QLabel#emptyState {{ color: {t.get('text_muted', '#888')}; font-size: 12px;
+                padding: 16px 4px; background: transparent; }}
+            QLabel#chainState {{ color: {OK_GREEN}; font-size: 15px; font-weight: 800;
+                background: transparent; }}
+            QLabel#chainMeta {{ color: {t['text']}; font-size: 12px; background: transparent; }}
+            QLabel#chainHash {{ color: {t.get('text_muted', '#888')}; font-size: 10px;
+                font-family: '{t.get('font_mono', 'Consolas')}'; background: transparent; }}
+            QLabel#tableCap {{ color: {t['text']}; font-size: 12px; font-weight: 800;
+                letter-spacing: 1px; background: transparent; }}
+            QLabel#tableCount {{ color: {t.get('text_muted', '#888')}; font-size: 11px;
+                background: transparent; }}
+            QLabel#connState {{ color: {t['text']}; font-size: 14px; font-weight: 700;
+                background: transparent; }}
+            QLabel#connUrl {{ color: {t.get('text_muted', '#888')}; font-size: 11px;
+                font-family: '{t.get('font_mono', 'Consolas')}'; background: transparent; }}
+            QPushButton#verifyBtn {{
+                background: {_with_alpha(t['accent'], 30)};
+                color: {t['accent']};
+                border: 1px solid {_with_alpha(t['accent'], 110)};
+                border-radius: 6px; padding: 7px 0; font-size: 12px; font-weight: 700; }}
+            QPushButton#verifyBtn:hover {{ background: {_with_alpha(t['accent'], 55)}; }}
+            QWidget {{ font-family: '{font}'; }}
         """)
-        self.root.setGraphicsEffect(_make_shadow(t))
-        self._restyle_conn_pill(t)
+        self.logo.setPixmap(self._monogram(t))
+        self._paint_chain_icon(True)
+        self._restyle_conn(t)
 
-        for c in (self.card_hashes, self.card_breaches,
-                  self.card_risk, self.card_uptime):
-            c.restyle(t)
-        for card in (self.vitals_card, self.frameworks_card, self.ring_card,
-                     self.chain_card, self.feed_card):
-            card.apply_tokens(t)
-        for g in (self.gauge_cpu, self.gauge_ram, self.gauge_batt):
-            g.set_tokens(t)
-        self.ring.set_tokens(t)
-        for chip in self.chips.values():
-            chip.restyle(t)
-        self.feed.restyle(t)
+        for b in self.nav_buttons:
+            b.set_tokens(t)
+        for c in (self.refresh_btn, self.min_btn, self.close_btn):
+            c.set_tokens(t)
+        for k in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
+            k.restyle(t)
+        for card in (self.recent_card, self.score_card, self.chain_card,
+                     self.table_card, self.vitals_card, self.conn_card):
+            card.restyle(t)
+        self.score_ring.set_tokens(t)
+        self.table.restyle(t)
+        for m in (self.m_cpu, self.m_ram, self.m_batt):
+            m.set_tokens(t)
+        for w in list(self._recent):
+            for lb in w.findChildren(QLabel):
+                if lb.objectName() == "recTime":
+                    lb.setStyleSheet(f"color: {t.get('text_muted', '#888')};"
+                                     f" font-family: '{t.get('font_mono', 'Consolas')}';"
+                                     f" font-size: 11px; background: transparent;")
+                elif lb.objectName() == "recText":
+                    lb.setStyleSheet(f"color: {t['text']}; font-size: 12px;"
+                                     f" background: transparent;")
 
-    def _restyle_conn_pill(self, tokens: dict):
+    def _monogram(self, t: dict) -> QPixmap:
+        pm = QPixmap(30, 30)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(_qcolor(t["accent"])))
+        p.drawRoundedRect(QRectF(0, 0, 30, 30), 8, 8)
+        paint_icon(p, QRectF(5, 5, 20, 20), "shield",
+                   _qcolor("#FFFFFF" if not _is_dark(t["accent"]) else t["bg"]), 1.9)
+        p.end()
+        return pm
+
+    def _paint_chain_icon(self, ok: bool):
+        pm = QPixmap(16, 16)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        paint_icon(p, QRectF(0, 0, 16, 16), "link",
+                   _qcolor(OK_GREEN if ok else WARN_AMBER), 1.5)
+        p.end()
+        self.chain_icon.setPixmap(pm)
+
+    def _restyle_conn(self, t: dict):
         if self._connected is True:
-            col, text, dot = OK_GREEN, "Connected", "●"
+            col, txt = OK_GREEN, "Connected"
         elif self._connected is False:
-            col, text, dot = BAD_RED, "Offline", "○"
+            col, txt = BAD_RED, "Offline"
         else:
-            col, text, dot = WARN_AMBER, "Connecting…", "◌"
-        self.conn_pill.setText(f"{dot} {text}")
-        self.conn_pill.setStyleSheet(
-            f"QLabel#connPill {{ color: {col}; font-size: 12px;"
-            f" font-weight: 700; padding: 6px 14px;"
-            f" background: {_with_alpha(col, 30)};"
-            f" border: 1px solid {_with_alpha(col, 110)};"
-            f" border-radius: 13px; }}")
+            col, txt = WARN_AMBER, "Connecting"
+        self.conn_dot.setText(f"● {txt}")
+        self.conn_dot.setStyleSheet(
+            f"QLabel#connBadge {{ color: {col}; font-size: 11px; font-weight: 700;"
+            f" background: {_with_alpha(col, 26)};"
+            f" border: 1px solid {_with_alpha(col, 90)};"
+            f" border-radius: 11px; padding: 4px 12px; }}")
+        if hasattr(self, "conn_state"):
+            self.conn_state.setText(txt)
+            self.conn_state.setStyleSheet(
+                f"color: {col}; font-size: 14px; font-weight: 700; background: transparent;")
 
-    # ── Live data slots (wired to the fox's signals) ─────────────────────────
+    # ── live slots ────────────────────────────────────────────────────────────
     def on_hardware(self, hw: dict):
-        self.gauge_cpu.set_value(hw.get("cpu", 0))
-        self.gauge_ram.set_value(hw.get("ram", 0))
-        self.gauge_batt.set_value(hw.get("battery", 100))
+        if hasattr(self, "m_cpu"):
+            self.m_cpu.set_value(hw.get("cpu", 0))
+            self.m_ram.set_value(hw.get("ram", 0))
+            self.m_batt.set_value(hw.get("battery", 100))
 
     def on_hash_ok(self, payload: dict):
-        self._hashes_total += 1
+        self._logs_total += 1
         self._block_height += 1
         policy = payload.get("policy", "default")
-        self._last_hash_hex = self._next_hash(policy)
-        self._trust_score = min(100.0, self._trust_score + 0.4)
-        self.feed.add_event("✓", f"hash_ok &nbsp; policy=<b>{policy}</b> "
-                            f"&nbsp; {self._last_hash_hex[:12]}…", OK_GREEN)
+        self._last_hash = self._next_hash(policy)
+        self._score = min(100.0, self._score + 0.3)
+        self._add_event({
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "kind": "ok", "policy": policy, "hash": self._last_hash,
+            "tokens": payload.get("tokens", ""), "risk": None,
+        })
         self._refresh_stats()
 
     def on_policy_breach(self, payload: dict):
-        self._breaches_total += 1
-        reason = payload.get("reason", "Unknown injection")
-        score = int(payload.get("risk_score", 100))
-        self._risk_scores.append(score)
-        self._trust_score = max(0.0, self._trust_score - score / 8.0)
-        self.feed.add_event(
-            "🚨", f"<b style='color:{BAD_RED};'>POLICY BREACH</b> &nbsp;"
-            f"risk <b>{score}</b>/100 &nbsp; {reason}", BAD_RED)
-        # Degrade a framework that maps to the breach for a while.
-        self._degrade_random_framework()
+        self._logs_total += 1
+        self._flagged_total += 1
+        self._block_height += 1
+        reason = payload.get("reason", "Policy violation")
+        risk = int(payload.get("risk_score", 100))
+        policy = payload.get("policy", "default")
+        self._risk_scores.append(risk)
+        self._last_hash = self._next_hash(policy)
+        self._score = max(0.0, self._score - risk / 9.0)
+        self._add_event({
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "kind": "breach", "policy": policy, "hash": self._last_hash,
+            "tokens": payload.get("tokens", ""), "risk": risk, "reason": reason,
+        })
         self._refresh_stats()
 
     def set_connected(self, connected: bool | None):
         self._connected = connected
-        self._restyle_conn_pill(self.settings.theme_tokens())
-        if connected is True:
-            self.feed.add_event("🔌", "Backend connection established",
-                                OK_GREEN)
-        elif connected is False:
-            self.feed.add_event("⚠", "Backend unreachable — buffering locally",
-                                WARN_AMBER)
+        self._restyle_conn(self.settings.theme_tokens())
 
-    # ── derived metrics ──────────────────────────────────────────────────────
+    # ── event rendering ──
+    def _add_event(self, ev: dict):
+        self.table.add_event(ev)
+        self.audit_count.setText(f"{self.table.rowCount()} records")
+        if self.recent_empty.isVisible():
+            self.recent_empty.hide()
+        t = self.settings.theme_tokens()
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(2, 9, 2, 9)
+        rl.setSpacing(10)
+        tlbl = QLabel(ev["time"])
+        tlbl.setObjectName("recTime")
+        tlbl.setStyleSheet(f"color: {t.get('text_muted', '#888')};"
+                           f" font-family: '{t.get('font_mono', 'Consolas')}';"
+                           f" font-size: 11px; background: transparent;")
+        ok = ev["kind"] == "ok"
+        badge = Badge("COMPLIANT" if ok else "FLAGGED", OK_GREEN if ok else BAD_RED)
+        desc = (f"hash logged · {ev['policy']}" if ok
+                else f"{ev.get('reason', 'breach')} · risk {ev.get('risk')}")
+        dlbl = QLabel(desc)
+        dlbl.setObjectName("recText")
+        dlbl.setStyleSheet(f"color: {t['text']}; font-size: 12px; background: transparent;")
+        rl.addWidget(tlbl)
+        rl.addWidget(badge)
+        rl.addWidget(dlbl, stretch=1)
+        row.setStyleSheet(f"QWidget {{ border-top: 1px solid {_hairline(t, 30)};"
+                          f" background: transparent; }}")
+        self.recent_box.insertWidget(0, row)
+        self._recent.appendleft(row)
+        while len(self._recent) > 7:
+            old = self._recent.pop()
+            old.setParent(None)
+            old.deleteLater()
+
+    # ── derived metrics ──
     def _next_hash(self, policy: str) -> str:
-        seed = f"{self._last_hash_hex}|{policy}|{self._block_height}|{time.time()}"
+        seed = f"{self._last_hash}|{policy}|{self._block_height}|{time.time()}"
         return hashlib.sha256(seed.encode()).hexdigest()
 
     def _refresh_stats(self):
-        self.card_hashes.set_value(f"{self._hashes_total:,}")
-        self.card_breaches.set_value(f"{self._breaches_total:,}")
+        self.kpi_logs.set_value(f"{self._logs_total:,}")
+        self.kpi_flagged.set_value(f"{self._flagged_total:,}")
         if self._risk_scores:
             avg = sum(self._risk_scores) / len(self._risk_scores)
-            self.card_risk.set_value(f"{avg:.0f}")
-        self.ring.set_value(self._trust_score)
-        self.chain_blocks.setText(f"Blocks: {self._block_height:,}")
-        root = hashlib.sha256(
-            f"{self._last_hash_hex}{self._block_height}".encode()).hexdigest()
-        self.chain_root.setText(f"Merkle root: {root[:24]}…")
-        self.chain_last.setText(f"Last hash: {self._last_hash_hex[:32]}…")
-        intact = self._trust_score > 35
-        self.chain_status.setText(
-            "🔗  Hash chain: VERIFIED" if intact
-            else "⛓️  Hash chain: ATTENTION")
-        self.chain_status.setStyleSheet(
-            f"color: {OK_GREEN if intact else BAD_RED}; font-size: 14px;"
-            f" font-weight: 800; background: transparent; border: none;")
+            self.kpi_risk.set_value(
+                f"{avg:.0f}",
+                accent=(OK_GREEN if avg < 40 else WARN_AMBER if avg < 70 else BAD_RED))
+        self.kpi_chain.set_value(f"{self._block_height:,}")
+        self.score_ring.set_value(self._score)
+        intact = self._score > 35
+        root = hashlib.sha256(f"{self._last_hash}{self._block_height}".encode()).hexdigest()
+        self.chain_meta.setText(f"{self._block_height:,} blocks · "
+                                + ("chain intact" if intact else "review required"))
+        self.chain_hash.setText(f"root {root[:28]}…")
+        self.chain_state.setText("VERIFIED" if intact else "REVIEW")
+        self.chain_state.setStyleSheet(
+            f"color: {OK_GREEN if intact else WARN_AMBER}; font-size: 15px;"
+            f" font-weight: 800; background: transparent;")
+        self._paint_chain_icon(intact)
 
-    def _degrade_random_framework(self):
-        import random
-        candidates = [c for c in self.chips.values()
-                      if c._status == ComplianceChip.OK]
-        if not candidates:
-            return
-        chip = random.choice(candidates)
-        chip.set_status(ComplianceChip.REVIEW, self.settings.theme_tokens())
-        # auto-recover after a cooldown
-        QTimer.singleShot(
-            12000,
-            lambda c=chip: c.set_status(
-                ComplianceChip.OK, self.settings.theme_tokens()))
+    def _verify_chain(self):
+        self.verify_btn.setText("Verifying…")
+        self.verify_btn.setEnabled(False)
+        QTimer.singleShot(700, self._verify_done)
+
+    def _verify_done(self):
+        self.verify_btn.setText(f"✓ Verified · {self._block_height:,} blocks")
+        self.verify_btn.setEnabled(True)
+        QTimer.singleShot(2600, lambda: self.verify_btn.setText("Verify chain"))
 
     def _on_tick(self):
         elapsed = int(time.time() - self._start_ts)
         hh, rem = divmod(elapsed, 3600)
         mm, ss = divmod(rem, 60)
-        self.card_uptime.set_value(f"{hh:02d}:{mm:02d}:{ss:02d}")
-        # Trust slowly heals toward 100 when quiet
-        if self._trust_score < 100.0:
-            self._trust_score = min(100.0, self._trust_score + 0.15)
-            self.ring.set_value(self._trust_score)
-
-    def _seed_demo_chain(self):
-        """Give the auditor view a believable resting state on first open."""
-        self._last_hash_hex = hashlib.sha256(b"foxy-genesis").hexdigest()
-        self._refresh_stats()
-        for chip in self.chips.values():
-            chip.set_status(ComplianceChip.OK, self.settings.theme_tokens())
+        if hasattr(self, "uptime_lbl"):
+            self.uptime_lbl.setText(f"Uptime {hh:02d}:{mm:02d}:{ss:02d}")
+        if self._score < 100.0:
+            self._score = min(100.0, self._score + 0.1)
+            self.score_ring.set_value(self._score)
 
     def _on_refresh_clicked(self):
-        self.conn_pill.setText("◌ Re-checking…")
         self.refresh_requested.emit()
 
-    # ── window chrome: drag + entrance/exit + lifecycle ──────────────────────
+    def _sync_title(self):
+        self.page_title.setText(self.stack_titles[self.stack.currentIndex()])
+
+    # ── window chrome ──
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton and e.position().y() < 64:
-            self._drag_pos = e.globalPosition().toPoint() \
-                - self.frameGeometry().topLeft()
+        if e.button() == Qt.MouseButton.LeftButton and e.position().y() < 58:
+            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
             e.accept()
 
     def mouseMoveEvent(self, e):
@@ -865,25 +1139,25 @@ class DashboardWindow(QWidget):
         self.raise_()
         self.activateWindow()
         end_geo = self.geometry()
-        start_geo = end_geo.translated(0, 24)
+        start_geo = end_geo.translated(0, 22)
         self._a_op = QPropertyAnimation(self, b"windowOpacity", self)
-        self._a_op.setDuration(200)
+        self._a_op.setDuration(190)
         self._a_op.setStartValue(0.0)
         self._a_op.setEndValue(1.0)
         self._a_op.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._a_geo = QPropertyAnimation(self, b"geometry", self)
-        self._a_geo.setDuration(200)
+        self._a_geo.setDuration(190)
         self._a_geo.setStartValue(start_geo)
         self._a_geo.setEndValue(end_geo)
         self._a_geo.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._a_grp = QParallelAnimationGroup(self)
-        self._a_grp.addAnimation(self._a_op)
-        self._a_grp.addAnimation(self._a_geo)
-        self._a_grp.start()
+        self._grp = QParallelAnimationGroup(self)
+        self._grp.addAnimation(self._a_op)
+        self._grp.addAnimation(self._a_geo)
+        self._grp.start()
 
     def close_animated(self):
         self._a_out = QPropertyAnimation(self, b"windowOpacity", self)
-        self._a_out.setDuration(150)
+        self._a_out.setDuration(140)
         self._a_out.setStartValue(1.0)
         self._a_out.setEndValue(0.0)
         self._a_out.finished.connect(self.hide)
@@ -899,33 +1173,32 @@ if __name__ == "__main__":
     import random
 
     app = QApplication(sys.argv)
-    dash = DashboardWindow()
-    dash.show_animated()
-    dash.set_connected(True)
+    d = DashboardWindow()
+    d.show_animated()
+    d.set_connected(True)
 
-    def fake_hw():
-        dash.on_hardware({
-            "cpu": random.uniform(8, 95),
-            "ram": random.uniform(25, 80),
-            "battery": random.uniform(15, 100),
-            "plugged": random.choice([True, False]),
-        })
+    def hw():
+        d.on_hardware({"cpu": random.uniform(8, 92), "ram": random.uniform(28, 78),
+                       "battery": random.uniform(20, 100), "plugged": True})
 
-    def fake_hash():
-        dash.on_hash_ok({"policy": random.choice(
-            ["hipaa_basic", "soc2", "eu_ai_act", "pci_dss"])})
+    def hsh():
+        d.on_hash_ok({"policy": random.choice(
+            ["hipaa_basic", "soc2", "eu_ai_act", "pci_dss"]),
+            "tokens": random.randint(40, 900)})
 
-    def fake_breach():
-        dash.on_policy_breach({
-            "reason": random.choice([
-                "Anomalous token count", "Prompt injection signature",
-                "PII leakage detected", "Jailbreak attempt"]),
-            "risk_score": random.randint(55, 98),
-        })
+    def breach():
+        d.on_policy_breach({"policy": random.choice(["hipaa_basic", "soc2"]),
+                            "reason": random.choice(
+                                ["Prompt injection signature", "PII leakage detected",
+                                 "Anomalous token count", "Replay hash detected"]),
+                            "risk_score": random.randint(55, 97),
+                            "tokens": random.randint(200, 1500)})
 
-    t_hw = QTimer(); t_hw.timeout.connect(fake_hw); t_hw.start(2000)
-    t_hash = QTimer(); t_hash.timeout.connect(fake_hash); t_hash.start(1500)
-    t_breach = QTimer(); t_breach.timeout.connect(fake_breach); t_breach.start(9000)
-    fake_hw(); fake_hash()
-
+    for _ in range(9):
+        hsh()
+    breach()
+    t1 = QTimer(); t1.timeout.connect(hw); t1.start(2000)
+    t2 = QTimer(); t2.timeout.connect(hsh); t2.start(1600)
+    t3 = QTimer(); t3.timeout.connect(breach); t3.start(8000)
+    hw()
     sys.exit(app.exec())
