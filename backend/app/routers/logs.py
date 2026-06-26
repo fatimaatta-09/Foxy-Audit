@@ -4,9 +4,10 @@ Sequence (all in one transaction):
   1. Lock this org's tail row (FOR UPDATE) to serialize concurrent inserts and
      prevent the chain from forking.
   2. Compute the new chain hash from the previous row's hash.
-  3. Grade the metadata with Gemini (inline, so the verdict is returned to the SDK
-     — which then drives the desktop fox's red alert on a breach).
-  4. Insert the row and commit once.
+  3. Insert the row with gemini_verdict = null and commit immediately.
+  4. Enqueue the row for background Gemini grading (worker.py).
+  5. Return HTTP 202 Accepted with status="pending" — the verdict will be
+     patched asynchronously by the worker.
 """
 
 from __future__ import annotations
@@ -14,18 +15,19 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.status import HTTP_202_ACCEPTED
 
-from .. import gemini
 from ..auth import require_org
 from ..chain import GENESIS_HASH, compute_chain_hash
 from ..db import get_db
 from ..models import AuditLog, Organization
-from ..schemas import LogIngest, LogResponse, Verdict
+from ..schemas import LogIngest, LogResponse
+from ..worker import worker
 
 router = APIRouter()
 
 
-@router.post("/v1/logs", response_model=LogResponse)
+@router.post("/v1/logs", response_model=LogResponse, status_code=HTTP_202_ACCEPTED)
 def ingest(
     payload: LogIngest,
     org: Organization = Depends(require_org),
@@ -53,15 +55,7 @@ def ingest(
         prev_hash=prev_hash,
     )
 
-    verdict: Verdict = gemini.evaluate(
-        {
-            "prompt_hash": payload.prompt_hash,
-            "response_hash": payload.response_hash,
-            "token_count": payload.token_count,
-            "policy_tag": payload.policy_tag,
-        }
-    )
-
+    # Write the chain row immediately — verdict will be back-filled by the worker.
     row = AuditLog(
         org_id=org.id,
         seq=seq,
@@ -71,10 +65,25 @@ def ingest(
         policy_tag=payload.policy_tag,
         prev_hash=prev_hash,
         chain_hash=chain_hash,
-        gemini_verdict=verdict.model_dump(),
+        gemini_verdict=None,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
 
-    return LogResponse(log_id=row.id, seq=seq, chain_hash=chain_hash, verdict=verdict)
+    # Enqueue for async Gemini grading — fire and forget.
+    worker.submit(
+        row.id,
+        {
+            "prompt_hash": payload.prompt_hash,
+            "response_hash": payload.response_hash,
+            "token_count": payload.token_count,
+            "policy_tag": payload.policy_tag,
+        },
+    )
+
+    return LogResponse(
+        log_id=row.id, seq=seq, chain_hash=chain_hash,
+        status="pending", verdict=None,
+    )
+

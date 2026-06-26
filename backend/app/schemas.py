@@ -35,7 +35,8 @@ class LogResponse(BaseModel):
     log_id: uuid.UUID
     seq: int
     chain_hash: str
-    verdict: Verdict
+    status: str = "pending"          # "pending" | "graded"
+    verdict: Verdict | None = None
 
 
 class VerifyResponse(BaseModel):
