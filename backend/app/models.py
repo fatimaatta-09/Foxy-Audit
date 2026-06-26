@@ -22,6 +22,18 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     api_key_hash: Mapped[str] = mapped_column(
         String(64), unique=True, index=True, nullable=False)
+    # Billing / Stripe integration
+    plan_tier: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default=None)
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True, default=None)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None)
+    subscription_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default=None)             # active | past_due | cancelled
+    # Key rotation tracking
+    key_rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 

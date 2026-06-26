@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # When the judge is unreachable: False = fail-open (write row, no breach),
     # True = fail-closed (flag for human review). The chain row is always written.
     gemini_fail_closed: bool = False
+    # Stripe billing integration
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
 
 
 @lru_cache
