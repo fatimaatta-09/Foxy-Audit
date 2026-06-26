@@ -6,13 +6,16 @@ for tenant isolation), and grades each interaction with **Gemini 1.5 Pro**.
 
 ## Endpoints
 
-| Method | Path          | Purpose                                            |
-|--------|---------------|----------------------------------------------------|
-| GET    | `/v1/health`  | Liveness + key check (the desktop app probes this) |
-| POST   | `/v1/logs`    | Ingest metadata → chain → Gemini verdict → store   |
-| GET    | `/v1/verify`  | Recompute the chain, detect tampering              |
+| Method | Path                   | Purpose                                              |
+|--------|------------------------|------------------------------------------------------|
+| GET    | `/v1/health`           | Liveness + key check (the desktop app probes this)   |
+| POST   | `/v1/logs`             | Ingest metadata → chain → 202 → background Gemini   |
+| GET    | `/v1/verify`           | Recompute the chain, detect tampering                |
+| POST   | `/v1/passport`         | Generate a compliance passport (HTML report)         |
+| POST   | `/v1/keys/rotate`      | Rotate the org's API key (invalidates the old one)   |
+| POST   | `/v1/webhooks/stripe`  | Stripe subscription webhook (auto-provisions orgs)   |
 
-All three require `Authorization: Bearer <org_api_key>`.
+All endpoints except `/v1/webhooks/stripe` require `Authorization: Bearer <org_api_key>`.
 
 ## Run locally
 
@@ -22,7 +25,7 @@ cp .env.example .env                 # then set GEMINI_API_KEY
 docker compose up -d                 # Postgres 16 on :5432
 python -m venv .venv && . .venv/Scripts/activate   # (Windows: .venv\Scripts\activate)
 pip install -r requirements.txt
-alembic upgrade head                 # create tables + RLS policy
+alembic upgrade head                 # create tables + RLS policy + billing columns
 python scripts/seed_org.py --name "Demo Corp"      # prints FOXY_API_KEY=foxy_sk_...
 uvicorn app.main:app --port 8000 --reload
 ```
@@ -50,11 +53,18 @@ python scripts/verify_chain.py        # per-row PASS/FAIL table
 - **Sequential hash chain, not blockchain/Merkle:** `chain.py` is the single
   source of truth for `Hn = SHA256(data_blob || H_{n-1})`, imported by both the
   ingest route and the verifier so writer and reader can never diverge.
-- **Inline Gemini:** `/v1/logs` grades synchronously and returns the verdict, so
-  the SDK can drive the desktop fox's red alert. Redis/Celery + 202 is a later
-  optimization (the `gemini.evaluate()` call is the seam to move behind a queue).
+- **Async Gemini:** `/v1/logs` returns `202 Accepted` immediately after writing
+  the chain row. A background `GeminiWorker` thread (`worker.py`) grades the
+  metadata and patches the verdict back into the row asynchronously.
 - **Fail-open judge:** if Gemini is unreachable the chain row is still written
   (the chain is the legal artifact); flip `GEMINI_FAIL_CLOSED=true` to flag instead.
 - **RLS:** `auth.require_org` sets `app.current_org` via `set_config(..., true)`
   per transaction; the `org_isolation` policy (with `FORCE`) scopes every
   `audit_logs` query to the calling tenant.
+- **Key rotation:** `POST /v1/keys/rotate` generates a new key, overwrites the
+  hash — the old key is immediately invalid. Copy the new key on the spot.
+- **Stripe billing:** `POST /v1/webhooks/stripe` auto-provisions orgs on
+  checkout completion and tracks subscription status changes.
+- **Compliance passport:** `POST /v1/passport` renders a self-verifiable HTML
+  report with chain root hash, stats, and policy breakdown.
+
