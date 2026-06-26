@@ -58,6 +58,7 @@ class FoxyClient:
             desktop_ping=desktop_ping,
             timeout=timeout,
         )
+        self.last_hash = "GENESIS_HASH"
 
     @property
     def enabled(self) -> bool:
@@ -74,29 +75,39 @@ class FoxyClient:
                 @functools.wraps(fn)
                 async def awrapper(*args, **kwargs):
                     response = await fn(*args, **kwargs)
-                    self._observe(_extract_prompt(args, kwargs), response, policy)
+                    self.log_interaction(_extract_prompt(args, kwargs), response, policy)
                     return response
                 return awrapper
 
             @functools.wraps(fn)
             def wrapper(*args, **kwargs):
                 response = fn(*args, **kwargs)
-                self._observe(_extract_prompt(args, kwargs), response, policy)
+                self.log_interaction(_extract_prompt(args, kwargs), response, policy)
                 return response
             return wrapper
 
         return decorator
 
     # ── internal ──────────────────────────────────────────────────────────
-    def _observe(self, prompt, response, policy: str) -> None:
+    def log_interaction(self, prompt, response, policy: str) -> None:
+        """Perform cryptographic hashing synchronously and push to AsyncDispatcher."""
+        import time
         try:
             prompt_s = "" if prompt is None else str(prompt)
             response_s = "" if response is None else str(response)
+            timestamp = time.time()
+            
+            # Using self.last_hash, prompt, response, and timestamp synchronously
+            combined = f"{self.last_hash}{prompt_s}{response_s}{timestamp}"
+            self.last_hash = hashing.sha256_hex(combined)
+            
             payload = {
                 "prompt_hash": hashing.sha256_hex(prompt_s),
                 "response_hash": hashing.sha256_hex(response_s),
                 "token_count": hashing.estimate_tokens(prompt_s, response_s),
                 "policy_tag": policy,
+                "chain_hash": self.last_hash,
+                "timestamp": timestamp,
             }
             # raw text goes out of scope here — never stored or transmitted
 

@@ -1,8 +1,7 @@
 """Background dispatch — keeps all network I/O off the host application's thread.
 
-A single lazily-started daemon thread drains a queue of ingest jobs. For each
-job it POSTs the metadata to the backend; if the returned Gemini verdict flags a
-policy breach, it fires the red `policy_breach` UDP ping to the desktop fox.
+A single lazily-started daemon thread drains a queue of ingest jobs in batches.
+For each batch, it POSTs the metadata to the backend.
 
 Every failure path is swallowed and logged at debug level — telemetry must never
 crash, block, or surface an error to the host app.
@@ -10,9 +9,12 @@ crash, block, or surface an error to the host app.
 
 from __future__ import annotations
 
+import atexit
 import logging
 import queue
 import threading
+import time
+import requests
 
 from . import transport, udp
 from .config import FoxyConfig
@@ -20,19 +22,24 @@ from .config import FoxyConfig
 log = logging.getLogger("foxy_audit")
 
 
-class _Dispatcher:
-    def __init__(self) -> None:
+class AsyncDispatcher:
+    def __init__(self, batch_size: int = 10, flush_interval: float = 1.0) -> None:
         self._q: "queue.Queue[tuple[FoxyConfig, dict]]" = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
+        self._shutdown = False
+        atexit.register(self.flush)
 
     def _ensure_worker(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
         with self._lock:
             if self._thread is None or not self._thread.is_alive():
+                self._shutdown = False
                 self._thread = threading.Thread(
-                    target=self._run, name="foxy-audit-dispatch", daemon=True
+                    target=self._run, name="foxy-audit-async-dispatch", daemon=True
                 )
                 self._thread.start()
 
@@ -41,38 +48,55 @@ class _Dispatcher:
         self._q.put((cfg, payload))
 
     def _run(self) -> None:
-        while True:
-            cfg, payload = self._q.get()
+        batch = []
+        last_flush = time.time()
+        
+        while not self._shutdown or not self._q.empty():
             try:
-                self._process(cfg, payload)
-            except Exception as exc:  # never let the worker die
-                log.debug("foxy-audit dispatch error: %s", exc)
-            finally:
-                self._q.task_done()
+                # Wait up to the flush interval for an item
+                timeout = max(0.1, self.flush_interval - (time.time() - last_flush))
+                cfg, payload = self._q.get(timeout=timeout)
+                batch.append((cfg, payload))
+            except queue.Empty:
+                pass
 
-    def _process(self, cfg: FoxyConfig, payload: dict) -> None:
+            now = time.time()
+            if batch and (len(batch) >= self.batch_size or now - last_flush >= self.flush_interval):
+                self._process_batch(batch)
+                batch = []
+                last_flush = now
+
+    def _process_batch(self, batch: list[tuple[FoxyConfig, dict]]) -> None:
+        if not batch:
+            return
+        
+        cfg = batch[0][0]
+        payloads = [item[1] for item in batch]
+        
         try:
-            result = transport.post_log(cfg.endpoint, cfg.api_key, payload, cfg.timeout)
+            # Non-blocking batch HTTP request
+            headers = {"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"}
+            
+            # Map /v1/logs to /logs/batch as required by the backend decoupling refactor
+            endpoint = cfg.endpoint.replace("/v1/logs", "/logs/batch")
+            if "/logs/batch" not in endpoint:
+                endpoint = endpoint.rstrip('/') + "/logs/batch"
+                
+            resp = requests.post(endpoint, json=payloads, headers=headers, timeout=cfg.timeout)
+            resp.raise_for_status()
+            
+            # Since HTTP 202 is returned, verdicts are processed async.
+            # No immediate UDP ping is required based on response.
         except Exception as exc:
             log.debug("foxy-audit POST failed: %s", exc)
-            return
-        verdict = (result or {}).get("verdict") or {}
-        if verdict.get("policy_breach") and cfg.desktop_ping:
-            udp.send_ping(
-                {
-                    "event": "policy_breach",
-                    "reason": str(verdict.get("reason", "Policy violation"))[:300],
-                    "risk_score": int(verdict.get("risk_score", 100)),
-                    "policy": payload.get("policy_tag", "default"),
-                    "tokens": payload.get("token_count", 0),
-                },
-                cfg.udp_host,
-                cfg.udp_port,
-            )
+
+    def flush(self) -> None:
+        self._shutdown = True
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2.0)
 
 
-_DISPATCHER = _Dispatcher()
-
+_DISPATCHER = AsyncDispatcher()
 
 def submit(cfg: FoxyConfig, payload: dict) -> None:
     """Enqueue an ingest job for background delivery."""
