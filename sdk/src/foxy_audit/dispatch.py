@@ -74,19 +74,19 @@ class AsyncDispatcher:
         payloads = [item[1] for item in batch]
         
         try:
-            # Non-blocking batch HTTP request
             headers = {"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"}
             
-            # Map /v1/logs to /logs/batch as required by the backend decoupling refactor
-            endpoint = cfg.endpoint.replace("/v1/logs", "/logs/batch")
-            if "/logs/batch" not in endpoint:
-                endpoint = endpoint.rstrip('/') + "/logs/batch"
-                
+            # Normalise the endpoint to always be .../v1/logs/batch
+            # Strip any trailing slashes and known suffixes, then append the canonical path.
+            base = cfg.endpoint.rstrip("/")
+            for suffix in ("/v1/logs/batch", "/v1/logs", "/logs/batch", "/logs"):
+                if base.endswith(suffix):
+                    base = base[: -len(suffix)]
+                    break
+            endpoint = f"{base}/v1/logs/batch"
+
             resp = requests.post(endpoint, json=payloads, headers=headers, timeout=cfg.timeout)
             resp.raise_for_status()
-            
-            # Since HTTP 202 is returned, verdicts are processed async.
-            # No immediate UDP ping is required based on response.
         except Exception as exc:
             log.debug("foxy-audit POST failed: %s", exc)
 
