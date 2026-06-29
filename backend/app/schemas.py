@@ -7,6 +7,8 @@ the Bearer API key, so a client can never spoof another tenant's id.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -44,3 +46,27 @@ class VerifyResponse(BaseModel):
     count: int
     first_broken_seq: int | None = None
     detail: str | None = None
+
+
+class LogListItem(BaseModel):
+    """One row returned by GET /v1/logs."""
+    id: uuid.UUID
+    seq: int
+    prompt_hash: str
+    response_hash: str
+    token_count: int
+    policy_tag: str
+    chain_hash: str
+    gemini_verdict: dict[str, Any] | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LogListResponse(BaseModel):
+    items: list[LogListItem]
+    total: int
+    page: int
+    limit: int
+

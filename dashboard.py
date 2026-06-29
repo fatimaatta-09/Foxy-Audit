@@ -35,9 +35,12 @@ until the FastAPI ledger endpoints are wired in.
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 import hashlib
+import urllib.request
+import urllib.error
 from datetime import datetime
 from collections import deque
 
@@ -48,11 +51,65 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import (
     Qt, QPoint, QRectF, QTimer, QPropertyAnimation,
-    QParallelAnimationGroup, QEasingCurve, pyqtSignal, pyqtProperty,
+    QParallelAnimationGroup, QEasingCurve, pyqtSignal, pyqtProperty, QThread,
 )
 from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPixmap
 
 from fox_settings import FoxSettings
+
+
+# ── Backend HTTP workers (run off-thread so the GUI never freezes) ───────────
+class VerifyWorker(QThread):
+    """Calls GET /v1/verify and emits the result."""
+    succeeded = pyqtSignal(dict)   # {ok, count, first_broken_seq, detail}
+    failed    = pyqtSignal(str)    # error message
+
+    def __init__(self, backend_url: str, org_key: str, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+
+    def run(self):
+        url = f"{self.backend_url}/v1/verify"
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {self.org_key}"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.succeeded.emit(data)
+        except urllib.error.HTTPError as e:
+            self.failed.emit(f"HTTP {e.code}: {e.reason}")
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class RefreshWorker(QThread):
+    """Calls GET /v1/logs?page=1&limit=50 and emits the rows."""
+    succeeded = pyqtSignal(dict)   # {items, total, page, limit}
+    failed    = pyqtSignal(str)
+
+    def __init__(self, backend_url: str, org_key: str,
+                 page: int = 1, limit: int = 50, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+        self.page = page
+        self.limit = limit
+
+    def run(self):
+        url = f"{self.backend_url}/v1/logs?page={self.page}&limit={self.limit}"
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {self.org_key}"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.succeeded.emit(data)
+        except urllib.error.HTTPError as e:
+            self.failed.emit(f"HTTP {e.code}: {e.reason}")
+        except Exception as e:
+            self.failed.emit(str(e))
 
 
 # ── Colour helpers ──────────────────────────────────────────────────────────
@@ -507,6 +564,35 @@ class AuditTable(QTableWidget):
                                       align=Qt.AlignmentFlag.AlignRight))
         while self.rowCount() > self.MAX_ROWS:
             self.removeRow(self.rowCount() - 1)
+
+    def populate_from_backend(self, items: list):
+        """Replace table contents with rows fetched from GET /v1/logs.
+
+        Each item is a dict with the LogListItem shape from the backend.
+        Newest-first ordering is preserved (the backend already sorts desc).
+        """
+        self.setRowCount(0)  # clear existing rows
+        for item in items:
+            verdict = item.get("gemini_verdict") or {}
+            breach = verdict.get("policy_breach", False)
+            risk_score = verdict.get("risk_score", None) if breach else None
+            # Parse ISO timestamp from backend → HH:MM:SS
+            ts_str = item.get("created_at", "")
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                time_str = ts.strftime("%H:%M:%S")
+            except (ValueError, AttributeError):
+                time_str = ts_str[:8] if ts_str else "—"
+            ev = {
+                "time":   time_str,
+                "kind":   "breach" if breach else "ok",
+                "policy": item.get("policy_tag", "—"),
+                "hash":   item.get("prompt_hash", "—"),
+                "tokens": item.get("token_count", ""),
+                "risk":   risk_score,
+                "reason": verdict.get("reason", ""),
+            }
+            self.add_event(ev)
 
 
 # ── Sidebar nav button ──────────────────────────────────────────────────────
@@ -1087,14 +1173,41 @@ class DashboardWindow(QWidget):
         self._paint_chain_icon(intact)
 
     def _verify_chain(self):
+        """Real chain verify — calls GET /v1/verify on the backend."""
+        url = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if not (url and key):
+            self.verify_btn.setText("⚠ No backend configured")
+            QTimer.singleShot(2500, lambda: self.verify_btn.setText("Verify chain"))
+            return
         self.verify_btn.setText("Verifying…")
         self.verify_btn.setEnabled(False)
-        QTimer.singleShot(700, self._verify_done)
+        self._verify_worker = VerifyWorker(url, key, self)
+        self._verify_worker.succeeded.connect(self._on_verify_success)
+        self._verify_worker.failed.connect(self._on_verify_failed)
+        self._verify_worker.start()
 
-    def _verify_done(self):
-        self.verify_btn.setText(f"✓ Verified · {self._block_height:,} blocks")
+    def _on_verify_success(self, data: dict):
+        ok: bool = data.get("ok", False)
+        count: int = data.get("count", 0)
+        broken: int | None = data.get("first_broken_seq")
+        if ok:
+            self.verify_btn.setText(f"✓ Chain intact · {count:,} blocks")
+            self.chain_state.setText("VERIFIED")
+            self.chain_state.setStyleSheet(
+                f"color: {OK_GREEN}; font-size: 15px; font-weight: 800; background: transparent;")
+        else:
+            self.verify_btn.setText(f"⚠ Broken at seq {broken}")
+            self.chain_state.setText("TAMPERED")
+            self.chain_state.setStyleSheet(
+                f"color: {BAD_RED}; font-size: 15px; font-weight: 800; background: transparent;")
         self.verify_btn.setEnabled(True)
-        QTimer.singleShot(2600, lambda: self.verify_btn.setText("Verify chain"))
+        QTimer.singleShot(4000, lambda: self.verify_btn.setText("Verify chain"))
+
+    def _on_verify_failed(self, err: str):
+        self.verify_btn.setText(f"⚠ Error: {err[:40]}")
+        self.verify_btn.setEnabled(True)
+        QTimer.singleShot(3500, lambda: self.verify_btn.setText("Verify chain"))
 
     def _on_tick(self):
         elapsed = int(time.time() - self._start_ts)
@@ -1107,7 +1220,34 @@ class DashboardWindow(QWidget):
             self.score_ring.set_value(self._score)
 
     def _on_refresh_clicked(self):
-        self.refresh_requested.emit()
+        """Fetch real history from GET /v1/logs and repopulate the table."""
+        self.refresh_requested.emit()  # still notify the fox (for health recheck)
+        url = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if not (url and key):
+            return
+        self._refresh_worker = RefreshWorker(url, key, parent=self)
+        self._refresh_worker.succeeded.connect(self._on_refresh_success)
+        self._refresh_worker.failed.connect(self._on_refresh_failed)
+        self._refresh_worker.start()
+
+    def _on_refresh_success(self, data: dict):
+        items: list = data.get("items", [])
+        total: int = data.get("total", 0)
+        self.table.populate_from_backend(items)
+        self.audit_count.setText(f"{self.table.rowCount()} records  (backend total: {total:,})")
+        # Sync KPI counters from real data
+        breach_count = sum(
+            1 for it in items
+            if (it.get("gemini_verdict") or {}).get("policy_breach", False)
+        )
+        self._logs_total = max(self._logs_total, total)
+        self._flagged_total = max(self._flagged_total, breach_count)
+        self._refresh_stats()
+
+    def _on_refresh_failed(self, err: str):
+        # Silently log — the table keeps its existing data
+        print(f"[Dashboard] Refresh failed: {err}")
 
     def _sync_title(self):
         self.page_title.setText(self.stack_titles[self.stack.currentIndex()])

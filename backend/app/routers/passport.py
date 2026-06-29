@@ -27,7 +27,9 @@ from ..models import AuditLog, Organization
 
 router = APIRouter()
 
-_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
+# templates/ lives at  backend/app/templates/, NOT backend/app/routers/templates/
+# os.path.dirname(__file__) == .../backend/app/routers — so we go one level up.
+_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 _jinja_env = Environment(
     loader=FileSystemLoader(_TEMPLATE_DIR),
     autoescape=True,

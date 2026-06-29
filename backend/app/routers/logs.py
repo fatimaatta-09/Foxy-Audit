@@ -1,27 +1,36 @@
-"""POST /logs/batch — ingest a batch of interactions into the hash chain.
+"""POST /v1/logs/batch — ingest a batch of interactions into the hash chain.
+GET  /v1/logs         — fetch paginated audit log rows for the authenticated org.
 
-Sequence:
+Sequence (POST):
   1. Authenticate the org via API key.
   2. Enqueue the entire batch payload to Celery for background processing.
   3. Return HTTP 202 Accepted instantly.
+
+Sequence (GET):
+  1. Authenticate the org via API key (RLS GUC is set by require_org).
+  2. Query audit_logs filtered by org_id with pagination.
+  3. Return JSON list — dashboard Refresh button calls this.
 """
 
 from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
 
 from ..auth import require_org
-from ..models import Organization
-from ..schemas import LogIngest
+from ..db import get_db
+from ..models import AuditLog, Organization
+from ..schemas import LogIngest, LogListItem, LogListResponse
 from ..worker import process_log_batch_task
 
 router = APIRouter()
 
 
-@router.post("/logs/batch", status_code=HTTP_202_ACCEPTED)
+@router.post("/v1/logs/batch", status_code=HTTP_202_ACCEPTED)
 def ingest_batch(
     payload: List[LogIngest],
     org: Organization = Depends(require_org),
@@ -37,3 +46,39 @@ def ingest_batch(
     process_log_batch_task.delay(batch_data)
 
     return {"status": "pending", "count": len(batch_data)}
+
+
+@router.get("/v1/logs", response_model=LogListResponse)
+def list_logs(
+    org: Organization = Depends(require_org),
+    db: Session = Depends(get_db),
+    page: int = Query(default=1, ge=1, description="1-indexed page number"),
+    limit: int = Query(default=50, ge=1, le=200, description="rows per page"),
+):
+    """Return paginated audit log rows for the caller's org.
+
+    RLS is already active (set by require_org), so the WHERE clause on org_id
+    is belt-and-suspenders — the DB enforces tenant isolation regardless.
+    Results are ordered newest-first so the dashboard shows the latest events.
+    """
+    offset = (page - 1) * limit
+
+    total: int = db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org.id)
+    ).scalar_one()
+
+    rows = db.execute(
+        select(AuditLog)
+        .where(AuditLog.org_id == org.id)
+        .order_by(AuditLog.seq.desc())
+        .offset(offset)
+        .limit(limit)
+    ).scalars().all()
+
+    return LogListResponse(
+        items=[LogListItem.model_validate(r) for r in rows],
+        total=total,
+        page=page,
+        limit=limit,
+    )
+

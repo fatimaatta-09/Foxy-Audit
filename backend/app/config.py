@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     # Stripe billing integration
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    # CORS — comma-separated list of allowed origins.
+    # NEVER set to * in production; wildcard CORS contradicts our security USP.
+    cors_origins: str = (
+        "http://localhost:3000,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173,"
+        "http://127.0.0.1:3000"
+    )
+
+    def get_cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache

@@ -3,6 +3,12 @@
 Revision ID: 0001
 Revises:
 Create Date: 2026-06-26
+
+Fix: billing columns (plan_tier, stripe_*, key_rotated_at) added here so that
+models.py can map them without requiring 0002 to have run first.
+Migration 0002 retains its ADD COLUMN statements but wraps them in DO $$ BEGIN
+/ EXCEPTION WHEN duplicate_column THEN END; $$ blocks so re-running on a fresh
+DB (where these columns already exist) is a no-op.
 """
 from alembic import op
 
@@ -18,10 +24,16 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE organizations (
-            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            name         TEXT NOT NULL,
-            api_key_hash VARCHAR(64) NOT NULL UNIQUE,
-            created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+            id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                   TEXT NOT NULL,
+            api_key_hash           VARCHAR(64) NOT NULL UNIQUE,
+            -- Billing / Stripe columns (also in 0002 for idempotency)
+            plan_tier              VARCHAR(32),
+            stripe_customer_id     VARCHAR(255) UNIQUE,
+            stripe_subscription_id VARCHAR(255),
+            subscription_status    VARCHAR(32),
+            key_rotated_at         TIMESTAMPTZ,
+            created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
         );
         """
     )
@@ -64,3 +76,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS audit_logs;")
     op.execute("DROP TABLE IF EXISTS organizations;")
+

@@ -3,6 +3,7 @@
 Endpoints:
   GET  /v1/health            liveness + key check (desktop app probes this)
   POST /v1/logs              ingest metadata → chain → 202 → background Gemini
+  GET  /v1/logs              fetch paginated audit log rows
   GET  /v1/verify            recompute the chain, detect tampering
   POST /v1/passport          generate a compliance passport (HTML)
   POST /v1/keys/rotate       rotate the org's API key
@@ -16,6 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .config import get_settings
 from .routers import billing, health, keys, logs, passport, verify
 from .worker import worker
 
@@ -29,12 +31,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Foxy Audit", version="0.1.0", lifespan=lifespan)
 
-# Permissive CORS — the local web/desktop clients live on other origins.
+# Secure CORS — origins are read from CORS_ORIGINS env var (comma-separated).
+# Wildcards are never used; that would contradict our enterprise trust USP.
+_settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_settings.get_cors_origins(),
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(health.router, tags=["health"])
@@ -48,4 +52,3 @@ app.include_router(billing.router, tags=["billing"])
 @app.get("/")
 def root():
     return {"service": "foxy-audit", "status": "ok"}
-
