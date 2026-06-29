@@ -1,0 +1,79 @@
+"""GET /v1/policies  — fetch the org's active policy configuration.
+PUT /v1/policies  — update policy toggles.
+
+Core Requirement #1: Active Policy Configuration.
+
+A row is auto-created with safe defaults on first GET so the table is never
+empty. Gemini grading reads these flags via gemini.evaluate(meta, policy_config).
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from ..auth import require_org
+from ..db import get_db
+from ..models import OrgPolicy, Organization
+
+router = APIRouter()
+
+
+class PolicyConfig(BaseModel):
+    pii_detection: bool = True
+    prompt_injection: bool = True
+    regulated_data_mode: bool = False
+    max_token_threshold: int = Field(default=50_000, ge=1, le=10_000_000)
+
+
+def _get_or_create(org: Organization, db: Session) -> OrgPolicy:
+    """Return the org's policy row, creating it with defaults if missing."""
+    row = db.get(OrgPolicy, org.id)
+    if row is None:
+        row = OrgPolicy(org_id=org.id)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+@router.get("/v1/policies", response_model=PolicyConfig)
+def get_policies(
+    org: Organization = Depends(require_org),
+    db: Session = Depends(get_db),
+) -> PolicyConfig:
+    """Return the org's current compliance policy settings."""
+    row = _get_or_create(org, db)
+    return PolicyConfig(
+        pii_detection=row.pii_detection,
+        prompt_injection=row.prompt_injection,
+        regulated_data_mode=row.regulated_data_mode,
+        max_token_threshold=row.max_token_threshold,
+    )
+
+
+@router.put("/v1/policies", response_model=PolicyConfig)
+def update_policies(
+    body: PolicyConfig,
+    org: Organization = Depends(require_org),
+    db: Session = Depends(get_db),
+) -> PolicyConfig:
+    """Update the org's compliance policy settings.
+
+    Changes take effect for all interactions processed AFTER this call.
+    The Gemini evaluator reads these flags on every grading job.
+    """
+    row = _get_or_create(org, db)
+    row.pii_detection = body.pii_detection
+    row.prompt_injection = body.prompt_injection
+    row.regulated_data_mode = body.regulated_data_mode
+    row.max_token_threshold = body.max_token_threshold
+    db.commit()
+    db.refresh(row)
+    return PolicyConfig(
+        pii_detection=row.pii_detection,
+        prompt_injection=row.prompt_injection,
+        regulated_data_mode=row.regulated_data_mode,
+        max_token_threshold=row.max_token_threshold,
+    )

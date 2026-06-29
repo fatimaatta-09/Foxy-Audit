@@ -1,4 +1,4 @@
-"""ORM models — organizations and the append-only audit_logs hash chain."""
+"""ORM models — organizations, the append-only audit_logs hash chain, and per-org policy config."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, DateTime, ForeignKey, Integer, String, UniqueConstraint, func,
+    BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -56,3 +56,23 @@ class AuditLog(Base):
     gemini_verdict: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class OrgPolicy(Base):
+    """Per-org compliance policy configuration — Core Requirement #1.
+
+    One row per organization. Created with safe defaults on first GET.
+    Non-technical executives update this via PUT /v1/policies; the
+    Gemini evaluator reads these flags to adjust its system prompt.
+    """
+    __tablename__ = "org_policies"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), primary_key=True)
+    pii_detection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    prompt_injection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    regulated_data_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    max_token_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=50000)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+

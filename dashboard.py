@@ -48,6 +48,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QStackedWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QApplication, QSizePolicy, QButtonGroup, QAbstractItemView,
+    QTextEdit, QLineEdit,
 )
 from PyQt6.QtCore import (
     Qt, QPoint, QRectF, QTimer, QPropertyAnimation,
@@ -110,6 +111,47 @@ class RefreshWorker(QThread):
             self.failed.emit(f"HTTP {e.code}: {e.reason}")
         except Exception as e:
             self.failed.emit(str(e))
+
+
+class _SandboxFetchWorker(QThread):
+    """Fetch GET /v1/logs/{seq} and compare stored hashes to locally computed ones.
+
+    Emits result(matched: bool, detail: str).
+    """
+    result = pyqtSignal(bool, str)
+
+    def __init__(self, backend_url: str, org_key: str, seq: int,
+                 local_prompt_hash: str, local_response_hash: str, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+        self.seq = seq
+        self.local_ph = local_prompt_hash
+        self.local_rh = local_response_hash
+
+    def run(self):
+        url = f"{self.backend_url}/v1/logs/{self.seq}"
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {self.org_key}"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            stored_ph = data.get("prompt_hash", "")
+            stored_rh = data.get("response_hash", "")
+            if stored_ph == self.local_ph and stored_rh == self.local_rh:
+                self.result.emit(True, "")
+            else:
+                detail = []
+                if stored_ph != self.local_ph:
+                    detail.append(f"Prompt hash: ledger={stored_ph[:16]}… local={self.local_ph[:16]}…")
+                if stored_rh != self.local_rh:
+                    detail.append(f"Response hash: ledger={stored_rh[:16]}… local={self.local_rh[:16]}…")
+                self.result.emit(False, "\n".join(detail))
+        except urllib.error.HTTPError as e:
+            self.result.emit(False, f"HTTP {e.code}: {e.reason} — seq {self.seq} not found")
+        except Exception as e:
+            self.result.emit(False, f"Error: {e}")
 
 
 # ── Colour helpers ──────────────────────────────────────────────────────────
@@ -746,6 +788,7 @@ class DashboardWindow(QWidget):
         self.stack.addWidget(self._page_overview(t))   # 0
         self.stack.addWidget(self._page_audit(t))      # 1
         self.stack.addWidget(self._page_system(t))     # 2
+        self.stack.addWidget(self._page_sandbox(t))    # 3
         self.stack.currentChanged.connect(self._sync_title)
         main.addWidget(self.stack, stretch=1)
         h.addLayout(main, stretch=1)
@@ -782,7 +825,7 @@ class DashboardWindow(QWidget):
         self.nav_buttons = []
         for i, (icon, label) in enumerate(
                 [("overview", "Overview"), ("log", "Audit Log"),
-                 ("system", "System")]):
+                 ("system", "System"), ("shield", "Sandbox")]):
             btn = NavButton(icon, label, t)
             btn.clicked.connect(lambda _c, idx=i: self.stack.setCurrentIndex(idx))
             self.nav_group.addButton(btn, i)
@@ -809,7 +852,7 @@ class DashboardWindow(QWidget):
 
         self.page_title = QLabel("Overview")
         self.page_title.setObjectName("pageTitle")
-        self.stack_titles = ["Overview", "Blind Audit Log", "System Health"]
+        self.stack_titles = ["Overview", "Blind Audit Log", "System Health", "Verification Sandbox"]
         h.addWidget(self.page_title)
         h.addStretch()
 
@@ -952,6 +995,176 @@ class DashboardWindow(QWidget):
         v.addLayout(row)
         v.addStretch()
         return page
+
+    # ── Verification Sandbox (Core Requirement #3) ───────────────────────────
+    def _page_sandbox(self, t: dict) -> QWidget:
+        """Zero-knowledge proof sandbox: compute hashes locally, compare to ledger.
+
+        The SHA-256 computation runs entirely in the client (no server call).
+        Only the 'Compare to Ledger' button makes a network request—to fetch
+        the stored hashes for the given seq number from GET /v1/logs/{seq}.
+        """
+        from PyQt6.QtWidgets import QTextEdit, QLineEdit, QGroupBox
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(22, 20, 22, 20)
+        v.setSpacing(16)
+
+        # Header
+        hdr = QHBoxLayout()
+        cap = QLabel("VERIFICATION SANDBOX")
+        cap.setObjectName("tableCap")
+        sub = QLabel("Compute hashes locally — no server call — then compare to the immutable ledger.")
+        sub.setObjectName("tableCount")
+        hdr.addWidget(cap)
+        hdr.addStretch()
+        hdr.addWidget(sub)
+        v.addLayout(hdr)
+
+        # Input group
+        inputs_row = QHBoxLayout()
+        inputs_row.setSpacing(14)
+
+        prompt_box = QVBoxLayout()
+        prompt_lbl = QLabel("ORIGINAL PROMPT")
+        prompt_lbl.setObjectName("kpiLabel")
+        self.sb_prompt = QTextEdit()
+        self.sb_prompt.setPlaceholderText("Paste the original prompt text here…")
+        self.sb_prompt.setFixedHeight(130)
+        prompt_box.addWidget(prompt_lbl)
+        prompt_box.addWidget(self.sb_prompt)
+        inputs_row.addLayout(prompt_box)
+
+        response_box = QVBoxLayout()
+        response_lbl = QLabel("ORIGINAL RESPONSE")
+        response_lbl.setObjectName("kpiLabel")
+        self.sb_response = QTextEdit()
+        self.sb_response.setPlaceholderText("Paste the original response text here…")
+        self.sb_response.setFixedHeight(130)
+        response_box.addWidget(response_lbl)
+        response_box.addWidget(self.sb_response)
+        inputs_row.addLayout(response_box)
+        v.addLayout(inputs_row)
+
+        # Compute button
+        compute_btn = QPushButton("Compute Hashes Locally")
+        compute_btn.setObjectName("verifyBtn")
+        compute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        compute_btn.setFixedHeight(40)
+        compute_btn.clicked.connect(self._sb_compute)
+        v.addWidget(compute_btn)
+
+        # Hash display
+        hash_row = QHBoxLayout()
+        hash_row.setSpacing(12)
+        ph_box = QVBoxLayout()
+        ph_lbl = QLabel("PROMPT HASH (SHA-256)")
+        ph_lbl.setObjectName("kpiLabel")
+        self.sb_prompt_hash = QLabel("—")
+        self.sb_prompt_hash.setObjectName("chainHash")
+        self.sb_prompt_hash.setWordWrap(True)
+        ph_box.addWidget(ph_lbl)
+        ph_box.addWidget(self.sb_prompt_hash)
+        hash_row.addLayout(ph_box)
+
+        rh_box = QVBoxLayout()
+        rh_lbl = QLabel("RESPONSE HASH (SHA-256)")
+        rh_lbl.setObjectName("kpiLabel")
+        self.sb_response_hash = QLabel("—")
+        self.sb_response_hash.setObjectName("chainHash")
+        self.sb_response_hash.setWordWrap(True)
+        rh_box.addWidget(rh_lbl)
+        rh_box.addWidget(self.sb_response_hash)
+        hash_row.addLayout(rh_box)
+        v.addLayout(hash_row)
+
+        # Ledger comparison row
+        ledger_row = QHBoxLayout()
+        ledger_row.setSpacing(10)
+        seq_lbl = QLabel("LEDGER SEQ #")
+        seq_lbl.setObjectName("kpiLabel")
+        self.sb_seq = QLineEdit()
+        self.sb_seq.setPlaceholderText("e.g. 3")
+        self.sb_seq.setFixedWidth(110)
+        self.sb_compare_btn = QPushButton("Compare to Ledger")
+        self.sb_compare_btn.setObjectName("verifyBtn")
+        self.sb_compare_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sb_compare_btn.setFixedHeight(38)
+        self.sb_compare_btn.clicked.connect(self._sb_compare)
+        ledger_row.addWidget(seq_lbl)
+        ledger_row.addWidget(self.sb_seq)
+        ledger_row.addWidget(self.sb_compare_btn)
+        ledger_row.addStretch()
+        v.addLayout(ledger_row)
+
+        # Result display
+        self.sb_result = QLabel("")
+        self.sb_result.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sb_result.setWordWrap(True)
+        self.sb_result.setMinimumHeight(60)
+        v.addWidget(self.sb_result)
+        v.addStretch()
+        return page
+
+    # ── Sandbox logic ──
+    def _sb_compute(self):
+        """Compute SHA-256 hashes locally — zero server calls."""
+        prompt = self.sb_prompt.toPlainText()
+        response = self.sb_response.toPlainText()
+        ph = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        rh = hashlib.sha256(response.encode("utf-8")).hexdigest()
+        self.sb_prompt_hash.setText(ph)
+        self.sb_response_hash.setText(rh)
+        self.sb_result.setText("Hashes computed locally. Enter a Ledger Seq # and click Compare.")
+        self.sb_result.setStyleSheet(f"color: {INFO_BLUE}; font-size: 14px; font-weight: 700;")
+
+    def _sb_compare(self):
+        """Fetch GET /v1/logs/{seq} and compare stored hashes to locally computed ones."""
+        ph = self.sb_prompt_hash.text()
+        rh = self.sb_response_hash.text()
+        if ph in ("", "—") or rh in ("", "—"):
+            self.sb_result.setText("⚠ Compute hashes first before comparing.")
+            self.sb_result.setStyleSheet(f"color: {WARN_AMBER}; font-size: 14px; font-weight: 700;")
+            return
+        seq_text = self.sb_seq.text().strip()
+        if not seq_text.isdigit():
+            self.sb_result.setText("⚠ Enter a valid sequence number.")
+            self.sb_result.setStyleSheet(f"color: {WARN_AMBER}; font-size: 14px; font-weight: 700;")
+            return
+        url = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if not (url and key):
+            self.sb_result.setText("⚠ Configure Backend URL and API Key in Settings first.")
+            self.sb_result.setStyleSheet(f"color: {WARN_AMBER}; font-size: 14px; font-weight: 700;")
+            return
+        self.sb_compare_btn.setText("Fetching…")
+        self.sb_compare_btn.setEnabled(False)
+        self._sb_worker = _SandboxFetchWorker(
+            url, key, int(seq_text), ph, rh, self
+        )
+        self._sb_worker.result.connect(self._sb_on_result)
+        self._sb_worker.start()
+
+    def _sb_on_result(self, matched: bool, detail: str):
+        self.sb_compare_btn.setText("Compare to Ledger")
+        self.sb_compare_btn.setEnabled(True)
+        if matched:
+            self.sb_result.setText(
+                "✓  MATCH — Interaction certified authentic.\n"
+                "The hashes you computed locally are identical to the immutable ledger."
+            )
+            self.sb_result.setStyleSheet(
+                f"color: {OK_GREEN}; font-size: 16px; font-weight: 800;"
+                " border: 2px solid " + OK_GREEN + "; border-radius: 8px; padding: 14px;"
+            )
+        else:
+            self.sb_result.setText(
+                "✗  MISMATCH — Log may have been tampered with.\n" + detail
+            )
+            self.sb_result.setStyleSheet(
+                f"color: {BAD_RED}; font-size: 16px; font-weight: 800;"
+                " border: 2px solid " + BAD_RED + "; border-radius: 8px; padding: 14px;"
+            )
 
     # ── theming ──────────────────────────────────────────────────────────────
     def apply_theme(self, t: dict):
