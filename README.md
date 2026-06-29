@@ -48,6 +48,10 @@ We provide a lightweight Python SDK (`pip install foxy-audit`) that intercepts A
 
 - **Intelligent Policy Grading** — A background worker powered by Google Gemini 1.5 Pro evaluates telemetry data against strict regulatory frameworks in real-time.
 
+- **Active Policy Configuration** — Non-technical executives can instantly toggle compliance rules (PII detection, prompt injection, regulated data mode) via the dashboard, instantly altering the strictness of the Gemini evaluator.
+
+- **Verification Sandbox** — A built-in zero-knowledge proof tool allowing any third-party auditor to mathematically prove that the company's logs haven't been tampered with. It shifts the paradigm from "Trust Us" to "Trust the Math."
+
 - **The "Foxy" UI** — A sleek, claymorphism-styled enterprise portal designed for compliance officers to visually verify cryptographic proofs, interact with their audit logs, and download verification PDFs with a single click.
 
 ## 🚀 Quickstart Guide
