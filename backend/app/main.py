@@ -24,7 +24,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from .config import get_settings
-from .routers import billing, health, keys, logs, passport, policies, verify
+from .routers import analytics, billing, health, keys, logs, passport, policies, verify
 
 
 @asynccontextmanager
@@ -57,6 +57,7 @@ app.include_router(passport.router, tags=["passport"])
 app.include_router(keys.router, tags=["keys"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(policies.router, tags=["policies"])
+app.include_router(analytics.router, tags=["analytics"])
 
 
 @app.get("/")
