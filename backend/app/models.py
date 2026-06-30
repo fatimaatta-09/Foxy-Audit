@@ -51,6 +51,7 @@ class AuditLog(Base):
     response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     policy_tag: Mapped[str] = mapped_column(String(32), nullable=False)
+    pii_signals: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     chain_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     gemini_verdict: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

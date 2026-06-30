@@ -101,6 +101,7 @@ def _process_batch(batch_payloads: list[dict[str, Any]], retries_left: int = 3) 
                 response_hash=item["response_hash"],
                 token_count=item["token_count"],
                 policy_tag=item["policy_tag"],
+                pii_signals=item.get("pii_signals"),
                 prev_hash=prev_hash,
                 chain_hash=chain_hash,
                 gemini_verdict=verdict_dict,

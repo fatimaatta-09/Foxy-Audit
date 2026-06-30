@@ -27,6 +27,18 @@ log = logging.getLogger("foxy_audit")
 _POLICY_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 _PROMPT_KWARGS = ("prompt", "user_prompt", "message", "text", "input", "query")
 
+_EMAIL_RE = re.compile(r"[\w\.-]+@[\w\.-]+\.\w+")
+_SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+
+def _detect_pii(prompt_s: str, response_s: str) -> list[str]:
+    signals = []
+    combined = prompt_s + " " + response_s
+    if _EMAIL_RE.search(combined):
+        signals.append("email")
+    if _SSN_RE.search(combined):
+        signals.append("ssn_pattern")
+    return signals
+
 
 def _extract_prompt(args: tuple, kwargs: dict) -> str:
     """Best-effort: the first known prompt kwarg, else the first string arg."""
@@ -108,6 +120,7 @@ class FoxyClient:
                 "policy_tag": policy,
                 "chain_hash": self.last_hash,
                 "timestamp": timestamp,
+                "pii_signals": _detect_pii(prompt_s, response_s),
             }
             # raw text goes out of scope here — never stored or transmitted
 

@@ -16,5 +16,30 @@ services:
       timeout: 3s
       retries: 10
 
+  foxy-seed:
+    build: .
+    container_name: foxy_seed
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://foxy:foxy@db:5432/foxy
+    command: python scripts/seed_org.py
+
+  foxy-backend:
+    build: .
+    container_name: foxy_backend
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://foxy:foxy@db:5432/foxy
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SECRET_KEY=${SECRET_KEY:-foxy_demo_secret}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,*}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
 volumes:
   foxy_pgdata:

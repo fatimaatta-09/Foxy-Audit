@@ -18,6 +18,7 @@ class LogIngest(BaseModel):
     response_hash: str = Field(min_length=64, max_length=64)
     token_count: int = Field(ge=0, le=10_000_000)
     policy_tag: str = Field(pattern=r"^[a-z0-9_]{1,32}$")
+    pii_signals: list[str] | None = None
 
     @field_validator("prompt_hash", "response_hash")
     @classmethod
@@ -56,6 +57,7 @@ class LogListItem(BaseModel):
     response_hash: str
     token_count: int
     policy_tag: str
+    pii_signals: list[str] | None = None
     chain_hash: str
     gemini_verdict: dict[str, Any] | None = None
     created_at: datetime

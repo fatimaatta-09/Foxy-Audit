@@ -15,8 +15,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
 from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -36,7 +37,7 @@ _jinja_env = Environment(
 )
 
 
-@router.post("/v1/passport", response_class=HTMLResponse)
+@router.post("/v1/passport")
 def generate_passport(
     org: Organization = Depends(require_org),
     db: Session = Depends(get_db),
@@ -111,7 +112,7 @@ def generate_passport(
 
     # ── Render ───────────────────────────────────────────────────────────
     template = _jinja_env.get_template("compliance_passport.html")
-    html = template.render(
+    html_string = template.render(
         org_name=org.name,
         org_id=str(org.id),
         plan_tier=getattr(org, "plan_tier", None),
@@ -130,4 +131,10 @@ def generate_passport(
         root_hash=rows[-1].chain_hash if rows else GENESIS_HASH,
         genesis_hash=GENESIS_HASH,
     )
-    return HTMLResponse(content=html)
+    
+    pdf_bytes = HTML(string=html_string).write_pdf()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=passport.pdf"}
+    )
