@@ -1,0 +1,58 @@
+"""Configuration resolution for the Foxy Audit SDK.
+
+Priority for every setting: explicit kwarg → environment variable → default.
+The SDK is a graceful no-op for the HTTP path when no API key is configured
+(it still fires the local UDP ping so the desktop fox reacts), so importing
+and decorating is always safe even before a key/backend exist.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+# The UDP host/port are fixed by the desktop app's sdk_bridge listener.
+DEFAULT_ENDPOINT = "http://127.0.0.1:8000"
+DEFAULT_UDP_HOST = "127.0.0.1"
+DEFAULT_UDP_PORT = 9999
+DEFAULT_TIMEOUT = 5.0
+
+
+@dataclass(frozen=True)
+class FoxyConfig:
+    api_key: str = ""
+    endpoint: str = DEFAULT_ENDPOINT
+    udp_host: str = DEFAULT_UDP_HOST
+    udp_port: int = DEFAULT_UDP_PORT
+    desktop_ping: bool = True
+    timeout: float = DEFAULT_TIMEOUT
+
+    @classmethod
+    def resolve(
+        cls,
+        api_key: str | None = None,
+        endpoint: str | None = None,
+        udp_host: str | None = None,
+        udp_port: int | None = None,
+        desktop_ping: bool = True,
+        timeout: float = DEFAULT_TIMEOUT,
+    ) -> "FoxyConfig":
+        key = api_key if api_key is not None else os.getenv("FOXY_API_KEY", "")
+        ep = endpoint if endpoint is not None else os.getenv("FOXY_BACKEND_URL", DEFAULT_ENDPOINT)
+        return cls(
+            api_key=key.strip(),
+            endpoint=ep.rstrip("/"),
+            udp_host=udp_host or DEFAULT_UDP_HOST,
+            udp_port=int(udp_port or DEFAULT_UDP_PORT),
+            desktop_ping=desktop_ping,
+            timeout=timeout,
+        )
+
+    @property
+    def enabled(self) -> bool:
+        """True when the SDK should stream to the cloud backend.
+
+        When False, the decorator still runs the wrapped function and still
+        fires the local desktop ping — it just skips the HTTP POST.
+        """
+        return bool(self.api_key)
