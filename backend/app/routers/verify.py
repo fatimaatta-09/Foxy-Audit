@@ -8,7 +8,7 @@ breaks too (avalanche effect). Returns the first broken sequence number.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from ..auth import require_org
@@ -25,9 +25,21 @@ def verify(
     org: Organization = Depends(require_org),
     db: Session = Depends(get_db),
 ):
+    total = db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org.id)
+    ).scalar_one()
+
+    if total > 50000:
+        return VerifyResponse(
+            ok=False,
+            count=total,
+            first_broken_seq=None,
+            detail="chain too long for full verify, use partial window"
+        )
+
     rows = db.execute(
         select(AuditLog).where(AuditLog.org_id == org.id).order_by(AuditLog.seq.asc())
-    ).scalars().all()
+    ).scalars().yield_per(1000)
 
     prev_hash = GENESIS_HASH
     for row in rows:

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
@@ -27,11 +27,24 @@ from ..models import AuditLog, Organization
 from ..schemas import LogIngest, LogListItem, LogListResponse
 from ..worker import submit_batch
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+def _rate_limit_key(request: Request) -> str:
+    auth = request.headers.get("Authorization")
+    if auth:
+        return auth
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=_rate_limit_key)
+
 router = APIRouter()
 
 
 @router.post("/v1/logs/batch", status_code=HTTP_202_ACCEPTED)
+@limiter.limit("60/minute")
 def ingest_batch(
+    request: Request,
     payload: List[LogIngest],
     org: Organization = Depends(require_org),
 ):

@@ -15,13 +15,28 @@ Endpoints:
 
 from __future__ import annotations
 
+import subprocess
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from .config import get_settings
 from .routers import billing, health, keys, logs, passport, policies, verify
 
-app = FastAPI(title="Foxy Audit", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        subprocess.run(["alembic", "current"], check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: alembic current failed: {e.stderr}")
+    yield
+
+
+app = FastAPI(title="Foxy Audit", version="0.1.0", lifespan=lifespan)
 
 # Secure CORS — origins are read from CORS_ORIGINS env var (comma-separated).
 _settings = get_settings()
@@ -31,6 +46,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+app.state.limiter = logs.limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(health.router, tags=["health"])
 app.include_router(logs.router, tags=["logs"])
