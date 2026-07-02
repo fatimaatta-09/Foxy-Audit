@@ -1,12 +1,15 @@
-"""POST /v1/keys/rotate — rotate the calling org's API key.
+"""API key management.
 
-The caller authenticates with their current Bearer key.  A new key is generated,
-the old key hash is overwritten (one-way — the old key is immediately invalid),
-and the new plaintext key is returned **once**.  The caller must store it; the
-backend only keeps the SHA-256 hash.
+Two audiences share this router:
 
-This mirrors the ``seed_org.py`` key-generation pattern but is accessible at
-runtime from the dashboard or CLI without direct database access.
+* The **dashboard** (human admin session) manages *named* keys — list / create /
+  revoke — via ``GET|POST /v1/keys`` and ``DELETE /v1/keys/{id}``. New keys are
+  stored as HMAC-SHA256(server pepper, key) in the ``api_keys`` table; the
+  plaintext is returned exactly once.
+* The **SDK/CLI** (machine Bearer key) can still ``POST /v1/keys/rotate`` its own
+  key without a dashboard login. Rotate now issues a peppered key, revokes the
+  org's other active keys, and invalidates the legacy plain-SHA256 org hash so
+  the old key is permanently dead.
 """
 
 from __future__ import annotations
@@ -14,19 +17,117 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
+import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import require_org
+from ..auth import hash_key, require_org, require_role
 from ..db import get_db
-from ..models import Organization
+from ..models import ApiKey, Organization, User
 
 log = logging.getLogger("foxy.keys")
 router = APIRouter()
 
+
+def _new_key() -> tuple[str, str, str]:
+    """Return (plaintext, hmac_hash, display_prefix) for a fresh key."""
+    key = "foxy_sk_" + secrets.token_hex(24)
+    return key, hash_key(key), key[:11] + "…" + key[-4:]   # foxy_sk_1a2…7e02
+
+
+# ─────────────────────────── dashboard (admin session) ───────────────────────
+
+class KeyItem(BaseModel):
+    id: str
+    name: str
+    key_prefix: str
+    status: str
+    created_at: str
+    last_used_at: str | None = None
+    revoked_at: str | None = None
+
+
+class CreateKeyRequest(BaseModel):
+    name: str = "unnamed key"
+
+
+class CreateKeyResponse(BaseModel):
+    id: str
+    name: str
+    key_prefix: str
+    api_key: str             # plaintext — shown once, never stored
+    created_at: str
+    message: str = "Copy this key now — it is shown once and cannot be recovered."
+
+
+def _serialize(k: ApiKey) -> KeyItem:
+    return KeyItem(
+        id=str(k.id), name=k.name, key_prefix=k.key_prefix, status=k.status,
+        created_at=k.created_at.isoformat() if k.created_at else "",
+        last_used_at=k.last_used_at.isoformat() if k.last_used_at else None,
+        revoked_at=k.revoked_at.isoformat() if k.revoked_at else None,
+    )
+
+
+@router.get("/v1/keys", response_model=list[KeyItem])
+def list_keys(
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """List the org's API keys (active + revoked), newest first — admin only."""
+    rows = db.execute(
+        select(ApiKey).where(ApiKey.org_id == admin.org_id)
+        .order_by(ApiKey.created_at.desc())
+    ).scalars().all()
+    return [_serialize(k) for k in rows]
+
+
+@router.post("/v1/keys", response_model=CreateKeyResponse)
+def create_key(
+    body: CreateKeyRequest,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Create a named API key. Returns the plaintext once — admin only."""
+    key, key_hash, prefix = _new_key()
+    name = ((body.name or "").strip() or "unnamed key")[:120]  # whitespace-only -> default
+    row = ApiKey(org_id=admin.org_id, name=name,
+                 key_prefix=prefix, key_hash=key_hash, status="active")
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    log.info("Created API key %s for org %s", row.id, admin.org_id)
+    return CreateKeyResponse(
+        id=str(row.id), name=row.name, key_prefix=row.key_prefix,
+        api_key=key, created_at=row.created_at.isoformat() if row.created_at else "",
+    )
+
+
+@router.delete("/v1/keys/{key_id}")
+def revoke_key(
+    key_id: uuid.UUID,     # FastAPI validates the path -> 422 (not 500) on a non-UUID
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Revoke one of the org's keys — admin only. Idempotent on an already-revoked key."""
+    row = db.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.org_id == admin.org_id)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    if row.status != "revoked":
+        row.status = "revoked"
+        row.revoked_at = datetime.now(timezone.utc)
+        db.commit()
+    log.info("Revoked API key %s for org %s", row.id, admin.org_id)
+    return {"status": "revoked", "id": str(row.id)}
+
+
+# ─────────────────────────── SDK/CLI (machine Bearer) ────────────────────────
 
 class RotateResponse(BaseModel):
     org_id: str
@@ -40,18 +141,26 @@ def rotate_key(
     org: Organization = Depends(require_org),
     db: Session = Depends(get_db),
 ):
-    new_key = "foxy_sk_" + secrets.token_hex(24)
-    new_hash = hashlib.sha256(new_key.encode("utf-8")).hexdigest()
-
+    """Rotate the calling org's key (Bearer auth). Issues a peppered key, revokes
+    the org's other active keys, and kills the legacy plain-SHA256 org hash."""
     now = datetime.now(timezone.utc)
+    key, key_hash, prefix = _new_key()
 
-    org.api_key_hash = new_hash
+    # Revoke every currently-active key first, then mint the replacement.
+    for k in db.execute(
+        select(ApiKey).where(ApiKey.org_id == org.id, ApiKey.status == "active")
+    ).scalars().all():
+        k.status = "revoked"
+        k.revoked_at = now
+
+    db.add(ApiKey(org_id=org.id, name="primary (rotated)", key_prefix=prefix,
+                  key_hash=key_hash, status="active"))
+
+    # Point the legacy hash at the new key too, so the old key is dead but the
+    # NOT NULL column stays satisfied (the peppered path matches first anyway).
+    org.api_key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
     org.key_rotated_at = now
     db.commit()
 
     log.info("Rotated API key for org %s", org.id)
-    return RotateResponse(
-        org_id=str(org.id),
-        api_key=new_key,
-        rotated_at=now.isoformat(),
-    )
+    return RotateResponse(org_id=str(org.id), api_key=key, rotated_at=now.isoformat())

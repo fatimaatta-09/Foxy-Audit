@@ -104,6 +104,40 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)   # bcrypt
     role: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default="member")             # admin | member
+    # Offboarding: a disabled user cannot log in and any live session is rejected
+    # (see auth.require_org's human path / auth_human.login).
+    disabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class ApiKey(Base):
+    """A named SDK API key, one org can hold many (Phase 3 A2).
+
+    The plaintext key is shown once at creation and never stored — only
+    ``key_hash`` = HMAC-SHA256(server pepper, key) is kept, so a DB leak alone
+    can't recover a usable key (unlike the legacy plain-SHA256 org key, which
+    require_org still honours as a fallback). No RLS: require_org looks a key up
+    *before* the tenant GUC is set, so isolation here is enforced in app code
+    (every management query filters on org_id).
+    """
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(64), nullable=False)   # display only e.g. foxy_sk_1a2…7e02
+    key_hash: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False)             # HMAC-SHA256 hex
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="active")             # active | revoked
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
 

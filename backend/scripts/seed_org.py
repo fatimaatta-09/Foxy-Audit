@@ -30,8 +30,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text  # noqa: E402
 
+from app.auth import hash_key  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
-from app.models import Organization, User  # noqa: E402
+from app.models import ApiKey, Organization, User  # noqa: E402
 
 
 def main() -> None:
@@ -64,6 +65,12 @@ def main() -> None:
         db.add(org)
         db.commit()
         db.refresh(org)
+
+        # Register the same key in the peppered multi-key table (the primary path
+        # in auth.require_org); the legacy sha256 org hash above stays as a fallback.
+        db.add(ApiKey(org_id=org.id, name="primary", key_hash=hash_key(key),
+                      key_prefix=key[:11] + "…" + key[-4:], status="active"))
+        db.commit()
 
         if args.admin_email:
             import bcrypt

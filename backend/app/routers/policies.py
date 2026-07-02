@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..auth import require_org
+from ..auth import resolve_org
 from ..db import get_db
 from ..models import OrgPolicy, Organization
 
@@ -40,7 +40,7 @@ def _get_or_create(org: Organization, db: Session) -> OrgPolicy:
 
 @router.get("/v1/policies", response_model=PolicyConfig)
 def get_policies(
-    org: Organization = Depends(require_org),
+    org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
 ) -> PolicyConfig:
     """Return the org's current compliance policy settings."""
@@ -56,7 +56,7 @@ def get_policies(
 @router.put("/v1/policies", response_model=PolicyConfig)
 def update_policies(
     body: PolicyConfig,
-    org: Organization = Depends(require_org),
+    org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
 ) -> PolicyConfig:
     """Update the org's compliance policy settings.

@@ -743,20 +743,20 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div class="page" id="page-policy">
       <div class="pg-head">
         <div><div class="eyebrow">Gemini 1.5 Pro · AI Judge</div><div class="h1">Policy ruleset<span class="fox-dot">.</span></div><div class="sub">what the Judge flags or blocks — applies across all tenants</div></div>
-        <button class="btn pri sm" onclick="showToast('Policy ruleset saved and propagated')">save ruleset</button>
+        <button class="btn pri sm" onclick="savePolicy()">save ruleset</button>
       </div>
       <div class="g2">
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Content safeguards</div></div></div>
-          <div class="prow"><div><div class="pname">Block PII — names, SSNs, emails</div><div class="pdesc">rejects prompts/responses with detectable personal identifiers</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-          <div class="prow"><div><div class="pname">Flag prompt injections</div><div class="pdesc">marks jailbreak and indirect injection attempts for review</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-          <div class="prow"><div><div class="pname">Monitor toxic output</div><div class="pdesc">scores AI responses for abusive or harmful content</div><span class="sev med">medium severity</span></div><label class="toggle"><input type="checkbox"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-          <div class="prow"><div><div class="pname">Block financial data leakage</div><div class="pdesc">prevents card numbers and account data in logged outputs</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-          <div class="prow"><div><div class="pname">Demographic bias audit</div><div class="pdesc">tracks differential refusal rates across user groups</div><span class="sev low">low severity</span></div><label class="toggle"><input type="checkbox"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
+          <div class="prow"><div><div class="pname">Block PII — names, SSNs, emails</div><div class="pdesc">Judge rejects prompts/responses with detectable personal identifiers</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polPii" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
+          <div class="prow"><div><div class="pname">Flag prompt injections</div><div class="pdesc">marks jailbreak and indirect injection attempts for review</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polInjection" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
+          <div class="prow"><div><div class="pname">Regulated data mode — HIPAA / financial</div><div class="pdesc">stricter grading for regulated workloads (PHI, cardholder, account data)</div><span class="sev med">medium severity</span></div><label class="toggle"><input type="checkbox" id="polRegulated"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
         </div>
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Judge sensitivity</div></div></div>
-          <div class="flabel" style="margin-top:0;">enforcement mode</div>
+          <div class="flabel" style="margin-top:0;">max tokens per interaction</div>
+          <input class="cin" id="polMaxTokens" type="number" min="1" step="1000" value="50000">
+          <div class="flabel">enforcement mode</div>
           <select><option>block on breach — highest protection</option><option>flag only, allow through</option><option>silent monitor (log only)</option></select>
           <div class="flabel">confidence threshold</div>
           <select><option>high — fewer false positives</option><option selected>balanced (default)</option><option>low — catch every edge case</option></select>
@@ -806,13 +806,11 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div class="page" id="page-keys">
       <div class="pg-head">
         <div><div class="eyebrow">Access control</div><div class="h1">API keys &amp; tenants<span class="fox-dot">.</span></div><div class="sub">connect, rotate, or revoke per developer or service</div></div>
-        <button class="btn pri sm" onclick="showToast('New API key generated — copy it now, shown once')">+ new key</button>
+        <button class="btn pri sm" onclick="createKey()">+ new key</button>
       </div>
       <div class="clay pad" style="max-width:780px;">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.6;">each key maps to one developer or service · keys write to the ledger via <span style="font-family:var(--mono);color:var(--fox2);">POST /v1/ledger</span></div>
-        <div class="krow"><div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="var(--fox)"/></svg></span></div><div class="kbody"><div class="kname">Fatima — foxy-prod-01</div><div class="kmeta">sk_live_••••7e02 · used 2 min ago</div></div><span class="kstatus active">active</span><div class="kactions"><button class="btn ghost sm" onclick="showToast('Key rotated — old secret invalid')">rotate</button><button class="btn danger sm" onclick="revokeKey(this)">revoke</button></div></div>
-        <div class="krow"><div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="var(--fox)"/></svg></span></div><div class="kbody"><div class="kname">Backend team — foxy-prod-02</div><div class="kmeta">sk_live_••••33ff · used 14 hr ago</div></div><span class="kstatus active">active</span><div class="kactions"><button class="btn ghost sm" onclick="showToast('Key rotated — old secret invalid')">rotate</button><button class="btn danger sm" onclick="revokeKey(this)">revoke</button></div></div>
-        <div class="krow" style="opacity:.5;"><div class="ic-chip dark" style="opacity:.5;"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="var(--muted)"/></svg></span></div><div class="kbody"><div class="kname">Hassan — foxy-dev-03</div><div class="kmeta">revoked 2026-06-20</div></div><span class="kstatus revoked">revoked</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.6;">each key maps to one developer or service · keys authenticate SDK writes via <span style="font-family:var(--mono);color:var(--fox2);">POST /v1/logs/batch</span></div>
+        <div id="keysList"></div>
       </div>
     </div>
 
@@ -822,11 +820,14 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <div class="g2">
         <div class="clay pad">
           <div style="font-weight:700;font-size:13px;margin-bottom:14px;">Account</div>
-          <div class="flabel" style="margin-top:0;">display name</div><input class="cin" value="Fatima Rehman">
-          <div class="flabel">email</div><input class="cin" value="fatima@foxyaudit.dev">
-          <div class="flabel">role</div><select><option selected>Admin</option><option>Auditor</option><option>Viewer</option></select>
-          <div class="flabel">org id</div><input class="cin" value="ORG-4F2A9C-GIKI" readonly style="opacity:.6;">
-          <button class="btn pri" onclick="showToast('Account changes saved')">save changes</button>
+          <div class="flabel" style="margin-top:0;">email</div><input class="cin" id="setEmail" readonly style="opacity:.7;">
+          <div class="flabel">role</div><input class="cin" id="setRole" readonly style="opacity:.7;">
+          <div class="flabel">org id</div><input class="cin" id="setOrg" readonly style="opacity:.6;">
+          <div style="border-top:2px dashed var(--line);margin:16px 0 4px;"></div>
+          <div style="font-weight:700;font-size:12px;margin-bottom:2px;">Change password</div>
+          <div class="flabel" style="margin-top:8px;">current password</div><input class="cin" id="setCurPw" type="password" autocomplete="current-password">
+          <div class="flabel">new password</div><input class="cin" id="setNewPw" type="password" autocomplete="new-password">
+          <button class="btn pri" onclick="changePassword()">change password</button>
         </div>
         <div>
           <div class="clay pad" style="margin-bottom:14px;">
@@ -841,6 +842,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <button class="btn danger" onclick="showToast('Delete requires email confirmation')">delete workspace</button>
           </div>
         </div>
+      </div>
+      <div class="clay pad" id="teamCard" style="margin-top:14px;display:none;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" fill="#000"/></svg></span></div><div class="txt">Team — dashboard users</div></div><span class="stitle-act" onclick="addUser()">+ add auditor</span></div>
+        <div id="teamList"></div>
       </div>
     </div>
 
@@ -1091,6 +1096,154 @@ function runExport(){
   const ccb=$('chainCheckBtn'); if(ccb)ccb.addEventListener('click',verifyChain);
 
   check();
+})();
+</script>
+
+<!-- ═══ Phase 3 wiring: Policy · Keys · Settings (live backend) ═══ -->
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const api=(path,opts)=>fetch(path,Object.assign({credentials:'same-origin'},opts||{}));
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtDate=s=>{ if(!s)return '—'; try{return new Date(s).toLocaleDateString();}catch(e){return '—';} };
+  const rel=s=>{ if(!s)return 'never'; try{ const d=(Date.now()-new Date(s).getTime())/1000;
+    if(d<60)return 'just now'; if(d<3600)return Math.floor(d/60)+' min ago';
+    if(d<86400)return Math.floor(d/3600)+' hr ago'; return Math.floor(d/86400)+' d ago'; }catch(e){return '—';} };
+  const toast=m=>{ try{ showToast(m); }catch(e){} };
+  const errText=async r=>{ try{ const e=await r.json(); return e.detail||('HTTP '+r.status); }catch(e){ return 'HTTP '+r.status; } };
+
+  // one-time secret reveal — on-brand, copyable (keys / temp passwords are shown once)
+  function revealSecret(title, value){
+    let ov=$('secretOverlay');
+    if(!ov){
+      ov=document.createElement('div'); ov.id='secretOverlay';
+      ov.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(6,5,4,.88);display:flex;align-items:center;justify-content:center;padding:20px;';
+      ov.innerHTML='<div class="clay pad" style="width:440px;max-width:100%;">'
+        +'<div style="font-weight:800;font-size:14px;margin-bottom:6px;" id="secTitle"></div>'
+        +'<div class="sub" style="margin-bottom:12px;">Shown once — copy it now. It cannot be recovered.</div>'
+        +'<input id="secVal" readonly style="width:100%;box-sizing:border-box;font-family:var(--mono);font-size:12px;padding:10px;border:2.5px solid #000;border-radius:10px;background:var(--paper,#fff);">'
+        +'<div style="display:flex;gap:8px;margin-top:12px;"><button class="btn pri" id="secCopy" type="button">copy</button><button class="btn ghost" id="secClose" type="button">done</button></div>'
+        +'</div>';
+      document.body.appendChild(ov);
+      ov.addEventListener('click',e=>{ if(e.target===ov)ov.style.display='none'; });
+      $('secClose').onclick=()=>ov.style.display='none';
+      $('secCopy').onclick=()=>{ const v=$('secVal'); v.select();
+        try{ navigator.clipboard.writeText(v.value); }catch(e){ try{document.execCommand('copy');}catch(_){} }
+        toast('Copied to clipboard'); };
+    }
+    $('secTitle').textContent=title; const v=$('secVal'); v.value=value;
+    ov.style.display='flex'; v.focus(); v.select();
+  }
+
+  // ── Policy (B1) ──
+  window.loadPolicy=async function(){
+    try{ const r=await api('/v1/policies'); if(!r.ok)return; const p=await r.json();
+      if($('polPii'))$('polPii').checked=!!p.pii_detection;
+      if($('polInjection'))$('polInjection').checked=!!p.prompt_injection;
+      if($('polRegulated'))$('polRegulated').checked=!!p.regulated_data_mode;
+      if($('polMaxTokens'))$('polMaxTokens').value=p.max_token_threshold;
+    }catch(e){}
+  };
+  window.savePolicy=async function(){
+    const mt=parseInt(($('polMaxTokens')||{}).value,10);
+    const body={ pii_detection:!!($('polPii')||{}).checked, prompt_injection:!!($('polInjection')||{}).checked,
+      regulated_data_mode:!!($('polRegulated')||{}).checked, max_token_threshold:(mt>0?mt:50000) };
+    try{ const r=await api('/v1/policies',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      toast(r.ok?'Policy ruleset saved and propagated':('Save failed — '+await errText(r)));
+    }catch(e){ toast('Could not reach the server'); }
+  };
+
+  // ── Keys (B2) ──
+  function keyRow(k){
+    const active=k.status==='active';
+    const meta=active?(esc(k.key_prefix)+' · used '+rel(k.last_used_at)):('revoked '+fmtDate(k.revoked_at));
+    return '<div class="krow"'+(active?'':' style="opacity:.55;"')+'>'
+      +'<div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="'+(active?'var(--fox)':'var(--muted)')+'"/></svg></span></div>'
+      +'<div class="kbody"><div class="kname">'+esc(k.name)+'</div><div class="kmeta">'+meta+'</div></div>'
+      +'<span class="kstatus '+(active?'active':'revoked')+'">'+esc(k.status)+'</span>'
+      +(active?'<div class="kactions"><button class="btn danger sm" type="button" onclick="revokeKeyApi(\''+k.id+'\')">revoke</button></div>':'')
+      +'</div>';
+  }
+  window.loadKeys=async function(){
+    const box=$('keysList'); if(!box)return;
+    try{ const r=await api('/v1/keys'); if(!r.ok){ box.innerHTML='<div style="color:var(--muted);font-size:12px;">Could not load keys ('+esc(await errText(r))+').</div>'; return; }
+      const keys=await r.json();
+      box.innerHTML=(Array.isArray(keys)&&keys.length)?keys.map(keyRow).join(''):'<div style="color:var(--muted);font-size:12px;padding:8px 0;">No keys yet — create one to connect the SDK.</div>';
+    }catch(e){ box.innerHTML='<div style="color:var(--muted);font-size:12px;">Could not reach the server.</div>'; }
+  };
+  window.createKey=async function(){
+    const name=window.prompt('Name this key (e.g. "Backend — prod"):','SDK key'); if(name===null)return;
+    try{ const r=await api('/v1/keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:name||'unnamed key'})});
+      if(!r.ok){ toast('Create failed — '+await errText(r)); return; }
+      const k=await r.json(); revealSecret('New API key · '+k.name, k.api_key); toast('API key created'); loadKeys();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.revokeKeyApi=async function(id){
+    if(!confirm('Revoke this key? The old secret becomes invalid immediately.'))return;
+    try{ const r=await api('/v1/keys/'+id,{method:'DELETE'}); toast(r.ok?'Access revoked':('Revoke failed — '+await errText(r))); loadKeys(); }
+    catch(e){ toast('Could not reach the server'); }
+  };
+
+  // ── Settings + Team (B3) ──
+  let _isAdmin=false;
+  window.loadSettings=async function(){
+    try{ const r=await api('/v1/auth/me'); if(r.ok){ const me=await r.json();
+      if($('setEmail'))$('setEmail').value=me.email||'';
+      if($('setRole'))$('setRole').value=me.role||'';
+      if($('setOrg'))$('setOrg').value=me.org_id||'';
+      _isAdmin=(me.role==='admin');
+    }}catch(e){}
+    const card=$('teamCard'); if(card)card.style.display=_isAdmin?'':'none';
+    if(_isAdmin)loadTeam();
+  };
+  function userRow(u){
+    const on=!u.disabled;
+    return '<div class="krow"'+(on?'':' style="opacity:.55;"')+'>'
+      +'<div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" fill="'+(on?'var(--fox)':'var(--muted)')+'"/></svg></span></div>'
+      +'<div class="kbody"><div class="kname">'+esc(u.email)+'</div><div class="kmeta">'+esc(u.role)+(on?'':' · disabled')+'</div></div>'
+      +(on?'<span class="kstatus active">active</span><div class="kactions"><button class="btn danger sm" type="button" onclick="disableUser(\''+u.id+'\')">disable</button></div>'
+          :'<span class="kstatus revoked">disabled</span>')
+      +'</div>';
+  }
+  async function loadTeam(){
+    const box=$('teamList'); if(!box)return;
+    try{ const r=await api('/v1/auth/users'); if(!r.ok){ box.innerHTML=''; return; }
+      const users=await r.json(); box.innerHTML=Array.isArray(users)?users.map(userRow).join(''):'';
+    }catch(e){}
+  }
+  window.addUser=async function(){
+    const email=window.prompt('New auditor email:'); if(email===null||!email.trim())return;
+    const role=(window.prompt('Role — admin or member:','member')||'member').trim().toLowerCase();
+    try{ const r=await api('/v1/auth/users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.trim(),role:role})});
+      if(!r.ok){ toast('Add failed — '+await errText(r)); return; }
+      const u=await r.json(); revealSecret('Temp password · '+u.email, u.temp_password); toast('Auditor added'); loadTeam();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.disableUser=async function(id){
+    if(!confirm('Disable this user? They are logged out and cannot sign in.'))return;
+    try{ const r=await api('/v1/auth/users/'+id+'/disable',{method:'POST'});
+      if(!r.ok){ toast('Disable failed — '+await errText(r)); return; }
+      toast('User disabled'); loadTeam();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.changePassword=async function(){
+    const cur=$('setCurPw'), nw=$('setNewPw'); if(!cur||!nw)return;
+    if(!cur.value||!nw.value){ toast('Enter current and new password'); return; }
+    try{ const r=await api('/v1/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:cur.value,new_password:nw.value})});
+      if(!r.ok){ toast('Change failed — '+await errText(r)); return; }
+      cur.value=''; nw.value=''; toast('Password changed');
+    }catch(e){ toast('Could not reach the server'); }
+  };
+
+  // ── lazy-load each page's live data on navigation ──
+  const _go=window.go;
+  if(typeof _go==='function'){
+    window.go=function(page,el){ _go(page,el);
+      if(page==='policy')loadPolicy();
+      else if(page==='keys')loadKeys();
+      else if(page==='settings')loadSettings();
+    };
+  }
 })();
 </script>
 </body>
