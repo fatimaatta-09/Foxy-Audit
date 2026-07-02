@@ -30,7 +30,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import get_settings
 from .routers import (
-    auth_human, billing, health, keys, logs, passport, policies, verify,
+    analytics, auth_human, billing, health, keys, logs, passport, policies, verify,
 )
 
 # The web dashboard (foxy-audit-premium.html) is served same-origin at /dashboard
@@ -82,6 +82,7 @@ app.include_router(passport.router, tags=["passport"])
 app.include_router(keys.router, tags=["keys"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(policies.router, tags=["policies"])
+app.include_router(analytics.router, tags=["analytics"])
 
 
 @app.get("/")

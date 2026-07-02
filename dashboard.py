@@ -117,6 +117,31 @@ class RefreshWorker(QThread):
             self.failed.emit(str(e))
 
 
+class ThreatAnalyticsWorker(QThread):
+    """Calls GET /v1/analytics/threats and emits the analytics data."""
+    succeeded = pyqtSignal(dict)
+    failed    = pyqtSignal(str)
+
+    def __init__(self, backend_url: str, org_key: str, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+
+    def run(self):
+        url = f"{self.backend_url}/v1/analytics/threats"
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {self.org_key}"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.succeeded.emit(data)
+        except urllib.error.HTTPError as e:
+            self.failed.emit(f"HTTP {e.code}: {e.reason}")
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class _SandboxFetchWorker(QThread):
     """Fetch GET /v1/logs/{seq} and compare stored hashes to locally computed ones.
 
@@ -312,6 +337,11 @@ def paint_icon(p: QPainter, rect: QRectF, name: str, color: QColor,
         for cx in (x + w * 0.16, x + w * 0.16 + s + gap):
             for cy in (y + h * 0.16, y + h * 0.16 + s + gap):
                 p.drawRoundedRect(QRectF(cx, cy, s, s), 2, 2)
+    elif name == "analytics":
+        p.drawLine(int(x + w * 0.25), int(y + h * 0.85), int(x + w * 0.25), int(y + h * 0.4))
+        p.drawLine(int(x + w * 0.5), int(y + h * 0.85), int(x + w * 0.5), int(y + h * 0.2))
+        p.drawLine(int(x + w * 0.75), int(y + h * 0.85), int(x + w * 0.75), int(y + h * 0.55))
+        p.drawLine(int(x + w * 0.1), int(y + h * 0.85), int(x + w * 0.9), int(y + h * 0.85))
     elif name == "log":         # list rows
         for i in range(3):
             ly = y + h * (0.30 + i * 0.20)
@@ -916,6 +946,7 @@ class DashboardWindow(QWidget):
         self.stack.addWidget(self._page_audit(t))      # 1
         self.stack.addWidget(self._page_system(t))     # 2
         self.stack.addWidget(self._page_sandbox(t))    # 3
+        self.stack.addWidget(self._page_analytics(t))  # 4
         self.stack.currentChanged.connect(self._sync_title)
         main.addWidget(self.stack, stretch=1)
         h.addLayout(main, stretch=1)
@@ -952,7 +983,8 @@ class DashboardWindow(QWidget):
         self.nav_buttons = []
         for i, (icon, label) in enumerate(
                 [("overview", "Overview"), ("log", "Audit Log"),
-                 ("system", "System"), ("shield", "Sandbox")]):
+                 ("system", "System"), ("shield", "Sandbox"),
+                 ("analytics", "Threat Analytics")]):
             btn = NavButton(icon, label, t)
             btn.clicked.connect(lambda _c, idx=i: self.stack.setCurrentIndex(idx))
             self.nav_group.addButton(btn, i)
@@ -979,7 +1011,7 @@ class DashboardWindow(QWidget):
 
         self.page_title = QLabel("Overview")
         self.page_title.setObjectName("pageTitle")
-        self.stack_titles = ["Overview", "Blind Audit Log", "System Health", "Verification Sandbox"]
+        self.stack_titles = ["Overview", "Blind Audit Log", "System Health", "Verification Sandbox", "Threat Analytics"]
         h.addWidget(self.page_title)
         h.addStretch()
 
@@ -1709,6 +1741,71 @@ class DashboardWindow(QWidget):
         self._refresh_worker.failed.connect(self._on_refresh_failed)
         self._refresh_worker.start()
 
+        # Trigger Analytics update as well
+        self._analytics_worker = ThreatAnalyticsWorker(url, key, parent=self)
+        self._analytics_worker.succeeded.connect(self._on_analytics_success)
+        self._analytics_worker.start()
+
+    def _on_analytics_success(self, data: dict):
+        self.analytics_kpi_threats.set_value(str(data.get("total_threats", 0)))
+        self.analytics_kpi_risk.set_value(str(data.get("avg_risk_score", 0)))
+
+        # Update high risk list
+        # Clear existing items
+        while self.analytics_recent_box.count() > 1:
+            item = self.analytics_recent_box.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        recent = data.get("recent_high_risk", [])
+        if recent:
+            self.analytics_recent_empty.hide()
+            t = self.settings.theme_tokens()
+            for ev in recent:
+                row = QWidget()
+                rl = QHBoxLayout(row)
+                rl.setContentsMargins(2, 6, 2, 6)
+                
+                tlbl = QLabel(ev["timestamp"][:19].replace("T", " "))
+                tlbl.setStyleSheet(f"color: {t.get('text_muted', '#888')}; font-size: 11px;")
+                badge = Badge(f"RISK {ev['risk_score']}", BAD_RED)
+                dlbl = QLabel(f"Seq {ev['seq']} · {ev['policy_tag']} · {ev['reason']}")
+                dlbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
+                
+                rl.addWidget(tlbl)
+                rl.addWidget(badge)
+                rl.addWidget(dlbl, stretch=1)
+                row.setStyleSheet(f"border-top: 1px solid {_hairline(t, 30)};")
+                self.analytics_recent_box.insertWidget(self.analytics_recent_box.count()-1, row)
+        else:
+            self.analytics_recent_empty.show()
+
+        # Update policies list
+        while self.analytics_policies_box.count() > 1:
+            item = self.analytics_policies_box.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        policies = data.get("top_policies", [])
+        if policies:
+            self.analytics_policies_empty.hide()
+            t = self.settings.theme_tokens()
+            for p in policies:
+                row = QWidget()
+                rl = QHBoxLayout(row)
+                rl.setContentsMargins(2, 6, 2, 6)
+                plbl = QLabel(p["tag"])
+                plbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
+                clbl = QLabel(f"{p['count']} breaches")
+                clbl.setStyleSheet(f"color: {WARN_AMBER}; font-size: 12px; font-weight: bold;")
+                
+                rl.addWidget(plbl, stretch=1)
+                rl.addWidget(clbl)
+                row.setStyleSheet(f"border-top: 1px solid {_hairline(t, 30)};")
+                self.analytics_policies_box.insertWidget(self.analytics_policies_box.count()-1, row)
+        else:
+            self.analytics_policies_empty.show()
+
     def _on_refresh_success(self, data: dict):
         items: list = data.get("items", [])
         total: int = data.get("total", 0)
@@ -1726,6 +1823,47 @@ class DashboardWindow(QWidget):
     def _on_refresh_failed(self, err: str):
         # Silently log — the table keeps its existing data
         print(f"[Dashboard] Refresh failed: {err}")
+
+    def _page_analytics(self, t: dict) -> QWidget:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(22, 20, 22, 20)
+        v.setSpacing(16)
+        
+        kpis = QHBoxLayout()
+        kpis.setSpacing(14)
+        self.analytics_kpi_threats = KpiTile(t, "Total Threats", "0", "policy breaches", BAD_RED)
+        self.analytics_kpi_risk = KpiTile(t, "Avg Risk Score", "0", "across threats", WARN_AMBER)
+        kpis.addWidget(self.analytics_kpi_threats)
+        kpis.addWidget(self.analytics_kpi_risk)
+        kpis.addStretch()
+        v.addLayout(kpis)
+
+        body = QHBoxLayout()
+        body.setSpacing(16)
+
+        self.analytics_recent_card = Card(t, "Recent High-Risk Events")
+        self.analytics_recent_box = QVBoxLayout()
+        self.analytics_recent_box.setSpacing(0)
+        self.analytics_recent_empty = QLabel("No high-risk threats detected.")
+        self.analytics_recent_empty.setObjectName("emptyState")
+        self.analytics_recent_box.addWidget(self.analytics_recent_empty)
+        self.analytics_recent_box.addStretch()
+        self.analytics_recent_card.body.addLayout(self.analytics_recent_box, stretch=1)
+        body.addWidget(self.analytics_recent_card, stretch=2)
+
+        self.analytics_policies_card = Card(t, "Top Breached Policies")
+        self.analytics_policies_box = QVBoxLayout()
+        self.analytics_policies_box.setSpacing(0)
+        self.analytics_policies_empty = QLabel("All policies compliant.")
+        self.analytics_policies_empty.setObjectName("emptyState")
+        self.analytics_policies_box.addWidget(self.analytics_policies_empty)
+        self.analytics_policies_box.addStretch()
+        self.analytics_policies_card.body.addLayout(self.analytics_policies_box, stretch=1)
+        body.addWidget(self.analytics_policies_card, stretch=1)
+
+        v.addLayout(body, stretch=1)
+        return page
 
     def _sync_title(self):
         self.page_title.setText(self.stack_titles[self.stack.currentIndex()])
