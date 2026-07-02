@@ -5,14 +5,22 @@ __pycache__/
 .eggs/
 build/
 dist/
+.pytest_cache/
 
 # Virtualenvs
 .venv/
 venv/
 env/
 
+# Node / Next.js
+node_modules/
+.next/
+*.tsbuildinfo
+
 # Secrets / local config
 .env
+.env.local
+backend/.env
 *.local
 
 # OS / editor

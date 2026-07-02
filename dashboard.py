@@ -35,12 +35,13 @@ until the FastAPI ledger endpoints are wired in.
 
 from __future__ import annotations
 
-import json
+import os
 import sys
 import time
+import json
 import hashlib
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import datetime
 from collections import deque
 
@@ -48,13 +49,16 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QStackedWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QApplication, QSizePolicy, QButtonGroup, QAbstractItemView,
-    QTextEdit, QLineEdit,
+    QGraphicsDropShadowEffect, QTextEdit, QLineEdit,
 )
 from PyQt6.QtCore import (
-    Qt, QPoint, QRectF, QTimer, QPropertyAnimation,
-    QParallelAnimationGroup, QEasingCurve, pyqtSignal, pyqtProperty, QThread,
+    Qt, QPoint, QRectF, QTimer, QThread, QPropertyAnimation,
+    QParallelAnimationGroup, QEasingCurve, pyqtSignal, pyqtProperty,
 )
-from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPixmap
+from PyQt6.QtGui import (
+    QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPixmap, QFontDatabase,
+    QLinearGradient,
+)
 
 from fox_settings import FoxSettings
 
@@ -191,11 +195,99 @@ def _mix(a: str, b: str, t: float) -> str:
     return f"#{r:02X}{g:02X}{bl:02X}"
 
 
-# Status palette — fixed, theme-independent, so danger always reads as danger.
-OK_GREEN   = "#22C55E"
-WARN_AMBER = "#F59E0B"
-BAD_RED    = "#EF4444"
-INFO_BLUE  = "#3B82F6"
+# Status palette — matches foxy-audit-premium.html :root (clay / paprika site),
+# fixed & theme-independent so danger always reads as danger.
+OK_GREEN   = "#3ddc84"
+WARN_AMBER = "#ffc83d"
+BAD_RED    = "#ff4d4d"
+INFO_BLUE  = "#5b8cff"
+DARK_TX    = "#160d08"   # near-black ink used on the coloured pills
+
+
+# ── Foxy Audit "premium" clay palette (1:1 with the website :root) ───────────
+CLAY = {
+    "bg": "#0e0c0a", "bg2": "#161310", "surf": "#1c1815", "surf2": "#221d18",
+    "surf3": "#2a241d", "line": "#322b23",
+    "ink": "#f7f1e8", "ink2": "#cdc2b3", "muted": "#8c8174", "muted2": "#5f564a",
+    "fox": "#ff7a2e", "fox2": "#ff9d52", "fox3": "#d65a16", "foxdeep": "#8a3611",
+}
+
+_FONT_CACHE: dict[str, str] = {}
+_FONTS_REGISTERED = False
+
+
+def _register_bundled_fonts():
+    """Load the bundled Unbounded / Space Mono TTFs (the site's brand fonts) so the
+    console uses them instead of a generic system fallback."""
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    _FONTS_REGISTERED = True
+    font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    try:
+        for fn in os.listdir(font_dir):
+            if fn.lower().endswith((".ttf", ".otf")):
+                QFontDatabase.addApplicationFont(os.path.join(font_dir, fn))
+    except Exception:
+        pass
+
+
+def _pick_font(kind: str) -> str:
+    """Brand fonts (bundled Unbounded / Space Mono) with sane fallbacks."""
+    if kind in _FONT_CACHE:
+        return _FONT_CACHE[kind]
+    _register_bundled_fonts()
+    try:
+        fams = set(QFontDatabase.families())
+    except Exception:
+        fams = set()
+    if kind == "disp":
+        cands = ["Unbounded", "Nunito", "Poppins", "Montserrat",
+                 "Segoe UI Variable Display", "Segoe UI Semibold", "Segoe UI"]
+        default = "Segoe UI"
+    else:
+        cands = ["Space Mono", "Cascadia Mono", "JetBrains Mono",
+                 "Consolas", "Courier New"]
+        default = "Consolas"
+    pick = next((c for c in cands if c in fams), default)
+    _FONT_CACHE[kind] = pick
+    return pick
+
+
+def _clay_tokens() -> dict:
+    """The console's design tokens.  The base palette (bg / accent / status) is
+    the original clay/paprika scheme — unchanged — but the surfaces are now
+    *glassmorphic*: translucent white frosting (rgba whites), bright 1px rims and
+    soft shadows are layered over that palette.  Qt can't do CSS backdrop-filter,
+    so 'glass' here = translucency + rim-light + soft shadow over the dark base.
+
+    Alpha values are 0–255 (Qt stylesheet convention)."""
+    return {
+        "bg": CLAY["bg"], "bg2": CLAY["bg2"],
+        "panel": CLAY["surf"], "panel2": CLAY["surf2"], "panel3": CLAY["surf3"],
+        "line": CLAY["line"],
+        "text": CLAY["ink"], "text2": CLAY["ink2"],
+        "text_muted": CLAY["muted"], "text_muted2": CLAY["muted2"],
+        "accent": CLAY["fox"], "accent2": CLAY["fox2"], "accent3": CLAY["fox3"],
+        # ── glass layer (frosted-white over the dark palette) ──
+        "glass_hi":  "rgba(255,255,255,34)",   # top sheen of a panel
+        "glass_lo":  "rgba(255,255,255,10)",   # bottom of a panel
+        "glass_brd": "rgba(255,255,255,50)",   # bright 1px rim
+        "glass_brd_soft": "rgba(255,255,255,28)",
+        "glass_str_hi": "rgba(255,255,255,60)",  # raised glass (nav active / button)
+        "glass_str_lo": "rgba(255,255,255,24)",
+        "glass_fill": "rgba(255,255,255,16)",   # flat translucent fill
+        "font": _pick_font("disp"), "font_mono": _pick_font("mono"),
+    }
+
+
+def _glass_shadow(widget, dy: int = 9, blur: int = 26, alpha: int = 90):
+    """Soft ambient shadow that lifts a frosted-glass panel off the backdrop."""
+    eff = QGraphicsDropShadowEffect(widget)
+    eff.setBlurRadius(blur)
+    eff.setOffset(0, dy)
+    eff.setColor(QColor(0, 0, 0, alpha))
+    widget.setGraphicsEffect(eff)
 
 
 def _hairline(tokens: dict, alpha: int = 38) -> str:
@@ -283,12 +375,15 @@ class Badge(QLabel):
         if color:
             self._color = color
         c = self._color
+        tx = "#FFFFFF" if _is_dark(c) else DARK_TX
+        mono = _pick_font("mono")
         self.setStyleSheet(
-            f"QLabel {{ color: {c};"
-            f" background: {_with_alpha(c, 28)};"
-            f" border: 1px solid {_with_alpha(c, 90)};"
-            f" border-radius: 5px; padding: 2px 9px;"
-            f" font-size: 10px; font-weight: 700; }}")
+            f"QLabel {{ color: {tx};"
+            f" background: {c};"
+            f" border: 1px solid rgba(0,0,0,55);"
+            f" border-radius: 9px; padding: 3px 12px;"
+            f" font-family: '{mono}'; font-size: 9px; font-weight: 700;"
+            f" letter-spacing: 0.5px; }}")
 
 
 # ── KPI tile ────────────────────────────────────────────────────────────────
@@ -303,45 +398,37 @@ class KpiTile(QFrame):
         self.value_lbl.setObjectName("kpiValue")
         self.sub_lbl = QLabel(sub)
         self.sub_lbl.setObjectName("kpiSub")
-        self.accent_bar = QFrame()
-        self.accent_bar.setObjectName("kpiAccent")
-        self.accent_bar.setFixedWidth(3)
-
-        body = QVBoxLayout()
-        body.setContentsMargins(15, 13, 13, 13)
+        body = QVBoxLayout(self)
+        body.setContentsMargins(17, 15, 15, 16)
         body.setSpacing(5)
         body.addWidget(self.label_lbl)
         body.addWidget(self.value_lbl)
         body.addWidget(self.sub_lbl)
-
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(0)
-        row.addWidget(self.accent_bar)
-        row.addLayout(body)
         self.restyle(tokens)
 
     def restyle(self, tokens: dict):
+        self._tokens = tokens
         acc = self._accent or tokens["accent"]
+        mono = tokens.get("font_mono", "Consolas")
         self.setStyleSheet(f"""
             QFrame#kpiTile {{
-                background: {tokens['panel']};
-                border: 1px solid {_hairline(tokens)};
-                border-radius: 8px; }}
-            QFrame#kpiAccent {{
-                background: {acc};
-                border-top-left-radius: 8px; border-bottom-left-radius: 8px; }}
+                background: rgba(170,170,255,15);
+                border: 1px solid {_with_alpha(acc, 48)};
+                border-radius: 16px; }}
             QLabel#kpiLabel {{
                 color: {tokens.get('text_muted', '#888')};
-                font-size: 10px; font-weight: 700; letter-spacing: 1px;
+                font-family: '{mono}';
+                font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
                 background: transparent; border: none; }}
             QLabel#kpiValue {{
-                color: {tokens['text']}; font-size: 26px; font-weight: 800;
-                background: transparent; border: none; }}
+                color: {tokens['text']}; font-size: 27px; font-weight: 800;
+                letter-spacing: -1px; background: transparent; border: none; }}
             QLabel#kpiSub {{
-                color: {tokens.get('text_muted', '#888')}; font-size: 11px;
+                color: {tokens.get('text_muted2', tokens.get('text_muted', '#888'))};
+                font-family: '{mono}'; font-size: 9px;
                 background: transparent; border: none; }}
         """)
+        # no Qt drop-shadow on glass panels — the effect darkens nested rows
 
     def set_value(self, value: str, sub: str | None = None,
                   accent: str | None = None):
@@ -350,9 +437,8 @@ class KpiTile(QFrame):
             self.sub_lbl.setText(sub)
         if accent is not None:
             self._accent = accent
-            self.accent_bar.setStyleSheet(
-                f"background: {accent}; border-top-left-radius: 8px;"
-                f" border-bottom-left-radius: 8px;")
+            # re-skin so the card tint + top strip both track the new status colour
+            self.restyle(getattr(self, "_tokens", _clay_tokens()))
 
 
 # ── Compliance-score ring (thin, restrained) ────────────────────────────────
@@ -394,18 +480,20 @@ class ScoreRing(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         t = self._tokens
         side = min(self.width(), self.height())
-        thick = 9
-        m = thick / 2 + 3
+        thick = 12
+        m = thick / 2 + 4
         rect = QRectF((self.width() - side) / 2 + m, (self.height() - side) / 2 + m,
                       side - 2 * m, side - 2 * m)
-        track = QPen(_qcolor(_mix(t["panel"], t["text"], 0.14)), thick)
+        col = self._color()
+        span = int(-self._value / 100.0 * 360 * 16)
+        track = QPen(_qcolor(t.get("panel3", _mix(t["panel"], t["text"], 0.14))), thick)
         track.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(track)
         p.drawArc(rect, 0, 360 * 16)
-        arc = QPen(_qcolor(self._color()), thick)
+        arc = QPen(_qcolor(col), thick)
         arc.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(arc)
-        p.drawArc(rect, 90 * 16, int(-self._value / 100.0 * 360 * 16))
+        p.drawArc(rect, 90 * 16, span)
 
         p.setPen(_qcolor(t["text"]))
         f1 = QFont(t.get("font", "Segoe UI"), int(side / 5.2))
@@ -474,13 +562,14 @@ class MiniMeter(QWidget):
         p.setPen(_qcolor(t["text"]))
         p.drawText(QRectF(w * 0.3, 4, w * 0.7, 16),
                    Qt.AlignmentFlag.AlignRight, f"{self._value:.0f}%")
-        track_y, track_h = 30, 6
+        track_y, track_h = 28, 10
+        p.setPen(QPen(_qcolor("#000000"), 2))
+        p.setBrush(QBrush(_qcolor(t.get("bg2", t["bg"]))))
+        p.drawRoundedRect(QRectF(1, track_y, w - 2, track_h), 5, 5)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(_qcolor(_mix(t["panel"], t["text"], 0.14))))
-        p.drawRoundedRect(QRectF(0, track_y, w, track_h), 3, 3)
         p.setBrush(QBrush(_qcolor(self._color())))
-        p.drawRoundedRect(QRectF(0, track_y, max(track_h, w * self._value / 100.0),
-                                 track_h), 3, 3)
+        fill_w = max(track_h - 2, (w - 6) * self._value / 100.0)
+        p.drawRoundedRect(QRectF(3, track_y + 2, fill_w, track_h - 4), 3, 3)
         p.end()
 
 
@@ -506,14 +595,16 @@ class Card(QFrame):
     def restyle(self, tokens: dict):
         self.setStyleSheet(f"""
             QFrame#card {{
-                background: {tokens['panel']};
-                border: 1px solid {_hairline(tokens)};
-                border-radius: 8px; }}
+                background: rgba(176,174,255,21);
+                border: 1px solid rgba(190,186,255,16);
+                border-radius: 18px; }}
             QLabel#cardTitle {{
                 color: {tokens.get('text_muted', '#888')};
-                font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+                font-family: '{tokens.get('font_mono', 'Consolas')}';
+                font-size: 9px; font-weight: 700; letter-spacing: 1.2px;
                 background: transparent; border: none; }}
         """)
+        # no Qt drop-shadow on glass panels — the effect darkens nested rows
 
 
 # ── Audit-log data table ────────────────────────────────────────────────────
@@ -539,30 +630,35 @@ class AuditTable(QTableWidget):
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         hh.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        hh.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)   # chunky verdict pill
         hh.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        self.verticalHeader().setDefaultSectionSize(38)
+        self.setColumnWidth(4, 124)
+        self.verticalHeader().setDefaultSectionSize(40)
         self.restyle(tokens)
 
     def restyle(self, tokens: dict):
         t = tokens
         self._tokens = t
-        alt = _mix(t["panel"], t["bg"], 0.45)
+        mono = t.get("font_mono", "Consolas")
         self.setStyleSheet(f"""
             QTableWidget {{
-                background: {t['panel']}; alternate-background-color: {alt};
+                background: transparent;
+                alternate-background-color: rgba(190,186,255,15);
                 color: {t['text']}; border: none; outline: none;
-                font-size: 12px; gridline-color: transparent; }}
-            QTableWidget::item {{ padding: 4px 10px; border: none; }}
+                font-family: '{mono}'; font-size: 12px;
+                gridline-color: transparent; }}
+            QTableWidget::item {{ padding: 5px 12px; border: none; }}
             QHeaderView::section {{
-                background: {t['panel']}; color: {t.get('text_muted', '#888')};
-                padding: 8px 10px; border: none;
-                border-bottom: 1px solid {_hairline(t, 55)};
-                font-size: 10px; font-weight: 700; letter-spacing: 0.6px; }}
-            QScrollBar:vertical {{ width: 7px; background: transparent; margin: 0; }}
+                background: transparent; color: {t.get('text_muted', '#888')};
+                padding: 10px 12px; border: none;
+                border-bottom: 1px solid rgba(255,255,255,32);
+                font-family: '{mono}';
+                font-size: 9px; font-weight: 700; letter-spacing: 0.8px; }}
+            QScrollBar:vertical {{ width: 8px; background: transparent; margin: 6px 2px; }}
             QScrollBar::handle:vertical {{
-                background: {_with_alpha(t['accent'], 120)};
-                border-radius: 3px; min-height: 24px; }}
+                background: rgba(255,255,255,60);
+                border-radius: 4px; min-height: 28px; }}
+            QScrollBar::handle:vertical:hover {{ background: rgba(255,255,255,95); }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         """)
         for r in range(self.rowCount()):
@@ -663,25 +759,35 @@ class NavButton(QPushButton):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         t = self._tokens
-        acc = t["accent"]
         active = self.isChecked()
         hover = self.underMouse()
-        r = QRectF(0, 2, self.width(), self.height() - 4)
+        r = QRectF(1, 2, self.width() - 2, self.height() - 4)
         if active:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(_qcolor(_with_alpha(acc, 32))))
-            p.drawRoundedRect(r, 7, 7)
-            p.setBrush(QBrush(_qcolor(acc)))
-            p.drawRoundedRect(QRectF(0, r.center().y() - 9, 3, 18), 1.5, 1.5)
+            # Match the console's other orange controls (hero / verifCard /
+            # verifyBtn / ctaBtn): a muted paprika gradient with a soft
+            # translucent-white rim — NOT the old neobrutalist black border.
+            grad = QLinearGradient(r.topLeft(), r.bottomLeft())
+            grad.setColorAt(0.0, _qcolor("#c96a2f"))
+            grad.setColorAt(1.0, _qcolor("#a4521d"))
+            p.setPen(QPen(QColor(255, 255, 255, 60), 1))
+            p.setBrush(QBrush(grad))
+            p.drawRoundedRect(r, 12, 12)
         elif hover:
+            # Frosted highlight to match the glass surfaces, not an opaque chip.
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(_qcolor(_with_alpha(t.get("text_muted", "#888"), 22))))
-            p.drawRoundedRect(r, 7, 7)
-        col = _qcolor(acc if active else t["text"] if hover else t.get("text_muted", "#888"))
-        paint_icon(p, QRectF(14, r.center().y() - 9, 18, 18), self.icon_name, col, 1.7)
-        p.setPen(col)
-        f = QFont(t.get("font", "Segoe UI"), 10)
-        f.setBold(active)
+            p.setBrush(QBrush(QColor(255, 255, 255, 20)))
+            p.drawRoundedRect(r, 12, 12)
+        txt_col = _qcolor("#ffffff" if active
+                          else t["text"] if hover else t.get("text_muted", "#888"))
+        ic_col = txt_col
+        paint_icon(p, QRectF(16, r.center().y() - 9, 18, 18), self.icon_name, ic_col, 1.8)
+        p.setPen(txt_col)
+        # Draw with a crisp pixel size and the real bundled Unbounded faces
+        # (700 / 500) rather than a point-size + synthesized bold — the synth
+        # bold at a fractional point size is what made the label look muddy.
+        f = QFont(t.get("font", "Segoe UI"))
+        f.setPixelSize(13)
+        f.setWeight(QFont.Weight.Bold if active else QFont.Weight.Medium)
         p.setFont(f)
         p.drawText(QRectF(44, 0, self.width() - 50, self.height()),
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
@@ -712,9 +818,9 @@ class CtrlButton(QPushButton):
         t = self._tokens
         if self.underMouse():
             p.setPen(Qt.PenStyle.NoPen)
-            hl = BAD_RED if self._danger else _with_alpha(t.get("text_muted", "#888"), 40)
+            hl = BAD_RED if self._danger else t.get("panel3", t.get("panel"))
             p.setBrush(QBrush(_qcolor(hl)))
-            p.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 5, 5)
+            p.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 7, 7)
             col = _qcolor("#FFFFFF" if self._danger else t["text"])
         else:
             col = _qcolor(t.get("text_muted", "#888"))
@@ -727,11 +833,19 @@ class DashboardWindow(QWidget):
     refresh_requested = pyqtSignal()
     closed           = pyqtSignal()
 
+    # Set True for real Windows "acrylic" backdrop blur behind the window (Win10+
+    # / Win11).  Off by default: it can make dragging the frameless window laggy
+    # on some systems, and the self-contained glass already matches the reference.
+    GLASS_ACRYLIC = False
+
     def __init__(self, fox_widget=None, settings: FoxSettings | None = None,
                  sprite_sheet_path: str | None = None, parent=None):
         super().__init__(parent)
         self.fox_widget = fox_widget
         self.settings = settings or FoxSettings()
+        # sprite sheet for the little Foxy portrait on the verification card
+        self._sprite_path = sprite_sheet_path or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "ultimate_fox_spritesheet.png")
 
         # ── live state ──
         self._start_ts       = time.time()
@@ -743,12 +857,25 @@ class DashboardWindow(QWidget):
         self._block_height   = 0
         self._connected      = None
         self._drag_pos       = QPoint()
-        self._recent: deque[QWidget] = deque()
+        self._recent_events: deque = deque(maxlen=7)
 
+        # NOTE: deliberately NOT a Qt.WindowType.Tool window.  A Tool window is a
+        # non-activating auxiliary palette: on Windows it refuses to come to the
+        # foreground above the currently-active app, so "Open Dashboard" looked
+        # like it did nothing (the window existed and rendered, but stayed hidden
+        # behind whatever the user was working in).  A normal top-level window
+        # plus the explicit raise/activate in show_animated() fixes that.
+        #
+        # It is a *normal* window, NOT always-on-top: the console is a full app
+        # surface, so it must sit in the regular z-order (the user can click
+        # another app to send it behind) and minimize to the taskbar like any
+        # other window.  WindowMinimizeButtonHint + WindowSystemMenuHint give a
+        # frameless window a real taskbar button + minimize/restore on Windows.
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowSystemMenuHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("Foxy Audit — Auditor Console")
@@ -757,7 +884,7 @@ class DashboardWindow(QWidget):
         self.setFixedSize(min(1140, int(scr.width() * 0.88)),
                           min(710, int(scr.height() * 0.9)))
 
-        tokens = self.settings.theme_tokens()
+        tokens = _clay_tokens()
         self._build(tokens)
         self.apply_theme(tokens)
 
@@ -856,15 +983,11 @@ class DashboardWindow(QWidget):
         h.addWidget(self.page_title)
         h.addStretch()
 
-        self.conn_dot = QLabel()
-        self.conn_dot.setObjectName("connBadge")
-        h.addWidget(self.conn_dot)
-
         self.refresh_btn = CtrlButton("refresh", t)
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         h.addWidget(self.refresh_btn)
         self.min_btn = CtrlButton("min", t)
-        self.min_btn.clicked.connect(self.hide)
+        self.min_btn.clicked.connect(self.showMinimized)
         self.close_btn = CtrlButton("close", t, danger=True)
         self.close_btn.clicked.connect(self.close_animated)
         h.addWidget(self.min_btn)
@@ -872,49 +995,145 @@ class DashboardWindow(QWidget):
         return self.topbar
 
     # ── pages ──
+    def _feature_tile(self, text: str, obj: str, on_click) -> QPushButton:
+        tile = QPushButton(text)
+        tile.setObjectName(obj)
+        tile.setCursor(Qt.CursorShape.PointingHandCursor)
+        tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        tile.clicked.connect(lambda: on_click())
+        _glass_shadow(tile, 8, 22, 80)
+        return tile
+
     def _page_overview(self, t: dict) -> QWidget:
         page = QWidget()
         v = QVBoxLayout(page)
-        v.setContentsMargins(22, 20, 22, 20)
+        v.setContentsMargins(24, 20, 24, 22)
         v.setSpacing(16)
 
+        # ── in-page header (mirrors the website "vibe check" header) ──
+        head = QHBoxLayout()
+        htxt = QVBoxLayout()
+        htxt.setSpacing(3)
+        self.ov_eyebrow = QLabel("● GOVERNANCE-AS-CODE")
+        self.ov_eyebrow.setObjectName("eyebrow")
+        self.ov_h1 = QLabel("Org‑wide compliance, live.")
+        self.ov_h1.setObjectName("h1Head")
+        self.ov_sub = QLabel("org-4F2A9C · synced 2 min ago · all systems foxy")
+        self.ov_sub.setObjectName("subHead")
+        htxt.addWidget(self.ov_eyebrow)
+        htxt.addWidget(self.ov_h1)
+        htxt.addWidget(self.ov_sub)
+        head.addLayout(htxt)
+        head.addStretch()
+        self.export_btn = QPushButton("Export passport")
+        self.export_btn.setObjectName("ctaBtn")
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        head.addWidget(self.export_btn, 0, Qt.AlignmentFlag.AlignTop)
+        v.addLayout(head)
+
+        # ── hero + feature tiles ──
+        hero_row = QHBoxLayout()
+        hero_row.setSpacing(16)
+        self.hero = QFrame()
+        self.hero.setObjectName("hero")
+        hl = QVBoxLayout(self.hero)
+        hl.setContentsMargins(26, 22, 26, 24)
+        hl.setSpacing(6)
+        htop = QHBoxLayout()
+        htag = QLabel("ORG-WIDE AI HEALTH")
+        htag.setObjectName("heroTag")
+        self.live_badge = QLabel("● LIVE")
+        self.live_badge.setObjectName("liveBadge")
+        htop.addWidget(htag)
+        htop.addStretch()
+        htop.addWidget(self.live_badge)
+        self.hero_num = QLabel("100")
+        self.hero_num.setObjectName("heroNum")
+        hfoot = QLabel("compliance score · all systems foxy")
+        hfoot.setObjectName("heroFoot")
+        hl.addLayout(htop)
+        hl.addStretch()
+        hl.addWidget(self.hero_num)
+        hl.addWidget(hfoot)
+        _glass_shadow(self.hero, 10, 26, 110)
+        hero_row.addWidget(self.hero, stretch=3)
+
+        tiles = QVBoxLayout()
+        tiles.setSpacing(14)
+        self.tile_threats = self._feature_tile(
+            "Blind Audit\nLog", "tileBlue", lambda: self.stack.setCurrentIndex(1))
+        self.tile_system = self._feature_tile(
+            "System\nHealth", "tilePink", lambda: self.stack.setCurrentIndex(2))
+        tiles.addWidget(self.tile_threats)
+        tiles.addWidget(self.tile_system)
+        hero_row.addLayout(tiles, stretch=2)
+        v.addLayout(hero_row)
+
+        # ── stats row (4 KPIs) ──
         kpis = QHBoxLayout()
         kpis.setSpacing(14)
-        self.kpi_logs = KpiTile(t, "Interactions Logged", "0", "session total", INFO_BLUE)
+        self.kpi_logs = KpiTile(t, "Interactions", "0", "logged this session", INFO_BLUE)
         self.kpi_flagged = KpiTile(t, "Policy Breaches", "0", "flagged by AI judge", BAD_RED)
         self.kpi_risk = KpiTile(t, "Avg Risk Score", "—", "across flagged events", WARN_AMBER)
         self.kpi_chain = KpiTile(t, "Ledger Blocks", "0", "hash-chained", OK_GREEN)
-        for w in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
-            kpis.addWidget(w)
+        for wgt in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
+            kpis.addWidget(wgt)
         v.addLayout(kpis)
 
+        # ── verification card (website credit-card style) + ledger integrity ──
         body = QHBoxLayout()
         body.setSpacing(16)
 
-        self.recent_card = Card(t, "Recent Activity")
-        self.recent_box = QVBoxLayout()
-        self.recent_box.setSpacing(0)
-        self.recent_box.setContentsMargins(0, 0, 0, 0)
-        self.recent_empty = QLabel("No interactions yet — waiting for SDK telemetry…")
-        self.recent_empty.setObjectName("emptyState")
-        self.recent_box.addWidget(self.recent_empty)
-        self.recent_box.addStretch()
-        self.recent_card.body.addLayout(self.recent_box, stretch=1)
-        body.addWidget(self.recent_card, stretch=3)
+        verif_col = QVBoxLayout()
+        verif_col.setSpacing(11)
+        verif_cap = QLabel("VERIFICATION CARD")
+        verif_cap.setObjectName("sectionCap")
+        verif_col.addWidget(verif_cap)
+
+        self.verif_card = QFrame()
+        self.verif_card.setObjectName("verifCard")
+        self.verif_card.setMinimumHeight(186)
+        vc = QVBoxLayout(self.verif_card)
+        vc.setContentsMargins(22, 20, 22, 20)
+        vc.setSpacing(0)
+        vtop = QHBoxLayout()
+        chip = QLabel()
+        chip.setObjectName("verifFox")
+        chip.setFixedSize(50, 50)
+        chip.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        _foxpix = self._fox_pixmap(50)
+        if _foxpix is not None:
+            chip.setPixmap(_foxpix)
+        vhint = QLabel("tap to verify ↻")
+        vhint.setObjectName("verifHint")
+        vtop.addWidget(chip)
+        vtop.addStretch()
+        vtop.addWidget(vhint)
+        vc.addLayout(vtop)
+        vc.addStretch()
+        veye = QLabel("AUDIT HEALTH")
+        veye.setObjectName("verifEye")
+        self.verif_num = QLabel("0 events")
+        self.verif_num.setObjectName("verifNum")
+        vc.addWidget(veye)
+        vc.addWidget(self.verif_num)
+        vc.addStretch()
+        vbot = QHBoxLayout()
+        self.verif_hash = QLabel("•••• •••• •••• ••••")
+        self.verif_hash.setObjectName("verifBottom")
+        vfoxy = QLabel("FOXY")
+        vfoxy.setObjectName("verifBottom")
+        vbot.addWidget(self.verif_hash)
+        vbot.addStretch()
+        vbot.addWidget(vfoxy)
+        vc.addLayout(vbot)
+        verif_col.addWidget(self.verif_card)
+        verif_col.addStretch()
+        body.addLayout(verif_col, stretch=3)
 
         right = QVBoxLayout()
         right.setSpacing(16)
-
-        self.score_card = Card(t, "Compliance Score")
-        self.score_ring = ScoreRing(t)
-        ring_row = QHBoxLayout()
-        ring_row.addStretch()
-        ring_row.addWidget(self.score_ring)
-        ring_row.addStretch()
-        self.score_card.body.addLayout(ring_row)
-        right.addWidget(self.score_card)
-
-        self.chain_card = Card(t, "Ledger Integrity")
+        self.chain_card = Card(t, "Ledger integrity")
         state_row = QHBoxLayout()
         self.chain_icon = QLabel()
         self.chain_icon.setFixedSize(16, 16)
@@ -1168,52 +1387,127 @@ class DashboardWindow(QWidget):
 
     # ── theming ──────────────────────────────────────────────────────────────
     def apply_theme(self, t: dict):
+        # The auditor console wears a fixed glassmorphic skin over the original
+        # clay/paprika palette, so any chat theme passed in is ignored.
+        t = _clay_tokens()
         font = t.get("font", "Segoe UI")
+        mono = t.get("font_mono", "Consolas")
+        # When real acrylic blur is active the shell is a translucent veil so the
+        # frosted blur of the backdrop shows through; otherwise it's an opaque
+        # paprika backdrop (so the window is never see-through to the raw desktop).
+        if getattr(self, "_acrylic_on", False):
+            shell_bg = ("qradialgradient(cx:0.12, cy:0.0, radius:1.25, fx:0.12, fy:0.0,"
+                        " stop:0 rgba(42,26,17,150), stop:0.5 rgba(16,13,10,125),"
+                        " stop:1 rgba(11,10,9,125))")
+        else:
+            # colourful wash so the frosted panels have real colour to frost over
+            shell_bg = ("qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+                        " stop:0 #6a3514, stop:0.30 #15100c, stop:0.52 #122a5e,"
+                        " stop:0.74 #1c0e26, stop:1 #461630)")
         self.shell.setStyleSheet(f"""
             QFrame#shell {{
-                background: {t['bg']};
-                border: 1px solid {_hairline(t, 60)};
-                border-radius: 10px; }}
+                background: {shell_bg};
+                border: 1px solid rgba(255,255,255,22);
+                border-radius: 22px; }}
             QFrame#sidebar {{
-                background: {_mix(t['bg'], t['panel'], 0.5)};
+                background: rgba(190,186,255,11);
                 border: none;
-                border-right: 1px solid {_hairline(t, 45)};
-                border-top-left-radius: 10px; border-bottom-left-radius: 10px; }}
+                border-right: 1px solid rgba(200,196,255,16);
+                border-top-left-radius: 22px; border-bottom-left-radius: 22px; }}
             QFrame#topbar {{
                 background: transparent;
-                border-bottom: 1px solid {_hairline(t, 45)}; }}
+                border-bottom: 1px solid rgba(255,255,255,12); }}
             QLabel#brandName {{ color: {t['text']}; font-size: 15px; font-weight: 800;
                 background: transparent; }}
-            QLabel#brandSub {{ color: {t.get('text_muted', '#888')}; font-size: 8px;
-                font-weight: 700; letter-spacing: 1.4px; background: transparent; }}
+            QLabel#brandSub {{ color: {t['text_muted']}; font-family: '{mono}';
+                font-size: 8px; font-weight: 700; letter-spacing: 1.4px;
+                background: transparent; }}
             QLabel#logo {{ background: transparent; }}
-            QLabel#navMeta {{ color: {t.get('text_muted', '#888')}; font-size: 8px;
-                font-weight: 700; letter-spacing: 1.2px; background: transparent; }}
-            QLabel#navMetaVal {{ color: {t['text']}; font-size: 12px; font-weight: 600;
-                font-family: '{t.get('font_mono', 'Consolas')}'; background: transparent; }}
-            QLabel#pageTitle {{ color: {t['text']}; font-size: 17px; font-weight: 800;
+            QLabel#navMeta {{ color: {t['text_muted']}; font-family: '{mono}';
+                font-size: 8px; font-weight: 700; letter-spacing: 1.2px;
                 background: transparent; }}
-            QLabel#emptyState {{ color: {t.get('text_muted', '#888')}; font-size: 12px;
+            QLabel#navMetaVal {{ color: {t['text']}; font-size: 12px; font-weight: 700;
+                font-family: '{mono}'; background: transparent; }}
+            QLabel#pageTitle {{ color: {t['text']}; font-size: 18px; font-weight: 800;
+                letter-spacing: -0.5px; background: transparent; }}
+            QLabel#emptyState {{ color: {t['text_muted']}; font-size: 12px;
                 padding: 16px 4px; background: transparent; }}
-            QLabel#chainState {{ color: {OK_GREEN}; font-size: 15px; font-weight: 800;
+            QLabel#sectionCap {{ color: {t['text_muted']}; font-family: '{mono}';
+                font-size: 9px; font-weight: 700; letter-spacing: 1.2px;
                 background: transparent; }}
-            QLabel#chainMeta {{ color: {t['text']}; font-size: 12px; background: transparent; }}
-            QLabel#chainHash {{ color: {t.get('text_muted', '#888')}; font-size: 10px;
-                font-family: '{t.get('font_mono', 'Consolas')}'; background: transparent; }}
+            QFrame#verifCard {{
+                background: qlineargradient(x1:0, y1:0, x2:0.55, y2:1,
+                    stop:0 #c96a2f, stop:0.6 #a4521d, stop:1 #76360f);
+                border: 1px solid rgba(255,255,255,16);
+                border-radius: 20px; }}
+            QLabel#verifFox {{ background: transparent; border: none; }}
+            QLabel#verifHint {{ color: #ffffff; background: rgba(0,0,0,170);
+                font-family: '{mono}'; font-size: 9px; font-weight: 700;
+                border-radius: 11px; padding: 4px 11px; }}
+            QLabel#verifEye {{ color: rgba(26,9,0,200); font-family: '{mono}';
+                font-size: 10px; font-weight: 700; letter-spacing: 1px;
+                background: transparent; }}
+            QLabel#verifNum {{ color: #1a0900; font-size: 27px; font-weight: 800;
+                letter-spacing: -1px; background: transparent; }}
+            QLabel#verifBottom {{ color: rgba(26,9,0,205); font-family: '{mono}';
+                font-size: 10px; font-weight: 700; letter-spacing: 1px;
+                background: transparent; }}
+            QLabel#chainState {{ color: {OK_GREEN}; font-size: 16px; font-weight: 800;
+                letter-spacing: 0.5px; background: transparent; }}
+            QLabel#chainMeta {{ color: {t['text2']}; font-size: 12px; background: transparent; }}
+            QLabel#chainHash {{ color: {t['text_muted']}; font-size: 10px;
+                font-family: '{mono}'; background: transparent; }}
             QLabel#tableCap {{ color: {t['text']}; font-size: 12px; font-weight: 800;
                 letter-spacing: 1px; background: transparent; }}
-            QLabel#tableCount {{ color: {t.get('text_muted', '#888')}; font-size: 11px;
-                background: transparent; }}
+            QLabel#tableCount {{ color: {t['text_muted']}; font-family: '{mono}';
+                font-size: 10px; background: transparent; }}
             QLabel#connState {{ color: {t['text']}; font-size: 14px; font-weight: 700;
                 background: transparent; }}
-            QLabel#connUrl {{ color: {t.get('text_muted', '#888')}; font-size: 11px;
-                font-family: '{t.get('font_mono', 'Consolas')}'; background: transparent; }}
+            QLabel#connUrl {{ color: {t['text_muted']}; font-size: 11px;
+                font-family: '{mono}'; background: transparent; }}
             QPushButton#verifyBtn {{
-                background: {_with_alpha(t['accent'], 30)};
-                color: {t['accent']};
-                border: 1px solid {_with_alpha(t['accent'], 110)};
-                border-radius: 6px; padding: 7px 0; font-size: 12px; font-weight: 700; }}
-            QPushButton#verifyBtn:hover {{ background: {_with_alpha(t['accent'], 55)}; }}
+                background: #c96a2f;
+                color: #ffffff;
+                border: 1px solid rgba(255,255,255,14);
+                border-radius: 11px; padding: 9px 0; font-size: 12px; font-weight: 800; }}
+            QPushButton#verifyBtn:hover {{ background: #d6743a; }}
+            QPushButton#verifyBtn:pressed {{ background: #a8551f; }}
+            QLabel#eyebrow {{ color: {t['accent2']}; font-family: '{mono}';
+                font-size: 9px; font-weight: 800; letter-spacing: 1.6px;
+                background: transparent; }}
+            QLabel#h1Head {{ color: {t['text']}; font-size: 26px; font-weight: 800;
+                letter-spacing: -1px; background: transparent; }}
+            QLabel#subHead {{ color: {t['text_muted']}; font-size: 12px;
+                background: transparent; }}
+            QPushButton#ctaBtn {{ background: #c96a2f; color: #ffffff;
+                border: 1px solid rgba(255,255,255,14); border-radius: 12px; padding: 9px 16px;
+                font-size: 12px; font-weight: 800; }}
+            QPushButton#ctaBtn:hover {{ background: #d6743a; }}
+            QFrame#hero {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #c96a2f, stop:0.62 #a4521d, stop:1 #6e3411);
+                border: 1px solid rgba(255,255,255,16);
+                border-radius: 24px; }}
+            QLabel#heroTag {{ color: rgba(26,9,0,210); font-family: '{mono}';
+                font-size: 10px; font-weight: 800; letter-spacing: 1px;
+                background: transparent; }}
+            QLabel#liveBadge {{ color: #ffffff; background: rgba(0,0,0,160);
+                font-family: '{mono}'; font-size: 9px; font-weight: 800;
+                border-radius: 10px; padding: 3px 10px; }}
+            QLabel#heroNum {{ color: #1a0900; font-size: 46px; font-weight: 800;
+                letter-spacing: -2px; background: transparent; }}
+            QLabel#heroFoot {{ color: rgba(26,9,0,200); font-family: '{mono}';
+                font-size: 11px; font-weight: 700; background: transparent; }}
+            QPushButton#tileBlue, QPushButton#tilePink {{
+                color: #ffffff; border: 1px solid rgba(255,255,255,15);
+                border-radius: 20px; padding: 18px; text-align: left;
+                font-size: 15px; font-weight: 800; }}
+            QPushButton#tileBlue {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #4d6cba, stop:1 #39508f); }}
+            QPushButton#tilePink {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #c25c88, stop:1 #9c3c64); }}
+            QPushButton#tileBlue:hover, QPushButton#tilePink:hover {{
+                border: 1px solid rgba(255,255,255,40); }}
             QWidget {{ font-family: '{font}'; }}
         """)
         self.logo.setPixmap(self._monogram(t))
@@ -1226,33 +1520,34 @@ class DashboardWindow(QWidget):
             c.set_tokens(t)
         for k in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
             k.restyle(t)
-        for card in (self.recent_card, self.score_card, self.chain_card,
+        for card in (self.chain_card,
                      self.table_card, self.vitals_card, self.conn_card):
             card.restyle(t)
-        self.score_ring.set_tokens(t)
+        if self.verif_card.graphicsEffect() is None:
+            _glass_shadow(self.verif_card, 12, 28, 110)
         self.table.restyle(t)
         for m in (self.m_cpu, self.m_ram, self.m_batt):
             m.set_tokens(t)
-        for w in list(self._recent):
-            for lb in w.findChildren(QLabel):
-                if lb.objectName() == "recTime":
-                    lb.setStyleSheet(f"color: {t.get('text_muted', '#888')};"
-                                     f" font-family: '{t.get('font_mono', 'Consolas')}';"
-                                     f" font-size: 11px; background: transparent;")
-                elif lb.objectName() == "recText":
-                    lb.setStyleSheet(f"color: {t['text']}; font-size: 12px;"
-                                     f" background: transparent;")
+
+    def _fox_pixmap(self, size: int):
+        """A little Foxy portrait — the first idle sprite cell (192×208), scaled."""
+        pm = QPixmap(self._sprite_path)
+        if pm.isNull():
+            return None
+        frame = pm.copy(0, 0, 192, 208)
+        return frame.scaled(size, size,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation)
 
     def _monogram(self, t: dict) -> QPixmap:
         pm = QPixmap(30, 30)
         pm.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.setPen(Qt.PenStyle.NoPen)
+        p.setPen(QPen(_qcolor("#000000"), 2))
         p.setBrush(QBrush(_qcolor(t["accent"])))
-        p.drawRoundedRect(QRectF(0, 0, 30, 30), 8, 8)
-        paint_icon(p, QRectF(5, 5, 20, 20), "shield",
-                   _qcolor("#FFFFFF" if not _is_dark(t["accent"]) else t["bg"]), 1.9)
+        p.drawRoundedRect(QRectF(1, 1, 28, 28), 9, 9)
+        paint_icon(p, QRectF(5, 5, 20, 20), "shield", _qcolor("#1a0900"), 2.0)
         p.end()
         return pm
 
@@ -1272,12 +1567,7 @@ class DashboardWindow(QWidget):
             col, txt = BAD_RED, "Offline"
         else:
             col, txt = WARN_AMBER, "Connecting"
-        self.conn_dot.setText(f"● {txt}")
-        self.conn_dot.setStyleSheet(
-            f"QLabel#connBadge {{ color: {col}; font-size: 11px; font-weight: 700;"
-            f" background: {_with_alpha(col, 26)};"
-            f" border: 1px solid {_with_alpha(col, 90)};"
-            f" border-radius: 11px; padding: 4px 12px; }}")
+        # (top-bar connection badge removed; status still shown on the System page)
         if hasattr(self, "conn_state"):
             self.conn_state.setText(txt)
             self.conn_state.setStyleSheet(
@@ -1322,42 +1612,12 @@ class DashboardWindow(QWidget):
 
     def set_connected(self, connected: bool | None):
         self._connected = connected
-        self._restyle_conn(self.settings.theme_tokens())
+        self._restyle_conn(_clay_tokens())
 
     # ── event rendering ──
     def _add_event(self, ev: dict):
         self.table.add_event(ev)
         self.audit_count.setText(f"{self.table.rowCount()} records")
-        if self.recent_empty.isVisible():
-            self.recent_empty.hide()
-        t = self.settings.theme_tokens()
-        row = QWidget()
-        rl = QHBoxLayout(row)
-        rl.setContentsMargins(2, 9, 2, 9)
-        rl.setSpacing(10)
-        tlbl = QLabel(ev["time"])
-        tlbl.setObjectName("recTime")
-        tlbl.setStyleSheet(f"color: {t.get('text_muted', '#888')};"
-                           f" font-family: '{t.get('font_mono', 'Consolas')}';"
-                           f" font-size: 11px; background: transparent;")
-        ok = ev["kind"] == "ok"
-        badge = Badge("COMPLIANT" if ok else "FLAGGED", OK_GREEN if ok else BAD_RED)
-        desc = (f"hash logged · {ev['policy']}" if ok
-                else f"{ev.get('reason', 'breach')} · risk {ev.get('risk')}")
-        dlbl = QLabel(desc)
-        dlbl.setObjectName("recText")
-        dlbl.setStyleSheet(f"color: {t['text']}; font-size: 12px; background: transparent;")
-        rl.addWidget(tlbl)
-        rl.addWidget(badge)
-        rl.addWidget(dlbl, stretch=1)
-        row.setStyleSheet(f"QWidget {{ border-top: 1px solid {_hairline(t, 30)};"
-                          f" background: transparent; }}")
-        self.recent_box.insertWidget(0, row)
-        self._recent.appendleft(row)
-        while len(self._recent) > 7:
-            old = self._recent.pop()
-            old.setParent(None)
-            old.deleteLater()
 
     # ── derived metrics ──
     def _next_hash(self, policy: str) -> str:
@@ -1373,7 +1633,11 @@ class DashboardWindow(QWidget):
                 f"{avg:.0f}",
                 accent=(OK_GREEN if avg < 40 else WARN_AMBER if avg < 70 else BAD_RED))
         self.kpi_chain.set_value(f"{self._block_height:,}")
-        self.score_ring.set_value(self._score)
+        if hasattr(self, "hero_num"):
+            self.hero_num.setText(f"{self._score:.0f}")
+        if hasattr(self, "verif_num"):
+            self.verif_num.setText(f"{self._logs_total:,} events")
+            self.verif_hash.setText("•••• •••• •••• ••••")
         intact = self._score > 35
         root = hashlib.sha256(f"{self._last_hash}{self._block_height}".encode()).hexdigest()
         self.chain_meta.setText(f"{self._block_height:,} blocks · "
@@ -1430,7 +1694,8 @@ class DashboardWindow(QWidget):
             self.uptime_lbl.setText(f"Uptime {hh:02d}:{mm:02d}:{ss:02d}")
         if self._score < 100.0:
             self._score = min(100.0, self._score + 0.1)
-            self.score_ring.set_value(self._score)
+            if hasattr(self, "hero_num"):
+                self.hero_num.setText(f"{self._score:.0f}")
 
     def _on_refresh_clicked(self):
         """Fetch real history from GET /v1/logs and repopulate the table."""
@@ -1484,29 +1749,90 @@ class DashboardWindow(QWidget):
         self.move(scr.center().x() - self.width() // 2,
                   scr.center().y() - self.height() // 2)
 
+    def _bring_to_front(self):
+        """Reliably pull the window above the currently-active application.
+
+        Qt's raise_/activateWindow alone are not enough on Windows when the
+        request comes from a process that isn't already in the foreground
+        (e.g. opening from the system-tray menu): Windows silently denies the
+        focus change.  The window is no longer always-on-top, so this explicit
+        SetForegroundWindow is what pulls it above the active app on open /
+        restore (afterwards it behaves like any normal window in the z-order)."""
+        self.raise_()
+        self.activateWindow()
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
+        except Exception:
+            pass
+
+    def _enable_acrylic(self):
+        """Optional real frosted blur behind the window (Windows only).
+
+        Uses the undocumented SetWindowCompositionAttribute API with
+        ACCENT_ENABLE_ACRYLICBLURBEHIND, tinted with the dark base colour so the
+        palette is preserved.  Best-effort: silently no-ops off-Windows or if the
+        call fails.  Enable via DashboardWindow.GLASS_ACRYLIC = True."""
+        if sys.platform != "win32" or getattr(self, "_acrylic_done", False):
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class ACCENTPOLICY(ctypes.Structure):
+                _fields_ = [("AccentState", ctypes.c_int),
+                            ("AccentFlags", ctypes.c_int),
+                            ("GradientColor", ctypes.c_uint),
+                            ("AnimationId", ctypes.c_int)]
+
+            class WINCOMPATTRDATA(ctypes.Structure):
+                _fields_ = [("Attribute", ctypes.c_int),
+                            ("Data", ctypes.POINTER(ACCENTPOLICY)),
+                            ("SizeOfData", ctypes.c_size_t)]
+
+            # ABGR tint = warm-dark base at ~70% so the frosted blur stays visible
+            # while the palette reads dark/on-brand.
+            r, g, b = 0x18, 0x12, 0x0E
+            gradient = (0xB2 << 24) | (b << 16) | (g << 8) | r
+            accent = ACCENTPOLICY(4, 0, gradient, 0)   # 4 = ACRYLICBLURBEHIND
+            data = WINCOMPATTRDATA(19, ctypes.pointer(accent),
+                                   ctypes.sizeof(accent))   # 19 = ACCENT_POLICY
+            ctypes.windll.user32.SetWindowCompositionAttribute(
+                wintypes.HWND(int(self.winId())), ctypes.pointer(data))
+            self._acrylic_done = True
+        except Exception:
+            pass
+
     def show_animated(self):
+        was_minimized = self.isMinimized()
         if not self.isVisible():
             self.center_on_screen()
         self.setWindowOpacity(0.0)
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        end_geo = self.geometry()
-        start_geo = end_geo.translated(0, 22)
+        # show() alone does NOT restore a window the user minimized to the
+        # taskbar (Qt still reports a minimized window as "visible"), so
+        # re-opening from the fox / tray must explicitly un-minimize it.
+        if was_minimized:
+            self.showNormal()
+        else:
+            self.show()
+        if self.GLASS_ACRYLIC:
+            self._enable_acrylic()
+            # If the blur actually applied, switch the shell to its translucent
+            # veil so the frost shows; if it failed, stay opaque (never see-through).
+            if getattr(self, "_acrylic_done", False) and not getattr(self, "_acrylic_on", False):
+                self._acrylic_on = True
+                self.apply_theme(None)
+        self._bring_to_front()
+        # opacity-only fade (no geometry slide — avoids the high-DPI setGeometry
+        # warnings on a fixed-size window).
         self._a_op = QPropertyAnimation(self, b"windowOpacity", self)
         self._a_op.setDuration(190)
         self._a_op.setStartValue(0.0)
         self._a_op.setEndValue(1.0)
         self._a_op.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._a_geo = QPropertyAnimation(self, b"geometry", self)
-        self._a_geo.setDuration(190)
-        self._a_geo.setStartValue(start_geo)
-        self._a_geo.setEndValue(end_geo)
-        self._a_geo.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._grp = QParallelAnimationGroup(self)
-        self._grp.addAnimation(self._a_op)
-        self._grp.addAnimation(self._a_geo)
-        self._grp.start()
+        self._a_op.start()
 
     def close_animated(self):
         self._a_out = QPropertyAnimation(self, b"windowOpacity", self)

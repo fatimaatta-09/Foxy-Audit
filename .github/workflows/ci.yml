@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Fast, dependency-light gate: the SDK unit tests plus the hash-chain
+  # regression test (the product's core trust claim). Neither needs Postgres.
+  sdk-and-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install SDK + pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./sdk
+          pip install pytest
+      - name: SDK tests
+        run: pytest sdk/tests -q
+      - name: Hash-chain regression test
+        run: pytest backend/tests/test_chain.py -q
+
+  # Syntax/compile gate for the PyQt6 desktop app. Uses py_compile so it needs
+  # no Qt platform libraries or GUI on the runner.
+  desktop-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Byte-compile desktop modules
+        run: |
+          python -m py_compile \
+            omni_fox.py dashboard.py clay_chat_popup.py fox_settings.py \
+            settings_dialog.py sdk_bridge.py ai_providers.py \
+            window_tracker.py eye_tracker.py security_overlay.py

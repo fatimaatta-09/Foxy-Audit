@@ -1,145 +1,163 @@
-"""Background Gemini grading worker — runs in-process daemon threads.
+"""Durable Gemini grading worker — a Postgres-outbox poller.
 
-IMPORTANT: This module intentionally uses Python's standard-library
-ThreadPoolExecutor instead of Celery. Reasons:
+Ingest (POST /v1/logs/batch) commits each chain row synchronously with
+grading_status='pending' (the column default). That commit IS the durable
+enqueue: the job lives in the same row as the chain data, so a crash between the
+202 response and grading cannot lose it — unlike the previous in-memory pool.
 
-  1. No external broker (Redis) required — the XPRIZE demo runs with
-     only Postgres, which is already in docker-compose.yml.
-  2. Identical throughput for a demo workload (sub-10 req/s).
-  3. Failure/retry logic is preserved; we simply re-submit to the pool.
+This poller claims 'pending' rows with FOR UPDATE SKIP LOCKED (safe to run in
+several processes at once), grades each with the org's configured policy via
+gemini.evaluate(meta, policy_config), and writes the verdict back, marking the
+row 'graded'. Stuck 'in_progress' rows (a worker died mid-job) are reclaimed
+after grading_stuck_seconds; after grading_max_attempts failures a row is parked
+in 'failed' — a human-visible dead-letter, never silently dropped.
 
-For production, swap submit_batch() with a Celery/Redis call by:
-  - Adding `redis` service to docker-compose.yml
-  - Reinstating the Celery task decorator
-  - Starting `celery -A app.worker worker` alongside uvicorn
-
-The contract the router depends on is just:
-    worker.submit_batch(batch_payloads: list[dict]) -> None
+RLS note: the poller must connect as a role that BYPASSES RLS (the docker 'foxy'
+superuser does) so its cross-org claim query sees every org's rows; the per-row
+write-back also sets app.current_org defensively.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import signal
 import time
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+import uuid
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError
 
 from . import gemini
-from .chain import GENESIS_HASH, compute_chain_hash
+from .config import get_settings
 from .db import SessionLocal
-from .models import AuditLog, OrgPolicy
+from .models import OrgPolicy
 
 log = logging.getLogger("foxy.worker")
 
-# Daemon pool — threads do not block process exit.
-_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="foxy-grader")
-
-
-def _process_batch(batch_payloads: list[dict[str, Any]], retries_left: int = 3) -> None:
-    """Do the actual DB work in a pool thread."""
-    if not batch_payloads:
-        return
-
-    org_id = batch_payloads[0]["org_id"]
-    db: Session = SessionLocal()
-    try:
-        db.execute(text("SET LOCAL app.current_org = :oid"), {"oid": org_id})
-
-        # Fetch org's policy config once for the whole batch
-        import uuid as _uuid
-        policy_row = db.get(OrgPolicy, _uuid.UUID(org_id))
-        policy_config = {
-            "pii_detection": policy_row.pii_detection,
-            "prompt_injection": policy_row.prompt_injection,
-            "regulated_data_mode": policy_row.regulated_data_mode,
-            "max_token_threshold": policy_row.max_token_threshold,
-        } if policy_row else None
-
-        prev = db.execute(
-            select(AuditLog.seq, AuditLog.chain_hash)
-            .where(AuditLog.org_id == org_id)
-            .order_by(AuditLog.seq.desc())
-            .limit(1)
-            .with_for_update()
-        ).first()
-
-        prev_seq = prev.seq if prev else 0
-        prev_hash = prev.chain_hash if prev else GENESIS_HASH
-
-        objects_to_save = []
-        for item in batch_payloads:
-            # Gemini evaluation — fail-open so the chain row is always written.
-            try:
-                verdict = gemini.evaluate(item, policy_config)
-                verdict_dict = verdict.model_dump()
-            except Exception as exc:
-                log.error("Gemini evaluation failed for item, using safe fallback: %s", exc)
-                verdict_dict = {
-                    "policy_breach": False,
-                    "reason": "gemini_unavailable",
-                    "risk_score": 0,
-                }
-
-            seq = prev_seq + 1
-            chain_hash = compute_chain_hash(
-                org_id=org_id,
-                prompt_hash=item["prompt_hash"],
-                response_hash=item["response_hash"],
-                token_count=item["token_count"],
-                policy_tag=item["policy_tag"],
-                seq=seq,
-                prev_hash=prev_hash,
-            )
-            row = AuditLog(
-                org_id=org_id,
-                seq=seq,
-                prompt_hash=item["prompt_hash"],
-                response_hash=item["response_hash"],
-                token_count=item["token_count"],
-                policy_tag=item["policy_tag"],
-                pii_signals=item.get("pii_signals"),
-                prev_hash=prev_hash,
-                chain_hash=chain_hash,
-                gemini_verdict=verdict_dict,
-            )
-            objects_to_save.append(row)
-            prev_seq = seq
-            prev_hash = chain_hash
-
-        if objects_to_save:
-            db.bulk_save_objects(objects_to_save)
-            db.commit()
-            log.info(
-                "Saved batch of %d logs for org %s (seq %d–%d)",
-                len(objects_to_save), org_id, objects_to_save[0].seq, objects_to_save[-1].seq,
-            )
-
-    except OperationalError as exc:
-        db.rollback()
-        log.warning("DB lock contention — retrying batch (retries_left=%d): %s", retries_left, exc)
-        if retries_left > 0:
-            time.sleep(1)
-            _POOL.submit(_process_batch, batch_payloads, retries_left - 1)
-    except Exception as exc:
-        db.rollback()
-        log.error("Unhandled error in log batch — retrying (retries_left=%d): %s", retries_left, exc)
-        if retries_left > 0:
-            time.sleep(2)
-            _POOL.submit(_process_batch, batch_payloads, retries_left - 1)
-    finally:
-        db.close()
-
-
-def submit_batch(batch_payloads: list[dict[str, Any]]) -> None:
-    """Fire-and-forget: enqueue batch for background Gemini grading + DB insert.
-
-    Returns immediately (HTTP 202 pattern). The batch is processed by a daemon
-    thread — the caller never waits for Gemini or the DB write.
+# Atomically claim a batch: mark pending (or stuck in_progress) rows in_progress
+# and return their metadata. FOR UPDATE SKIP LOCKED lets multiple pollers run.
+_CLAIM_SQL = text(
     """
-    if not batch_payloads:
-        return
-    _POOL.submit(_process_batch, batch_payloads)
+    UPDATE audit_logs
+       SET grading_status     = 'in_progress',
+           grading_started_at = now(),
+           grading_attempts   = grading_attempts + 1
+     WHERE id IN (
+           SELECT id FROM audit_logs
+            WHERE grading_status = 'pending'
+               OR (grading_status = 'in_progress'
+                   AND grading_started_at < now() - make_interval(secs => :stuck))
+            ORDER BY created_at
+              FOR UPDATE SKIP LOCKED
+            LIMIT :batch
+     )
+    RETURNING id, org_id, prompt_hash, response_hash,
+              token_count, policy_tag, pii_signals, grading_attempts
+    """
+)
+
+_MARK_GRADED_SQL = text(
+    """
+    UPDATE audit_logs
+       SET gemini_verdict = CAST(:verdict AS jsonb),
+           grading_status  = 'graded',
+           graded_at       = now()
+     WHERE id = :id
+    """
+)
+_MARK_RETRY_SQL = text("UPDATE audit_logs SET grading_status = 'pending' WHERE id = :id")
+_MARK_FAILED_SQL = text("UPDATE audit_logs SET grading_status = 'failed' WHERE id = :id")
+
+
+def _policy_config(db: Session, org_id) -> dict | None:
+    """Load the org's policy flags so the judge enforces what they configured."""
+    oid = org_id if isinstance(org_id, uuid.UUID) else uuid.UUID(str(org_id))
+    policy = db.get(OrgPolicy, oid)
+    if policy is None:
+        return None
+    return {
+        "pii_detection": policy.pii_detection,
+        "prompt_injection": policy.prompt_injection,
+        "regulated_data_mode": policy.regulated_data_mode,
+        "max_token_threshold": policy.max_token_threshold,
+    }
+
+
+def _claim_batch(db: Session, batch: int, stuck: int) -> list:
+    """Claim up to `batch` rows for grading; returns their metadata mappings."""
+    rows = db.execute(_CLAIM_SQL, {"batch": batch, "stuck": stuck}).mappings().all()
+    db.commit()   # release the row locks before the (possibly slow) Gemini call
+    return list(rows)
+
+
+def _grade_one(db: Session, row) -> None:
+    """Grade one claimed row with its org's policy and persist the verdict."""
+    meta = {
+        "prompt_hash": row["prompt_hash"],
+        "response_hash": row["response_hash"],
+        "token_count": row["token_count"],
+        "policy_tag": row["policy_tag"],
+        "pii_signals": row["pii_signals"],
+    }
+    policy_config = _policy_config(db, row["org_id"])
+    verdict = gemini.evaluate(meta, policy_config)
+    # Scope RLS to this row's org before the write-back (no-op under a
+    # BYPASSRLS/superuser role, required under a hardened one).
+    db.execute(text("SELECT set_config('app.current_org', :oid, true)"),
+               {"oid": str(row["org_id"])})
+    db.execute(_MARK_GRADED_SQL,
+               {"id": row["id"], "verdict": json.dumps(verdict.model_dump())})
+    db.commit()
+
+
+def _handle_failure(db: Session, row, max_attempts: int, exc: Exception) -> None:
+    db.rollback()
+    attempts = row["grading_attempts"] or 0
+    sql = _MARK_FAILED_SQL if attempts >= max_attempts else _MARK_RETRY_SQL
+    try:
+        db.execute(sql, {"id": row["id"]})
+        db.commit()
+    except Exception:
+        db.rollback()
+    log.warning("grading %s for %s (attempt %s): %s",
+                "FAILED (dead-letter)" if attempts >= max_attempts else "retry",
+                row["id"], attempts, exc)
+
+
+def run_forever() -> None:
+    """Poll the outbox until interrupted. Entry point for `app.worker_main`."""
+    s = get_settings()
+    log.info("Foxy grading poller started (interval=%ss batch=%s)",
+             s.grading_poll_interval, s.grading_batch_size)
+
+    stopping = {"flag": False}
+
+    def _stop(*_):
+        stopping["flag"] = True
+
+    try:
+        signal.signal(signal.SIGINT, _stop)
+        signal.signal(signal.SIGTERM, _stop)
+    except ValueError:
+        pass   # not the main thread (e.g. a lifespan-daemon fallback)
+
+    while not stopping["flag"]:
+        rows: list = []
+        db = SessionLocal()
+        try:
+            rows = _claim_batch(db, s.grading_batch_size, s.grading_stuck_seconds)
+            for row in rows:
+                try:
+                    _grade_one(db, row)
+                except Exception as exc:   # noqa: BLE001 — never let one row kill the loop
+                    _handle_failure(db, row, s.grading_max_attempts, exc)
+        except Exception as exc:           # noqa: BLE001 — claim/DB hiccup: back off
+            db.rollback()
+            log.warning("poll loop error: %s", exc)
+        finally:
+            db.close()
+        if not rows:
+            time.sleep(s.grading_poll_interval)
+
+    log.info("Foxy grading poller stopped")

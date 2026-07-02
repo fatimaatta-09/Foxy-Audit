@@ -1,4 +1,4 @@
-# CLAUDE.md
+I have made some fixes yet check if those are working at your end# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -6,9 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The PyQt6 **desktop client** for the Foxy Audit platform: an animated pixel-art fox ("compliance
 officer" mascot) that lives at the bottom of the screen, reacts to system telemetry, and exposes a
-chat copilot. The FastAPI / Redis / Gemini / PostgreSQL backend described in `README.md` is **not in
-this repo** — this is only the desktop app. The desktop app talks to that platform two ways: a local
-UDP bridge from the `@foxy.audit` SDK, and an HTTPS health check against `backend_url`.
+chat copilot. The desktop app talks to the backend platform two ways: a local UDP bridge from the
+`@foxy.audit` SDK, and an HTTPS health check against `backend_url`.
+
+**Branch note:** on the current **`foxy-skeleton`** branch the whole three-tier system is present, not
+just the desktop app — `backend/` (the FastAPI / PostgreSQL service, with `chain.py`, `worker.py`,
+`gemini.py`, `routers/`, `scripts/`, `docker-compose.yml`), `sdk/` (the `foxy-audit` pip package), and
+`demo/`. So backend work *can* be done here. (The older `foxy-f` / `foxy-a` branches carried only the
+desktop app — see "Repository branches" below.)
 
 Note: the product is "Foxy Audit", but the code still uses the older "OmniAware Fox" / `omni_fox`
 naming internally (including the QSettings org/app keys `OmniAwareFox` / `DesktopPet`).
@@ -114,5 +119,5 @@ everything re-skins automatically — do not branch on theme names anywhere else
 
 The full desktop app lives on **`foxy-f`** (and on local `foxy-a`, which is `foxy-f` plus the
 Compliance Command Center dashboard, `dashboard.py`). `main` and the remote `origin/foxy-a` contain
-only `README.md`. Don't assume `main` is the source of truth — confirm with `git ls-tree -r <branch>
+only `README.md`. Don't assume `main` is the source of truth — confirm with `git ls-tree -r <branch>0
 --name-only` before branching or comparing.

@@ -10,22 +10,23 @@ directly.  This avoids heavy native dependencies like weasyprint in production.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import require_org
+from ..auth import resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
 from ..db import get_db
 from ..models import AuditLog, Organization
 
+log = logging.getLogger("foxy.passport")
 router = APIRouter()
 
 # templates/ lives at  backend/app/templates/, NOT backend/app/routers/templates/
@@ -39,7 +40,7 @@ _jinja_env = Environment(
 
 @router.post("/v1/passport")
 def generate_passport(
-    org: Organization = Depends(require_org),
+    org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
     days: int = Query(default=30, ge=1, le=365),
 ):
@@ -132,9 +133,18 @@ def generate_passport(
         genesis_hash=GENESIS_HASH,
     )
     
-    pdf_bytes = HTML(string=html_string).write_pdf()
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=passport.pdf"}
-    )
+    # Prefer a signed PDF, but degrade to HTML if weasyprint's native libraries
+    # aren't installed (the review flagged weasyprint as a deploy risk — a missing
+    # lib must not take down the endpoint, and the import stays lazy so the app
+    # still boots without it).
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(string=html_string).write_pdf()
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=passport.pdf"},
+        )
+    except Exception as exc:
+        log.warning("weasyprint unavailable — returning HTML passport: %s", exc)
+        return HTMLResponse(content=html_string)

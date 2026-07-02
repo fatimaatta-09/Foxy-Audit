@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>WhatsPlan — Judge's Setup Guide</title>
+<style>
+
+@page {
+  size: A4;
+  margin: 0;
+}
+@page cover {
+  margin: 0;
+}
+@page content {
+  margin: 26mm 20mm 22mm 20mm;
+  @bottom-left {
+    content: "WhatsPlan — Setup Guide";
+    font-family: "Liberation Sans", Arial, sans-serif;
+    font-size: 8.5pt;
+    color: #98a2a8;
+    letter-spacing: 0.03em;
+  }
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-family: "Liberation Sans", Arial, sans-serif;
+    font-size: 8.5pt;
+    color: #98a2a8;
+  }
+}
+
+:root{
+  --wa-green: #00a884;
+  --wa-green-dark: #008f72;
+  --wa-green-bright: #25d366;
+  --ink: #111b21;
+  --muted: #667781;
+  --faint: #98a2a8;
+  --bg-panel: #f0f2f5;
+  --border: #e3e7e9;
+  --warn-bg: #fff7e6;
+  --warn-border: #f0c36d;
+  --warn-text: #8a5a00;
+  --note-bg: #eafaf5;
+  --note-border: #9fe3cf;
+  --danger: #ef4444;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  font-family: "Liberation Sans", Arial, sans-serif;
+  color: var(--ink);
+  font-size: 10.3pt;
+  line-height: 1.55;
+}
+
+/* ============== COVER PAGE ============== */
+.cover {
+  page: cover;
+  width: 210mm;
+  height: 297mm;
+  position: relative;
+  background: var(--ink);
+  color: white;
+  overflow: hidden;
+}
+.cover .stripe {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 6mm;
+  background: linear-gradient(180deg, var(--wa-green-bright), var(--wa-green) 55%, var(--wa-green-dark));
+}
+.cover-inner {
+  position: absolute;
+  top: 0; left: 6mm; right: 0; bottom: 0;
+  padding: 26mm 18mm;
+  display: flex;
+  flex-direction: column;
+}
+.cover-kicker {
+  font-family: "DejaVu Sans Condensed", "Liberation Sans", sans-serif;
+  font-size: 10pt;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--wa-green-bright);
+  font-weight: bold;
+}
+.cover-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 6mm;
+  margin-top: 10mm;
+}
+.cover-logo-row img { width: 22mm; height: 22mm; border-radius: 5mm; }
+.cover-title {
+  font-family: "DejaVu Sans Condensed", "Liberation Sans", sans-serif;
+  font-weight: bold;
+  font-size: 40pt;
+  letter-spacing: -0.01em;
+  line-height: 1.0;
+}
+.cover-sub {
+  margin-top: 3mm;
+  font-size: 13pt;
+  color: #c7ccce;
+  font-style: italic;
+}
+.cover-doc-title {
+  margin-top: 22mm;
+  font-family: "DejaVu Sans Condensed", "Liberation Sans", sans-serif;
+  font-weight: bold;
+  font-size: 23pt;
+  max-width: 130mm;
+  line-height: 1.18;
+}
+.cover-doc-title .accent { color: var(--wa-green-bright); }
+
+.cover-demo {
+  margin-top: 12mm;
+  background: #1a2329;
+  border: 1px solid #2c373d;
+  border-radius: 3mm;
+  padding: 6mm 7mm;
+  max-width: 150mm;
+}
+.cover-demo-line {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 8.6pt;
+  color: #d1d6d8;
+  margin-bottom: 2.6mm;
+  display: flex;
+  align-items: baseline;
+  gap: 3mm;
+}
+.cover-demo-line .bub {
+  color: #aeb6b9;
+}
+.cover-demo-line .arrow { color: var(--wa-green-bright); }
+.cover-demo-line .tag {
+  font-weight: bold;
+}
+.tag-meeting { color: #6fb7ff; }
+.tag-task { color: var(--wa-green-bright); }
+.tag-notice { color: #ffb454; }
+.tag-skip { color: #74808a; }
+
+.cover-bottom {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-top: 1px solid #263238;
+  padding-top: 6mm;
+}
+.cover-bottom-block { font-size: 9pt; color: #9aa3a6; line-height: 1.5; }
+.cover-bottom-block b { color: #e6e9ea; display:block; font-size: 9.5pt; margin-bottom: 0.5mm;}
+
+/* ============== CONTENT PAGES ============== */
+.content { page: content; }
+
+.section { page-break-before: always; }
+.section:first-of-type { page-break-before: auto; }
+
+.eyebrow {
+  font-family: "DejaVu Sans Condensed", "Liberation Sans", sans-serif;
+  font-weight: bold;
+  font-size: 9pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--wa-green);
+  margin: 0 0 2mm 0;
+}
+h1 {
+  font-family: "DejaVu Sans Condensed", "Liberation Sans", sans-serif;
+  font-size: 21pt;
+  font-weight: bold;
+  margin: 0 0 5mm 0;
+  color: var(--ink);
+  line-height: 1.15;
+}
+h2 {
+  font-family: "DejaVu Sans Condensed", "Liberation Sans", sans-serif;
+  font-size: 13.5pt;
+  font-weight: bold;
+  margin: 7mm 0 3mm 0;
+  color: var(--ink);
+}
+h2 .num {
+  display: inline-block;
+  background: var(--wa-green);
+  color: white;
+  width: 6.5mm;
+  height: 6.5mm;
+  border-radius: 1.6mm;
+  text-align: center;
+  line-height: 6.5mm;
+  font-size: 10pt;
+  margin-right: 3mm;
+  vertical-align: middle;
+}
+h3 {
+  font-size: 11pt;
+  font-weight: bold;
+  margin: 5mm 0 2mm 0;
+  color: var(--ink);
+}
+p { margin: 0 0 3mm 0; }
+ul, ol { margin: 0 0 3mm 0; padding-left: 5mm; }
+li { margin-bottom: 1.6mm; }
+strong { font-weight: bold; }
+.lede {
+  font-size: 11pt;
+  color: var(--muted);
+  margin-bottom: 6mm;
+}
+
+code, .code {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 9pt;
+  background: var(--bg-panel);
+  border-radius: 1mm;
+  padding: 0.3mm 1.4mm;
+  color: #0d4f3f;
+}
+
+.codeblock {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 8.7pt;
+  background: #16201d;
+  color: #d6f5e8;
+  border-radius: 2mm;
+  padding: 4mm 5mm;
+  margin: 3mm 0 4mm 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.codeblock .com { color: #6fae9a; }
+
+/* step cards */
+.steps { margin: 3mm 0 4mm 0; }
+.step {
+  display: flex;
+  gap: 4mm;
+  margin-bottom: 3.5mm;
+  page-break-inside: avoid;
+}
+.step-num {
+  flex: 0 0 auto;
+  width: 8mm; height: 8mm;
+  border-radius: 50%;
+  background: var(--wa-green);
+  color: white;
+  font-weight: bold;
+  font-size: 10pt;
+  text-align: center;
+  line-height: 8mm;
+}
+.step-body { flex: 1; padding-top: 0.3mm; }
+.step-title { font-weight: bold; margin-bottom: 0.8mm; }
+.step-desc { color: var(--muted); font-size: 9.7pt; }
+
+/* callouts */
+.callout {
+  border-radius: 2mm;
+  padding: 4mm 5mm;
+  margin: 4mm 0;
+  page-break-inside: avoid;
+  font-size: 9.7pt;
+}
+.callout-title {
+  font-weight: bold;
+  font-size: 9.5pt;
+  margin-bottom: 1.3mm;
+  display: block;
+}
+.callout.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); }
+.callout.warn .callout-title { color: #6b4500; }
+.callout.note { background: var(--note-bg); border: 1px solid var(--note-border); color: #0d4f3f; }
+.callout.note .callout-title { color: var(--wa-green-dark); }
+
+/* fork / two-door layout */
+.fork {
+  display: flex;
+  gap: 5mm;
+  margin: 5mm 0 6mm 0;
+}
+.door {
+  flex: 1;
+  border: 1.4px solid var(--border);
+  border-radius: 3mm;
+  padding: 5mm 5.5mm;
+  page-break-inside: avoid;
+}
+.door.primary { border-color: var(--wa-green); background: #f4fbf9; }
+.door-eyebrow {
+  font-size: 8pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: bold;
+  color: var(--faint);
+  margin-bottom: 1.5mm;
+}
+.door.primary .door-eyebrow { color: var(--wa-green); }
+.door-title { font-weight: bold; font-size: 12pt; margin-bottom: 1.5mm; }
+.door-title::before {
+  content: "";
+  display: inline-block;
+  width: 2.4mm; height: 2.4mm;
+  border-radius: 50%;
+  background: var(--faint);
+  margin-right: 2.4mm;
+  vertical-align: middle;
+}
+.door.primary .door-title::before { background: var(--wa-green-bright); }
+.door-desc { font-size: 9.3pt; color: var(--muted); margin-bottom: 3mm; }
+.door ul { font-size: 9.3pt; padding-left: 4mm; }
+
+/* status dot legend */
+.dot-row { display: flex; align-items: baseline; gap: 2.8mm; margin-bottom: 2.4mm; font-size: 9.5pt; }
+.dot-row .dot { margin-top: 0.4mm; }
+.dot-row strong { flex: 0 0 auto; white-space: nowrap; }
+.dot { width: 2.6mm; height: 2.6mm; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.dot.online { background: var(--wa-green-bright); }
+.dot.connecting { background: #facc15; }
+.dot.offline { background: #f87171; }
+
+/* table */
+table { width: 100%; border-collapse: collapse; margin: 3mm 0 5mm 0; font-size: 9.3pt; }
+th, td { text-align: left; padding: 2.4mm 3mm; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--faint); font-size: 8.3pt; text-transform: uppercase; letter-spacing: 0.06em; font-weight: bold; border-bottom: 1.4px solid var(--ink); }
+tr:last-child td { border-bottom: none; }
+
+/* planner mock */
+.planner-mock {
+  border: 1px solid var(--border);
+  border-radius: 2.5mm;
+  background: var(--bg-panel);
+  padding: 4mm 4.5mm;
+  margin: 4mm 0 5mm 0;
+}
+.planner-group { margin-bottom: 2.5mm; }
+.planner-group-head {
+  font-weight: bold;
+  font-size: 9.3pt;
+  display: flex;
+  align-items: center;
+  gap: 2mm;
+  margin-bottom: 1.5mm;
+}
+.planner-group-head .swatch {
+  width: 2.6mm; height: 2.6mm;
+  border-radius: 0.6mm;
+  display: inline-block;
+}
+.swatch.meetings { background: #6fb7ff; }
+.swatch.tasks { background: var(--wa-green-bright); }
+.swatch.announcements { background: #ffb454; }
+.planner-count {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 3mm;
+  padding: 0 1.8mm;
+  font-size: 8pt;
+  color: var(--muted);
+}
+.planner-item {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 1.6mm;
+  padding: 2mm 2.8mm;
+  margin-bottom: 1.3mm;
+  font-size: 8.8pt;
+  display: flex;
+  justify-content: space-between;
+  gap: 3mm;
+}
+.planner-item .meta { color: var(--faint); font-size: 8pt; }
+
+/* footer brand strip on toc */
+.toc-list { margin-top: 6mm; }
+.toc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 3mm;
+  padding: 2.6mm 0;
+  border-bottom: 1px solid var(--border);
+}
+.toc-num { font-family: "DejaVu Sans Mono", monospace; color: var(--wa-green); font-weight: bold; font-size: 9.5pt; width: 7mm; flex: 0 0 auto;}
+.toc-title { font-weight: bold; flex: 1; }
+.toc-page { color: var(--faint); font-size: 9pt; }
+
+.checklist { list-style: none; padding-left: 0; margin: 3mm 0 5mm 0; }
+.checklist li {
+  position: relative;
+  padding-left: 6.5mm;
+  margin-bottom: 2.2mm;
+  font-size: 9.7pt;
+}
+.checklist li::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0.6mm;
+  width: 4mm; height: 4mm;
+  border: 1.4px solid var(--wa-green);
+  border-radius: 0.8mm;
+}
+
+.small { font-size: 8.7pt; color: var(--muted); }
+.kbd {
+  font-family: "DejaVu Sans Mono", monospace;
+  font-size: 8.6pt;
+  background: var(--ink);
+  color: white;
+  padding: 0.4mm 1.6mm;
+  border-radius: 1mm;
+}
+hr.div { border: none; border-top: 1px solid var(--border); margin: 7mm 0; }
+
+.endnote {
+  margin-top: 10mm;
+  padding-top: 5mm;
+  border-top: 1.4px solid var(--ink);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.endnote img { width: 9mm; height: 9mm; border-radius: 2mm; }
+.endnote-text { font-size: 9pt; color: var(--muted); }
+
+</style>
+</head>
+<body>
+
+<!-- ===================== COVER ===================== -->
+<div class="cover">
+  <div class="stripe"></div>
+  <div class="cover-inner">
+    <div class="cover-kicker">Hackathon Submission · Setup &amp; Judging Guide</div>
+
+    <div class="cover-logo-row">
+      <img src="assets/logo.png" />
+      <div>
+        <div class="cover-title">WhatsPlan</div>
+        <div class="cover-sub">Chat, plan, win the day.</div>
+      </div>
+    </div>
+
+    <div class="cover-doc-title">How to run &amp; judge<br/>WhatsPlan <span class="accent">in under two minutes</span></div>
+
+    <div class="cover-demo">
+      <div class="cover-demo-line"><span class="bub">"standup on Zoom tmrw 9am — zoom.us/j/928…"</span></div>
+      <div class="cover-demo-line"><span class="arrow">→</span><span class="tag tag-meeting">MEETING</span><span class="bub">· 9:00 AM · link extracted</span></div>
+      <div class="cover-demo-line" style="margin-top:3mm"><span class="bub">"@sara finish API docs before EOD, pls"</span></div>
+      <div class="cover-demo-line"><span class="arrow">→</span><span class="tag tag-task">TASK</span><span class="bub">· assignee: Sara · due: EOD</span></div>
+      <div class="cover-demo-line" style="margin-top:3mm"><span class="bub">"lmaooo ok see you guys there"</span></div>
+      <div class="cover-demo-line"><span class="arrow">→</span><span class="tag tag-skip">chatter</span><span class="bub">· skipped</span></div>
+    </div>
+
+    <div class="cover-bottom">
+      <div class="cover-bottom-block">
+        <b>Two ways to see it</b>
+        The full product lives on the website.<br/>The Chrome extension is a companion popup.
+      </div>
+      <div class="cover-bottom-block" style="text-align:right">
+        <b>This guide covers</b>
+        Website walkthrough · Extension install<br/>Troubleshooting for judges
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== CONTENT ===================== -->
+<div class="content">
+
+<!-- ---------- TOC / ORIENTATION ---------- -->
+<div class="section">
+  <div class="eyebrow">Start Here</div>
+  <h1>Read this first</h1>
+  <p class="lede">One thing trips up almost every judge, so we're putting it on page one: <strong>WhatsPlan is a website with a small Chrome extension attached to it — not the other way around.</strong> The extension is a popup that shows your planner; it doesn't contain the app.</p>
+
+  <div class="fork">
+    <div class="door primary">
+      <div class="door-eyebrow">Recommended for judging</div>
+      <div class="door-title">The website</div>
+      <div class="door-desc">The real product. Connect WhatsApp, watch the AI sort live messages, try the six board types, switch between the eight themes, meet the pixel cat. Nothing to install.</div>
+      <ul>
+        <li>Open in any browser, no setup</li>
+        <li>Where you link WhatsApp via QR</li>
+        <li>Where AI reading gets turned on per chat</li>
+      </ul>
+    </div>
+    <div class="door">
+      <div class="door-eyebrow">Optional, after the website</div>
+      <div class="door-title">The Chrome extension</div>
+      <div class="door-desc">A lightweight companion popup — meetings, tasks, and announcements, one click away from the toolbar. It only shows data once the website has already sorted something.</div>
+      <ul>
+        <li>Manual install — judges load the folder</li>
+        <li>Reads from the same backend as the website</li>
+        <li>Empty until WhatsApp is linked on the website first</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout note">
+    <span class="callout-title">Five-second mental model</span>
+    Website = where the magic happens. Extension = a window into that magic, mounted in your toolbar. Judge the website first; install the extension second, as a bonus.
+  </div>
+
+  <h2 style="margin-top:9mm;">What's in this guide</h2>
+  <div class="toc-list">
+    <div class="toc-row"><span class="toc-num">01</span><span class="toc-title">See the product — website walkthrough</span><span class="toc-page">no install</span></div>
+    <div class="toc-row"><span class="toc-num">02</span><span class="toc-title">Install the companion extension</span><span class="toc-page">~30 seconds</span></div>
+    <div class="toc-row"><span class="toc-num">03</span><span class="toc-title">Get data flowing — link WhatsApp &amp; enable AI</span><span class="toc-page">~1 minute</span></div>
+    <div class="toc-row"><span class="toc-num">04</span><span class="toc-title">What you should see, and when</span><span class="toc-page">reference</span></div>
+    <div class="toc-row"><span class="toc-num">05</span><span class="toc-title">Troubleshooting for judges</span><span class="toc-page">reference</span></div>
+    <div class="toc-row"><span class="toc-num">06</span><span class="toc-title">Running it locally instead (optional)</span><span class="toc-page">for technical review</span></div>
+  </div>
+</div>
+
+<!-- ---------- 01 WEBSITE ---------- -->
+<div class="section">
+  <div class="eyebrow">Section 01</div>
+  <h1>See the product — no install needed</h1>
+  <p class="lede">This is the fastest path to judging WhatsPlan. Open the site, connect a WhatsApp account, and watch a real group chat turn into a planner.</p>
+
+  <h2><span class="num">1</span>Open the site</h2>
+  <p>Visit the live deployment in your browser. It's already running — there's nothing to clone, build, or configure.</p>
+  <div class="codeblock"><span class="com"># live deployment</span>
+https://whatsplan.social</div>
+
+  <h2><span class="num">2</span>Link a WhatsApp account</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">a</div>
+      <div class="step-body">
+        <div class="step-title">Click Connect</div>
+        <div class="step-desc">A QR code appears. This uses the official WhatsApp Web bridge — the same mechanism WhatsApp itself uses for linked devices.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">b</div>
+      <div class="step-body">
+        <div class="step-title">Scan it from your phone</div>
+        <div class="step-desc">On the phone with the WhatsApp account you want to demo: <strong>WhatsApp → Settings → Linked devices → Link a device</strong>, then scan.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">c</div>
+      <div class="step-body">
+        <div class="step-title">Wait for the green dot</div>
+        <div class="step-desc">The status indicator moves from connecting (yellow) to ready (green) once the session is live. No password is ever requested — your WhatsApp account is the identity.</div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="num">3</span>Turn AI reading on for one chat</h2>
+  <p>By design, WhatsPlan reads <strong>nothing</strong> until you opt a specific chat in. This is the one extra step most demos forget, and it's the reason an empty planner doesn't mean something's broken.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">a</div>
+      <div class="step-body">
+        <div class="step-title">Pick a chat, flip its AI toggle</div>
+        <div class="step-desc">Each chat in the list has its own switch. Flipping it on is the opt-in.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">b</div>
+      <div class="step-body">
+        <div class="step-title">Verify your email — one time</div>
+        <div class="step-desc">A 6-digit code is sent to confirm it's really you before any reading starts. Enter it in the dialog that appears.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">c</div>
+      <div class="step-body">
+        <div class="step-title">Send a test message</div>
+        <div class="step-desc">From the linked phone (or have someone else in the chat send one), try something like <em>"standup tomorrow 9am, zoom.us/j/123"</em>. Watch it land in the Planner within a couple of seconds.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="callout-title">Note for judges</span>
+    Verification stays valid for a short window, then WhatsPlan asks you to re-verify before reading any new chat. That's intentional — it's a safety gate, not a bug, and it's documented behavior, not a glitch you've hit.
+  </div>
+
+  <h2><span class="num">4</span>Explore the rest</h2>
+  <table>
+    <tr><th>Area</th><th>What to try</th></tr>
+    <tr><td><strong>Planner</strong></td><td>Meetings, Tasks, and Announcements groups fill up live. Tick a task to complete it, pin an announcement, click into a meeting to confirm the extracted time and link.</td></tr>
+    <tr><td><strong>Boards</strong></td><td>Six board types — Kanban, Table, Roadmap, Calendar, Checklist, Notes. Drag a card between Kanban columns; everything persists to the backend.</td></tr>
+    <tr><td><strong>Themes</strong></td><td>Eight full themes (Classic, Dark, Neo-Brutalist, Claymorphism, Glassmorphism, Neon, Skeuomorphic, Paper &amp; Ink), all built on WhatsApp's own green.</td></tr>
+    <tr><td><strong>Pixel cat</strong></td><td>An animated sprite companion roams the screen, reacts to typing and scrolling, and nudges you about open tasks.</td></tr>
+  </table>
+</div>
+
+<!-- ---------- 02 EXTENSION ---------- -->
+<div class="section">
+  <div class="eyebrow">Section 02</div>
+  <h1>Install the companion extension</h1>
+  <p class="lede">Optional, and best tried <em>after</em> Section 01 — the popup has nothing to show until the website has linked WhatsApp and classified at least one message.</p>
+
+  <div class="callout note">
+    <span class="callout-title">What this extension actually is</span>
+    A small Manifest V3 popup. No build step, no bundler — Chrome loads the folder's files directly. It polls the live WhatsPlan backend every five seconds and mirrors the Meetings / Tasks / Announcements you'd see on the website, in a toolbar-sized window. By default it points at the live deployment, so it works the moment it's loaded.
+  </div>
+
+  <h2><span class="num">1</span>Locate the extension folder</h2>
+  <p>Inside the submission, find the folder named <code>extension</code>. Open it and confirm you can see <code>manifest.json</code> directly inside — that's the folder Chrome needs.</p>
+  <div class="codeblock">extension/
+├── manifest.json   <span class="com">← this file must be directly inside the selected folder</span>
+├── popup.html
+├── popup.css
+├── popup.js
+├── content.js
+└── icons/</div>
+
+  <h2><span class="num">2</span>Turn on Developer mode</h2>
+  <div class="steps">
+    <div class="step"><div class="step-num">a</div><div class="step-body"><div class="step-title">Open Chrome</div><div class="step-desc">Type <span class="kbd">chrome://extensions</span> into the address bar and press Enter.</div></div></div>
+    <div class="step"><div class="step-num">b</div><div class="step-body"><div class="step-title">Flip the toggle</div><div class="step-desc">Top-right corner — switch <strong>Developer mode</strong> ON. Three new buttons appear at the top-left.</div></div></div>
+  </div>
+
+  <h2><span class="num">3</span>Load the folder</h2>
+  <div class="steps">
+    <div class="step"><div class="step-num">a</div><div class="step-body"><div class="step-title">Click "Load unpacked"</div><div class="step-desc">A file browser opens.</div></div></div>
+    <div class="step"><div class="step-num">b</div><div class="step-body"><div class="step-title">Select the <code>extension</code> folder itself</div><div class="step-desc">Click once to highlight the folder that holds <code>manifest.json</code> — don't open it and select individual files.</div></div></div>
+    <div class="step"><div class="step-num">c</div><div class="step-body"><div class="step-title">Confirm</div><div class="step-desc">"Select Folder" on Windows, "Select" on Mac. WhatsPlan now appears in your extensions list.</div></div></div>
+  </div>
+
+  <h2><span class="num">4</span>Pin and open it</h2>
+  <div class="steps">
+    <div class="step"><div class="step-num">a</div><div class="step-body"><div class="step-title">Click the puzzle-piece icon</div><div class="step-desc">Top-right of Chrome's toolbar.</div></div></div>
+    <div class="step"><div class="step-num">b</div><div class="step-body"><div class="step-title">Find WhatsPlan, click the pin</div><div class="step-desc">This pins the icon to the toolbar for one-click access.</div></div></div>
+    <div class="step"><div class="step-num">c</div><div class="step-body"><div class="step-title">Click the icon to open the popup</div><div class="step-desc">It connects to <code>whatsplan.social</code> automatically — no setup needed if you're judging the live deployment.</div></div></div>
+  </div>
+
+  <h3>One extra step the popup needs</h3>
+  <p>The popup authenticates using a session id it reads from an open WhatsPlan tab. <strong>Keep a <code>whatsplan.social</code> tab open (signed in) at the same time you use the extension</strong> — that's how it knows it's you.</p>
+</div>
+
+<!-- ---------- 03 WHAT YOU SHOULD SEE ---------- -->
+<div class="section">
+  <div class="eyebrow">Section 03</div>
+  <h1>What you should see, and when</h1>
+  <p class="lede">A quick reference so an empty screen never gets mistaken for a broken one.</p>
+
+  <h2>The popup's three states</h2>
+  <div class="dot-row"><span class="dot offline"></span><strong>Red dot</strong> — backend unreachable. Check your internet connection, or that the live site loads in a tab.</div>
+  <div class="dot-row"><span class="dot connecting"></span><strong>Yellow dot</strong> — backend is up, WhatsApp session is still connecting (booting, awaiting QR scan, or just authenticated).</div>
+  <div class="dot-row"><span class="dot online"></span><strong>Green dot</strong> — fully connected. If lists are still empty here, it's because nothing's been classified yet — see below.</div>
+
+  <h2>What a populated planner looks like</h2>
+  <p class="small">This is the same view on the website and in the extension popup — three groups, live counts, plain-language cards.</p>
+  <div class="planner-mock">
+    <div class="planner-group">
+      <div class="planner-group-head"><span class="swatch meetings"></span>Meetings <span class="planner-count">1</span></div>
+      <div class="planner-item"><span>Standup</span><span class="meta">9:00 AM · zoom.us/j/928… · Team Alpha</span></div>
+    </div>
+    <div class="planner-group">
+      <div class="planner-group-head"><span class="swatch tasks"></span>Tasks <span class="planner-count">1</span></div>
+      <div class="planner-item"><span>Finish API docs</span><span class="meta">@sara · due EOD · Team Alpha</span></div>
+    </div>
+    <div class="planner-group">
+      <div class="planner-group-head"><span class="swatch announcements"></span>Announcements <span class="planner-count">1</span></div>
+      <div class="planner-item"><span>Office closed Friday <span style="color:var(--faint); font-weight:normal;">(pinned)</span></span><span class="meta">Team Alpha</span></div>
+    </div>
+  </div>
+
+  <h2>Why a list might stay empty</h2>
+  <table>
+    <tr><th>Symptom</th><th>Reason</th></tr>
+    <tr><td>Green dot, all lists empty</td><td>No chat has AI reading turned on yet, or no new message has arrived since it was enabled.</td></tr>
+    <tr><td>One group empty, others fine</td><td>Working as intended — that chat simply hasn't produced that type of item. Send a message that matches it (e.g. <em>"@name finish X by Friday"</em> for a task).</td></tr>
+    <tr><td>A meeting shows "needs a time"</td><td>The AI extracted a meeting but couldn't pin down a time from the message — open it on the website to fill it in.</td></tr>
+  </table>
+</div>
+
+<!-- ---------- 04 TROUBLESHOOTING ---------- -->
+<div class="section">
+  <div class="eyebrow">Section 04</div>
+  <h1>Troubleshooting for judges</h1>
+
+  <table>
+    <tr><th>Issue</th><th>Fix</th></tr>
+    <tr>
+      <td>"Manifest file is missing or unreadable" when loading the extension</td>
+      <td>You selected the outer submission folder, not the inner one. Go back into it and select the specific subfolder that has <code>manifest.json</code> directly inside it — usually named <code>extension</code>.</td>
+    </tr>
+    <tr>
+      <td>Popup says "Open whatsplan.social in a tab… then hit refresh"</td>
+      <td>Open the live site in another tab while signed in, then click the ⟳ refresh button in the popup.</td>
+    </tr>
+    <tr>
+      <td>Popup shows a settings panel instead of the planner</td>
+      <td>First run only. The default backend URL is pre-filled — just click <strong>Save</strong>, no typing required, unless you're pointing it at a local dev server instead.</td>
+    </tr>
+    <tr>
+      <td>QR code on the website expires before you scan it</td>
+      <td>Refresh the connect screen for a new code — these are short-lived for security, same as WhatsApp's own linked-devices flow.</td>
+    </tr>
+    <tr>
+      <td>Verification code email never arrives</td>
+      <td>Check spam first. If testing against a local/dev deployment rather than the live site, the code may be printed to the server console instead of emailed (see Section 06).</td>
+    </tr>
+    <tr>
+      <td>Chrome blocks the extension after loading</td>
+      <td>Make sure Developer mode is still ON — Chrome occasionally re-disables unpacked extensions after a relaunch. Re-toggle it and the extension reactivates without reloading the folder.</td>
+    </tr>
+  </table>
+
+  <h2>Judging checklist</h2>
+  <ul class="checklist">
+    <li>Opened <code>whatsplan.social</code> directly — no install required for this part</li>
+    <li>Scanned the QR and saw the status dot turn green</li>
+    <li>Verified email and flipped AI reading on for one chat</li>
+    <li>Sent a test message and watched it land in the Planner within seconds</li>
+    <li>Tried at least one Board type and one theme switch</li>
+    <li>(Optional) Loaded the <code>extension</code> folder and pinned the popup</li>
+  </ul>
+</div>
+
+<!-- ---------- 05 LOCAL RUN ---------- -->
+<div class="section">
+  <div class="eyebrow">Section 05 — Optional, for technical review</div>
+  <h1>Running it locally instead</h1>
+  <p class="lede">Not required for judging — the live deployment already covers everything. Use this only if you want to inspect the code running end-to-end on your own machine.</p>
+
+  <h2>Docker (recommended)</h2>
+  <div class="codeblock">git clone &lt;this-repo-url&gt; &amp;&amp; cd WhatsPlan
+cp server/.env.example server/.env   <span class="com"># optional — works without keys</span>
+docker compose up --build</div>
+  <p>App → <code>http://localhost:8080</code> &nbsp;·&nbsp; API → <code>http://localhost:4000</code></p>
+
+  <h2>Without Docker (Node 20+)</h2>
+  <div class="codeblock"><span class="com"># terminal 1 — backend</span>
+cd server &amp;&amp; npm install &amp;&amp; npm run dev      <span class="com"># :4000</span>
+
+<span class="com"># terminal 2 — frontend</span>
+npm install &amp;&amp; npm run dev                   <span class="com"># :8080</span></div>
+
+  <div class="callout note">
+    <span class="callout-title">Zero API keys required</span>
+    Without a Groq key, message sorting falls back to a keyword-based heuristic classifier. Without a Brevo key, the verification code prints to the server console instead of emailing. Both work out of the box — keys just upgrade accuracy and delivery.
+  </div>
+
+  <h2>Pointing the extension at a local server</h2>
+  <p>Open the popup → <strong>settings (gear icon)</strong> → set <strong>Backend URL</strong> to <code>http://localhost:4000</code> and <strong>Website URL</strong> to <code>http://localhost:8080</code>, then Save.</p>
+
+  <hr class="div" />
+  <p class="small">Full architecture, environment variables, and API reference: see <code>server/README.md</code> and the root <code>README.md</code> in the submission.</p>
+
+  <div class="endnote">
+    <img src="assets/logo.png" />
+    <div class="endnote-text">WhatsPlan · The group chat stays. The chaos doesn't.</div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

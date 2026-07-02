@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     # Stripe billing integration
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    # Human session auth (dashboard login) — signs the session cookie.
+    # MUST be overridden with a strong random value in production (SESSION_SECRET).
+    session_secret: str = "dev-insecure-session-secret-change-me"
+    # Durable grading queue (Postgres outbox poller — app/worker.py)
+    grading_poll_interval: float = 2.0
+    grading_batch_size: int = 16
+    grading_max_attempts: int = 5
+    grading_stuck_seconds: int = 300
     # CORS — comma-separated list of allowed origins.
     # NEVER set to * in production; wildcard CORS contradicts our security USP.
     cors_origins: str = (

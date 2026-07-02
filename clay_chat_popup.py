@@ -34,21 +34,87 @@ Design notes
 
 from __future__ import annotations
 
+import os
 import sys
+import json
+import time
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QFrame, QGraphicsDropShadowEffect,
-    QApplication, QSizePolicy,
+    QApplication, QSizePolicy, QStackedWidget,
 )
 from PyQt6.QtCore import (
-    Qt, QPoint, QRect, QThread, pyqtSignal, QPropertyAnimation,
+    Qt, QPoint, QPointF, QRect, QEvent, QThread, pyqtSignal, QPropertyAnimation,
     QEasingCurve, QTimer, QParallelAnimationGroup,
 )
-from PyQt6.QtGui import QColor, QFont, QPixmap
+from PyQt6.QtGui import (
+    QColor, QFont, QPixmap, QFontDatabase,
+    QPainter, QPen, QBrush, QLinearGradient, QPolygonF,
+)
 
 from fox_settings import FoxSettings
 import ai_providers
 import window_tracker
+
+
+# ─────────────────────────── glass skin (matches the Auditor Console) ───────
+_FOX, _FOX2, _FOX3 = "#ff7a2e", "#ff9d52", "#d65a16"
+_INK, _MUTED = "#f7f1e8", "#8c8174"
+# colourful frosted backdrop the chat surfaces frost over
+# near-black frosted-glass backdrop — a calm hint of transparency, readable
+_PANEL_WASH = ("qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+               " stop:0 rgba(11,11,13,240), stop:0.5 rgba(15,15,18,240),"
+               " stop:1 rgba(8,8,10,240))")
+
+_FONT_CACHE: dict[str, str] = {}
+_FONTS_REGISTERED = False
+
+
+def _register_bundled_fonts():
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    _FONTS_REGISTERED = True
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    try:
+        for fn in os.listdir(d):
+            if fn.lower().endswith((".ttf", ".otf")):
+                QFontDatabase.addApplicationFont(os.path.join(d, fn))
+    except Exception:
+        pass
+
+
+def _pick_font(kind: str) -> str:
+    if kind in _FONT_CACHE:
+        return _FONT_CACHE[kind]
+    _register_bundled_fonts()
+    try:
+        fams = set(QFontDatabase.families())
+    except Exception:
+        fams = set()
+    cands = (["Unbounded", "Segoe UI Variable Display", "Segoe UI"] if kind == "disp"
+             else ["Space Mono", "Cascadia Mono", "Consolas"])
+    pick = next((c for c in cands if c in fams),
+                "Segoe UI" if kind == "disp" else "Consolas")
+    _FONT_CACHE[kind] = pick
+    return pick
+
+
+def _glass_tokens() -> dict:
+    """Fixed frosted-glass skin for the chat popup — mirrors the dashboard, so
+    any chat theme passed in is ignored (the copilot always reads as branded)."""
+    return {
+        "bg": "#11101a", "panel": "rgba(176,174,255,20)",
+        "radius": 22, "border": "1px solid rgba(190,186,255,16)",
+        "accent": "#c96a2f", "accent_dark": "#a8551f",
+        "text": _INK, "text_muted": _MUTED,
+        "font": _pick_font("disp"), "font_mono": _pick_font("mono"),
+        "bubble_user": "#c96a2f", "bubble_fox": "rgba(176,174,255,22)",
+        "header_bg": "transparent", "header_text": _INK,
+        "input_border": "1px solid rgba(190,186,255,16)", "outline_focus": "#c96a2f",
+        "shadow_blur": 30, "shadow_dx": 0, "shadow_dy": 12,
+        "shadow_color": (0, 0, 0), "shadow_alpha": 110,
+    }
 
 
 # ─────────────────────────────────────────────── background AI worker ──────
@@ -133,39 +199,32 @@ class ChatBubble(QLabel):
         self.apply_tokens(tokens)
 
     def apply_tokens(self, tokens: dict):
-        bg    = tokens["bubble_user"] if self.is_user else tokens["bubble_fox"]
-        r     = min(tokens["radius"], 18)
-        # User bubbles get a "sent" corner; fox bubbles get "received" corner
-        if tokens["radius"] > 0:
-            top_l  = r if not self.is_user else r
-            top_r  = r
-            bot_r  = 0 if self.is_user else r
-            bot_l  = 0 if not self.is_user else r
-            radius_css = (
-                f"border-top-left-radius: {top_l}px; "
-                f"border-top-right-radius: {top_r}px; "
-                f"border-bottom-right-radius: {bot_r}px; "
-                f"border-bottom-left-radius: {bot_l}px;"
-            )
-        else:
-            radius_css = "border-radius: 0px;"
-
-        # For themes with dark bubble_user, force white text in user bubbles
-        user_text = (
-            "#FFFFFF" if self.is_user and _is_dark(bg)
-            else tokens["text"]
-        )
-        text_col = user_text if self.is_user else tokens["text"]
-
+        face = tokens.get("font", "Segoe UI")   # same display font as the dashboard
+        r = 16
+        if self.is_user:                                  # sent — glassy paprika bubble
+            bg = ("qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+                  "stop:0 rgba(255,164,106,242), stop:0.45 rgba(226,118,54,228), "
+                  "stop:1 rgba(193,89,33,232))")
+            text_col = "#ffffff"
+            border = "1px solid rgba(255,255,255,82)"      # bright glass rim
+            radius_css = (f"border-top-left-radius:{r}px;border-top-right-radius:{r}px;"
+                          f"border-bottom-right-radius:4px;border-bottom-left-radius:{r}px;")
+            pad = "9px 14px"
+        else:                                             # received — plain text, no bubble
+            bg = "transparent"
+            text_col = tokens.get("text", "#f7f1e8")
+            border = "none"
+            radius_css = ""
+            pad = "2px 2px"
         self.setStyleSheet(f"""
             QLabel {{
-                background-color: {bg};
+                background: {bg};
                 color: {text_col};
                 {radius_css}
-                padding: 9px 14px;
-                font-size: 13px;
-                font-family: '{tokens.get('font', 'Segoe UI')}';
-                border: none;
+                padding: {pad};
+                font-size: 12.5px;
+                font-family: '{face}';
+                border: {border};
             }}
         """)
 
@@ -198,18 +257,170 @@ class ClayPanel(QFrame):
 
     def __init__(self, tokens: dict, parent: QWidget | None = None):
         super().__init__(parent)
+        self.setObjectName("clayPanel")
         self.set_tokens(tokens)
 
     def set_tokens(self, tokens: dict):
-        border = tokens.get("border", "none")
+        # the most external frame — a clear lavender-white rim around the window.
+        # Scope the rule to #clayPanel: a bare `QFrame {…}` would cascade its
+        # border/radius into every descendant QFrame *and QLabel* (QLabel is a
+        # QFrame subclass), drawing a stray outline around the title/bubbles.
         self.setStyleSheet(f"""
-            QFrame {{
-                background-color: {tokens['bg']};
-                border-radius: {tokens['radius']}px;
-                border: {border};
+            QFrame#clayPanel {{
+                background: {_PANEL_WASH};
+                border-radius: 22px;
+                border: 2px solid rgba(255,255,255,60);
             }}
         """)
         self.setGraphicsEffect(_make_shadow(tokens))
+
+
+# ─────────────────────────────────────────────── gradient wordmark ──────────
+class GradientText(QLabel):
+    """A QLabel whose text is painted with a horizontal brand gradient — the
+    warm paprika→orange we use across the app — instead of a flat colour."""
+
+    def __init__(self, text: str = "", parent: QWidget | None = None):
+        super().__init__(text, parent)
+        self._stops = [(0.0, "#ffb474"), (0.5, "#ff7a2e"), (1.0, "#d65a16")]
+
+    def set_gradient(self, stops: list[tuple[float, str]]):
+        self._stops = stops
+        self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        rect = self.rect()
+        grad = QLinearGradient(float(rect.left()), 0.0, float(rect.right()), 0.0)
+        for pos, col in self._stops:
+            grad.setColorAt(pos, QColor(col))
+        p.setPen(QPen(QBrush(grad), 0))
+        p.setFont(self.font())
+        align = self.alignment() or (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        p.drawText(rect, align, self.text())
+        p.end()
+
+
+# ─────────────────────────────────────────────── vector icon button ────────
+class _IconButton(QPushButton):
+    """A crisp, painted vector icon button (not an OS emoji glyph). The button
+    background + hover come from its stylesheet; the glyph is drawn on top."""
+
+    def __init__(self, kind: str, slot=None, size: int = 30,
+                 color: str = "#f2ede6", parent: QWidget | None = None):
+        super().__init__(parent)
+        self._kind  = kind
+        self._color = QColor(color)
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        if slot is not None:
+            self.clicked.connect(slot)
+
+    def set_icon_color(self, color: str):
+        self._color = QColor(color)
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)                       # stylesheet bg + hover
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(self._color, 2.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        cx, cy = self.width() / 2.0, self.height() / 2.0
+        k = self._kind
+        if k == "close":
+            d = 4.5
+            p.drawLine(QPointF(cx - d, cy - d), QPointF(cx + d, cy + d))
+            p.drawLine(QPointF(cx - d, cy + d), QPointF(cx + d, cy - d))
+        elif k == "minimize":                           # single lower bar
+            d = 4.5
+            p.drawLine(QPointF(cx - d, cy + 3), QPointF(cx + d, cy + 3))
+        elif k == "chev_right":
+            p.drawPolyline(QPolygonF([QPointF(cx - 2, cy - 5),
+                                      QPointF(cx + 3, cy),
+                                      QPointF(cx - 2, cy + 5)]))
+        elif k == "chev_left":
+            p.drawPolyline(QPolygonF([QPointF(cx + 2, cy - 5),
+                                      QPointF(cx - 3, cy),
+                                      QPointF(cx + 2, cy + 5)]))
+        elif k == "settings":                           # tune / sliders
+            xl, xr = cx - 6, cx + 6
+            rows = ((cy - 5, cx + 2), (cy, cx - 3), (cy + 5, cx + 3))
+            for y, _kx in rows:
+                p.drawLine(QPointF(xl, y), QPointF(xr, y))
+            p.setPen(QPen(self._color, 1.0))
+            p.setBrush(QBrush(self._color))
+            for y, kx in rows:
+                p.drawEllipse(QPointF(kx, y), 2.4, 2.4)
+        elif k == "send":
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(self._color))
+            p.drawPolygon(QPolygonF([QPointF(cx - 6, cy - 6), QPointF(cx + 7, cy),
+                                     QPointF(cx - 6, cy + 6), QPointF(cx - 2.5, cy)]))
+        elif k == "trash":
+            p.drawLine(QPointF(cx - 5.5, cy - 4), QPointF(cx + 5.5, cy - 4))   # lid
+            p.drawPolyline(QPolygonF([QPointF(cx - 1.8, cy - 4), QPointF(cx - 1.6, cy - 6),
+                                      QPointF(cx + 1.6, cy - 6), QPointF(cx + 1.8, cy - 4)]))
+            p.drawLine(QPointF(cx - 4, cy - 4), QPointF(cx - 3.2, cy + 6))     # body
+            p.drawLine(QPointF(cx + 4, cy - 4), QPointF(cx + 3.2, cy + 6))
+            p.drawLine(QPointF(cx - 3.2, cy + 6), QPointF(cx + 3.2, cy + 6))
+            p.drawLine(QPointF(cx - 1.4, cy - 1), QPointF(cx - 1.4, cy + 3.5))  # ribs
+            p.drawLine(QPointF(cx + 1.4, cy - 1), QPointF(cx + 1.4, cy + 3.5))
+        p.end()
+
+
+# ─────────────────────────────────────────── chat-history persistence ──────
+def _history_path() -> str:
+    d = os.path.join(os.path.expanduser("~"), ".foxy_audit")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(d, "chat_history.json")
+
+
+def _load_sessions() -> list:
+    try:
+        with open(_history_path(), encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_sessions(sessions: list):
+    try:
+        with open(_history_path(), "w", encoding="utf-8") as f:
+            json.dump(sessions, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _rel_time(ts) -> str:
+    try:
+        d = time.time() - float(ts)
+    except Exception:
+        return ""
+    if d < 60:      return "just now"
+    if d < 3600:    return f"{int(d // 60)}m ago"
+    if d < 86400:   return f"{int(d // 3600)}h ago"
+    if d < 604800:  return f"{int(d // 86400)}d ago"
+    return time.strftime("%b %d", time.localtime(float(ts)))
+
+
+class _HistoryRow(QFrame):
+    """A clickable saved-chat row (click loads it; the trash button deletes)."""
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 # ──────────────────────────────────────────────────── the popup itself ─────
@@ -256,25 +467,59 @@ class ChatPopup(QWidget):
         self._ai_worker: _AICallWorker | None = None
         self._typing:   TypingDots | None     = None
         self._typing_wrapper: QWidget | None  = None
+        self._empty_state: QWidget | None     = None
+        self._sessions: list  = _load_sessions()   # saved until deleted
+        self._current_session: dict | None = None
 
+        # A normal frameless top-level window (NOT a Tool / always-on-top
+        # palette): the user can click another app to send the chat behind it,
+        # and it gets a real taskbar button so the minimize control below can
+        # minimize/restore it.  WindowMinimizeButtonHint + WindowSystemMenuHint
+        # enable that minimize/restore on a frameless window on Windows.
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowSystemMenuHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # Responsive sizing based on screen height
+        self.setWindowTitle("Foxy Audit — Copilot")
+        self.setMouseTracking(True)
+        # Resizable + movable frameless window (drag the top bar to move,
+        # drag any edge/corner to resize).
         screen_h = QApplication.primaryScreen().geometry().height()
-        popup_h = min(480, int(screen_h * 0.6))
-        self.setFixedSize(320, popup_h)
+        default_h = min(560, int(screen_h * 0.7))
+        self.setMinimumSize(300, 380)
+        self.resize(360, default_h)
 
-        tokens = self.settings.theme_tokens()
+        # drag / edge-resize state
+        self._drag_active  = False
+        self._resize_edge: str | None = None
+        self._press_global = QPoint()
+        self._press_geo    = QRect()
+
+        tokens = _glass_tokens()
         self._build_ui(tokens, sprite_sheet_path)
         self.apply_theme(tokens)
-        self._add_bubble(
-            "Hey! I'm Foxy Audit 🦊 Your compliance officer. Ask me about governance, audit trails, or PC health!",
-            is_user=False,
-        )
+
+        # Drag from the top bar, resize from the panel's outer margin. The title
+        # has no click action, so it forwards to the header (it is transparent to
+        # mouse); but the gear/close buttons, scroll area and input MUST stay
+        # hittable — a transparent container hides its children from hit-testing —
+        # so we route drag/resize via an event filter instead.
+        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.panel.setMouseTracking(True)
+        self.panel.installEventFilter(self)
+        # Drag the window from anywhere non-interactive: the top bar AND the
+        # whole message area (incl. bubbles). Buttons / input / scrollbar are
+        # not registered, so they keep their own clicks.
+        for w in (self.header_bar, self.scroll.viewport(), self.messages_container,
+                  self.history_scroll.viewport(), self.history_container):
+            self._make_draggable(w)
+
+        # welcoming empty-state with quick-ask chips (hidden once you start chatting)
+        self._empty_state = self._build_empty_state()
+        self.messages_layout.insertWidget(0, self._empty_state)
 
     # ─────────────────────────────────────────── UI construction ───
     def _build_ui(self, tokens: dict, sprite_sheet_path: str | None):
@@ -285,49 +530,56 @@ class ChatPopup(QWidget):
         outer.addWidget(self.panel)
 
         self.layout_ = QVBoxLayout(self.panel)
-        self.layout_.setContentsMargins(16, 14, 16, 14)
-        self.layout_.setSpacing(10)
+        self.layout_.setContentsMargins(11, 11, 11, 11)
+        self.layout_.setSpacing(8)
 
-        # ── header bar ──────────────────────────────────────────────
+        # ── header bar (centred title, balanced 70px side slots) ─────
         self.header_bar = QWidget()
-        self.header_bar.setFixedHeight(44)
+        self.header_bar.setFixedHeight(46)
         self.header_bar.setObjectName("headerBar")
         header = QHBoxLayout(self.header_bar)
-        header.setContentsMargins(10, 4, 8, 4)
-        header.setSpacing(8)
+        header.setContentsMargins(10, 0, 10, 0)
+        header.setSpacing(0)
 
-        # Fox avatar (tiny crop from spritesheet col 0 row 0)
-        self._avatar_lbl = QLabel()
-        self._avatar_lbl.setFixedSize(32, 32)
-        self._avatar_lbl.setObjectName("avatarLbl")
-        if sprite_sheet_path:
-            pix = QPixmap(sprite_sheet_path)
-            if not pix.isNull():
-                frame = pix.copy(QRect(0, 0, 192, 208)).scaled(
-                    32, 32,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.FastTransformation,
-                )
-                self._avatar_lbl.setPixmap(frame)
-        header.addWidget(self._avatar_lbl)
+        left = QWidget(); left.setFixedWidth(104)
+        lh = QHBoxLayout(left); lh.setContentsMargins(0, 0, 0, 0); lh.setSpacing(6)
+        self.back_btn = _IconButton("chev_left", self._show_chat)   # history → chat
+        self.gear_btn = _IconButton("settings", self._open_settings)
+        lh.addWidget(self.back_btn); lh.addWidget(self.gear_btn); lh.addStretch()
+        self.back_btn.hide()
+        header.addWidget(left)
 
-        self.title_label = QLabel("Foxy Audit — Security Copilot")
+        header.addStretch()
+        self.title_label = GradientText("Foxy Audit")
         self.title_label.setObjectName("titleLabel")
-        header.addWidget(self.title_label, stretch=1)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.addWidget(self.title_label)
+        header.addStretch()
 
-        self.gear_btn = self._icon_btn("⚙", self._open_settings)
-        header.addWidget(self.gear_btn)
-        self.close_btn = self._icon_btn("×", self.hide)
-        header.addWidget(self.close_btn)
+        right = QWidget(); right.setFixedWidth(104)
+        rh = QHBoxLayout(right); rh.setContentsMargins(0, 0, 0, 0); rh.setSpacing(6)
+        self.history_btn = _IconButton("chev_right", self._show_history)  # chat → history
+        self.min_btn     = _IconButton("minimize", self.showMinimized)
+        self.close_btn   = _IconButton("close", self.hide)
+        rh.addStretch(); rh.addWidget(self.history_btn)
+        rh.addWidget(self.min_btn); rh.addWidget(self.close_btn)
+        header.addWidget(right)
 
         self.layout_.addWidget(self.header_bar)
 
-        # ── message area ────────────────────────────────────────────
+        # ── content stack: chat page (0) + history page (1) ──────────
+        self.content_stack = QStackedWidget()
+        self.content_stack.setStyleSheet("background: transparent;")
+        self.layout_.addWidget(self.content_stack, stretch=1)
+
+        # -- chat page --
+        chat_page = QWidget(); chat_page.setStyleSheet("background: transparent;")
+        cp = QVBoxLayout(chat_page); cp.setContentsMargins(0, 0, 0, 0); cp.setSpacing(8)
+
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setObjectName("msgScroll")
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
         self.messages_container = QWidget()
         self.messages_container.setObjectName("msgContainer")
         self.messages_container.setStyleSheet("background: transparent;")
@@ -336,24 +588,49 @@ class ChatPopup(QWidget):
         self.messages_layout.setSpacing(6)
         self.messages_layout.addStretch()
         self.scroll.setWidget(self.messages_container)
-        self.layout_.addWidget(self.scroll, stretch=1)
+        cp.addWidget(self.scroll, stretch=1)
 
-        # ── input row ───────────────────────────────────────────────
-        input_row = QHBoxLayout()
-        input_row.setSpacing(8)
+        self.input_pill = QFrame()
+        self.input_pill.setObjectName("inputPill")
+        pill = QHBoxLayout(self.input_pill)
+        pill.setContentsMargins(16, 5, 6, 5)
+        pill.setSpacing(6)
         self.input_field = QLineEdit()
         self.input_field.setObjectName("inputField")
         self.input_field.setPlaceholderText("Ask Foxy Audit…")
         self.input_field.returnPressed.connect(self.send_message)
-        input_row.addWidget(self.input_field, stretch=1)
-
-        self.send_btn = QPushButton("➤")
+        pill.addWidget(self.input_field, stretch=1)
+        self.send_btn = _IconButton("send", self.send_message, size=34, color="#ffffff")
         self.send_btn.setObjectName("sendBtn")
-        self.send_btn.setFixedSize(38, 38)
-        self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.send_btn.clicked.connect(self.send_message)
-        input_row.addWidget(self.send_btn)
-        self.layout_.addLayout(input_row)
+        pill.addWidget(self.send_btn)
+        cp.addWidget(self.input_pill)
+        self.content_stack.addWidget(chat_page)
+
+        # -- history page --
+        hist_page = QWidget(); hist_page.setStyleSheet("background: transparent;")
+        hp = QVBoxLayout(hist_page); hp.setContentsMargins(2, 0, 2, 0); hp.setSpacing(8)
+        cap_row = QHBoxLayout(); cap_row.setContentsMargins(4, 2, 4, 0)
+        self.hist_cap = QLabel("SAVED CHATS"); self.hist_cap.setObjectName("histCap")
+        cap_row.addWidget(self.hist_cap); cap_row.addStretch()
+        self.new_chat_btn = QPushButton("＋ New chat"); self.new_chat_btn.setObjectName("newChatBtn")
+        self.new_chat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.new_chat_btn.clicked.connect(self._new_chat)
+        cap_row.addWidget(self.new_chat_btn)
+        hp.addLayout(cap_row)
+
+        self.history_scroll = QScrollArea()
+        self.history_scroll.setWidgetResizable(True)
+        self.history_scroll.setObjectName("histScroll")
+        self.history_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.history_container = QWidget()
+        self.history_container.setStyleSheet("background: transparent;")
+        self.history_layout = QVBoxLayout(self.history_container)
+        self.history_layout.setContentsMargins(4, 4, 4, 4)
+        self.history_layout.setSpacing(8)
+        self.history_layout.addStretch()
+        self.history_scroll.setWidget(self.history_container)
+        hp.addWidget(self.history_scroll, stretch=1)
+        self.content_stack.addWidget(hist_page)
 
     @staticmethod
     def _icon_btn(icon: str, slot) -> QPushButton:
@@ -366,6 +643,7 @@ class ChatPopup(QWidget):
     # ─────────────────────────────────────────────── theming ───────
     def apply_theme(self, tokens: dict):
         """Re-skin the entire popup in place.  Safe to call at any time."""
+        tokens = _glass_tokens()   # fixed frosted-glass skin (ignores chat themes)
         self.panel.set_tokens(tokens)
         r   = tokens["radius"]
         acc = tokens["accent"]
@@ -374,47 +652,63 @@ class ChatPopup(QWidget):
         txt_m = tokens.get("text_muted", "#888888")
         panel_col = tokens["panel"]
         font = tokens.get("font", "Segoe UI")
-        hdr_bg  = tokens.get("header_bg",  tokens["bg"])
+        font_mono = tokens.get("font_mono", "Consolas")
         hdr_txt = tokens.get("header_text", txt)
-        border  = tokens.get("border", "none")
-        in_bdr  = tokens.get("input_border", border)
+        # frosted-glass fill for the pills — a soft translucent white tint with a
+        # bright rim, sitting on the even backdrop; shared by header + input bars
+        pill_fill   = "rgba(255,255,255,18)"
+        pill_border = "1px solid rgba(255,255,255,52)"
 
         self.header_bar.setStyleSheet(f"""
             QWidget#headerBar {{
-                background-color: {hdr_bg};
-                border-radius: {r}px;
-                border-bottom-left-radius: 0px;
-                border-bottom-right-radius: 0px;
+                background-color: {pill_fill};
+                border-radius: 14px;
+                border: {pill_border};
             }}
         """)
-        self.title_label.setStyleSheet(f"""
-            QLabel#titleLabel {{
-                font-weight: 700; font-size: 14px;
-                color: {hdr_txt};
-                font-family: '{font}';
-                background: transparent;
-            }}
-        """)
-        self._avatar_lbl.setStyleSheet("background: transparent; border: none;")
+        self.title_label.setFont(QFont(font, 14, QFont.Weight.Bold))
+        self.title_label.set_gradient([(0.0, "#ffb474"), (0.5, "#ff7a2e"), (1.0, "#d65a16")])
+        self.title_label.setStyleSheet("QLabel#titleLabel { background: transparent; border: none; }")
 
         _icon_ss = f"""
             QPushButton {{
-                background-color: {panel_col};
+                background-color: rgba(255,255,255,15);
                 color: {hdr_txt};
-                border-radius: {min(r, 15)}px;
-                font-size: 16px; font-weight: bold;
+                border-radius: 15px;
+                font-size: 18px; font-weight: bold;
                 border: none;
             }}
             QPushButton:hover {{ background-color: {acc}; color: #FFFFFF; }}
             QPushButton:pressed {{ background-color: {acc_dark}; }}
         """
-        self.gear_btn.setStyleSheet(_icon_ss)
-        self.close_btn.setStyleSheet(_icon_ss)
+        for b in (self.gear_btn, self.close_btn, self.min_btn,
+                  self.history_btn, self.back_btn):
+            b.setStyleSheet(_icon_ss)
+
+        # history page — caption, "new chat" button, scroll
+        self.hist_cap.setStyleSheet(
+            f"color: {txt_m}; font-family: '{font}'; font-size: 9px; "
+            f"font-weight: 800; letter-spacing: 1.5px; background: transparent;")
+        self.new_chat_btn.setStyleSheet(f"""
+            QPushButton#newChatBtn {{
+                background: rgba(255,255,255,14); color: {txt};
+                border: 1px solid rgba(255,255,255,40); border-radius: 11px;
+                padding: 5px 12px; font-family: '{font}';
+                font-size: 11px; font-weight: 700;
+            }}
+            QPushButton#newChatBtn:hover {{ background: {acc}; color: #ffffff; border: 1px solid {acc}; }}
+        """)
+        _scroll_ss = f"""
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{ width: 5px; background: transparent; }}
+            QScrollBar::handle:vertical {{ background: {acc}; border-radius: 2px; min-height: 20px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+        """
+        self.history_scroll.setStyleSheet(_scroll_ss)
 
         self.scroll.setStyleSheet(f"""
             QScrollArea#msgScroll {{
-                background-color: {panel_col};
-                border-radius: {min(r, 16)}px;
+                background: transparent;
                 border: none;
             }}
             QScrollBar:vertical {{
@@ -431,26 +725,29 @@ class ChatPopup(QWidget):
             }}
         """)
 
+        self.input_pill.setStyleSheet(f"""
+            QFrame#inputPill {{
+                background-color: {pill_fill};
+                border-radius: 22px;
+                border: {pill_border};
+            }}
+        """)
         self.input_field.setStyleSheet(f"""
             QLineEdit#inputField {{
-                background-color: {panel_col};
-                border-radius: {min(r, 18)}px;
-                padding: 10px 14px;
-                font-size: 13px;
+                background: transparent;
+                border: none;
+                padding: 6px 0;
+                font-size: 12.5px;
                 color: {txt};
-                border: {in_bdr};
                 font-family: '{font}';
-            }}
-            QLineEdit#inputField:focus {{
-                border: 2px solid {tokens.get('outline_focus', acc)};
             }}
         """)
         self.send_btn.setStyleSheet(f"""
             QPushButton#sendBtn {{
                 background-color: {acc};
-                color: {'#000000' if not _is_dark(acc) else '#FFFFFF'};
-                border-radius: {min(r, 19)}px;
-                font-size: 15px; font-weight: bold;
+                color: #ffffff;
+                border-radius: 17px;
+                font-size: 14px; font-weight: bold;
                 border: none;
             }}
             QPushButton#sendBtn:hover {{ background-color: {acc_dark}; }}
@@ -463,9 +760,107 @@ class ChatPopup(QWidget):
     def _open_settings(self):
         from settings_dialog import SettingsDialog
         dlg = SettingsDialog(self.settings, self)
-        dlg.theme_changed.connect(lambda _k: self.apply_theme(self.settings.theme_tokens()))
-        dlg.settings_saved.connect(lambda: self.apply_theme(self.settings.theme_tokens()))
+        dlg.settings_saved.connect(lambda: self.apply_theme(_glass_tokens()))
         dlg.exec()
+
+    # ─────────────────────────────────── move + edge-resize ────────
+    _RESIZE_MARGIN = 8
+
+    _EDGE_CURSORS = {
+        "l":  Qt.CursorShape.SizeHorCursor,  "r":  Qt.CursorShape.SizeHorCursor,
+        "t":  Qt.CursorShape.SizeVerCursor,  "b":  Qt.CursorShape.SizeVerCursor,
+        "tl": Qt.CursorShape.SizeFDiagCursor, "br": Qt.CursorShape.SizeFDiagCursor,
+        "tr": Qt.CursorShape.SizeBDiagCursor, "bl": Qt.CursorShape.SizeBDiagCursor,
+    }
+
+    def _edge_at(self, pos: QPoint) -> str | None:
+        m = self._RESIZE_MARGIN
+        w, h = self.width(), self.height()
+        x, y = pos.x(), pos.y()
+        left, right = x <= m, x >= w - m
+        top, bottom = y <= m, y >= h - m
+        if top and left:     return "tl"
+        if top and right:    return "tr"
+        if bottom and left:  return "bl"
+        if bottom and right: return "br"
+        if left:   return "l"
+        if right:  return "r"
+        if top:    return "t"
+        if bottom: return "b"
+        return None
+
+    def _make_draggable(self, widget: QWidget):
+        """Route a non-interactive widget's mouse events to window-drag.
+        Keep the normal arrow cursor — no move cursor over the chat."""
+        widget.setMouseTracking(True)
+        widget.setCursor(Qt.CursorShape.ArrowCursor)
+        widget.installEventFilter(self)
+
+    def _move_to(self, global_pos: QPoint):
+        self.move(self._press_geo.topLeft() + (global_pos - self._press_global))
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        left = bool(event.buttons() & Qt.MouseButton.LeftButton) \
+            if et in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease) else True
+        # ── panel outer margin: resize on an edge, move anywhere else ──
+        if obj is self.panel:
+            if et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._press_global = event.globalPosition().toPoint()
+                self._press_geo    = self.geometry()
+                self._resize_edge  = self._edge_at(event.position().toPoint())
+                self._drag_active  = self._resize_edge is None
+                return True
+            if et == QEvent.Type.MouseMove:
+                if left and self._resize_edge:
+                    self._resize_to(event.globalPosition().toPoint())
+                    return True
+                if left and self._drag_active:
+                    self._move_to(event.globalPosition().toPoint())
+                    return True
+                if not left:
+                    edge = self._edge_at(event.position().toPoint())
+                    self.panel.setCursor(self._EDGE_CURSORS.get(edge, Qt.CursorShape.ArrowCursor))
+            elif et == QEvent.Type.MouseButtonRelease:
+                self._resize_edge = None
+                self._drag_active = False
+            return super().eventFilter(obj, event)
+
+        # ── any other tracked surface (header, chat area, bubbles): move ──
+        if et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            self._press_global = event.globalPosition().toPoint()
+            self._press_geo    = self.geometry()
+            self._drag_active  = True
+            self._resize_edge  = None
+            return True
+        if et == QEvent.Type.MouseMove and left and self._drag_active:
+            self._move_to(event.globalPosition().toPoint())
+            return True
+        if et == QEvent.Type.MouseButtonRelease:
+            self._drag_active = False
+        return super().eventFilter(obj, event)
+
+    def _resize_to(self, global_pos: QPoint):
+        delta = global_pos - self._press_global
+        geo   = QRect(self._press_geo)
+        e     = self._resize_edge
+        minw, minh = self.minimumWidth(), self.minimumHeight()
+        if "l" in e:
+            geo.setLeft(min(geo.left() + delta.x(), geo.right() - minw))
+        if "r" in e:
+            geo.setRight(max(geo.right() + delta.x(), geo.left() + minw))
+        if "t" in e:
+            geo.setTop(min(geo.top() + delta.y(), geo.bottom() - minh))
+        if "b" in e:
+            geo.setBottom(max(geo.bottom() + delta.y(), geo.top() + minh))
+        self.setGeometry(geo)
+
+    def resizeEvent(self, event):
+        # let bubbles grow/shrink with the window so the chat fills the space
+        bubble_w = max(220, int(self.width() * 0.72))
+        for b in self._bubbles:
+            b.setMaximumWidth(bubble_w)
+        super().resizeEvent(event)
 
     # ─────────────────────────────────────────── positioning ───────
     def popup_near(self, fox_widget: QWidget):
@@ -485,7 +880,12 @@ class ChatPopup(QWidget):
     def show_animated(self):
         """Fade-in + slide-up entrance animation (180 ms)."""
         self.setWindowOpacity(0.0)
-        self.show()
+        # show() alone won't restore a chat the user minimized to the taskbar,
+        # so re-opening from the fox must explicitly un-minimize it.
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
         self.raise_()
         self.activateWindow()
 
@@ -509,10 +909,206 @@ class ChatPopup(QWidget):
         self._anim_group.addAnimation(self._anim_pos)
         self._anim_group.start()
 
+    # ─────────────────────────────────────────── empty state ───────
+    def _build_empty_state(self) -> QWidget:
+        """A welcoming intro with quick-ask chips, shown before any chatting."""
+        t     = _glass_tokens()
+        face  = t.get("font", "Segoe UI")
+        ink   = t.get("text", "#f7f1e8")
+        muted = "#9b9aae"
+        acc   = t.get("accent", "#c96a2f")
+
+        w = QWidget()
+        w.setObjectName("emptyState")
+        w.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(w)
+        v.setContentsMargins(6, 14, 6, 6)
+        v.setSpacing(7)
+
+        emoji = QLabel("🦊")
+        emoji.setStyleSheet("background: transparent; font-size: 30px;")
+        v.addWidget(emoji)
+
+        hi = QLabel("Hey, I'm Foxy Audit")
+        hi.setStyleSheet(f"background: transparent; color: {ink}; "
+                         f"font-family: '{face}'; font-size: 17px; font-weight: 800;")
+        v.addWidget(hi)
+
+        sub = QLabel("Your compliance copilot. Ask me about governance, "
+                     "audit trails, or your PC's health.")
+        sub.setWordWrap(True)
+        sub.setStyleSheet(f"background: transparent; color: {muted}; "
+                          f"font-family: '{face}'; font-size: 12px;")
+        v.addWidget(sub)
+
+        v.addSpacing(8)
+        cap = QLabel("TRY ASKING")
+        cap.setStyleSheet(f"background: transparent; color: {muted}; "
+                          f"font-family: '{face}'; font-size: 9px; font-weight: 800; "
+                          f"letter-spacing: 1.5px;")
+        v.addWidget(cap)
+
+        chip_ss = (
+            "QPushButton#suggestChip {"
+            "  background: rgba(255,255,255,14); color: %s;"
+            "  border: 1px solid rgba(255,255,255,38); border-radius: 13px;"
+            "  padding: 11px 14px; text-align: left;"
+            "  font-family: '%s'; font-size: 12px; font-weight: 600; }"
+            "QPushButton#suggestChip:hover {"
+            "  background: rgba(255,255,255,28); border: 1px solid %s; }"
+        ) % (ink, face, acc)
+
+        for label, prompt in (
+            ("🩺   How healthy is my PC right now?", "How healthy is my PC right now?"),
+            ("📋   Explain my latest policy breach", "Explain my latest policy breach"),
+            ("📂   Open a file or folder for me",    "open "),
+        ):
+            chip = QPushButton(label)
+            chip.setObjectName("suggestChip")
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.setStyleSheet(chip_ss)
+            chip.clicked.connect(lambda _=False, p=prompt: self._use_suggestion(p))
+            v.addWidget(chip)
+
+        # let the intro text drag the window too (chips stay clickable)
+        for lbl in (w, emoji, hi, sub, cap):
+            self._make_draggable(lbl)
+        return w
+
+    def _use_suggestion(self, prompt: str):
+        if prompt.endswith(" "):          # e.g. "open " — let the user finish the path
+            self.input_field.setText(prompt)
+            self.input_field.setFocus()
+        else:
+            self.input_field.setText(prompt)
+            self.send_message()
+
+    def _hide_empty_state(self):
+        if self._empty_state is not None:
+            self._empty_state.hide()
+
+    # ────────────────────────────────────── history / navigation ───
+    def _show_chat(self):
+        self.back_btn.hide(); self.gear_btn.show(); self.history_btn.show()
+        self.title_label.setText("Foxy Audit")
+        self.content_stack.setCurrentIndex(0)
+
+    def _show_history(self):
+        self._refresh_history_list()
+        self.gear_btn.hide(); self.history_btn.hide(); self.back_btn.show()
+        self.title_label.setText("History")
+        self.content_stack.setCurrentIndex(1)
+
+    def _new_chat(self):
+        self._clear_chat()
+        self._current_session = None
+        self._history = []
+        if self._empty_state is not None:
+            self._empty_state.show()
+        self._show_chat()
+        self.raise_()
+        self.activateWindow()
+        self.input_field.setFocus()
+
+    def _clear_chat(self):
+        self._remove_typing_indicator()
+        for i in reversed(range(self.messages_layout.count())):
+            w = self.messages_layout.itemAt(i).widget()
+            if w is not None and w is not self._empty_state:
+                w.setParent(None)
+                w.deleteLater()
+        self._bubbles = []
+
+    def _record_message(self, text: str, is_user: bool):
+        if self._current_session is None:
+            self._current_session = {"id": str(time.time()), "ts": time.time(),
+                                     "title": "", "messages": []}
+            self._sessions.insert(0, self._current_session)
+        self._current_session["messages"].append(
+            {"role": "user" if is_user else "assistant", "content": text})
+        if is_user and not self._current_session.get("title"):
+            self._current_session["title"] = text[:48]
+        self._current_session["ts"] = time.time()
+        _save_sessions(self._sessions)
+
+    def _load_session(self, session: dict):
+        self._clear_chat()
+        self._current_session = session
+        msgs = session.get("messages", [])
+        self._history = [{"role": m.get("role", "user"), "content": m.get("content", "")}
+                         for m in msgs][-20:]
+        self._hide_empty_state()
+        for m in msgs:
+            self._add_bubble(m.get("content", ""),
+                             is_user=(m.get("role") == "user"), record=False)
+        self._show_chat()
+
+    def _delete_session(self, session: dict):
+        if session in self._sessions:
+            self._sessions.remove(session)
+        if session is self._current_session:
+            self._current_session = None
+        _save_sessions(self._sessions)
+        self._refresh_history_list()
+
+    def _refresh_history_list(self):
+        while self.history_layout.count():
+            w = self.history_layout.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        if not self._sessions:
+            empty = QLabel("No saved chats yet.\nYour conversations show up here.")
+            empty.setWordWrap(True)
+            empty.setStyleSheet(f"background: transparent; color: #9b9aae; border: none; "
+                                f"font-family: '{_glass_tokens()['font']}'; font-size: 12px;")
+            self.history_layout.addWidget(empty)
+        else:
+            for session in self._sessions:
+                self.history_layout.addWidget(self._history_row(session))
+        self.history_layout.addStretch()
+
+    def _history_row(self, session: dict) -> QWidget:
+        t = _glass_tokens()
+        face = t["font"]; ink = t["text"]; muted = "#9b9aae"; acc = t["accent"]
+        row = _HistoryRow(); row.setObjectName("histRow")
+        row.setCursor(Qt.CursorShape.PointingHandCursor)
+        row.setStyleSheet(f"""
+            QFrame#histRow {{ background: rgba(255,255,255,12);
+                border: 1px solid rgba(255,255,255,28); border-radius: 12px; }}
+            QFrame#histRow:hover {{ background: rgba(255,255,255,24);
+                border: 1px solid {acc}; }}
+        """)
+        h = QHBoxLayout(row); h.setContentsMargins(12, 9, 8, 9); h.setSpacing(8)
+        col = QVBoxLayout(); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(2)
+        title = QLabel(session.get("title") or "New chat")
+        title.setStyleSheet(f"background: transparent; color: {ink}; border: none; "
+                            f"font-family: '{face}'; font-size: 12.5px; font-weight: 700;")
+        title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        n = len(session.get("messages", []))
+        meta = QLabel(f"{_rel_time(session.get('ts', 0))} · {n} messages")
+        meta.setStyleSheet(f"background: transparent; color: {muted}; border: none; "
+                           f"font-family: '{face}'; font-size: 10px;")
+        meta.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        col.addWidget(title); col.addWidget(meta)
+        h.addLayout(col, stretch=1)
+        dele = _IconButton("trash", size=30, color="#b9b6c6")
+        dele.setObjectName("histDel")
+        dele.setStyleSheet("""
+            QPushButton#histDel { background: transparent; border: none; border-radius: 8px; }
+            QPushButton#histDel:hover { background: rgba(255,90,90,75); }
+        """)
+        dele.clicked.connect(lambda _=False, s=session: self._delete_session(s))
+        h.addWidget(dele)
+        row.clicked.connect(lambda s=session: self._load_session(s))
+        return row
+
     # ──────────────────────────────────────────── chat logic ───────
-    def _add_bubble(self, text: str, is_user: bool) -> ChatBubble:
-        tokens = self.settings.theme_tokens()
+    def _add_bubble(self, text: str, is_user: bool, record: bool = True) -> ChatBubble:
+        if record:
+            self._record_message(text, is_user)
+        tokens = _glass_tokens()
         bubble = ChatBubble(text, is_user, tokens)
+        bubble.setMaximumWidth(max(220, int(self.width() * 0.72)))
         self._bubbles.append(bubble)
 
         row = QHBoxLayout()
@@ -528,6 +1124,9 @@ class ChatPopup(QWidget):
         wrapper.setStyleSheet("background: transparent;")
         wrapper.setLayout(row)
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, wrapper)
+        # dragging the window works over the message text too
+        self._make_draggable(bubble)
+        self._make_draggable(wrapper)
         QTimer.singleShot(30, self._scroll_to_bottom)
         return bubble
 
@@ -536,7 +1135,7 @@ class ChatPopup(QWidget):
         sb.setValue(sb.maximum())
 
     def _show_typing_indicator(self):
-        tokens = self.settings.theme_tokens()
+        tokens = _glass_tokens()
         self._typing = TypingDots(tokens)
 
         row = QHBoxLayout()
@@ -549,6 +1148,7 @@ class ChatPopup(QWidget):
         self._typing_wrapper.setLayout(row)
         self.messages_layout.insertWidget(
             self.messages_layout.count() - 1, self._typing_wrapper)
+        self._make_draggable(self._typing_wrapper)
         QTimer.singleShot(30, self._scroll_to_bottom)
 
     def _remove_typing_indicator(self):
@@ -563,6 +1163,7 @@ class ChatPopup(QWidget):
         text = self.input_field.text().strip()
         if not text:
             return
+        self._hide_empty_state()
         self.input_field.clear()
         self._add_bubble(text, is_user=True)
 
@@ -625,6 +1226,12 @@ class ChatPopup(QWidget):
             return f'Hmm, couldn\'t find "{path}" — double-check the path?'
         except Exception as exc:
             return f"Couldn't open that: {exc}"
+
+    def showEvent(self, event):
+        # always pop to the front of the z-order when shown
+        super().showEvent(event)
+        self.raise_()
+        self.activateWindow()
 
     # ─────────────────────────────────────── clean shutdown ───────
     def hideEvent(self, event):

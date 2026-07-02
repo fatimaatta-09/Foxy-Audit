@@ -416,7 +416,7 @@ class FoxSettings:
 
     # ── behaviour tuning ──
     def reaction_cooldown(self) -> float:
-        return self._s.value("behavior/cooldown", 1.5, type=float)
+        return self._s.value("behavior/cooldown", 4.0, type=float)
 
     def set_reaction_cooldown(self, seconds: float):
         self._s.setValue("behavior/cooldown", seconds)

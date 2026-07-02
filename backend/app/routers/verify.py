@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from ..auth import require_org
+from ..auth import resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
 from ..db import get_db
 from ..models import AuditLog, Organization
@@ -22,7 +22,7 @@ router = APIRouter()
 
 @router.get("/v1/verify", response_model=VerifyResponse)
 def verify(
-    org: Organization = Depends(require_org),
+    org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
 ):
     total = db.execute(
@@ -55,10 +55,10 @@ def verify(
         if expected != row.chain_hash:
             return VerifyResponse(
                 ok=False,
-                count=len(rows),
+                count=total,
                 first_broken_seq=row.seq,
                 detail=f"chain hash mismatch at seq {row.seq}",
             )
         prev_hash = row.chain_hash
 
-    return VerifyResponse(ok=True, count=len(rows), first_broken_seq=None, detail="chain intact")
+    return VerifyResponse(ok=True, count=total, first_broken_seq=None, detail="chain intact")

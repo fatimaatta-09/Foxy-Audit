@@ -55,6 +55,15 @@ class AuditLog(Base):
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     chain_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     gemini_verdict: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # ── durable grading queue (Postgres outbox) ──
+    grading_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="pending")   # pending|in_progress|graded|failed
+    grading_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0")
+    grading_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    graded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
@@ -76,4 +85,25 @@ class OrgPolicy(Base):
     max_token_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=50000)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class User(Base):
+    """A human dashboard account (email/password + role), scoped to one org.
+
+    Separate from the org API key: the SDK authenticates with the machine Bearer
+    key (require_org); humans log in here over a signed cookie session.
+    """
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("org_id", "email", name="uq_user_org_email"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)   # bcrypt
+    role: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="member")             # admin | member
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
 

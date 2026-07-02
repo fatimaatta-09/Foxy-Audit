@@ -60,6 +60,7 @@ class LogListItem(BaseModel):
     pii_signals: list[str] | None = None
     chain_hash: str
     gemini_verdict: dict[str, Any] | None = None
+    grading_status: str = "pending"
     created_at: datetime
 
     class Config:
@@ -71,4 +72,27 @@ class LogListResponse(BaseModel):
     total: int
     page: int
     limit: int
+
+
+# ── dashboard stats (GET /v1/stats) ──
+class GradingCounts(BaseModel):
+    pending: int = 0
+    in_progress: int = 0
+    graded: int = 0
+    failed: int = 0
+
+
+class ActivityDay(BaseModel):
+    date: str            # YYYY-MM-DD
+    count: int
+    breaches: int
+
+
+class StatsResponse(BaseModel):
+    total_logged: int
+    breaches: int
+    clean_rate: float            # percent, 0-100
+    avg_token_count: float
+    grading: GradingCounts
+    activity_7d: list[ActivityDay]
 

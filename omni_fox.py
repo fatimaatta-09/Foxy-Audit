@@ -20,7 +20,7 @@ from PyQt6.QtCore import Qt, QTimer, QPoint, QRect, pyqtSignal, QThread
 from PyQt6.QtGui import QPixmap, QTransform, QCursor, QPainter, QColor, QIcon
 from pynput import keyboard, mouse
 
-from clay_chat_popup import ChatPopup
+from clay_chat_popup import ChatPopup, _pick_font
 from fox_settings import FoxSettings
 from settings_dialog import SettingsDialog
 import window_tracker
@@ -28,6 +28,42 @@ from eye_tracker import EyeOverlay
 from security_overlay import SecurityOverlay
 from sdk_bridge import SDKBridgeListener
 from dashboard import DashboardWindow
+
+
+# ── Shared matte menu skin (matches the dashboard / chat / settings) ────────
+def _matte_menu_qss() -> str:
+    """Stylesheet for the tray + right-click menus, in the app's fixed matte
+    skin: dark base, lavender frost rim, matte-orange selection, and the
+    Unbounded brand display font (same wordmark used on the dashboard/chat)."""
+    disp = _pick_font("disp")
+    return f"""
+        QMenu {{
+            background-color: #17131f;
+            color: #f7f1e8;
+            border: 1px solid rgba(190,186,255,30);
+            border-radius: 16px;
+            padding: 7px;
+            font-family: '{disp}';
+            font-size: 14px;
+            font-weight: 500;
+        }}
+        QMenu::item {{
+            padding: 11px 40px 11px 20px;
+            border-radius: 11px;
+            margin: 3px 5px;
+        }}
+        QMenu::item:selected {{
+            background-color: #c96a2f;
+            color: #ffffff;
+        }}
+        QMenu::item:disabled {{ color: #6b6675; }}
+        QMenu::separator {{
+            height: 1px;
+            background: rgba(190,186,255,22);
+            margin: 6px 12px;
+        }}
+        QMenu::right-arrow {{ width: 12px; height: 12px; margin-right: 8px; }}
+    """
 
 
 # ── Spritesheet layout ─────────────────────────────────────────────────────
@@ -237,7 +273,9 @@ class OmniAwareFox(QWidget):
         self._facing_left   = False
 
         # ── Idle-break timer (random autonomous actions) ──────────────────
-        self._idle_break_countdown = random.randint(150, 300)  # ticks
+        # ~600-1200 ticks @ 100ms ≈ 60-120s between autonomous poses.  Kept
+        # deliberately sparse so the fox feels calm/ambient rather than fidgety.
+        self._idle_break_countdown = random.randint(600, 1200)  # ticks
 
         # ── Compliance tip timer ──────────────────────────────────────────
         self._tip_countdown = random.randint(600, 900)  # ticks (~60-90s)
@@ -341,7 +379,7 @@ class OmniAwareFox(QWidget):
             if self._idle_break_countdown <= 0:
                 row, dur = random.choice(self._IDLE_ACTIONS)
                 self._set_state("IDLE_BREAK", row, dur)
-                self._idle_break_countdown = random.randint(150, 300)
+                self._idle_break_countdown = random.randint(600, 1200)
 
         elif self.state == "WALKING":
             self.current_frame = (self.current_frame + 1) % FRAMES_PER_ACTION
@@ -446,7 +484,7 @@ class OmniAwareFox(QWidget):
     # ── Input listeners (heavily debounced) ────────────────────────────────
     def trigger_typing(self):
         now = time.time()
-        if now - self._last_typing_trigger < 3.0:
+        if now - self._last_typing_trigger < 12.0:
             return
         self._last_typing_trigger  = now
         self.last_interaction_time = now
@@ -458,7 +496,7 @@ class OmniAwareFox(QWidget):
 
     def trigger_scrolling(self):
         now = time.time()
-        if now - self._last_scroll_trigger < 4.0:
+        if now - self._last_scroll_trigger < 15.0:
             return
         self._last_scroll_trigger  = now
         self.last_interaction_time = now
@@ -696,25 +734,7 @@ class OmniAwareFox(QWidget):
     # ── Context menu ───────────────────────────────────────────────────────
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #1e1e2e; color: #cdd6f4;
-                border: 1px solid rgba(203,166,247,0.4);
-                border-radius: 8px; padding: 6px;
-                font-family: 'Segoe UI', sans-serif;
-                font-size: 13px;
-            }
-            QMenu::item {
-                padding: 7px 18px; border-radius: 5px;
-            }
-            QMenu::item:selected {
-                background: rgba(203,166,247,0.25); color: #cba6f7;
-            }
-            QMenu::separator {
-                height: 1px; background: rgba(203,166,247,0.2);
-                margin: 4px 10px;
-            }
-        """)
+        menu.setStyleSheet(_matte_menu_qss())
 
         # ── Compliance actions ──
         menu.addAction("📊 Open Dashboard",     self.open_dashboard)
@@ -781,11 +801,7 @@ class OmniAwareFox(QWidget):
         self.tray_icon.setToolTip("Foxy Audit — Compliance Officer")
 
         tray_menu = QMenu(self)
-        tray_menu.setStyleSheet("""
-            QMenu { background: #1e1e2e; color: #cdd6f4; border: 1px solid rgba(203,166,247,0.4); border-radius: 6px; padding: 4px; font-family: 'Segoe UI', sans-serif; font-size: 13px; }
-            QMenu::item { padding: 6px 18px; border-radius: 4px; }
-            QMenu::item:selected { background: rgba(203,166,247,0.25); color: #cba6f7; }
-        """)
+        tray_menu.setStyleSheet(_matte_menu_qss())
         
         tray_menu.addAction("🦊 Show Foxy", self._show_from_tray)
         tray_menu.addAction("📊 Dashboard", self.open_dashboard)
@@ -814,13 +830,17 @@ class OmniAwareFox(QWidget):
     # ── Settings ───────────────────────────────────────────────────────────
     def open_settings(self):
         dlg = SettingsDialog(self.settings, self)
-        dlg.theme_changed.connect(self._on_theme_changed)
         dlg.settings_saved.connect(self._on_theme_changed)
         dlg.exec()
 
     def _on_theme_changed(self, *_):
+        # The dashboard + chat use a fixed matte skin (they ignore the tokens
+        # passed in); re-apply so any saved setting change re-skins them cleanly.
+        tokens = self.settings.theme_tokens()
         if self.chat_popup is not None:
-            self.chat_popup.apply_theme(self.settings.theme_tokens())
+            self.chat_popup.apply_theme(tokens)
+        if self.dashboard is not None:
+            self.dashboard.apply_theme(tokens)
 
     # ── Shutdown ───────────────────────────────────────────────────────────
     def closeEvent(self, event):

@@ -1,29 +1,28 @@
 """
 OmniAware Fox — Settings Dialog
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A premium, token-driven settings UI. Three tabs:
-  • Appearance  — 14 animated theme swatches with live preview
+A premium settings UI in the app's fixed matte skin. Three tabs:
   • AI Brain    — provider/key/model/URL with inline connection test
   • Behaviour   — cooldown, pat sensitivity, roaming, glance toggles
+  • Foxy Audit  — org API key + backend URL with a live health probe
 
 Design rules
 ────────────
-• Zero plain Qt defaults — every widget is fully styled via QSS that reads
-  directly from the active theme tokens.
-• ThemeSwatch cards show bg + accent + text exactly as they will look in
-  the chat popup — the user picks by sight, not by label.
+• One fixed matte skin (`_matte_tokens()`) that mirrors the Auditor Console
+  and chat popup — there is no theme picker any more, the look is constant.
+• Zero plain Qt defaults — every widget is fully styled via QSS built from
+  the matte tokens, using the bundled Unbounded / Space Mono fonts.
 • Tab bar uses a custom pill-style selector so it never looks like a
   default QTabWidget.
 • Sliders use a custom groove + handle that matches the accent colour.
 • All QThread workers (connection test) are properly cleaned up via
   finished.connect(_cleanup) so there are no ghost threads on repeated
   test clicks.
-• The dialog re-skins itself whenever the user selects a new theme so
-  the settings UI itself previews the choice.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import urllib.request
 import urllib.error
@@ -34,11 +33,66 @@ from PyQt6.QtWidgets import (
     QMessageBox, QSizePolicy, QStackedWidget,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor, QFont, QFontDatabase
 
-from fox_settings import FoxSettings, THEMES, AI_PROVIDERS
+from fox_settings import FoxSettings, AI_PROVIDERS
+from clay_chat_popup import GradientText, _IconButton
 import window_tracker
 import ai_providers
+
+
+# ───────────────────────────── bundled fonts + fixed matte skin ─────────────
+_FONT_CACHE: dict[str, str] = {}
+_FONTS_REGISTERED = False
+
+
+def _register_bundled_fonts():
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    _FONTS_REGISTERED = True
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    try:
+        for fn in os.listdir(d):
+            if fn.lower().endswith((".ttf", ".otf")):
+                QFontDatabase.addApplicationFont(os.path.join(d, fn))
+    except Exception:
+        pass
+
+
+def _pick_font(kind: str) -> str:
+    if kind in _FONT_CACHE:
+        return _FONT_CACHE[kind]
+    _register_bundled_fonts()
+    try:
+        fams = set(QFontDatabase.families())
+    except Exception:
+        fams = set()
+    cands = (["Unbounded", "Segoe UI Variable Display", "Segoe UI"] if kind == "disp"
+             else ["Space Mono", "Cascadia Mono", "Consolas"])
+    pick = next((c for c in cands if c in fams),
+                "Segoe UI" if kind == "disp" else "Consolas")
+    _FONT_CACHE[kind] = pick
+    return pick
+
+
+def _matte_tokens() -> dict:
+    """Fixed matte skin for the settings dialog — mirrors the Auditor Console
+    and chat popup so the whole app reads as one branded surface. There is no
+    theme switching any more; the look is constant."""
+    return {
+        "bg": "#0c0c0e", "radius": 16,
+        "accent": "#c96a2f", "accent_dark": "#a8551f",
+        "panel": "rgba(255,255,255,16)",
+        "text": "#f4efe8", "text_muted": "#9b9aae",
+        "font": _pick_font("disp"), "font_disp": _pick_font("disp"),
+        "header_bg": "rgba(255,255,255,10)", "header_text": "#f4efe8",
+        "border": "2px solid rgba(255,255,255,55)",
+        "input_border": "1px solid rgba(255,255,255,45)",
+        "outline_focus": "#c96a2f",
+        "shadow_blur": 34, "shadow_dx": 0, "shadow_dy": 14,
+        "shadow_color": (0, 0, 0), "shadow_alpha": 150,
+    }
 
 
 # ───────────────────────────────────────── background connection tester ────
@@ -112,104 +166,6 @@ def _is_dark(color_str: str) -> bool:
         except ValueError:
             pass
     return False
-
-
-# ──────────────────────────────────────────── theme swatch card widget ─────
-class ThemeSwatchCard(QFrame):
-    """
-    A richly styled clickable card that previews one theme.
-
-    Layout:
-      ┌─────────────────────────────────────┐
-      │  ██  Label name              accent ▶│
-      │  mini bubble preview                 │
-      └─────────────────────────────────────┘
-    """
-    clicked = pyqtSignal(str)   # emits theme key
-
-    _SELECTED_BORDER_WIDTH = 3
-
-    def __init__(self, key: str, tokens: dict, selected: bool = False,
-                 parent=None):
-        super().__init__(parent)
-        self.key      = key
-        self._tokens  = tokens
-        self._selected = selected
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(64)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._build(tokens)
-        self._apply_style(selected)
-
-    def _build(self, tokens: dict):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 8, 14, 8)
-        layout.setSpacing(12)
-
-        # Colour dot
-        dot = QLabel()
-        dot.setFixedSize(22, 22)
-        dot.setStyleSheet(f"""
-            background-color: {tokens['accent']};
-            border-radius: 11px;
-            border: 2px solid {tokens.get('accent_dark', tokens['accent'])};
-        """)
-        layout.addWidget(dot)
-
-        # Theme name
-        name = QLabel(tokens["label"])
-        name.setStyleSheet(f"""
-            font-size: 13px; font-weight: 600;
-            color: {tokens['text']};
-            font-family: '{tokens.get('font', 'Segoe UI')}';
-            background: transparent;
-        """)
-        layout.addWidget(name, stretch=1)
-
-        # Mini accent badge
-        badge = QLabel("Aa")
-        badge.setFixedSize(36, 22)
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setStyleSheet(f"""
-            background-color: {tokens['accent']};
-            color: {'#000000' if not _is_dark(tokens['accent']) else '#FFFFFF'};
-            border-radius: {min(tokens['radius'], 11)}px;
-            font-size: 10px; font-weight: 700;
-        """)
-        layout.addWidget(badge)
-
-    def _apply_style(self, selected: bool):
-        t   = self._tokens
-        r   = min(t["radius"], 12)
-        bw  = self._SELECTED_BORDER_WIDTH if selected else 1
-        bc  = t["accent_dark"] if selected else t.get("border", t["accent"])
-        # strip the "Npx solid " prefix if border token is already a full string
-        if isinstance(bc, str) and "solid" in bc:
-            bc = t["accent"]
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(14 if selected else 6)
-        shadow.setOffset(0, 4 if selected else 2)
-        r2, g2, b2 = t.get("shadow_color", (60, 60, 80))
-        shadow.setColor(QColor(r2, g2, b2, 120 if selected else 50))
-        self.setGraphicsEffect(shadow)
-
-        self.setStyleSheet(f"""
-            QFrame {{
-                background-color: {t['bg']};
-                border-radius: {r}px;
-                border: {bw}px solid {bc};
-            }}
-        """)
-
-    def set_selected(self, selected: bool):
-        self._selected = selected
-        self._apply_style(selected)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.key)
-        super().mousePressEvent(event)
 
 
 # ──────────────────────────────────────────── custom pill tab bar ──────────
@@ -408,7 +364,6 @@ def _divider(tokens: dict) -> QFrame:
 
 # ══════════════════════════════════════════════════════ Settings Dialog ════
 class SettingsDialog(QDialog):
-    theme_changed  = pyqtSignal(str)
     settings_saved = pyqtSignal()
 
     def __init__(self, settings: FoxSettings, parent=None):
@@ -444,22 +399,19 @@ class SettingsDialog(QDialog):
         self._title_bar.setFixedHeight(52)
         tb_layout = QHBoxLayout(self._title_bar)
         tb_layout.setContentsMargins(20, 0, 12, 0)
-        self._title_lbl = QLabel("⚙  Foxy Settings")
+        self._title_lbl = GradientText("Foxy Settings")
         self._title_lbl.setObjectName("titleLbl")
         tb_layout.addWidget(self._title_lbl)
         tb_layout.addStretch()
-        self._x_btn = QPushButton("×")
+        self._x_btn = _IconButton("close", self.reject, size=32)
         self._x_btn.setObjectName("xBtn")
-        self._x_btn.setFixedSize(32, 32)
-        self._x_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._x_btn.clicked.connect(self.reject)
         tb_layout.addWidget(self._x_btn)
         self._card_layout.addWidget(self._title_bar)
 
         # Tab bar
         self._tab_bar = PillTabBar(
-            ["🎨  Appearance", "🤖  AI Brain", "🦊  Behaviour", "🔑  Foxy Audit"],
-            self.settings.theme_tokens(),
+            ["AI Brain", "Behaviour", "Foxy Audit"],
+            _matte_tokens(),
         )
         tab_wrapper = QWidget()
         tab_wrapper.setObjectName("tabWrapper")
@@ -474,8 +426,6 @@ class SettingsDialog(QDialog):
         self._card_layout.addWidget(self._stack, stretch=1)
 
         # Build all tabs
-        self._swatch_cards: list[ThemeSwatchCard] = []
-        self._stack.addWidget(self._build_appearance_tab())
         self._stack.addWidget(self._build_ai_tab())
         self._stack.addWidget(self._build_behaviour_tab())
         self._stack.addWidget(self._build_foxy_audit_tab())
@@ -510,7 +460,7 @@ class SettingsDialog(QDialog):
         self._tab_bar.tab_changed.connect(self._stack.setCurrentIndex)
 
         # Initial full restyle
-        self._apply_dialog_theme(self.settings.theme_tokens())
+        self._apply_dialog_theme(_matte_tokens())
 
         # Drag-to-move (frameless dialog)
         self._drag_pos = None
@@ -538,6 +488,7 @@ class SettingsDialog(QDialog):
         txt     = t["text"]
         txt_m   = t.get("text_muted", txt)
         font    = t.get("font", "Segoe UI")
+        font_d  = t.get("font_disp", font)
         hdr_bg  = t.get("header_bg", bg)
         hdr_txt = t.get("header_text", txt)
         bdr     = t.get("border", "none")
@@ -568,19 +519,16 @@ class SettingsDialog(QDialog):
                 border-top-right-radius: {card_r}px;
             }}
         """)
-        self._title_lbl.setStyleSheet(f"""
-            font-size: 15px; font-weight: 700;
-            color: {hdr_txt};
-            font-family: '{font}';
-            background: transparent;
-        """)
+        self._title_lbl.setFont(QFont(font_d, 15, QFont.Weight.Bold))
+        self._title_lbl.set_gradient([(0.0, "#ffb474"), (0.5, "#ff7a2e"), (1.0, "#d65a16")])
+        self._title_lbl.setStyleSheet("background: transparent; border: none;")
+        self._x_btn.set_icon_color("#f4efe8")
         self._x_btn.setStyleSheet(f"""
             QPushButton#xBtn {{
-                background: transparent; color: {hdr_txt};
-                border-radius: {min(r,16)}px; font-size: 18px; font-weight: bold;
-                border: none;
+                background: rgba(255,255,255,15);
+                border-radius: {min(r,16)}px; border: none;
             }}
-            QPushButton#xBtn:hover {{ background-color: {acc}; color: #ffffff; }}
+            QPushButton#xBtn:hover {{ background-color: {acc}; }}
         """)
         # Tab wrapper bg
         self._tab_bar.parentWidget().setStyleSheet(
@@ -697,54 +645,9 @@ class SettingsDialog(QDialog):
         for child in self.findChildren(ThemedCheckBox):
             child.apply_tokens(t)
 
-        # Update swatches selection ring colour
-        for card in self._swatch_cards:
-            card.set_selected(card.key == self.settings.theme())
-
-    # ─────────────────────────────── Appearance tab ───────────────
-    def _build_appearance_tab(self) -> QWidget:
-        page = QWidget()
-        page.setObjectName("appearancePage")
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(16, 8, 16, 16)
-        outer.setSpacing(12)
-
-        tokens = self.settings.theme_tokens()
-        outer.addWidget(_section_label("Select a theme", tokens))
-        outer.addWidget(_divider(tokens))
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        inner = QWidget()
-        grid  = QVBoxLayout(inner)
-        grid.setContentsMargins(4, 8, 4, 8)
-        grid.setSpacing(10)
-
-        current = self.settings.theme()
-        for key, tk in THEMES.items():
-            card = ThemeSwatchCard(key, tk, selected=(key == current))
-            card.clicked.connect(self._select_theme)
-            self._swatch_cards.append(card)
-            grid.addWidget(card)
-
-        grid.addStretch()
-        scroll.setWidget(inner)
-        outer.addWidget(scroll, stretch=1)
-        return page
-
-    def _select_theme(self, key: str):
-        self.settings.set_theme(key)
-        tokens = self.settings.theme_tokens()
-        for card in self._swatch_cards:
-            card.set_selected(card.key == key)
-        self._apply_dialog_theme(tokens)
-        self.theme_changed.emit(key)
-
     # ─────────────────────────────── AI Brain tab ─────────────────
     def _build_ai_tab(self) -> QWidget:
-        tokens = self.settings.theme_tokens()
+        tokens = _matte_tokens()
         page   = QWidget()
         page.setObjectName("aiPage")
         layout = QVBoxLayout(page)
@@ -794,7 +697,7 @@ class SettingsDialog(QDialog):
 
         # Test button + status label
         test_row = QHBoxLayout()
-        self._test_btn = QPushButton("⚡  Test Connection")
+        self._test_btn = QPushButton("Test Connection")
         self._test_btn.setObjectName("testBtn")
         self._test_btn.setFixedHeight(36)
         self._test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -838,7 +741,7 @@ class SettingsDialog(QDialog):
         hl.setContentsMargins(0, 0, 0, 0)
         hl.setSpacing(12)
         lbl = QLabel(label_text)
-        lbl.setFixedWidth(100)
+        lbl.setFixedWidth(124)
         lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         hl.addWidget(lbl)
         hl.addWidget(widget, stretch=1)
@@ -867,7 +770,7 @@ class SettingsDialog(QDialog):
 
         self._test_btn.setEnabled(False)
         self._test_btn.setText("Testing…")
-        tokens = self.settings.theme_tokens()
+        tokens = _matte_tokens()
         self._test_status.setStyleSheet(
             f"color: {tokens.get('text_muted', '#888')}; font-size: 12px;"
         )
@@ -884,10 +787,10 @@ class SettingsDialog(QDialog):
 
     def _reset_test_btn(self):
         self._test_btn.setEnabled(True)
-        self._test_btn.setText("⚡  Test Connection")
+        self._test_btn.setText("Test Connection")
 
     def _on_test_ok(self, reply: str):
-        tokens = self.settings.theme_tokens()
+        tokens = _matte_tokens()
         self._test_status.setStyleSheet(
             f"color: {tokens['accent']}; font-size: 12px; font-weight: 600;"
         )
@@ -899,7 +802,7 @@ class SettingsDialog(QDialog):
 
     # ─────────────────────────────── Behaviour tab ────────────────
     def _build_behaviour_tab(self) -> QWidget:
-        tokens = self.settings.theme_tokens()
+        tokens = _matte_tokens()
         page   = QWidget()
         page.setObjectName("behaviourPage")
         layout = QVBoxLayout(page)
@@ -960,7 +863,7 @@ class SettingsDialog(QDialog):
 
     # ─────────────────────────────── Foxy Audit tab ───────────────
     def _build_foxy_audit_tab(self) -> QWidget:
-        tokens = self.settings.theme_tokens()
+        tokens = _matte_tokens()
         page   = QWidget()
         page.setObjectName("foxyAuditPage")
         layout = QVBoxLayout(page)
@@ -996,7 +899,7 @@ class SettingsDialog(QDialog):
 
         # Test button + status label
         test_row = QHBoxLayout()
-        self._foxy_test_btn = QPushButton("⚡  Test Backend")
+        self._foxy_test_btn = QPushButton("Test Backend")
         self._foxy_test_btn.setObjectName("foxyTestBtn")
         self._foxy_test_btn.setFixedHeight(36)
         self._foxy_test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1039,7 +942,7 @@ class SettingsDialog(QDialog):
 
         self._foxy_test_btn.setEnabled(False)
         self._foxy_test_btn.setText("Testing…")
-        tokens = self.settings.theme_tokens()
+        tokens = _matte_tokens()
         self._foxy_test_status.setStyleSheet(
             f"color: {tokens.get('text_muted', '#888')}; font-size: 12px;"
         )
@@ -1056,10 +959,10 @@ class SettingsDialog(QDialog):
 
     def _reset_foxy_btn(self):
         self._foxy_test_btn.setEnabled(True)
-        self._foxy_test_btn.setText("⚡  Test Backend")
+        self._foxy_test_btn.setText("Test Backend")
 
     def _on_foxy_ok(self):
-        tokens = self.settings.theme_tokens()
+        tokens = _matte_tokens()
         self._foxy_test_status.setStyleSheet(
             f"color: {tokens['accent']}; font-size: 12px; font-weight: 600;"
         )
