@@ -152,6 +152,10 @@ def run_forever() -> None:
                     _grade_one(db, row)
                 except Exception as exc:   # noqa: BLE001 — never let one row kill the loop
                     _handle_failure(db, row, s.grading_max_attempts, exc)
+            # Liveness heartbeat (busy OR idle) so /health/ready can detect a
+            # dead/stuck worker before the grading queue backs up silently.
+            db.execute(text("UPDATE worker_heartbeat SET beat_at = now() WHERE id = 1"))
+            db.commit()
         except Exception as exc:           # noqa: BLE001 — claim/DB hiccup: back off
             db.rollback()
             log.warning("poll loop error: %s", exc)

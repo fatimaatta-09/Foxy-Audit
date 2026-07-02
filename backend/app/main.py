@@ -34,10 +34,22 @@ from .routers import (
 )
 
 # The web dashboard (foxy-audit-premium.html) is served same-origin at /dashboard
-# so the human login session cookie works with no CORS/BFF.
-_DASHBOARD_HTML = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "foxy-audit-premium.html")
-)
+# so the human login session cookie works with no CORS/BFF. The file lives at the
+# repo root (local dev); in a container it's mounted at /app (see docker-compose),
+# so resolve across candidates (or FOXY_DASHBOARD_HTML).
+def _find_dashboard_html() -> str:
+    here = os.path.dirname(__file__)  # backend/app
+    candidates = [os.environ.get("FOXY_DASHBOARD_HTML")] + [
+        os.path.abspath(os.path.join(here, "..", "..", "foxy-audit-premium.html")),  # repo root (dev)
+        os.path.abspath(os.path.join(here, "..", "foxy-audit-premium.html")),          # /app (container)
+    ]
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    return candidates[-1]  # last resort — FileResponse will 404 clearly
+
+
+_DASHBOARD_HTML = _find_dashboard_html()
 
 
 @asynccontextmanager

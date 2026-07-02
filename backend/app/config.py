@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # Deployment environment. "prod" makes insecure secret defaults fail fast at
+    # startup (so a real deploy can never silently run on the dev session secret).
+    foxy_env: str = "dev"
     database_url: str = "postgresql+psycopg://foxy:foxy@localhost:5432/foxy"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-1.5-pro"
@@ -23,6 +27,8 @@ class Settings(BaseSettings):
     # Human session auth (dashboard login) — signs the session cookie.
     # MUST be overridden with a strong random value in production (SESSION_SECRET).
     session_secret: str = "dev-insecure-session-secret-change-me"
+    # Server-side pepper mixed into the API-key HMAC (Phase 3 A2). Required in prod.
+    api_key_pepper: str = ""
     # Durable grading queue (Postgres outbox poller — app/worker.py)
     grading_poll_interval: float = 2.0
     grading_batch_size: int = 16
@@ -38,7 +44,22 @@ class Settings(BaseSettings):
     )
 
     def get_cors_origins(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        # A literal "*" is never allowed — wildcard CORS contradicts the security USP.
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip() and o.strip() != "*"]
+
+    @model_validator(mode="after")
+    def _require_secure_prod(self):
+        """Fail fast if a prod deploy is left on insecure secret defaults."""
+        if self.foxy_env.lower() == "prod":
+            missing = []
+            if self.session_secret in ("", "dev-insecure-session-secret-change-me"):
+                missing.append("SESSION_SECRET")
+            if not self.api_key_pepper:
+                missing.append("API_KEY_PEPPER")
+            if missing:
+                raise ValueError(
+                    "FOXY_ENV=prod requires strong values for: " + ", ".join(missing))
+        return self
 
 
 @lru_cache

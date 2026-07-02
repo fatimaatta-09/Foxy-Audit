@@ -16,15 +16,30 @@ services:
       timeout: 3s
       retries: 10
 
-  foxy-seed:
+  # Run migrations to head, then exit. Everything below waits for this to succeed
+  # (nothing else migrated the schema before).
+  foxy-migrate:
     build: .
-    container_name: foxy_seed
+    container_name: foxy_migrate
     depends_on:
       db:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://foxy:foxy@db:5432/foxy
-    command: python scripts/seed_org.py
+      - DATABASE_URL=postgresql+psycopg://foxy:foxy@db:5432/foxy
+    command: alembic upgrade head
+
+  # One-shot: create a demo org + admin user (the API key is printed in its logs).
+  foxy-seed:
+    build: .
+    container_name: foxy_seed
+    depends_on:
+      foxy-migrate:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=postgresql+psycopg://foxy:foxy@db:5432/foxy
+    command: >
+      python scripts/seed_org.py --name "Demo Corp"
+      --admin-email admin@demo.test --admin-password adminpass123
 
   foxy-backend:
     build: .
@@ -32,14 +47,27 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      foxy-migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://foxy:foxy@db:5432/foxy
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - SECRET_KEY=${SECRET_KEY:-foxy_demo_secret}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,*}
+      - DATABASE_URL=postgresql+psycopg://foxy:foxy@db:5432/foxy
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - SESSION_SECRET=${SESSION_SECRET:-foxy_demo_session_secret}
+      - API_KEY_PEPPER=${API_KEY_PEPPER:-foxy_demo_pepper}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    volumes:
+      # The dashboard HTML lives at the repo root (outside this build context).
+      - ../foxy-audit-premium.html:/app/foxy-audit-premium.html:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
 
   # Durable grading poller — drains the audit_logs Postgres outbox (app/worker.py).
   # No Redis: the queue lives in Postgres, so this is stateless and restart-safe.
@@ -49,10 +77,19 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      foxy-migrate:
+        condition: service_completed_successfully
     environment:
       - DATABASE_URL=postgresql+psycopg://foxy:foxy@db:5432/foxy
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     command: python -m app.worker_main
+    # Healthy only if the poller wrote a heartbeat in the last 30s (detects a hang).
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,psycopg,datetime as d,sys; u=os.environ['DATABASE_URL'].replace('+psycopg',''); c=psycopg.connect(u); r=c.execute('SELECT beat_at FROM worker_heartbeat WHERE id=1').fetchone(); c.close(); sys.exit(0 if r and r[0] and (d.datetime.now(d.timezone.utc)-r[0]).total_seconds()<30 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 15s
     restart: unless-stopped
 
 volumes:
