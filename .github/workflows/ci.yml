@@ -24,6 +24,41 @@ jobs:
       - name: Hash-chain regression test
         run: pytest backend/tests/test_chain.py -q
 
+  # Full backend integration suite against a real Postgres: auth/RBAC, tenant
+  # isolation, HMAC keys + legacy fallback, ingest->chain->verify (incl. tamper),
+  # /health/ready, policy->judge wiring, and public-chain anchoring (stub provider).
+  backend-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: foxy
+          POSTGRES_PASSWORD: foxy
+          POSTGRES_DB: foxy_pytest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U foxy -d foxy_pytest"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://foxy:foxy@localhost:5432/foxy_pytest
+      API_KEY_PEPPER: testpepper
+      SESSION_SECRET: test-session-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install backend deps + test tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest httpx
+      - name: Integration tests (conftest runs alembic upgrade head)
+        working-directory: backend
+        run: pytest tests/integration -q
+
   # Syntax/compile gate for the PyQt6 desktop app. Uses py_compile so it needs
   # no Qt platform libraries or GUI on the runner.
   desktop-compile:
