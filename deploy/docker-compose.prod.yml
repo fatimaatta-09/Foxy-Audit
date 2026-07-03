@@ -1,0 +1,134 @@
+# Production stack for foxyaudit.tech — run FROM THE REPO ROOT on the VM:
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up --build -d
+#
+# Topology: Caddy is the only service with published ports (80/443). It
+# terminates TLS for foxyaudit.tech (+www, static sale page), app.foxyaudit.tech
+# and admin.foxyaudit.tech (both proxied to the one backend). Postgres and the
+# backend are reachable ONLY on the internal compose network — which is also why
+# the backend may trust proxy headers (--forwarded-allow-ips): nothing but Caddy
+# can reach it.
+#
+# Secrets come from deploy/.env (create from deploy/.env.example — NEVER commit).
+# FOXY_ENV=prod is hardcoded here so the config fail-fast (strong, distinct
+# secrets; TLS-only cookies) can't be switched off by a missing variable.
+
+name: foxy-prod
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: foxy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in deploy/.env}
+      POSTGRES_DB: foxy
+    volumes:
+      - foxy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foxy -d foxy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Run migrations to head, then exit. Everything below waits for this.
+  foxy-migrate:
+    build: ../backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+psycopg://foxy:${POSTGRES_PASSWORD:?}@db:5432/foxy
+    command: alembic upgrade head
+
+  foxy-backend:
+    build: ../backend
+    depends_on:
+      db:
+        condition: service_healthy
+      foxy-migrate:
+        condition: service_completed_successfully
+    environment:
+      - FOXY_ENV=prod
+      - DATABASE_URL=postgresql+psycopg://foxy:${POSTGRES_PASSWORD:?}@db:5432/foxy
+      - SESSION_SECRET=${SESSION_SECRET:?set in deploy/.env}
+      - STAFF_SESSION_SECRET=${STAFF_SESSION_SECRET:?set in deploy/.env}
+      - API_KEY_PEPPER=${API_KEY_PEPPER:?set in deploy/.env}
+      - STAFF_COOKIE_DOMAIN=${STAFF_COOKIE_DOMAIN:-admin.foxyaudit.tech}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://foxyaudit.tech,https://www.foxyaudit.tech}
+      - ADMIN_CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-}
+      - ADMIN_IP_ALLOWLIST=${ADMIN_IP_ALLOWLIST:-}
+      - TRAFFIC_TRACKING_ENABLED=${TRAFFIC_TRACKING_ENABLED:-true}
+      - TRAFFIC_RETENTION_DAYS=${TRAFFIC_RETENTION_DAYS:-90}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+    volumes:
+      # Dashboard + ops-console HTML live at the repo root, outside the build context.
+      - ../foxy-dashboard/foxy-audit-premium.html:/app/foxy-audit-premium.html:ro
+      - ../foxy-adminpage/index.html:/app/foxy-adminpage.html:ro
+    # --proxy-headers: real client IP/scheme from Caddy's X-Forwarded-* — needed
+    # for rate-limit keys, traffic ip_hash, and the admin IP allow-list.
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --proxy-headers --forwarded-allow-ips=*
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  # Grading poller + anchoring + usage_daily rollups + traffic partition upkeep.
+  foxy-worker:
+    build: ../backend
+    depends_on:
+      db:
+        condition: service_healthy
+      foxy-migrate:
+        condition: service_completed_successfully
+    environment:
+      - FOXY_ENV=prod
+      - DATABASE_URL=postgresql+psycopg://foxy:${POSTGRES_PASSWORD:?}@db:5432/foxy
+      - SESSION_SECRET=${SESSION_SECRET:?}
+      - STAFF_SESSION_SECRET=${STAFF_SESSION_SECRET:?}
+      - API_KEY_PEPPER=${API_KEY_PEPPER:?}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - USAGE_ROLLUP_INTERVAL=${USAGE_ROLLUP_INTERVAL:-300}
+      - TRAFFIC_RETENTION_DAYS=${TRAFFIC_RETENTION_DAYS:-90}
+      - ANCHOR_ENABLED=${ANCHOR_ENABLED:-false}
+      - ANCHOR_PROVIDER=${ANCHOR_PROVIDER:-stub}
+      - ANCHOR_INTERVAL_SECONDS=${ANCHOR_INTERVAL_SECONDS:-3600}
+      - ANCHOR_EVM_RPC_URL=${ANCHOR_EVM_RPC_URL:-}
+      - ANCHOR_EVM_CHAIN=${ANCHOR_EVM_CHAIN:-sepolia}
+      - ANCHOR_EVM_PRIVATE_KEY=${ANCHOR_EVM_PRIVATE_KEY:-}
+      - ANCHOR_EVM_CONTRACT=${ANCHOR_EVM_CONTRACT:-}
+    command: python -m app.worker_main
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,psycopg,datetime as d,sys; u=os.environ['DATABASE_URL'].replace('+psycopg',''); c=psycopg.connect(u); r=c.execute('SELECT beat_at FROM worker_heartbeat WHERE id=1').fetchone(); c.close(); sys.exit(0 if r and r[0] and (d.datetime.now(d.timezone.utc)-r[0]).total_seconds()<30 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 15s
+    restart: unless-stopped
+
+  # TLS + routing for all three sites. Certs auto-provisioned via Let's Encrypt
+  # once the DNS A records point at this VM.
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../foxy-sale-page:/srv/sale:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - foxy-backend
+    restart: unless-stopped
+
+volumes:
+  foxy_pgdata:
+  caddy_data:
+  caddy_config:

@@ -1756,9 +1756,14 @@ function submitContact(btn) {
 // ═══════════════════════════════════════════════
 // BACKEND — LEAD CAPTURE + PAGEVIEW BEACON
 // ═══════════════════════════════════════════════
-// Deployments set window.FOXY_API to the backend origin (e.g. https://app.foxyaudit.com)
-// and must include this marketing site's origin in the backend's CORS_ORIGINS.
-const FOXY_API = window.FOXY_API || 'http://localhost:8000';
+// Backend origin. Localhost dev talks to the local API; any real deploy derives
+// the app subdomain from its own hostname (foxyaudit.tech -> app.foxyaudit.tech).
+// Override by setting window.FOXY_API before this script. The marketing origin
+// must be in the backend's CORS_ORIGINS either way.
+const FOXY_API = window.FOXY_API ||
+  ((location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : 'https://app.' + location.hostname.replace(/^www\./, ''));
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);

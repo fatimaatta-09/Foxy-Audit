@@ -1,0 +1,31 @@
+# foxyaudit.tech — three sites, one backend. Caddy auto-provisions Let's Encrypt
+# certificates for every hostname below (DNS must already point at this VM).
+# Caddy ignores client-supplied X-Forwarded-For (no trusted_proxies configured),
+# so the backend always sees the real client IP.
+
+# Site 1 — marketing (static)
+foxyaudit.tech, www.foxyaudit.tech {
+	encode gzip
+	root * /srv/sale
+	file_server
+}
+
+# Site 2 — customer dashboard (backend, same-origin session cookie)
+app.foxyaudit.tech {
+	encode gzip
+	redir / /dashboard 302
+	# the staff surface is never reachable via the customer hostname
+	@admin path /admin*
+	respond @admin 404
+	reverse_proxy foxy-backend:8000
+}
+
+# Site 3 — staff ops console (backend, /admin only)
+admin.foxyaudit.tech {
+	encode gzip
+	redir / /admin/ 302
+	# nothing but the staff surface is served on the admin hostname
+	@notadmin not path /admin*
+	respond @notadmin 404
+	reverse_proxy foxy-backend:8000
+}

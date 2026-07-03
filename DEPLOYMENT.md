@@ -1,79 +1,100 @@
-# Foxy Audit — Three-Site Deployment Split
+# Foxy Audit — Production Deployment (foxyaudit.tech)
 
-How the three sites deploy to three subdomains against ONE backend and ONE database
-(Phase 4 handoff item 5). The separation is folders + subdomains — never git branches,
-never separate databases.
+Three sites, ONE backend, ONE database, deployed as a docker-compose stack on a
+single VM (public IP **34.18.4.58**) behind Caddy for TLS. Separation is
+folders + subdomains — never git branches, never separate databases.
 
-| Site | Folder | Subdomain | Serving model |
-|------|--------|-----------|---------------|
-| 1 · Marketing | `foxy-sale-page/` | `foxyaudit.com` | Static hosting (any CDN). Calls the backend cross-origin. |
-| 2 · Customer dashboard | `foxy-dashboard/foxy-audit-premium.html` | `app.foxyaudit.com` | Served BY the backend at `GET /dashboard` (same-origin — session cookie needs no CORS). |
-| 3 · Staff ops console | `foxy-adminpage/index.html` | `admin.foxyaudit.com` | Served BY the backend at `GET /admin/` (same-origin — staff cookie has `Path=/admin`). |
+| Site | Folder | URL | Serving model |
+|------|--------|-----|---------------|
+| 1 · Marketing | `foxy-sale-page/` | `https://foxyaudit.tech` (+`www`) | Static, served by Caddy `file_server`. Calls the backend cross-origin. |
+| 2 · Customer dashboard | `foxy-dashboard/foxy-audit-premium.html` | `https://app.foxyaudit.tech` | Backend serves it at `/dashboard` (same-origin session cookie, no CORS). |
+| 3 · Staff ops console | `foxy-adminpage/index.html` | `https://admin.foxyaudit.tech` | Backend serves it at `/admin/` (staff cookie `Path=/admin`). Caddy 404s everything except `/admin*` on this host. |
 
-Sites 2 and 3 are the SAME backend process behind two hostnames: point both
-`app.foxyaudit.com` and `admin.foxyaudit.com` at it. The `/admin` mount carries its own
-isolated middleware stack (distinct cookie + secret + CORS + IP guard), so hostname
-routing needs no special rules — but you MAY additionally block `/admin/*` on the
-`app.` vhost at the proxy for belt-and-braces.
+The stack (`deploy/docker-compose.prod.yml`): Postgres 16 → alembic migrate →
+API (uvicorn, `--proxy-headers`) → worker (grading, anchoring, rollups, traffic
+partitions) → Caddy (the only service with published ports, 80/443).
 
-## Backend environment (prod)
+## How deploys happen (CI/CD)
 
-`FOXY_ENV=prod` makes startup FAIL unless all of this is set correctly (see
-`backend/app/config.py::_require_secure_prod`) and forces TLS-only cookies:
+Push to `main` → `.github/workflows/deploy.yml`:
+
+1. **secret-scan** — GitLeaks over full git history
+2. **dependency-scan** — Trivy filesystem scan + CycloneDX SBOM artifact
+3. **quick-tests** — SDK tests + hash-chain regression (the full 80-test
+   Postgres integration suite runs in parallel in `ci.yml` on the same push)
+4. **image-scan** — builds `backend/Dockerfile` and Trivy-scans the image
+5. **deploy** — SSH to the VM (`appleboy/ssh-action`), `git reset --hard
+   origin/main`, `docker compose -f deploy/docker-compose.prod.yml --env-file
+   deploy/.env up --build -d`
+
+Scanners are report-only (`exit-code: 0`); flip to `1` to make findings block.
+
+## One-time setup
+
+**1. DNS** — A records, all → `34.18.4.58`:
+`foxyaudit.tech`, `www.foxyaudit.tech`, `app.foxyaudit.tech`, `admin.foxyaudit.tech`.
+Caddy auto-provisions Let's Encrypt certs on first request — DNS must resolve first.
+
+**2. GitHub repo secrets** (Settings → Secrets → Actions):
+- `VM_HOST1` = `34.18.4.58`
+- `VM_USER1` = the VM login user
+- `VM_SSH_KEY1` = private key whose public half is in the VM's `~/.ssh/authorized_keys`
+- `GITLEAKS_LICENSE` — only if the repo moves into a GitHub organization
+
+**3. On the VM** (Ubuntu assumed; ports 22/80/443 open in the cloud firewall):
 
 ```bash
-FOXY_ENV=prod
-DATABASE_URL=postgresql+psycopg://…                 # managed Postgres 16
-SESSION_SECRET=<strong random>                      # customer cookie
-STAFF_SESSION_SECRET=<different strong random>      # staff cookie — MUST differ
-API_KEY_PEPPER=<strong random — set once, never rotate casually>
-STAFF_COOKIE_DOMAIN=admin.foxyaudit.com             # staff cookie never leaves the admin host
-CORS_ORIGINS=https://foxyaudit.com                  # marketing origin (for /v1/leads + /v1/track)
-ADMIN_CORS_ORIGINS=                                 # empty — admin UI is same-origin at /admin/
-ADMIN_IP_ALLOWLIST=<office/VPN egress IPs, comma-separated>
-TRAFFIC_TRACKING_ENABLED=true
-TRAFFIC_RETENTION_DAYS=90
-USAGE_ROLLUP_INTERVAL=300
+# docker + compose plugin, git
+curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER
+# first clone + prod secrets (the deploy workflow refuses to run without deploy/.env)
+git clone https://github.com/fatimaatta-09/Foxy-Audit.git ~/foxy-audit
+cd ~/foxy-audit && cp deploy/.env.example deploy/.env && nano deploy/.env
 ```
 
-Generate secrets with `python -c "import secrets;print(secrets.token_urlsafe(48))"`.
-The full annotated list lives in `backend/.env.example`; `backend/docker-compose.yml`
-passes every var through.
+Fill `deploy/.env` with strong values (`python3 -c "import secrets;print(secrets.token_urlsafe(48))"`).
+`FOXY_ENV=prod` is hardcoded in the compose file, so the backend refuses to start
+on weak/equal/missing secrets. **Never commit `deploy/.env`** (gitignored).
 
-## Per-site wiring
+**4. First deploy + staff bootstrap** — push to `main` (or run the workflow
+manually), then create the first superadmin ONCE:
 
-- **Marketing (site 1):** static deploy of `foxy-sale-page/`. Set the backend origin
-  before the page's inline script: `<script>window.FOXY_API='https://app.foxyaudit.com'</script>`
-  — and keep `https://foxyaudit.com` in `CORS_ORIGINS` or the lead form + pageview
-  beacon preflights will fail.
-- **Dashboard (site 2):** nothing to deploy separately — the backend serves the HTML
-  (override the file location with `FOXY_DASHBOARD_HTML` if the container layout
-  differs; compose already bind-mounts it read-only).
-- **Admin (site 3):** served at `GET /admin/` (`FOXY_ADMIN_HTML` override available).
-  Bootstrap the first superadmin ONCE:
-  `python scripts/seed_staff.py --email you@foxy.audit --password '<strong>'`
-  (it refuses to run if staff already exist).
+```bash
+cd ~/foxy-audit
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env \
+  exec foxy-backend python scripts/seed_staff.py --email you@foxy.audit --password '<strong>'
+# and a first customer org if needed:
+#   ... exec foxy-backend python scripts/seed_org.py --name "First Corp" --admin-email admin@corp.com --admin-password '<strong>'
+```
 
-## Reverse proxy requirements
+## Security wiring worth knowing
 
-- Terminate TLS for all three hostnames; prod cookies are `Secure`-only so plain HTTP
-  logins will silently fail.
-- The admin IP allow-list trusts the FIRST `X-Forwarded-For` hop. The proxy MUST
-  overwrite (not append to) any client-supplied `X-Forwarded-For`, or the guard can be
-  spoofed. It is defense-in-depth on top of `require_staff`, never a replacement.
-
-## Don't forget the worker
-
-Run `python -m app.worker_main` (compose service `foxy-worker`) alongside the API. It
-owns grading, anchoring, `usage_daily` rollups, AND `traffic_events` partition
-create/drop — if it stops for long, inserts fall into the DEFAULT partition (never
-lost, but monthly partitions for months with rows already in DEFAULT can no longer be
-created, so keep it running).
+- **Cookies:** customer `session` on `app.`, staff `foxy_staff_session` scoped to
+  `Domain=admin.foxyaudit.tech; Path=/admin`. Distinct secrets enforced at startup.
+- **Proxy trust:** the backend runs `--forwarded-allow-ips=*`, which is safe ONLY
+  because nothing but Caddy can reach it (no published port). Caddy ignores
+  client-supplied `X-Forwarded-For`, so rate-limit keys, traffic `ip_hash`, and
+  `ADMIN_IP_ALLOWLIST` all see real client IPs. Don't ever publish port 8000.
+- **Host guards:** Caddy 404s `/admin*` on the app host and everything except
+  `/admin*` on the admin host — belt-and-braces on top of the cookie separation.
+- **Marketing → backend:** the sale page auto-derives `https://app.<domain>`
+  from its own hostname; `CORS_ORIGINS` in `deploy/.env` must list the marketing
+  origins (it does by default).
+- **Stripe:** point the webhook at `https://app.foxyaudit.tech/v1/webhooks/stripe`
+  and set both `STRIPE_*` vars in `deploy/.env`.
 
 ## Post-deploy smoke checklist
 
-1. `https://app.foxyaudit.com/health/ready` → 200.
-2. `https://app.foxyaudit.com/dashboard` → login works; Billing page loads usage + invoices.
-3. `https://admin.foxyaudit.com/admin/` → staff login works from an allow-listed IP; 403 from elsewhere.
-4. A customer session cookie on any `/admin/v1/*` route → 401 (channel separation).
-5. Marketing page → submit the contact form → row lands in `marketing_leads`; pageview lands in `traffic_events` with `site='marketing'`.
+1. `https://app.foxyaudit.tech/health/ready` → 200.
+2. `https://foxyaudit.tech` loads; contact form submits (row in `marketing_leads`).
+3. `https://app.foxyaudit.tech` → redirects to `/dashboard`; login works; Billing page loads.
+4. `https://admin.foxyaudit.tech` → redirects to `/admin/`; staff login works;
+   `https://app.foxyaudit.tech/admin/` → 404 (host guard).
+5. A customer session cookie on any `/admin/v1/*` route → 401 (channel separation).
+6. `docker compose ... ps` → `foxy-worker` healthy (heartbeat < 30 s old).
+
+## Don't forget the worker
+
+`foxy-worker` owns grading, anchoring, `usage_daily` rollups AND `traffic_events`
+partition create/drop. If it stops for long, inserts fall into the DEFAULT
+partition (never lost), but monthly partitions for months that already have rows
+in DEFAULT can no longer be created — keep it running (compose restarts it).
