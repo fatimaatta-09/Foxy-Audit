@@ -21,6 +21,7 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..anchor import latest_anchor
 from ..auth import resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
 from ..db import get_db
@@ -111,6 +112,21 @@ def generate_passport(
         (compliant_events / total_events * 100) if total_events else 100, 1
     )
 
+    # ── Public-chain anchor (Phase 3 A1) — cite it if the org has one ────
+    anchor = latest_anchor(db, org.id)
+    anchor_ctx = None
+    if anchor is not None:
+        anchor_ctx = {
+            "chain": anchor.chain,
+            "status": anchor.status,
+            "tx_hash": anchor.tx_hash,
+            "block_number": anchor.block_number,
+            "root_hash": anchor.root_hash,
+            "last_seq": anchor.last_seq,
+            "anchored_at": anchor.anchored_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+            if anchor.anchored_at else None,
+        }
+
     # ── Render ───────────────────────────────────────────────────────────
     template = _jinja_env.get_template("compliance_passport.html")
     html_string = template.render(
@@ -131,6 +147,7 @@ def generate_passport(
         last_seq=rows[-1].seq if rows else "—",
         root_hash=rows[-1].chain_hash if rows else GENESIS_HASH,
         genesis_hash=GENESIS_HASH,
+        anchor=anchor_ctx,
     )
     
     # Prefer a signed PDF, but degrade to HTML if weasyprint's native libraries

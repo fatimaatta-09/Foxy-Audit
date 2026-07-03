@@ -141,3 +141,33 @@ class ApiKey(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
 
+
+class ChainAnchor(Base):
+    """A public-chain anchor of an org's hash-chain head (Phase 3 A1).
+
+    Each row records that the org's chain head (``root_hash`` = the latest
+    audit_logs.chain_hash at ``last_seq``) was published to a public chain in
+    transaction ``tx_hash``. Once confirmed, anyone holding this receipt can
+    check the on-chain value and prove the ledger existed in that state at that
+    block — so tampering is detectable EXTERNALLY, not just by our own recompute.
+    RLS-scoped by org_id like audit_logs; also filtered in app code.
+    """
+    __tablename__ = "chain_anchors"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    root_hash: Mapped[str] = mapped_column(String(64), nullable=False)   # chain head at anchor time
+    last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)    # seq of the head row
+    chain: Mapped[str] = mapped_column(String(32), nullable=False)       # sepolia | stub | bitcoin
+    tx_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    block_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="pending")           # pending|confirmed|failed
+    detail: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    anchored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+

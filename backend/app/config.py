@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     session_secret: str = "dev-insecure-session-secret-change-me"
     # Server-side pepper mixed into the API-key HMAC (Phase 3 A2). Required in prod.
     api_key_pepper: str = ""
+    # Public-chain anchoring (Phase 3 A1) — periodically publish each org's chain
+    # head (latest audit_logs.chain_hash) to a public chain so tampering is
+    # externally detectable, not just internally recomputable. Provider is
+    # pluggable: 'stub' (no external chain, for dev/tests), 'evm' (web3 ->
+    # AnchorRegistry on Sepolia/any EVM), or 'opentimestamps' (Bitcoin).
+    anchor_enabled: bool = False
+    anchor_provider: str = "stub"              # stub | evm | opentimestamps
+    anchor_interval_seconds: int = 3600
+    anchor_evm_rpc_url: str = ""
+    anchor_evm_chain: str = "sepolia"
+    anchor_evm_private_key: str = ""           # funded testnet key; required for 'evm'
+    anchor_evm_contract: str = ""              # deployed AnchorRegistry address
     # Durable grading queue (Postgres outbox poller — app/worker.py)
     grading_poll_interval: float = 2.0
     grading_batch_size: int = 16

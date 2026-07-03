@@ -42,11 +42,26 @@ class LogResponse(BaseModel):
     verdict: Verdict | None = None
 
 
+class LastAnchor(BaseModel):
+    """The org's most recent public-chain anchor (Phase 3 A1), if any."""
+    chain: str
+    status: str
+    root_hash: str
+    last_seq: int
+    tx_hash: str | None = None
+    block_number: int | None = None
+    anchored_at: str | None = None
+    # True when the anchored root still matches a fresh recompute of the chain up
+    # to last_seq — i.e. nothing before the anchor point was tampered with.
+    matches_current_chain: bool | None = None
+
+
 class VerifyResponse(BaseModel):
     ok: bool
     count: int
     first_broken_seq: int | None = None
     detail: str | None = None
+    last_anchor: LastAnchor | None = None
 
 
 class LogListItem(BaseModel):

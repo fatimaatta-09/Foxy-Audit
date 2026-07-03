@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import signal
+import threading
 import time
 import uuid
 
@@ -29,6 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import gemini
+from .anchor import anchor_all_due
 from .config import get_settings
 from .db import SessionLocal
 from .models import OrgPolicy
@@ -125,6 +127,30 @@ def _handle_failure(db: Session, row, max_attempts: int, exc: Exception) -> None
                 row["id"], attempts, exc)
 
 
+def _anchor_loop(stopping: dict, s) -> None:
+    """Anchor each org's chain head on an interval, in its OWN thread and DB
+    session. Kept off the grading poll loop so a slow chain RPC (an EVM receipt
+    wait can take many seconds) can never starve grading or delay the liveness
+    heartbeat — 'anchoring never blocks ingest/grading'."""
+    log.info("Public-chain anchoring ON (provider=%s interval=%ss)",
+             s.anchor_provider, s.anchor_interval_seconds)
+    while not stopping["flag"]:
+        db = SessionLocal()
+        try:
+            n = anchor_all_due(db, s)
+            if n:
+                log.info("anchored %s org(s)", n)
+        except Exception as exc:               # noqa: BLE001 — a bad sweep must not kill the thread
+            log.warning("anchor loop error: %s", exc)
+        finally:
+            db.close()
+        # Interruptible sleep so shutdown is prompt even on a long interval.
+        waited = 0.0
+        while waited < s.anchor_interval_seconds and not stopping["flag"]:
+            time.sleep(min(1.0, s.anchor_interval_seconds - waited))
+            waited += 1.0
+
+
 def run_forever() -> None:
     """Poll the outbox until interrupted. Entry point for `app.worker_main`."""
     s = get_settings()
@@ -142,6 +168,10 @@ def run_forever() -> None:
     except ValueError:
         pass   # not the main thread (e.g. a lifespan-daemon fallback)
 
+    if s.anchor_enabled:
+        threading.Thread(target=_anchor_loop, args=(stopping, s),
+                         name="foxy-anchor", daemon=True).start()
+
     while not stopping["flag"]:
         rows: list = []
         db = SessionLocal()
@@ -156,6 +186,8 @@ def run_forever() -> None:
             # dead/stuck worker before the grading queue backs up silently.
             db.execute(text("UPDATE worker_heartbeat SET beat_at = now() WHERE id = 1"))
             db.commit()
+            # NOTE: public-chain anchoring runs in its own thread (_anchor_loop),
+            # NOT here — a slow chain RPC must never stall grading or the heartbeat.
         except Exception as exc:           # noqa: BLE001 — claim/DB hiccup: back off
             db.rollback()
             log.warning("poll loop error: %s", exc)

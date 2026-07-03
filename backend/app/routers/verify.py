@@ -11,13 +11,36 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
+from ..anchor import latest_anchor, recompute_head
 from ..auth import resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
 from ..db import get_db
 from ..models import AuditLog, Organization
-from ..schemas import VerifyResponse
+from ..schemas import LastAnchor, VerifyResponse
 
 router = APIRouter()
+
+
+def _last_anchor(db, org_id, cross_check: bool) -> LastAnchor | None:
+    """Build the LastAnchor block. When cross_check is set, recompute the chain
+    up to the anchored seq and compare to the anchored root; skipped for very
+    long chains (same guard as full verify) so /v1/verify never does an
+    unbounded recompute on every call — matches_current_chain stays None then."""
+    a = latest_anchor(db, org_id)
+    if a is None:
+        return None
+    matches = None
+    if cross_check:
+        try:
+            matches = (recompute_head(db, org_id, a.last_seq) == a.root_hash)
+        except Exception:  # pragma: no cover — never let the cross-check break verify
+            matches = None
+    return LastAnchor(
+        chain=a.chain, status=a.status, root_hash=a.root_hash, last_seq=a.last_seq,
+        tx_hash=a.tx_hash, block_number=a.block_number,
+        anchored_at=a.anchored_at.isoformat() if a.anchored_at else None,
+        matches_current_chain=matches,
+    )
 
 
 @router.get("/v1/verify", response_model=VerifyResponse)
@@ -29,12 +52,15 @@ def verify(
         select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org.id)
     ).scalar_one()
 
+    anchor = _last_anchor(db, org.id, cross_check=(total <= 50000))
+
     if total > 50000:
         return VerifyResponse(
             ok=False,
             count=total,
             first_broken_seq=None,
-            detail="chain too long for full verify, use partial window"
+            detail="chain too long for full verify, use partial window",
+            last_anchor=anchor,
         )
 
     rows = db.execute(
@@ -58,7 +84,9 @@ def verify(
                 count=total,
                 first_broken_seq=row.seq,
                 detail=f"chain hash mismatch at seq {row.seq}",
+                last_anchor=anchor,
             )
         prev_hash = row.chain_hash
 
-    return VerifyResponse(ok=True, count=total, first_broken_seq=None, detail="chain intact")
+    return VerifyResponse(ok=True, count=total, first_broken_seq=None,
+                          detail="chain intact", last_anchor=anchor)

@@ -217,6 +217,37 @@
         </div>
     </div>
 
+    <!-- Public Chain Anchor -->
+    {% if anchor %}
+    <div class="section">
+        <h2>Public Chain Anchor</h2>
+        <dl class="kv-grid">
+            <dt>Public Chain</dt>     <dd>{{ anchor.chain }}</dd>
+            <dt>Status</dt>
+            <dd>
+                {% if anchor.status == "confirmed" %}
+                <span class="breach-no">CONFIRMED on-chain</span>
+                {% else %}
+                <span class="breach-yes">{{ anchor.status|upper }}</span>
+                {% endif %}
+            </dd>
+            <dt>Anchored Head Seq</dt><dd>{{ anchor.last_seq }}</dd>
+            {% if anchor.tx_hash %}<dt>Transaction</dt><dd class="mono">{{ anchor.tx_hash }}</dd>{% endif %}
+            {% if anchor.block_number is not none %}<dt>Block</dt><dd>{{ anchor.block_number }}</dd>{% endif %}
+            <dt>Anchored At</dt>      <dd>{{ anchor.anchored_at or "—" }}</dd>
+        </dl>
+        <div style="margin-top: 12px;">
+            <strong style="font-size: 12px; color: #374151;">Anchored Root Hash:</strong>
+            <div class="hash-block">{{ anchor.root_hash }}</div>
+        </div>
+        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">
+            This root was published to a public chain, so its existence at that block is
+            independently checkable — tampering with any earlier record is detectable by a
+            third party, not only by the system operator.
+        </p>
+    </div>
+    {% endif %}
+
     <!-- Trust Statement -->
     <div class="section">
         <h2>Trust Model</h2>

@@ -5,7 +5,9 @@ Endpoints:
   POST /v1/logs/batch        ingest metadata -> chain -> 202 -> background Gemini
   GET  /v1/logs              fetch paginated audit log rows
   GET  /v1/logs/{seq}        fetch single row by sequence number
-  GET  /v1/verify            recompute the chain, detect tampering
+  GET  /v1/verify            recompute the chain, detect tampering (+ last anchor)
+  GET  /v1/anchors           list public-chain anchor receipts
+  POST /v1/anchors           publish the chain head to a public chain (admin)
   POST /v1/passport          generate a compliance passport (HTML)
   POST /v1/keys/rotate       rotate the org's API key
   GET  /v1/policies          fetch active policy config
@@ -30,7 +32,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import get_settings
 from .routers import (
-    analytics, auth_human, billing, health, keys, logs, passport, policies, verify,
+    analytics, anchors, auth_human, billing, health, keys, logs, passport, policies,
+    verify,
 )
 
 # The web dashboard (foxy-audit-premium.html) is served same-origin at /dashboard
@@ -95,6 +98,7 @@ app.include_router(keys.router, tags=["keys"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(policies.router, tags=["policies"])
 app.include_router(analytics.router, tags=["analytics"])
+app.include_router(anchors.router, tags=["anchors"])
 
 
 @app.get("/")

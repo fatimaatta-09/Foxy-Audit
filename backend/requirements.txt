@@ -13,3 +13,6 @@ slowapi>=0.1.9
 weasyprint>=61.0
 bcrypt>=4.1
 itsdangerous>=2.1
+# Public-chain anchoring (Phase 3 A1). Only needed for anchor_provider=evm; the
+# import is lazy so the app + the 'stub' provider run fine without it installed.
+web3>=6.0
