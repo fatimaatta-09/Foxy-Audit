@@ -13,9 +13,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..auth import resolve_org
+from ..auth import require_role, resolve_org
 from ..db import get_db
-from ..models import OrgPolicy, Organization
+from ..models import OrgPolicy, Organization, User
 
 router = APIRouter()
 
@@ -56,14 +56,20 @@ def get_policies(
 @router.put("/v1/policies", response_model=PolicyConfig)
 def update_policies(
     body: PolicyConfig,
-    org: Organization = Depends(resolve_org),
+    admin: User = Depends(require_role("admin")),
     db: Session = Depends(get_db),
 ) -> PolicyConfig:
-    """Update the org's compliance policy settings.
+    """Update the org's compliance policy settings — ADMIN humans only.
+
+    Hardened (Phase 4 #1): previously used resolve_org, which let a bare SDK
+    Bearer key or any 'member' rewrite compliance policy. Writing the rules that
+    govern the auditor is a privileged act, so it now requires an admin dashboard
+    session. require_role already scoped RLS to the admin's org.
 
     Changes take effect for all interactions processed AFTER this call.
     The Gemini evaluator reads these flags on every grading job.
     """
+    org = db.get(Organization, admin.org_id)
     row = _get_or_create(org, db)
     row.pii_detection = body.pii_detection
     row.prompt_injection = body.prompt_injection

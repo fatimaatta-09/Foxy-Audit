@@ -1,20 +1,28 @@
-"""Foxy Audit backend — FastAPI ingestion service.
+"""Foxy Audit backend — FastAPI ingestion service + admin platform.
 
-Endpoints:
-  GET  /v1/health            liveness + key check (desktop app probes this)
-  POST /v1/logs/batch        ingest metadata -> chain -> 202 -> background Gemini
-  GET  /v1/logs              fetch paginated audit log rows
-  GET  /v1/logs/{seq}        fetch single row by sequence number
-  GET  /v1/verify            recompute the chain, detect tampering (+ last anchor)
-  GET  /v1/anchors           list public-chain anchor receipts
-  POST /v1/anchors           publish the chain head to a public chain (admin)
-  POST /v1/passport          generate a compliance passport (HTML)
-  POST /v1/keys/rotate       rotate the org's API key
-  GET  /v1/policies          fetch active policy config
-  PUT  /v1/policies          update policy config
-  POST /v1/auth/{login,logout,me,users}  human dashboard session auth (RBAC)
-  GET  /dashboard            serve the web dashboard (same-origin login)
-  POST /v1/webhooks/stripe   Stripe subscription webhook
+Three surfaces, sharing ONE backend + ONE database, split at the ASGI layer so a
+customer credential can NEVER satisfy a staff route and vice-versa:
+
+  * customer_api  — the SDK ingest + customer dashboard (/v1/*, /dashboard). Its
+                    own SessionMiddleware (cookie `session`) + customer CORS.
+  * admin_api     — the internal admin site ("site 3"), mounted at /admin so its
+                    paths are /admin/v1/*. Its OWN SessionMiddleware (cookie
+                    `foxy_staff_session`, a DISTINCT secret), admin CORS, and an IP
+                    allow-list guard. require_staff/require_platform_role gate it.
+  * root `app`    — a bare parent that only mounts the two above. Kept middleware-
+                    free so the two sub-apps' session cookies never nest/collide
+                    (two SessionMiddleware on one app both write scope["session"]).
+
+Endpoints (customer):
+  GET  /v1/health · POST /v1/logs/batch · GET /v1/logs[/{seq}] · GET /v1/stats
+  GET  /v1/verify · POST /v1/passport · POST /v1/keys/rotate · GET/POST/DELETE /v1/keys
+  GET/PUT /v1/policies · GET /v1/analytics/threats · GET/POST /v1/anchors
+  POST /v1/auth/* (dashboard session) · POST /v1/leads · POST /v1/track (public)
+  POST /v1/webhooks/stripe · GET /dashboard
+Endpoints (admin, /admin/v1/*):
+  POST /admin/v1/auth/{login,logout} · GET /admin/v1/auth/me
+  GET  /admin/v1/organizations[/{id}] · POST …/{id}/suspend|enable
+  GET/POST /admin/v1/staff · POST …/{id}/disable · GET /admin/v1/stats · /admin/v1/traffic
 """
 
 from __future__ import annotations
@@ -31,20 +39,26 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import get_settings
+from .middleware.admin_guard import AdminIPAllowlistMiddleware
+from .middleware.traffic import TrafficMiddleware
 from .routers import (
-    analytics, anchors, auth_human, billing, health, keys, logs, passport, policies,
-    verify,
+    account, admin_orgs, admin_staff, admin_stats, analytics, anchors, auth_human,
+    auth_staff, billing, health, keys, leads, logs, passport, policies, verify,
 )
 
+_settings = get_settings()
+
+
 # The web dashboard (foxy-audit-premium.html) is served same-origin at /dashboard
-# so the human login session cookie works with no CORS/BFF. The file lives at the
-# repo root (local dev); in a container it's mounted at /app (see docker-compose),
-# so resolve across candidates (or FOXY_DASHBOARD_HTML).
+# so the human login session cookie works with no CORS/BFF. The file lives in
+# foxy-dashboard/ at the repo root (local dev); in a container it's mounted at
+# /app (see docker-compose), so resolve across candidates (or FOXY_DASHBOARD_HTML).
 def _find_dashboard_html() -> str:
     here = os.path.dirname(__file__)  # backend/app
     candidates = [os.environ.get("FOXY_DASHBOARD_HTML")] + [
-        os.path.abspath(os.path.join(here, "..", "..", "foxy-audit-premium.html")),  # repo root (dev)
-        os.path.abspath(os.path.join(here, "..", "foxy-audit-premium.html")),          # /app (container)
+        os.path.abspath(os.path.join(here, "..", "..", "foxy-dashboard",
+                                     "foxy-audit-premium.html")),               # repo (dev)
+        os.path.abspath(os.path.join(here, "..", "foxy-audit-premium.html")),   # /app (container)
     ]
     for c in candidates:
         if c and os.path.isfile(c):
@@ -53,6 +67,25 @@ def _find_dashboard_html() -> str:
 
 
 _DASHBOARD_HTML = _find_dashboard_html()
+
+
+# The ops console (foxy-adminpage/index.html) is served same-origin at /admin/ so
+# the staff session cookie (Path=/admin) works with no CORS. Same candidate
+# resolution as the dashboard (or FOXY_ADMIN_HTML).
+def _find_admin_html() -> str:
+    here = os.path.dirname(__file__)  # backend/app
+    candidates = [os.environ.get("FOXY_ADMIN_HTML")] + [
+        os.path.abspath(os.path.join(here, "..", "..", "foxy-adminpage",
+                                     "index.html")),                             # repo (dev)
+        os.path.abspath(os.path.join(here, "..", "foxy-adminpage.html")),        # /app (container)
+    ]
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    return candidates[-1]  # last resort — FileResponse will 404 clearly
+
+
+_ADMIN_HTML = _find_admin_html()
 
 
 @asynccontextmanager
@@ -66,47 +99,88 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Foxy Audit", version="0.1.0", lifespan=lifespan)
+# ───────────────────────────── customer API (site 2) ─────────────────────────
+customer_api = FastAPI(title="Foxy Audit", version="0.1.0")
+customer_api.state.limiter = logs.limiter
+customer_api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Secure CORS — origins are read from CORS_ORIGINS env var (comma-separated).
-_settings = get_settings()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_settings.get_cors_origins(),
-    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
-
-# Human dashboard login rides a signed cookie session (separate channel from the
-# SDK's Authorization: Bearer key). https_only=False for local http dev.
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=_settings.session_secret,
-    https_only=False,
-    same_site="lax",
-)
-
-app.state.limiter = logs.limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-app.include_router(auth_human.router, tags=["auth"])
-app.include_router(health.router, tags=["health"])
-app.include_router(logs.router, tags=["logs"])
-app.include_router(verify.router, tags=["verify"])
-app.include_router(passport.router, tags=["passport"])
-app.include_router(keys.router, tags=["keys"])
-app.include_router(billing.router, tags=["billing"])
-app.include_router(policies.router, tags=["policies"])
-app.include_router(analytics.router, tags=["analytics"])
-app.include_router(anchors.router, tags=["anchors"])
+for _r in (auth_human, health, logs, verify, passport, keys, billing, policies,
+           analytics, anchors, leads, account):
+    customer_api.include_router(_r.router, tags=[_r.__name__.rsplit(".", 1)[-1]])
 
 
-@app.get("/")
-def root():
+@customer_api.get("/")
+def customer_root():
     return {"service": "foxy-audit", "status": "ok"}
 
 
-@app.get("/dashboard")
+@customer_api.get("/dashboard")
 def dashboard():
-    """Serve the premium web dashboard (same-origin with the API)."""
+    """Serve the premium web dashboard (same-origin with the customer API)."""
     return FileResponse(_DASHBOARD_HTML, media_type="text/html")
+
+
+# Middleware runs outermost-last: SessionMiddleware is added LAST so it wraps (runs
+# before) TrafficMiddleware — the traffic row can then read the logged-in session.
+customer_api.add_middleware(TrafficMiddleware, site="app")
+customer_api.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.get_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+customer_api.add_middleware(
+    SessionMiddleware,
+    secret_key=_settings.session_secret,
+    session_cookie="session",
+    https_only=_settings.is_prod,          # was hardcoded False — now TLS-only in prod
+    same_site="lax",
+    max_age=_settings.session_max_age,
+)
+
+
+# ────────────────────────────── admin API (site 3) ───────────────────────────
+admin_api = FastAPI(title="Foxy Audit Admin", version="0.1.0")
+admin_api.state.limiter = auth_staff.limiter
+admin_api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+for _r in (auth_staff, admin_orgs, admin_staff, admin_stats):
+    admin_api.include_router(_r.router, tags=[_r.__name__.rsplit(".", 1)[-1]])
+
+
+@admin_api.get("/")
+def admin_console():
+    """Serve the ops console UI (same-origin with the admin API)."""
+    return FileResponse(_ADMIN_HTML, media_type="text/html")
+
+admin_api.add_middleware(TrafficMiddleware, site="admin")
+admin_api.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.get_admin_cors_origins(),   # SEPARATE from customer origins
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+# DISTINCT cookie name + secret + strict SameSite + host-scoped Domain/Path so the
+# staff cookie is never sent to the customer origin and a customer cookie can never
+# satisfy require_staff.
+admin_api.add_middleware(
+    SessionMiddleware,
+    secret_key=_settings.staff_session_secret,
+    session_cookie="foxy_staff_session",
+    https_only=_settings.is_prod,
+    same_site="strict",
+    max_age=_settings.staff_session_max_age,
+    path="/admin",
+    domain=(_settings.staff_cookie_domain or None),
+)
+# IP allow-list guard runs OUTERMOST (added last) — blocks before auth/routing.
+admin_api.add_middleware(AdminIPAllowlistMiddleware)
+
+
+# ───────────────────────────────── root app ──────────────────────────────────
+# Bare parent: mounts only, no middleware (so the two session cookies never nest).
+app = FastAPI(title="Foxy Audit (root)", version="0.1.0", lifespan=lifespan)
+app.mount("/admin", admin_api)   # must precede the "/" mount so /admin/* wins
+app.mount("/", customer_api)

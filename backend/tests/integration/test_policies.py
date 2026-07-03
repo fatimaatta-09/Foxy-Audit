@@ -6,13 +6,16 @@ from __future__ import annotations
 import hashlib
 
 
-def test_get_defaults_and_update(make_org, client):
+def test_get_defaults_and_update(make_org, client, login):
     org = make_org()
     p = client.get("/v1/policies", headers=org["auth"]).json()
     assert p["pii_detection"] is True
     assert p["max_token_threshold"] == 50000
 
-    updated = client.put("/v1/policies", headers=org["auth"], json={
+    # Policy WRITES are a privileged act: admin dashboard session, not the SDK key
+    # (see test_staff_auth.py::test_policy_write_rejects_bare_bearer).
+    ca = login(org["admin_email"], org["admin_password"])
+    updated = ca.put("/v1/policies", json={
         "pii_detection": False, "prompt_injection": True,
         "regulated_data_mode": True, "max_token_threshold": 12345,
     }).json()
@@ -22,12 +25,13 @@ def test_get_defaults_and_update(make_org, client):
     assert client.get("/v1/policies", headers=org["auth"]).json() == updated
 
 
-def test_policy_flags_reach_the_judge(make_org, client, monkeypatch):
+def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch):
     org = make_org()
-    client.put("/v1/policies", headers=org["auth"], json={
+    ca = login(org["admin_email"], org["admin_password"])
+    assert ca.put("/v1/policies", json={
         "pii_detection": False, "prompt_injection": False,
         "regulated_data_mode": True, "max_token_threshold": 777,
-    })
+    }).status_code == 200
     _h = lambda s: hashlib.sha256(s.encode()).hexdigest()  # noqa: E731
     client.post("/v1/logs/batch", headers=org["auth"], json=[
         {"prompt_hash": _h("p"), "response_hash": _h("r"), "token_count": 50, "policy_tag": "chat"},

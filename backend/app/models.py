@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func,
+    BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, SmallInteger, String,
+    UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -34,6 +35,20 @@ class Organization(Base):
     # Key rotation tracking
     key_rotated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None)
+    # ── Platform/admin metadata (Phase 4 #1, migration 0011). All nullable/defaulted
+    #    so ADD COLUMN is backward-compatible and the running app never breaks. ──
+    contact_email: Mapped[str | None] = mapped_column(
+        String(320), nullable=True, default=None)            # owner/billing contact
+    trial_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
+    deleted_at: Mapped[datetime | None] = mapped_column(     # soft delete — never hard-delete an org
+        DateTime(timezone=True), nullable=True, default=None)
+    suspended: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false")     # staff access hold (independent of Stripe)
+    suspended_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None)
+    monthly_log_quota: Mapped[int | None] = mapped_column(   # NULL = unlimited
+        Integer, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
@@ -170,4 +185,190 @@ class ChainAnchor(Base):
         DateTime(timezone=True), server_default=func.now())
     confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
+
+
+# ─────────────────────── Platform / admin ("site 3") tables ───────────────────
+# These power the internal admin site. Staff read cross-org with app.current_org
+# UNSET, so tables read ONLY on a staff path (or with a NULLABLE org_id) are
+# deliberately WITHOUT RLS — a nullable org_id can never match the RLS predicate,
+# so RLS there would hide the very rows staff need. Tables a CUSTOMER also reads
+# (invoices, usage_daily) keep org-scoped RLS exactly like audit_logs.
+
+
+class StaffUser(Base):
+    """A foxy.audit *platform* employee — NOT tenant-scoped (no org_id, no RLS).
+
+    Staff log in over a SEPARATE session cookie (foxy_staff_session) and are
+    resolved by auth.require_staff, which never sets app.current_org — so a staff
+    query reads across ALL orgs (the docker 'foxy' superuser bypasses FORCE RLS).
+    A customer `users` row can never satisfy require_staff and vice-versa: the two
+    channels use disjoint session keys, cookie names, and signing secrets.
+    """
+    __tablename__ = "staff_users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)   # bcrypt
+    platform_role: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="viewer")            # viewer|operator|superadmin
+    disabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class AdminAction(Base):
+    """Append-only audit trail of every state-changing staff action.
+
+    Written in the SAME transaction as the mutation it records, so a committed
+    suspend without a logged action (or vice-versa) cannot happen. No RLS
+    (platform-only); staff must never be able to DELETE from it.
+    """
+    __tablename__ = "admin_actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    staff_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    target_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class TrafficEvent(Base):
+    """One inbound/outbound request across any of the 3 sites — the "in/out"
+    tracking feed for the admin site. Written OFF the request hot path by
+    middleware/traffic.py. Platform-only, NO RLS: org_id is nullable (anonymous
+    marketing traffic has none), which structurally rules RLS out, and it is read
+    only by staff. Range-partitioned by created_at (see migration 0012), so the
+    effective PK is (id, created_at). Privacy: ip/ua are HMAC-hashed, never raw;
+    path/referrer carry NO query string; no bodies/headers/secrets are stored.
+    """
+    __tablename__ = "traffic_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    site: Mapped[str] = mapped_column(String(16), nullable=False)        # marketing|app|admin
+    path: Mapped[str] = mapped_column(String(512), nullable=False)       # route only, no query string
+    method: Mapped[str] = mapped_column(String(8), nullable=False)
+    status_code: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    direction: Mapped[str] = mapped_column(
+        String(3), nullable=False, server_default="in")                 # in|out
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    staff_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)   # HMAC(pepper, ip)
+    ua_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)   # HMAC(pepper, user-agent)
+    referrer: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    visitor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True, server_default=func.now())   # partition key
+
+
+class MarketingLead(Base):
+    """A marketing-site conversion before it becomes a paying org. Platform-only,
+    NO RLS (no org_id until conversion; pre-sales data never on a customer path)."""
+    __tablename__ = "marketing_leads"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    utm_campaign: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    utm_source: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    utm_medium: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="new")               # new|trial|converted|churned
+    converted_org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StripeEvent(Base):
+    """Durable, idempotent log of every verified Stripe webhook event. Makes the
+    formerly fire-and-forget webhook auditable + replay-safe (UNIQUE stripe_event_id
+    → ON CONFLICT DO NOTHING). Platform-only, NO RLS (org_id may be null / precede
+    an org; billing audit is staff-only)."""
+    __tablename__ = "stripe_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stripe_event_id: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False)           # evt_… idempotency key
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="received")          # received|processed|ignored|failed
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
+class Invoice(Base):
+    """Billing history for an org. RLS-scoped by org_id like audit_logs — a
+    customer reads its OWN invoices; staff (superuser, GUC unset) read all."""
+    __tablename__ = "invoices"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    stripe_invoice_id: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="usd")
+    status: Mapped[str] = mapped_column(String(16), nullable=False)      # draft|open|paid|void|uncollectible
+    period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class UsageDaily(Base):
+    """Per-org, per-day rollup of audit_logs so admin dashboards never scan the
+    raw ledger. Populated incrementally by the worker (app/usage.py). RLS-scoped
+    by org_id like audit_logs (a customer reads its own quota widget; staff read
+    all) — keeping the aggregate no broader than its RLS-protected source."""
+    __tablename__ = "usage_daily"
+    __table_args__ = (UniqueConstraint("org_id", "day", name="uq_usage_org_day"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    day: Mapped[datetime] = mapped_column(Date, nullable=False)
+    logs_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    tokens_sum: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    breach_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    graded_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    pending_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
 

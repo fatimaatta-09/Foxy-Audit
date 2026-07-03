@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Foxy Audit — Ops Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  /* deep clay base — same system as foxy-audit-premium.html */
+  --bg:      #0e0c0a;
+  --bg2:     #161310;
+  --surf:    #1c1815;
+  --surf2:   #221d18;
+  --surf3:   #2a241d;
+  --line:    #322b23;
+
+  --ink:     #f7f1e8;
+  --ink2:    #cdc2b3;
+  --muted:   #8c8174;
+  --muted2:  #5f564a;
+
+  --fox:     #ff7a2e;
+  --fox2:    #ff9d52;
+  --fox3:    #d65a16;
+  --foxdeep: #8a3611;
+
+  --safe-bg:   #3ddc84;
+  --safe-tx:   #07210f;
+  --breach-bg: #ff4d4d;
+  --breach-tx: #2a0303;
+  --warn-bg:   #ffc83d;
+  --warn-tx:   #2a1d00;
+  --info-bg:   #6ea8ff;
+  --info-tx:   #041129;
+
+  --r-lg: clamp(16px,2.4vw,26px);
+  --r-md: 16px;
+  --r-sm: 11px;
+
+  --clay: 9px 9px 0 rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,.04) inset;
+  --clay-sm: 5px 5px 0 rgba(0,0,0,.5);
+  --clay-press: 3px 3px 0 rgba(0,0,0,.5);
+
+  --disp: 'Unbounded', system-ui, sans-serif;
+  --mono: 'Space Mono', monospace;
+}
+
+html{-webkit-font-smoothing:antialiased}
+body{
+  font-family:var(--disp);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(255,122,46,.07), transparent 45%),
+    radial-gradient(circle at 100% 100%, rgba(255,122,46,.05), transparent 40%),
+    var(--bg);
+  color:var(--ink);
+  min-height:100vh;
+  overflow-x:hidden;
+  font-size:clamp(13px,0.9vw + 8px,15px);
+}
+
+/* ════════ SHELL ════════ */
+.app{display:flex;min-height:100vh}
+
+.dock{
+  width:96px;flex-shrink:0;
+  background:var(--bg2);
+  border-right:2.5px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;
+  padding:22px 0 18px;gap:6px;
+  position:fixed;top:0;left:0;bottom:0;z-index:300;
+}
+.dock-mark{
+  width:48px;height:48px;border-radius:16px;background:var(--fox);
+  border:3px solid #000;box-shadow:var(--clay-sm);
+  display:flex;align-items:center;justify-content:center;font-size:22px;
+  margin-bottom:6px;transform:rotate(-4deg);
+}
+.dock-ops{
+  font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:1.5px;
+  background:var(--warn-bg);color:var(--warn-tx);
+  border:2px solid #000;border-radius:6px;padding:2px 6px;margin-bottom:16px;
+  box-shadow:var(--clay-press);transform:rotate(3deg);
+}
+.dock-item{
+  width:60px;height:60px;border-radius:18px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  color:var(--muted);cursor:pointer;position:relative;
+  border:2.5px solid transparent;background:none;font-family:var(--disp);
+}
+.dock-item span{font-size:8.5px;font-weight:700;letter-spacing:.3px}
+.dock-item svg{width:19px;height:19px}
+.dock-item.active{
+  background:var(--fox);color:#000;border-color:#000;
+  box-shadow:var(--clay-sm);
+  transform:translateX(2px) rotate(-2deg);
+}
+.dock-item:hover:not(.active){background:var(--surf2);color:var(--ink)}
+.dock-foot{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px}
+.dock-user{
+  width:48px;height:48px;border-radius:14px;background:var(--surf3);
+  border:2.5px solid var(--line);display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:14px;color:var(--fox2);
+}
+.dock-out{
+  background:none;border:2.5px solid var(--line);border-radius:12px;color:var(--muted);
+  font-family:var(--mono);font-size:9px;font-weight:700;padding:6px 8px;cursor:pointer;
+}
+.dock-out:hover{color:var(--breach-bg);border-color:var(--breach-bg)}
+
+.main{flex:1;margin-left:96px;padding:34px clamp(18px,3.4vw,48px) 60px;min-width:0}
+
+/* ════════ TYPE ════════ */
+.eyebrow{
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:2.5px;
+  text-transform:uppercase;color:var(--fox2);margin-bottom:8px;
+}
+h1{font-size:clamp(21px,2.6vw,30px);font-weight:800;letter-spacing:-.5px;margin-bottom:4px}
+.sub{color:var(--muted);font-size:12px}
+.mono{font-family:var(--mono)}
+
+.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:26px;flex-wrap:wrap}
+
+/* ════════ CLAY BLOCKS ════════ */
+.clay{
+  background:var(--surf);border:2.5px solid #000;border-radius:var(--r-lg);
+  box-shadow:var(--clay);
+}
+.pad{padding:clamp(16px,2vw,24px)}
+
+.grid{display:grid;gap:18px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(158px,1fr));margin-bottom:22px}
+.kpi{padding:16px 18px;position:relative;overflow:hidden}
+.kpi .klabel{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
+.kpi .kval{font-size:clamp(22px,2.4vw,30px);font-weight:800;margin-top:6px;letter-spacing:-.5px}
+.kpi .kfoot{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:4px}
+.kpi.hot{background:var(--fox);color:#000}
+.kpi.hot .klabel,.kpi.hot .kfoot{color:rgba(0,0,0,.55)}
+
+/* ════════ CHIPS / BADGES ════════ */
+.chip{
+  display:inline-flex;align-items:center;gap:5px;
+  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.8px;
+  border:2px solid #000;border-radius:8px;padding:3px 8px;box-shadow:var(--clay-press);
+  text-transform:uppercase;white-space:nowrap;
+}
+.chip.safe{background:var(--safe-bg);color:var(--safe-tx)}
+.chip.bad{background:var(--breach-bg);color:var(--breach-tx)}
+.chip.warn{background:var(--warn-bg);color:var(--warn-tx)}
+.chip.info{background:var(--info-bg);color:var(--info-tx)}
+.chip.dim{background:var(--surf3);color:var(--ink2);box-shadow:none}
+
+/* ════════ TABLES ════════ */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{
+  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--muted);text-align:left;
+  padding:10px 12px;border-bottom:2.5px solid var(--line);
+}
+.tbl td{padding:11px 12px;border-bottom:1.5px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr{cursor:default}
+.tbl tbody tr.rowbtn{cursor:pointer}
+.tbl tbody tr.rowbtn:hover{background:var(--surf2)}
+.twrap{overflow-x:auto}
+
+/* ════════ CONTROLS ════════ */
+.btn{
+  font-family:var(--disp);font-weight:700;font-size:11.5px;letter-spacing:.3px;
+  border:2.5px solid #000;border-radius:12px;padding:9px 16px;cursor:pointer;
+  box-shadow:var(--clay-sm);background:var(--surf3);color:var(--ink);
+  transition:transform .06s ease;
+}
+.btn:hover{transform:translate(1px,1px);box-shadow:var(--clay-press)}
+.btn:active{transform:translate(3px,3px);box-shadow:none}
+.btn.pri{background:var(--fox);color:#000}
+.btn.danger{background:var(--breach-bg);color:var(--breach-tx)}
+.btn.safe{background:var(--safe-bg);color:var(--safe-tx)}
+.btn.sm{padding:6px 11px;font-size:10px;border-radius:10px}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+
+.cin{
+  width:100%;background:var(--bg2);border:2.5px solid var(--line);border-radius:var(--r-sm);
+  color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:10px 12px;
+  outline:none;margin-bottom:4px;
+}
+.cin:focus{border-color:var(--fox)}
+select.cin{appearance:none}
+.flabel{
+  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.6px;
+  text-transform:uppercase;color:var(--muted);margin:12px 0 6px;
+}
+
+/* ════════ PAGES ════════ */
+.page{display:none}
+.page.active{display:block;animation:pop .25s ease}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.split{display:grid;grid-template-columns:2fr 1fr;gap:18px;align-items:start}
+@media(max-width:980px){.split{grid-template-columns:1fr}}
+
+/* funnel bars */
+.fun{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.funrow{display:grid;grid-template-columns:86px 1fr 40px;align-items:center;gap:10px}
+.funlab{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.funbar{height:18px;border:2px solid #000;border-radius:7px;background:var(--surf3);overflow:hidden}
+.funbar i{display:block;height:100%;background:var(--fox);min-width:2px}
+.funnum{font-family:var(--mono);font-size:11px;font-weight:700;text-align:right}
+
+/* org detail drawer row */
+.drawer td{background:var(--bg2)}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;padding:6px 2px 10px}
+.dcell .dl{font-family:var(--mono);font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted2)}
+.dcell .dv{font-family:var(--mono);font-size:13px;font-weight:700;margin-top:3px}
+
+/* toast */
+#toast{
+  position:fixed;bottom:22px;left:50%;transform:translate(-50%,80px);z-index:9000;
+  background:var(--surf3);border:2.5px solid #000;border-radius:14px;box-shadow:var(--clay-sm);
+  padding:12px 20px;font-family:var(--mono);font-size:12px;font-weight:700;
+  transition:transform .25s ease;max-width:min(560px,90vw);
+}
+#toast.show{transform:translate(-50%,0)}
+
+/* login gate */
+#gate{
+  display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,5,4,.92);
+  align-items:center;justify-content:center;padding:20px;
+}
+.gatecard{width:360px;max-width:100%}
+.gerr{font-family:var(--mono);font-size:10.5px;color:var(--breach-bg);min-height:15px;margin-top:10px}
+
+@media(max-width:760px){
+  .dock{width:70px}
+  .main{margin-left:70px}
+  .dock-item{width:52px;height:52px}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ staff login gate ═══ -->
+<div id="gate">
+  <form id="gateForm" class="clay pad gatecard">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:2.5px solid #000;box-shadow:var(--clay-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🦊</div>
+      <div>
+        <div style="font-weight:800;font-size:15px;">Foxy Audit</div>
+        <div class="eyebrow" style="margin:0;">Ops console · staff only</div>
+      </div>
+    </div>
+    <div class="sub mono" style="font-size:10px;margin-bottom:6px;">
+      Separate channel from the customer dashboard — customer logins will not work here.
+    </div>
+    <div class="flabel" style="margin-top:8px;">staff email</div>
+    <input class="cin" id="gEmail" autocomplete="username" placeholder="you@foxy.audit">
+    <div class="flabel">password</div>
+    <input class="cin" id="gPass" type="password" autocomplete="current-password" placeholder="••••••••••">
+    <div id="gErr" class="gerr"></div>
+    <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Sign in</button>
+    <div class="sub mono" style="margin-top:12px;font-size:9.5px;">
+      first account: <span style="color:var(--ink2)">python scripts/seed_staff.py --email … --password …</span>
+    </div>
+  </form>
+</div>
+
+<div class="app" id="app" style="visibility:hidden;">
+  <!-- ═══ dock ═══ -->
+  <nav class="dock">
+    <div class="dock-mark">🦊</div>
+    <div class="dock-ops">INTERNAL</div>
+
+    <button class="dock-item active" data-page="overview" onclick="go('overview',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      <span>OVERVIEW</span>
+    </button>
+    <button class="dock-item" data-page="orgs" onclick="go('orgs',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 21v-4h6v4"/><path d="M9 10h.01M15 10h.01M9 14h.01M15 14h.01"/></svg>
+      <span>ORGS</span>
+    </button>
+    <button class="dock-item" data-page="traffic" onclick="go('traffic',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 17l5-6 4 4 6-8"/><path d="M14 7h4v4"/></svg>
+      <span>TRAFFIC</span>
+    </button>
+    <button class="dock-item" data-page="staff" id="navStaff" onclick="go('staff',this)" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M15.6 14.6c2.9.2 5 1.7 5.9 4.4"/></svg>
+      <span>STAFF</span>
+    </button>
+
+    <div class="dock-foot">
+      <div class="dock-user" id="avatar">·</div>
+      <button class="dock-out" onclick="doLogout()">EXIT</button>
+    </div>
+  </nav>
+
+  <!-- ═══ main ═══ -->
+  <main class="main">
+
+    <!-- ──────────────── OVERVIEW ──────────────── -->
+    <section class="page active" id="page-overview">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">platform · cross-org</div>
+          <h1>Ops overview</h1>
+          <div class="sub">Everything below reads across <b>all</b> tenants — staff channel only.</div>
+        </div>
+        <button class="btn" onclick="loadOverview()">↻ Refresh</button>
+      </div>
+
+      <div class="grid kpis">
+        <div class="clay kpi hot"><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></div>
+        <div class="clay kpi"><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></div>
+        <div class="clay kpi"><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot">from usage rollup</div></div>
+        <div class="clay kpi"><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot">all-time, all orgs</div></div>
+        <div class="clay kpi"><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></div>
+      </div>
+
+      <div class="split">
+        <div class="clay pad">
+          <div class="eyebrow">last 7 days</div>
+          <div style="font-weight:800;font-size:15px;margin-bottom:12px;">Traffic by site</div>
+          <div class="fun" id="siteFun"></div>
+          <div class="sub mono" id="siteErrs" style="margin-top:14px;font-size:10.5px;"></div>
+        </div>
+        <div class="clay pad">
+          <div class="eyebrow">marketing funnel</div>
+          <div style="font-weight:800;font-size:15px;margin-bottom:12px;">Leads</div>
+          <div class="fun" id="leadFun"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────── ORGS ──────────────── -->
+    <section class="page" id="page-orgs">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">tenants</div>
+          <h1>Organizations</h1>
+          <div class="sub">Click a row for drill-down. Suspend = staff access-hold, independent of Stripe.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <label class="sub mono" style="font-size:10px;display:flex;gap:6px;align-items:center;cursor:pointer;">
+            <input type="checkbox" id="showDeleted" onchange="loadOrgs()"> show offboarded
+          </label>
+          <button class="btn" onclick="loadOrgs()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="clay pad twrap">
+        <table class="tbl" id="orgTbl">
+          <thead><tr>
+            <th>Org</th><th>Plan</th><th>Subscription</th><th>Access</th><th>Contact</th><th>Created</th>
+          </tr></thead>
+          <tbody id="orgRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ──────────────── TRAFFIC ──────────────── -->
+    <section class="page" id="page-traffic">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">in / out · all 3 sites</div>
+          <h1>Traffic feed</h1>
+          <div class="sub">IP &amp; user-agent are HMAC-hashed at capture — nothing here is raw client data.</div>
+        </div>
+        <button class="btn" onclick="loadTraffic()">↻ Refresh</button>
+      </div>
+      <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
+        <div class="clay kpi"><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></div>
+        <div class="clay kpi"><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></div>
+        <div class="clay kpi"><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></div>
+        <div class="clay kpi"><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr">—</div></div>
+      </div>
+      <div class="clay pad twrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>When</th><th>Site</th><th>Method</th><th>Path</th><th>Status</th><th>Latency</th><th>Org</th>
+          </tr></thead>
+          <tbody id="trafRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ──────────────── STAFF ──────────────── -->
+    <section class="page" id="page-staff">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">superadmin only</div>
+          <h1>Platform staff</h1>
+          <div class="sub">Every create/disable lands in the append-only <span class="mono">admin_actions</span> audit trail.</div>
+        </div>
+        <button class="btn" onclick="loadStaff()">↻ Refresh</button>
+      </div>
+      <div class="split">
+        <div class="clay pad twrap">
+          <table class="tbl">
+            <thead><tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+            <tbody id="staffRows"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="clay pad">
+          <div class="eyebrow">new staff account</div>
+          <div class="flabel" style="margin-top:6px;">email</div>
+          <input class="cin" id="nsEmail" placeholder="teammate@foxy.audit">
+          <div class="flabel">platform role</div>
+          <select class="cin" id="nsRole">
+            <option value="viewer">viewer — read-only</option>
+            <option value="operator">operator — can suspend/enable orgs</option>
+            <option value="superadmin">superadmin — full control</option>
+          </select>
+          <button class="btn pri" style="margin-top:14px;width:100%;" onclick="createStaff()">Create account</button>
+          <div id="nsOut" class="sub mono" style="margin-top:12px;font-size:10.5px;word-break:break-all;"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"><span id="toastMsg"></span></div>
+
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const api=(p,o)=>fetch(p,Object.assign({credentials:'same-origin'},o||{}));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let ME=null;               // {id,email,platform_role}
+const ROLE_RANK={viewer:0,operator:1,superadmin:2};
+const can=min=>ME&&ROLE_RANK[ME.platform_role]>=ROLE_RANK[min];
+
+function toast(m){const t=$('toast');$('toastMsg').textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3200)}
+function fmtTime(iso){if(!iso)return'—';const d=new Date(iso);return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
+function fmtDay(iso){if(!iso)return'—';return new Date(iso).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}
+function num(n){return(n??0).toLocaleString()}
+
+function go(page,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  $('page-'+page).classList.add('active');
+  document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
+  if(el)el.classList.add('active');
+  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff})[page]();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* ──────────── auth gate ──────────── */
+async function boot(){
+  let r;try{r=await api('/admin/v1/auth/me')}catch(e){r=null}
+  if(r&&r.ok){enter(await r.json());return}
+  $('gate').style.display='flex';
+}
+function enter(me){
+  ME=me;
+  $('gate').style.display='none';
+  $('app').style.visibility='visible';
+  $('avatar').textContent=(me.email[0]||'?').toUpperCase();
+  $('avatar').title=me.email+' · '+me.platform_role;
+  if(can('superadmin'))$('navStaff').style.display='';
+  loadOverview();
+}
+$('gateForm').addEventListener('submit',async e=>{
+  e.preventDefault();$('gErr').textContent='';
+  let r;
+  try{
+    r=await api('/admin/v1/auth/login',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({email:$('gEmail').value.trim(),password:$('gPass').value})});
+  }catch(err){$('gErr').textContent='network error — is the backend running?';return}
+  if(!r.ok){
+    const d=await r.json().catch(()=>({}));
+    $('gErr').textContent=d.detail||d.error||('sign-in failed ('+r.status+')');return;
+  }
+  enter(await r.json());
+});
+async function doLogout(){await api('/admin/v1/auth/logout',{method:'POST'});location.reload()}
+
+/* ──────────── overview ──────────── */
+function funnelRow(label,val,max,color){
+  const w=max>0?Math.max(2,Math.round(val/max*100)):2;
+  return `<div class="funrow"><div class="funlab">${esc(label)}</div>
+    <div class="funbar"><i style="width:${w}%;${color?`background:${color};`:''}"></i></div>
+    <div class="funnum">${num(val)}</div></div>`;
+}
+async function loadOverview(){
+  const [rs,rt]=await Promise.all([api('/admin/v1/stats'),api('/admin/v1/traffic?limit=1')]);
+  if(!rs.ok){toast('stats failed ('+rs.status+')');return}
+  const s=await rs.json();
+  $('kOrgs').textContent=num(s.total_orgs);
+  $('kOrgsFoot').textContent=num(s.active_orgs)+' active · '+num(s.suspended_orgs)+' suspended';
+  $('kUsers').textContent=num(s.total_users);
+  $('kLogs').textContent=num(s.total_logs);
+  $('kBreaches').textContent=num(s.total_breaches);
+  $('kStaff').textContent=num(s.total_staff);
+
+  const lf=s.leads_by_status||{};
+  const lmax=Math.max(lf.new||0,lf.trial||0,lf.converted||0,lf.churned||0);
+  $('leadFun').innerHTML=
+    funnelRow('new',lf.new||0,lmax)+
+    funnelRow('trial',lf.trial||0,lmax,'var(--warn-bg)')+
+    funnelRow('converted',lf.converted||0,lmax,'var(--safe-bg)')+
+    funnelRow('churned',lf.churned||0,lmax,'var(--breach-bg)');
+
+  if(rt.ok){
+    const t=await rt.json();const bs=t.by_site||{};
+    const smax=Math.max(bs.marketing||0,bs.app||0,bs.admin||0);
+    $('siteFun').innerHTML=
+      funnelRow('marketing',bs.marketing||0,smax)+
+      funnelRow('app',bs.app||0,smax,'var(--fox2)')+
+      funnelRow('admin',bs.admin||0,smax,'var(--info-bg)');
+    $('siteErrs').innerHTML=(t.errors||0)>0
+      ?`⚠ <b>${num(t.errors)}</b> responses ≥400 in the last 7 days`
+      :'no 4xx/5xx responses in the last 7 days';
+  }
+}
+
+/* ──────────── orgs ──────────── */
+let ORG_OPEN=null;
+async function loadOrgs(){
+  const inc=$('showDeleted').checked?'?include_deleted=true':'';
+  const r=await api('/admin/v1/organizations'+inc);
+  if(!r.ok){toast('orgs failed ('+r.status+')');return}
+  const orgs=await r.json();ORG_OPEN=null;
+  if(!orgs.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  $('orgRows').innerHTML=orgs.map(o=>{
+    const access=o.deleted?'<span class="chip dim">offboarded</span>'
+      :o.suspended?'<span class="chip bad">suspended</span>'
+      :'<span class="chip safe">active</span>';
+    const sub=o.subscription_status
+      ?`<span class="chip ${o.subscription_status==='active'?'safe':'warn'}">${esc(o.subscription_status)}</span>`
+      :'<span class="chip dim">none</span>';
+    return `<tr class="rowbtn" onclick="toggleOrg('${o.id}',this)">
+      <td><b>${esc(o.name)}</b><div class="sub mono" style="font-size:9px;">${o.id.slice(0,8)}…</div></td>
+      <td class="mono">${esc(o.plan_tier||'—')}</td>
+      <td>${sub}</td><td>${access}</td>
+      <td class="mono" style="font-size:11px;">${esc(o.contact_email||'—')}</td>
+      <td class="mono" style="font-size:11px;">${fmtDay(o.created_at)}</td>
+    </tr>`;
+  }).join('');
+}
+async function toggleOrg(id,tr){
+  const old=document.querySelector('tr.drawer');if(old)old.remove();
+  if(ORG_OPEN===id){ORG_OPEN=null;return}
+  ORG_OPEN=id;
+  const r=await api('/admin/v1/organizations/'+id);
+  if(!r.ok){toast('detail failed ('+r.status+')');return}
+  const d=await r.json();
+  const row=document.createElement('tr');row.className='drawer';
+  const actions=!can('operator')?'<span class="sub mono" style="font-size:10px;">operator role required for actions</span>'
+    :d.suspended
+      ?`<button class="btn safe sm" onclick="orgEnable('${d.id}');event.stopPropagation()">Lift suspension</button>
+         <span class="sub mono" style="font-size:10px;margin-left:10px;">reason: ${esc(d.suspended_reason||'—')}</span>`
+      :`<button class="btn danger sm" onclick="orgSuspend('${d.id}');event.stopPropagation()">Suspend org</button>`;
+  row.innerHTML=`<td colspan="6">
+    <div class="dgrid">
+      <div class="dcell"><div class="dl">users</div><div class="dv">${num(d.user_count)}</div></div>
+      <div class="dcell"><div class="dl">api keys</div><div class="dv">${num(d.api_key_count)}</div></div>
+      <div class="dcell"><div class="dl">ledger rows</div><div class="dv">${num(d.total_logs)}</div></div>
+      <div class="dcell"><div class="dl">breaches</div><div class="dv">${num(d.breaches)}</div></div>
+      <div class="dcell"><div class="dl">monthly quota</div><div class="dv">${d.monthly_log_quota==null?'∞':num(d.monthly_log_quota)}</div></div>
+    </div>
+    <div style="padding:2px 2px 8px;">${actions}</div>
+  </td>`;
+  tr.after(row);
+}
+async function orgSuspend(id){
+  const reason=prompt('Suspension reason (recorded in the audit trail):','');
+  if(reason===null)return;
+  const r=await api(`/admin/v1/organizations/${id}/suspend`,{method:'POST',
+    headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
+  if(r.ok){toast('org suspended');loadOrgs()}else toast('suspend failed ('+r.status+')');
+}
+async function orgEnable(id){
+  const r=await api(`/admin/v1/organizations/${id}/enable`,{method:'POST'});
+  if(r.ok){toast('suspension lifted');loadOrgs()}else toast('enable failed ('+r.status+')');
+}
+
+/* ──────────── traffic ──────────── */
+async function loadTraffic(){
+  const r=await api('/admin/v1/traffic?limit=100');
+  if(!r.ok){toast('traffic failed ('+r.status+')');return}
+  const t=await r.json();const bs=t.by_site||{};
+  $('tMkt').textContent=num(bs.marketing);$('tApp').textContent=num(bs.app);
+  $('tAdm').textContent=num(bs.admin);$('tErr').textContent=num(t.errors);
+  const rows=t.recent||[];
+  if(!rows.length){$('trafRows').innerHTML='<tr><td colspan="7" class="sub mono">no traffic captured yet</td></tr>';return}
+  $('trafRows').innerHTML=rows.map(e=>{
+    const sc=e.status_code>=500?'bad':e.status_code>=400?'warn':'safe';
+    const site=e.site==='marketing'?'info':e.site==='admin'?'warn':'dim';
+    return `<tr>
+      <td class="mono" style="font-size:10.5px;white-space:nowrap;">${fmtTime(e.created_at)}</td>
+      <td><span class="chip ${site}">${esc(e.site)}</span></td>
+      <td class="mono">${esc(e.method)}</td>
+      <td class="mono" style="font-size:11px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.path)}</td>
+      <td><span class="chip ${sc}">${e.status_code}</span></td>
+      <td class="mono" style="font-size:11px;">${e.latency_ms==null?'—':e.latency_ms+' ms'}</td>
+      <td class="mono" style="font-size:10px;">${e.org_id?e.org_id.slice(0,8)+'…':'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ──────────── staff ──────────── */
+let STAFF_CACHE=[];
+async function loadStaff(){
+  const r=await api('/admin/v1/staff');
+  if(!r.ok){$('staffRows').innerHTML=`<tr><td colspan="4" class="sub mono">requires superadmin (${r.status})</td></tr>`;return}
+  const rows=await r.json();STAFF_CACHE=rows;
+  $('staffRows').innerHTML=rows.map(s=>{
+    const self=ME&&s.id===ME.id;
+    return `<tr>
+      <td class="mono" style="font-size:11.5px;">${esc(s.email)}${self?' <span class="chip dim">you</span>':''}</td>
+      <td><span class="chip ${s.platform_role==='superadmin'?'warn':s.platform_role==='operator'?'info':'dim'}">${esc(s.platform_role)}</span></td>
+      <td>${s.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>'}</td>
+      <td style="text-align:right;">${(!self&&!s.disabled)?`<button class="btn danger sm" onclick="disableStaff('${s.id}')">Disable</button>`:''}</td>
+    </tr>`;
+  }).join('');
+}
+async function createStaff(){
+  const email=$('nsEmail').value.trim(),role=$('nsRole').value;
+  if(!email){toast('email required');return}
+  const r=await api('/admin/v1/staff',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({email,platform_role:role})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){toast(d.detail||('create failed ('+r.status+')'));return}
+  $('nsOut').innerHTML=`created <b>${esc(d.email)}</b> (${esc(d.platform_role)})<br>
+    one-time temp password:<br><b style="color:var(--fox2);">${esc(d.temp_password)}</b><br>
+    <span style="color:var(--muted2);">share securely — it is never shown again.</span>`;
+  $('nsEmail').value='';loadStaff();
+}
+async function disableStaff(id){
+  const s=STAFF_CACHE.find(x=>x.id===id)||{};
+  if(!confirm('Disable staff account '+(s.email||id)+'?'))return;
+  const r=await api(`/admin/v1/staff/${id}/disable`,{method:'POST'});
+  if(r.ok){toast('account disabled');loadStaff()}else toast('disable failed ('+r.status+')');
+}
+
+boot();
+</script>
+</body>
+</html>

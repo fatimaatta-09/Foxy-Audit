@@ -172,6 +172,12 @@ def run_forever() -> None:
         threading.Thread(target=_anchor_loop, args=(stopping, s),
                          name="foxy-anchor", daemon=True).start()
 
+    # Usage rollups + traffic-partition maintenance run in their own thread so a
+    # slow rollup never stalls grading or the liveness heartbeat.
+    from .usage import usage_loop
+    threading.Thread(target=usage_loop, args=(stopping, s),
+                     name="foxy-usage", daemon=True).start()
+
     while not stopping["flag"]:
         rows: list = []
         db = SessionLocal()

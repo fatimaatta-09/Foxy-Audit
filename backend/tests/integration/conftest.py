@@ -28,6 +28,10 @@ os.environ.setdefault("SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("GEMINI_API_KEY", "")          # judge fail-open (no network in tests)
 os.environ.setdefault("ANCHOR_PROVIDER", "stub")     # deterministic anchoring
 os.environ.setdefault("ANCHOR_ENABLED", "false")     # no background worker in tests
+# Off by default so the async traffic writer never contaminates another test; the
+# dedicated traffic test flips get_settings().traffic_tracking_enabled on itself.
+os.environ.setdefault("TRAFFIC_TRACKING_ENABLED", "false")
+os.environ.setdefault("STAFF_SESSION_SECRET", "test-staff-session-secret")
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, _BACKEND_DIR)
@@ -39,14 +43,18 @@ from sqlalchemy import text  # noqa: E402
 from app.auth import hash_key  # noqa: E402
 from app.db import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import ApiKey, Organization, User  # noqa: E402
+from app.models import ApiKey, Organization, StaffUser, User  # noqa: E402
 
 try:
     import bcrypt
 except ImportError:  # pragma: no cover
     bcrypt = None
 
-_DATA_TABLES = "organizations, users, api_keys, audit_logs, chain_anchors, org_policies"
+_DATA_TABLES = (
+    "organizations, users, api_keys, audit_logs, chain_anchors, org_policies, "
+    "staff_users, admin_actions, traffic_events, marketing_leads, stripe_events, "
+    "invoices, usage_daily"
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -62,10 +70,17 @@ def _migrate():
 @pytest.fixture(autouse=True)
 def _clean_db():
     """Reset all tenant data before each test so tests are independent. Runs as the
-    superuser 'foxy', which bypasses RLS, so TRUNCATE clears every org's rows."""
+    superuser 'foxy', which bypasses RLS, so TRUNCATE clears every org's rows.
+    Also resets the in-memory rate limiters — every TestClient shares one client
+    IP, so the staff login's 10/minute brute-force cap would otherwise trip
+    spuriously partway through a test session."""
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {_DATA_TABLES} RESTART IDENTITY CASCADE"))
         conn.execute(text("UPDATE worker_heartbeat SET beat_at = NULL WHERE id = 1"))
+    from app.routers import auth_staff as _auth_staff
+    from app.routers import logs as _logs
+    _logs.limiter.reset()
+    _auth_staff.limiter.reset()
     yield
 
 
@@ -136,3 +151,38 @@ def add_user():
         finally:
             db.close()
     return _add
+
+
+@pytest.fixture
+def make_staff():
+    """Factory: create a platform-staff account. Returns email/password/role/id.
+    Staff are NOT org-scoped — this is the admin-site ("site 3") channel."""
+    counter = {"n": 0}
+
+    def _make(role: str = "superadmin", password: str = "staffpass123"):
+        counter["n"] += 1
+        email = f"staff{counter['n']}@foxy.audit"
+        db = SessionLocal()
+        try:
+            ph = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+            s = StaffUser(email=email, password_hash=ph, platform_role=role)
+            db.add(s)
+            db.commit()
+            db.refresh(s)
+            sid = str(s.id)
+        finally:
+            db.close()
+        return {"id": sid, "email": email, "password": password, "role": role}
+
+    return _make
+
+
+@pytest.fixture
+def staff_login():
+    """Factory: a fresh TestClient logged in to the ADMIN site as a staff user."""
+    def _login(email: str, password: str) -> TestClient:
+        c = TestClient(app)
+        r = c.post("/admin/v1/auth/login", json={"email": email, "password": password})
+        assert r.status_code == 200, f"staff login failed: {r.status_code} {r.text}"
+        return c
+    return _login

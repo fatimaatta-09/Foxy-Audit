@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db
-from .models import ApiKey, Organization, User
+from .models import ApiKey, Organization, StaffUser, User
 
 
 def _bearer_token(authorization: str) -> str:
@@ -128,3 +128,53 @@ def resolve_org(
             _scope_org(db, user.org_id)
             return db.get(Organization, user.org_id)
     raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+# ───────────────────────── platform-staff auth (site 3) ──────────────────────
+# The admin site runs on its OWN mounted sub-app with its OWN SessionMiddleware
+# (cookie `foxy_staff_session`, a distinct secret). The two apps are SIBLINGS, so
+# their `request.session` objects never collide. require_staff reads ONLY the
+# staff session key and never falls back to the customer session — so a customer
+# cookie can never satisfy a staff route, and vice-versa.
+
+# Ordered privilege ladder. A higher role satisfies any lower requirement.
+_PLATFORM_ROLES = {"viewer": 0, "operator": 1, "superadmin": 2}
+
+
+def require_staff(request: Request, db: Session = Depends(get_db)) -> StaffUser:
+    """Resolve the platform-staff user from the staff session cookie.
+
+    CRUCIAL: does NOT call `_scope_org` — it leaves `app.current_org` unset so a
+    staff query reads across ALL orgs (the docker `foxy` superuser bypasses FORCE
+    RLS). A staff endpoint that wants to drill into one org's RLS-protected rows
+    calls `set_org_scope_for_staff` deliberately."""
+    staff_id = request.session.get("staff_user_id")
+    if not staff_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    staff = db.get(StaffUser, uuid.UUID(str(staff_id)))
+    if staff is None:
+        raise HTTPException(status_code=401, detail="Session user no longer exists")
+    if staff.disabled:
+        raise HTTPException(status_code=401, detail="Account disabled")
+    return staff
+
+
+def require_platform_role(min_role: str):
+    """Dependency factory — gate a staff route on a MINIMUM platform role, using
+    the viewer < operator < superadmin ladder (so superadmin passes everything)."""
+    need = _PLATFORM_ROLES[min_role]
+
+    def _dep(staff: StaffUser = Depends(require_staff)) -> StaffUser:
+        have = _PLATFORM_ROLES.get(staff.platform_role, -1)
+        if have < need:
+            raise HTTPException(status_code=403, detail=f"requires '{min_role}' platform role")
+        return staff
+
+    return _dep
+
+
+def set_org_scope_for_staff(db: Session, org_id) -> None:
+    """Deliberately scope RLS to ONE org for a staff drill-down query (reuses the
+    same RLS path as customers instead of ad-hoc SQL). Only call when a staff
+    endpoint intends to read a single org's RLS-protected rows."""
+    _scope_org(db, org_id)

@@ -57,9 +57,19 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-foxy_demo_session_secret}
       - API_KEY_PEPPER=${API_KEY_PEPPER:-foxy_demo_pepper}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      # Admin site ("site 3") — staff cookie secret MUST differ from SESSION_SECRET in prod.
+      - STAFF_SESSION_SECRET=${STAFF_SESSION_SECRET:-foxy_demo_staff_session_secret}
+      - STAFF_COOKIE_DOMAIN=${STAFF_COOKIE_DOMAIN:-}
+      - ADMIN_CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-http://localhost:5174,http://127.0.0.1:5174}
+      - ADMIN_IP_ALLOWLIST=${ADMIN_IP_ALLOWLIST:-}
+      # In/out traffic capture (IP/UA HMAC-hashed with the pepper, never raw).
+      - TRAFFIC_TRACKING_ENABLED=${TRAFFIC_TRACKING_ENABLED:-true}
+      - TRAFFIC_RETENTION_DAYS=${TRAFFIC_RETENTION_DAYS:-90}
     volumes:
-      # The dashboard HTML lives at the repo root (outside this build context).
-      - ../foxy-audit-premium.html:/app/foxy-audit-premium.html:ro
+      # The dashboard + ops-console HTML live at the repo root (outside this
+      # build context) in foxy-dashboard/ and foxy-adminpage/.
+      - ../foxy-dashboard/foxy-audit-premium.html:/app/foxy-audit-premium.html:ro
+      - ../foxy-adminpage/index.html:/app/foxy-adminpage.html:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/ready || exit 1"]
@@ -82,6 +92,9 @@ services:
     environment:
       - DATABASE_URL=postgresql+psycopg://foxy:foxy@db:5432/foxy
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # usage_daily rollups + traffic partition create/drop run in this worker.
+      - USAGE_ROLLUP_INTERVAL=${USAGE_ROLLUP_INTERVAL:-300}
+      - TRAFFIC_RETENTION_DAYS=${TRAFFIC_RETENTION_DAYS:-90}
     command: python -m app.worker_main
     # Healthy only if the poller wrote a heartbeat in the last 30s (detects a hang).
     healthcheck:

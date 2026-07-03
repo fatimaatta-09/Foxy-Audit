@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foxy — Your AI Desktop Companion</title>
+<meta name="description" content="A desktop AI companion born from an ancient story. Meet Foxy.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=IM+Fell+English:ital@0;1&family=Share+Tech+Mono&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════
+   RESET & TOKENS
+═══════════════════════════════════════════ */
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+
+:root {
+  --fox:      #ff7a2e;
+  --fox2:     #ffb347;
+  --gold:     #d4a832;
+  --gold-dim: #6b4f10;
+  --parch:    #f5ead6;
+  --ink:      #0e0a06;
+  --void:     #07040b;
+  --void2:    #0e0c14;
+  --surf:     rgba(255,255,255,0.04);
+  --line:     rgba(255,255,255,0.07);
+  --cyan:     #00e0ff;
+  --white:    #ffffff;
+  --muted:    rgba(245,234,214,0.5);
+
+  --disp: 'Cinzel Decorative', serif;
+  --body: 'Geist', system-ui, sans-serif;
+  --fell: 'IM Fell English', Georgia, serif;
+  --mono: 'Share Tech Mono', monospace;
+}
+
+body {
+  font-family: var(--body);
+  background: var(--void);
+  color: var(--parch);
+  overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════
+   NAVBAR (always on top)
+═══════════════════════════════════════════ */
+.navbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 2.5rem;
+  background: transparent;
+  transition: background 0.4s ease, backdrop-filter 0.4s;
+}
+.navbar.scrolled {
+  background: rgba(7,4,11,0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.nav-logo {
+  font-family: var(--disp);
+  font-size: 1.1rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--fox2), var(--fox));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  list-style: none;
+}
+.nav-links a {
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: rgba(245,234,214,0.75);
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--parch); }
+.nav-cta {
+  font-family: var(--body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.55rem 1.4rem;
+  background: var(--fox);
+  color: var(--white);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.nav-cta:hover { background: var(--fox2); transform: translateY(-1px); }
+
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .navbar { padding: 1rem 1.4rem; }
+}
+
+/* ═══════════════════════════════════════════
+   STORY PLAYER SECTION (fullscreen)
+═══════════════════════════════════════════ */
+#story {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--void);
+}
+
+#story-video {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: center 70%;
+  filter: brightness(0.75) saturate(1.1);
+  transition: opacity 0.8s ease;
+}
+
+/* Cinematic overlays */
+.story-bar-top,
+.story-bar-bot {
+  position: absolute;
+  left: 0; right: 0;
+  background: var(--void);
+  z-index: 4;
+  pointer-events: none;
+  height: 7vh;
+  transition: height 0.6s ease;
+}
+.story-bar-top { top: 0; }
+.story-bar-bot { bottom: 0; }
+
+.story-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 50%, transparent 20%, rgba(7,4,11,0.7) 100%),
+    linear-gradient(to top, rgba(7,4,11,0.95) 0%, transparent 38%),
+    linear-gradient(to bottom, rgba(7,4,11,0.55) 0%, transparent 22%);
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Corner ornaments */
+.story-corners {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.story-corners::before,
+.story-corners::after {
+  content: '';
+  position: absolute;
+  width: 80px; height: 80px;
+  border-color: rgba(212,168,50,0.35);
+  border-style: solid;
+}
+.story-corners::before { top: 8vh; left: 2vw; border-width: 1px 0 0 1px; }
+.story-corners::after  { top: 8vh; right: 2vw; border-width: 1px 1px 0 0; }
+
+/* ── INTRO SPLASH ── */
+#intro-splash {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  background: radial-gradient(ellipse 60% 50% at 50% 55%, rgba(30,16,5,0.92), rgba(7,4,11,0.98));
+  transition: opacity 1.4s ease, visibility 1.4s;
+}
+#intro-splash.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.splash-eyebrow {
+  font-family: var(--mono);
+  font-size: clamp(0.55rem, 1.5vw, 0.7rem);
+  letter-spacing: 0.5em;
+  color: var(--gold-dim);
+  text-transform: uppercase;
+  margin-bottom: 1.4rem;
+  animation: fadeUp 1s ease 0.3s both;
+}
+.splash-title {
+  font-family: var(--disp);
+  font-size: clamp(4rem, 14vw, 10rem);
+  font-weight: 900;
+  line-height: 0.9;
+  background: linear-gradient(150deg, #f0d890 0%, #d4a832 40%, #ff7a2e 80%, #ff4500 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 60px rgba(212,168,50,0.25));
+  margin-bottom: 0.6rem;
+  animation: fadeUp 1.1s ease 0.5s both;
+}
+.splash-sub {
+  font-family: var(--fell);
+  font-style: italic;
+  font-size: clamp(0.85rem, 2.5vw, 1.2rem);
+  color: rgba(245,234,214,0.55);
+  margin-bottom: 3rem;
+  letter-spacing: 0.04em;
+  animation: fadeUp 1.1s ease 0.7s both;
+}
+.splash-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 3rem;
+  animation: fadeUp 1s ease 0.9s both;
+}
+.sdiv-line { width: 100px; height: 1px; background: linear-gradient(90deg, transparent, rgba(212,168,50,0.4)); }
+.sdiv-line.r { background: linear-gradient(90deg, rgba(212,168,50,0.4), transparent); }
+.sdiv-glyph { color: var(--gold); opacity: 0.5; font-size: 0.9rem; }
+
+.splash-btn {
+  font-family: var(--body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1.1rem 3.5rem;
+  background: linear-gradient(135deg, #f0d890, #d4a832, #ff7a2e);
+  color: var(--ink);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s, box-shadow 0.3s;
+  box-shadow: 0 0 30px rgba(212,168,50,0.25), 0 4px 20px rgba(0,0,0,0.5);
+  animation: fadeUp 1.1s ease 1.1s both;
+}
+.splash-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.splash-btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 0 50px rgba(212,168,50,0.45); }
+.splash-btn:hover::after { opacity: 1; }
+.splash-btn:active { transform: translateY(0) scale(0.99); }
+
+/* ── CHAPTER CAPTIONS ── */
+.story-caption {
+  position: absolute;
+  bottom: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(680px, 88vw);
+  text-align: center;
+  pointer-events: none;
+}
+.cap-badge {
+  display: inline-block;
+  font-family: var(--disp);
+  font-size: 0.55rem;
+  letter-spacing: 0.45em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(7,4,11,0.65);
+  border: 1px solid rgba(212,168,50,0.25);
+  padding: 0.28rem 1rem;
+  margin-bottom: 0.65rem;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.cap-text {
+  font-family: var(--fell);
+  font-style: italic;
+  font-size: clamp(1rem, 2.2vw, 1.3rem);
+  line-height: 1.65;
+  color: rgba(245,234,214,0.93);
+  text-shadow: 0 2px 20px rgba(0,0,0,0.95);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.8s ease 0.12s, transform 0.8s ease 0.12s;
+}
+.cap-badge.vis, .cap-text.vis { opacity: 1; transform: translateY(0); }
+
+/* ── TIMELINE ── */
+.story-timeline {
+  position: absolute;
+  bottom: 8vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: min(480px, 82vw);
+}
+.tl-track {
+  flex: 1;
+  height: 2px;
+  background: rgba(212,168,50,0.15);
+  position: relative;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.tl-fill {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--fox));
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.15s linear;
+  pointer-events: none;
+}
+.tl-dot {
+  position: absolute;
+  top: 50%;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--gold-dim);
+  transform: translateX(-50%) translateY(-50%);
+  transition: background 0.3s, box-shadow 0.3s, transform 0.3s;
+  cursor: pointer;
+}
+.tl-dot:hover, .tl-dot.past {
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+  transform: translateX(-50%) translateY(-50%) scale(1.3);
+}
+.tl-label {
+  position: absolute;
+  bottom: 180%;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.48rem;
+  color: var(--gold);
+  background: rgba(7,4,11,0.85);
+  padding: 0.2rem 0.5rem;
+  letter-spacing: 0.1em;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.tl-dot:hover .tl-label { opacity: 1; }
+.tl-time {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  color: rgba(212,168,50,0.45);
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ── VIDEO CONTROLS ── */
+.vid-controls {
+  position: absolute;
+  top: 10vh;
+  right: 2.5vw;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#story:hover .vid-controls { opacity: 1; }
+.vctrl {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(212,168,50,0.3);
+  background: rgba(7,4,11,0.5);
+  color: var(--gold);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 0.9rem;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s;
+}
+.vctrl:hover { background: rgba(212,168,50,0.15); border-color: var(--gold); }
+
+/* ── SCROLL DOWN HINT (after story ends) ── */
+#scroll-hint {
+  position: absolute;
+  bottom: 8vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 1s ease;
+  pointer-events: none;
+}
+#scroll-hint.vis { opacity: 1; pointer-events: auto; }
+#scroll-hint p {
+  font-family: var(--disp);
+  font-size: 0.58rem;
+  letter-spacing: 0.4em;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 0.8rem;
+}
+.scroll-arrow {
+  margin: 0 auto;
+  width: 22px; height: 36px;
+  border: 1.5px solid rgba(212,168,50,0.4);
+  border-radius: 11px;
+  position: relative;
+}
+.scroll-arrow::after {
+  content: '';
+  position: absolute;
+  top: 6px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 8px;
+  background: var(--gold);
+  border-radius: 2px;
+  animation: scrollDot 1.6s ease infinite;
+}
+@keyframes scrollDot { 0%{ top:6px; opacity:1; } 80%{ top:18px; opacity:0.2; } 100%{ top:6px; opacity:1; } }
+
+/* ═══════════════════════════════════════════
+   PARTICLES
+═══════════════════════════════════════════ */
+#particle-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════
+   CONTENT SECTIONS (below story)
+═══════════════════════════════════════════ */
+.content-wrap {
+  position: relative;
+  z-index: 2;
+  background: var(--void);
+}
+
+/* ── SECTION BASE ── */
+.section {
+  padding: 7rem 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.section-sm { padding: 5rem 2rem; }
+.section-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.45em;
+  text-transform: uppercase;
+  color: var(--fox);
+  margin-bottom: 0.8rem;
+}
+.section-title {
+  font-family: var(--disp);
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  font-weight: 700;
+  line-height: 1.1;
+  margin-bottom: 1.2rem;
+}
+.section-sub {
+  font-family: var(--fell);
+  font-style: italic;
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  color: var(--muted);
+  line-height: 1.7;
+  max-width: 560px;
+  margin-bottom: 3rem;
+}
+
+/* ── REVEAL ANIMATION ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(36px);
+  transition: opacity 0.9s ease, transform 0.9s ease;
+}
+.reveal.vis { opacity: 1; transform: translateY(0); }
+.reveal-2 { transition-delay: 0.15s; }
+.reveal-3 { transition-delay: 0.28s; }
+.reveal-4 { transition-delay: 0.4s; }
+
+/* ── SECTION DIVIDER ── */
+.ornament-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 1rem 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.od-line { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--line)); }
+.od-line.r { background: linear-gradient(90deg, var(--line), transparent); }
+.od-glyph { font-size: 0.7rem; color: rgba(212,168,50,0.3); letter-spacing: 0.3em; }
+
+/* ═══════════════════════════════════════════
+   ① DOWNLOAD & PRICING
+═══════════════════════════════════════════ */
+#download {
+  background: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(212,168,50,0.06), transparent 60%);
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.price-card {
+  position: relative;
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 2rem 1.8rem 2.2rem;
+  transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
+  overflow: hidden;
+}
+.price-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(212,168,50,0.3), transparent);
+}
+.price-card.featured {
+  border-color: rgba(212,168,50,0.45);
+  background: rgba(212,168,50,0.04);
+}
+.price-card.featured::before {
+  background: linear-gradient(90deg, var(--fox), var(--gold), var(--fox));
+  height: 2px;
+}
+.price-card:hover { border-color: rgba(212,168,50,0.4); transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,0.4); }
+
+.price-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.7rem;
+  border-radius: 20px;
+  margin-bottom: 1.2rem;
+  background: rgba(212,168,50,0.12);
+  color: var(--gold);
+  border: 1px solid rgba(212,168,50,0.25);
+}
+.price-badge.pop { background: rgba(255,122,46,0.12); color: var(--fox2); border-color: rgba(255,122,46,0.25); }
+
+.price-name {
+  font-family: var(--disp);
+  font-size: 1.1rem;
+  margin-bottom: 0.4rem;
+}
+.price-amount {
+  font-family: var(--body);
+  font-size: 2.4rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.price-amount sup { font-size: 1rem; vertical-align: top; margin-top: 0.5rem; opacity: 0.7; }
+.price-amount span { font-size: 0.9rem; font-weight: 400; opacity: 0.5; }
+.price-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.price-features {
+  list-style: none;
+  margin-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.price-features li {
+  font-size: 0.82rem;
+  color: rgba(245,234,214,0.75);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  line-height: 1.4;
+}
+.price-features li::before {
+  content: '✦';
+  color: var(--gold);
+  font-size: 0.5rem;
+  margin-top: 0.22rem;
+  flex-shrink: 0;
+}
+
+.price-btn {
+  width: 100%;
+  padding: 0.85rem;
+  border-radius: 8px;
+  border: none;
+  font-family: var(--body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+.price-btn.primary {
+  background: linear-gradient(135deg, var(--fox2), var(--fox));
+  color: var(--white);
+  box-shadow: 0 0 20px rgba(255,122,46,0.25);
+}
+.price-btn.primary:hover { box-shadow: 0 0 35px rgba(255,122,46,0.45); transform: translateY(-2px); }
+.price-btn.ghost {
+  background: transparent;
+  color: var(--parch);
+  border: 1px solid var(--line);
+}
+.price-btn.ghost:hover { border-color: rgba(212,168,50,0.4); background: var(--surf); }
+
+/* ── PAYMENT MODAL ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(7,4,11,0.88);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.35s ease;
+}
+.modal-overlay.open { opacity: 1; visibility: visible; }
+
+.modal {
+  background: var(--void2);
+  border: 1px solid rgba(212,168,50,0.25);
+  border-radius: 20px;
+  padding: 2.5rem;
+  max-width: 460px;
+  width: 100%;
+  position: relative;
+  transform: translateY(20px) scale(0.97);
+  transition: transform 0.35s ease;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+}
+.modal-overlay.open .modal { transform: translateY(0) scale(1); }
+
+.modal-close {
+  position: absolute;
+  top: 1.2rem; right: 1.4rem;
+  background: none; border: none;
+  color: var(--muted);
+  font-size: 1.3rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.modal-close:hover { color: var(--parch); }
+
+.modal-title {
+  font-family: var(--disp);
+  font-size: 1.2rem;
+  margin-bottom: 0.4rem;
+}
+.modal-plan {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  color: var(--fox);
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+
+.form-group { margin-bottom: 1.2rem; }
+.form-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: rgba(245,234,214,0.6);
+  margin-bottom: 0.45rem;
+  text-transform: uppercase;
+}
+.form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--parch);
+  font-family: var(--body);
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+  outline: none;
+}
+.form-input:focus { border-color: rgba(212,168,50,0.5); }
+.form-input::placeholder { color: rgba(245,234,214,0.25); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+
+.form-submit {
+  width: 100%;
+  padding: 0.95rem;
+  background: linear-gradient(135deg, var(--fox2), var(--fox));
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  font-family: var(--body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: all 0.25s;
+  box-shadow: 0 0 20px rgba(255,122,46,0.2);
+}
+.form-submit:hover { box-shadow: 0 0 36px rgba(255,122,46,0.4); transform: translateY(-1px); }
+
+.secure-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  font-size: 0.68rem;
+  color: rgba(245,234,214,0.3);
+}
+
+/* ═══════════════════════════════════════════
+   ② FEATURES
+═══════════════════════════════════════════ */
+#features {
+  background: radial-gradient(ellipse 80% 60% at 20% 50%, rgba(255,122,46,0.04), transparent 60%);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.2rem;
+}
+
+.feat-card {
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.8rem 1.6rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+.feat-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,122,46,0.2), transparent);
+}
+.feat-card:hover { border-color: rgba(255,122,46,0.25); transform: translateY(-3px); background: rgba(255,122,46,0.03); }
+.feat-icon { font-size: 1.8rem; margin-bottom: 1rem; display: block; }
+.feat-name {
+  font-family: var(--body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--parch);
+}
+.feat-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ═══════════════════════════════════════════
+   ③ USER MANUAL
+═══════════════════════════════════════════ */
+#manual {
+  background: radial-gradient(ellipse 70% 50% at 80% 50%, rgba(0,224,255,0.03), transparent 60%);
+}
+
+.manual-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 3rem;
+  align-items: start;
+}
+
+@media (max-width: 768px) { .manual-layout { grid-template-columns: 1fr; } }
+
+.manual-nav {
+  position: sticky;
+  top: 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.manual-nav-item {
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.55rem 0.9rem;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.2s;
+  background: none;
+  border: none;
+  text-align: left;
+  letter-spacing: 0.02em;
+}
+.manual-nav-item:hover, .manual-nav-item.active {
+  color: var(--parch);
+  background: var(--surf);
+}
+.manual-nav-item.active { color: var(--fox2); }
+
+.manual-content { min-height: 400px; }
+
+.manual-step {
+  display: none;
+}
+.manual-step.active { display: block; }
+
+.step-num {
+  font-family: var(--disp);
+  font-size: 4rem;
+  font-weight: 900;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(212,168,50,0.18);
+  line-height: 1;
+  margin-bottom: -1rem;
+  display: block;
+}
+.step-title {
+  font-family: var(--disp);
+  font-size: clamp(1.3rem, 3vw, 1.9rem);
+  margin-bottom: 1rem;
+}
+.step-body {
+  font-family: var(--fell);
+  font-style: italic;
+  font-size: 1.05rem;
+  color: var(--muted);
+  line-height: 1.8;
+  margin-bottom: 1.5rem;
+}
+.step-code {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.2rem 1.4rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--cyan);
+  line-height: 1.7;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+.step-tips {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.step-tips li {
+  font-size: 0.85rem;
+  color: rgba(245,234,214,0.7);
+  display: flex;
+  gap: 0.6rem;
+  line-height: 1.5;
+}
+.step-tips li::before { content: '→'; color: var(--fox); flex-shrink: 0; }
+
+.step-nav-btns {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 2rem;
+}
+.step-btn {
+  font-family: var(--body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.65rem 1.4rem;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surf);
+  color: var(--parch);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.step-btn:hover { border-color: rgba(212,168,50,0.4); }
+.step-btn.next { background: var(--fox); border-color: var(--fox); color: white; }
+.step-btn.next:hover { background: var(--fox2); border-color: var(--fox2); }
+
+/* ═══════════════════════════════════════════
+   ④ SUPPORT
+═══════════════════════════════════════════ */
+#support {
+  background: radial-gradient(ellipse 60% 50% at 50% 100%, rgba(255,122,46,0.05), transparent 60%);
+}
+
+.support-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.4rem;
+  margin-bottom: 4rem;
+}
+
+.support-card {
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 2rem 1.8rem;
+  transition: all 0.3s;
+  text-decoration: none;
+  display: block;
+  color: var(--parch);
+}
+.support-card:hover { border-color: rgba(255,122,46,0.3); transform: translateY(-3px); background: rgba(255,122,46,0.03); }
+.support-icon { font-size: 2rem; margin-bottom: 1rem; display: block; }
+.support-title { font-family: var(--disp); font-size: 0.95rem; margin-bottom: 0.5rem; }
+.support-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.6; }
+
+.contact-form {
+  max-width: 580px;
+  margin: 0 auto;
+}
+.contact-form .form-group { margin-bottom: 1.2rem; }
+.contact-form textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+/* ═══════════════════════════════════════════
+   FOOTER
+═══════════════════════════════════════════ */
+footer {
+  border-top: 1px solid var(--line);
+  padding: 3rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2rem;
+  text-align: center;
+}
+.footer-logo {
+  font-family: var(--disp);
+  font-size: 1.4rem;
+  background: linear-gradient(135deg, var(--fox2), var(--fox));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.footer-links {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.footer-links a {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color 0.2s;
+}
+.footer-links a:hover { color: var(--parch); }
+.footer-copy { font-size: 0.68rem; color: rgba(245,234,214,0.2); letter-spacing: 0.05em; }
+
+/* ═══════════════════════════════════════════
+   ANIMATIONS
+═══════════════════════════════════════════ */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(28px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+/* ═══════════════════════════════════════════
+   SCROLLBAR
+═══════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--void); }
+::-webkit-scrollbar-thumb { background: rgba(212,168,50,0.25); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(212,168,50,0.4); }
+</style>
+</head>
+<body>
+
+<!-- PARTICLES -->
+<canvas id="particle-canvas"></canvas>
+
+<!-- ══════════ NAVBAR ══════════ -->
+<nav class="navbar" id="navbar">
+  <a class="nav-logo" href="#">Foxy</a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#download">Download</a></li>
+    <li><a href="#manual">Manual</a></li>
+    <li><a href="#support">Support</a></li>
+  </ul>
+  <a href="#download" class="nav-cta">Get Foxy</a>
+</nav>
+
+<!-- ══════════ STORY SECTION ══════════ -->
+<section id="story">
+
+  <video id="story-video" muted playsinline preload="auto">
+    <source src="video/story.mp4" type="video/mp4">
+  </video>
+
+  <div class="story-bar-top"></div>
+  <div class="story-bar-bot"></div>
+  <div class="story-vignette"></div>
+  <div class="story-corners"></div>
+
+  <!-- INTRO SPLASH -->
+  <div id="intro-splash">
+    <div class="splash-eyebrow">A Story of Finding Home</div>
+    <div class="splash-title">Foxy</div>
+    <div class="splash-sub">From a lonely jungle to your desktop — one fox's journey</div>
+    <div class="splash-divider">
+      <div class="sdiv-line"></div>
+      <div class="sdiv-glyph">❧</div>
+      <div class="sdiv-line r"></div>
+    </div>
+    <button class="splash-btn" id="play-story">▶&ensp;Begin the Story</button>
+  </div>
+
+  <!-- CHAPTER CAPTIONS -->
+  <div class="story-caption">
+    <div class="cap-badge" id="cap-badge"></div>
+    <div class="cap-text" id="cap-text"></div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="story-timeline">
+    <div class="tl-track" id="tl-track">
+      <div class="tl-fill" id="tl-fill"></div>
+      <div class="tl-dot" style="left:0%" data-t="0"><span class="tl-label">I · The Book</span></div>
+      <div class="tl-dot" style="left:26.3%" data-t="10.005"><span class="tl-label">II · The Jungle</span></div>
+      <div class="tl-dot" style="left:52.6%" data-t="20.01"><span class="tl-label">III · The City</span></div>
+      <div class="tl-dot" style="left:78.9%" data-t="30.015"><span class="tl-label">IV · Becoming Foxy</span></div>
+    </div>
+    <div class="tl-time" id="tl-time">0:00</div>
+  </div>
+
+  <!-- VIDEO CONTROLS -->
+  <div class="vid-controls">
+    <div class="vctrl" id="vc-sound" title="Toggle sound">🔇</div>
+    <div class="vctrl" id="vc-replay" title="Replay">↺</div>
+  </div>
+
+  <!-- SCROLL HINT (shown after story ends) -->
+  <div id="scroll-hint">
+    <p>Continue the journey</p>
+    <div class="scroll-arrow"></div>
+  </div>
+
+</section>
+
+<!-- ══════════ CONTENT ══════════ -->
+<div class="content-wrap">
+
+  <!-- ① DOWNLOAD & PRICING -->
+  <section id="download">
+    <div class="section">
+      <div class="reveal">
+        <p class="section-eyebrow">Get Started</p>
+        <h2 class="section-title">Download Foxy</h2>
+        <p class="section-sub">Choose your plan and bring Foxy to your desktop. Free forever or unlock the full companion experience.</p>
+      </div>
+
+      <div class="pricing-grid">
+        <!-- FREE -->
+        <div class="price-card reveal reveal-2">
+          <div class="price-badge">Free</div>
+          <div class="price-name">The Wanderer</div>
+          <div class="price-amount"><sup>$</sup>0<span>/mo</span></div>
+          <div class="price-desc">Foxy finds her home on your desktop. The essentials, forever free.</div>
+          <ul class="price-features">
+            <li>Desktop companion with 4 emotion states</li>
+            <li>Window tracking & idle animations</li>
+            <li>Basic CPU/RAM alerts</li>
+            <li>Click to drag & reposition</li>
+          </ul>
+          <button class="price-btn ghost" onclick="downloadFree()">Download Free</button>
+        </div>
+
+        <!-- PRO -->
+        <div class="price-card featured reveal reveal-3">
+          <div class="price-badge pop">Most Popular</div>
+          <div class="price-name">The Companion</div>
+          <div class="price-amount"><sup>$</sup>4<span>.99/mo</span></div>
+          <div class="price-desc">The full Foxy experience — all 12 emotions, AI chat, and deep system awareness.</div>
+          <ul class="price-features">
+            <li>All 12 emotional states & animations</li>
+            <li>AI Chat powered by Claude / GPT-4 / Ollama</li>
+            <li>Advanced system monitoring & voice alerts</li>
+            <li>Battery guardian & low-resource warnings</li>
+            <li>Eye tracking & typing reaction</li>
+            <li>Autonomous roaming across windows</li>
+          </ul>
+          <button class="price-btn primary" onclick="openModal('companion', '$4.99/mo')">Get Companion →</button>
+        </div>
+
+        <!-- LIFETIME -->
+        <div class="price-card reveal reveal-4">
+          <div class="price-badge">Best Value</div>
+          <div class="price-name">The Guardian</div>
+          <div class="price-amount"><sup>$</sup>39<span> once</span></div>
+          <div class="price-desc">Lifetime access. One payment. Foxy stays with you forever.</div>
+          <ul class="price-features">
+            <li>Everything in Companion, forever</li>
+            <li>Lifetime updates included</li>
+            <li>Priority support channel</li>
+            <li>Early access to new features</li>
+            <li>Custom fox name & personality settings</li>
+          </ul>
+          <button class="price-btn ghost" onclick="openModal('guardian', '$39 once')">Go Lifetime →</button>
+        </div>
+      </div>
+
+      <p style="font-size:0.72rem;color:var(--muted);text-align:center">
+        Windows 10/11 · Python 3.10+ required · PyQt6 · Open source core
+      </p>
+    </div>
+  </section>
+
+  <div class="ornament-divider"><div class="od-line"></div><div class="od-glyph">✦ ✦ ✦</div><div class="od-line r"></div></div>
+
+  <!-- ② FEATURES -->
+  <section id="features">
+    <div class="section">
+      <div class="reveal">
+        <p class="section-eyebrow">What Foxy Does</p>
+        <h2 class="section-title">A companion that<br>actually cares</h2>
+        <p class="section-sub">Foxy isn't decoration. She reacts to your world, watches over your machine, and talks back when you need her.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feat-card reveal reveal-2">
+          <span class="feat-icon">🧠</span>
+          <div class="feat-name">System Guardian</div>
+          <div class="feat-desc">Watches CPU, RAM, and battery in real time. Cries when your battery hits 20%. Panics when your CPU hits 85%.</div>
+        </div>
+        <div class="feat-card reveal reveal-2">
+          <span class="feat-icon">💬</span>
+          <div class="feat-name">AI Chat</div>
+          <div class="feat-desc">Click Foxy to open a chat popup. She's powered by Claude, GPT-4, or your local Ollama model. She remembers context.</div>
+        </div>
+        <div class="feat-card reveal reveal-3">
+          <span class="feat-icon">🪟</span>
+          <div class="feat-name">Window Tracker</div>
+          <div class="feat-desc">Foxy follows your active window and sits on top of it. She roams autonomously when no window is in focus.</div>
+        </div>
+        <div class="feat-card reveal reveal-3">
+          <span class="feat-icon">🎭</span>
+          <div class="feat-name">12 Emotional States</div>
+          <div class="feat-desc">Sleep, alert, loving, shy, cheering, crying, thinking, standing, cuddling — she feels everything you do.</div>
+        </div>
+        <div class="feat-card reveal reveal-4">
+          <span class="feat-icon">⌨️</span>
+          <div class="feat-name">Input Reaction</div>
+          <div class="feat-desc">Foxy reacts every time you type or scroll. She paws the screen when you're typing and chores when you scroll fast.</div>
+        </div>
+        <div class="feat-card reveal reveal-4">
+          <span class="feat-icon">🔋</span>
+          <div class="feat-name">Battery Guardian</div>
+          <div class="feat-desc">She monitors your battery and power state. If you forget to plug in, she'll cry until you do.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="ornament-divider"><div class="od-line"></div><div class="od-glyph">✦ ✦ ✦</div><div class="od-line r"></div></div>
+
+  <!-- ③ USER MANUAL -->
+  <section id="manual">
+    <div class="section">
+      <div class="reveal">
+        <p class="section-eyebrow">User Manual</p>
+        <h2 class="section-title">Getting Foxy<br>up and running</h2>
+        <p class="section-sub">Everything you need to install, configure, and live with your new companion.</p>
+      </div>
+
+      <div class="manual-layout reveal reveal-2">
+        <nav class="manual-nav">
+          <button class="manual-nav-item active" onclick="showStep(0, this)">1. Installation</button>
+          <button class="manual-nav-item" onclick="showStep(1, this)">2. First Launch</button>
+          <button class="manual-nav-item" onclick="showStep(2, this)">3. AI Chat Setup</button>
+          <button class="manual-nav-item" onclick="showStep(3, this)">4. Interactions</button>
+          <button class="manual-nav-item" onclick="showStep(4, this)">5. Customisation</button>
+          <button class="manual-nav-item" onclick="showStep(5, this)">6. Troubleshooting</button>
+        </nav>
+
+        <div class="manual-content">
+
+          <div class="manual-step active" id="step-0">
+            <span class="step-num">01</span>
+            <h3 class="step-title">Installation</h3>
+            <p class="step-body">Foxy requires Python 3.10 or higher and a few packages. Run the following in your terminal to get everything set up:</p>
+            <div class="step-code"># Install dependencies
+pip install PyQt6 psutil pynput requests
+
+# Download Foxy
+git clone https://github.com/yourusername/foxy-companion
+cd foxy-companion
+
+# Run Foxy
+python omni_fox.py</div>
+            <ul class="step-tips">
+              <li>Make sure you have Python 3.10+ installed: <code>python --version</code></li>
+              <li>On Windows, run your terminal as Administrator if you see permission errors</li>
+              <li>Keep <code>ultimate_fox_spritesheet.png</code> in the same folder as <code>omni_fox.py</code></li>
+            </ul>
+            <div class="step-nav-btns">
+              <button class="step-btn next" onclick="showStep(1, document.querySelectorAll('.manual-nav-item')[1])">Next: First Launch →</button>
+            </div>
+          </div>
+
+          <div class="manual-step" id="step-1">
+            <span class="step-num">02</span>
+            <h3 class="step-title">First Launch</h3>
+            <p class="step-body">When Foxy first appears, she'll be in the bottom-right corner of your screen. She's a little shy at first — give her a moment to settle in.</p>
+            <ul class="step-tips">
+              <li><strong>Left-click</strong> Foxy to open the AI chat popup</li>
+              <li><strong>Right-click</strong> to open the context menu with all emotion controls</li>
+              <li><strong>Drag</strong> her by left-clicking and holding to reposition anywhere on screen</li>
+              <li>She'll start following your active window automatically within a few seconds</li>
+              <li>Foxy always stays on top of other windows — she'll never get buried</li>
+            </ul>
+            <div class="step-nav-btns">
+              <button class="step-btn" onclick="showStep(0, document.querySelectorAll('.manual-nav-item')[0])">← Back</button>
+              <button class="step-btn next" onclick="showStep(2, document.querySelectorAll('.manual-nav-item')[2])">Next: AI Chat →</button>
+            </div>
+          </div>
+
+          <div class="manual-step" id="step-2">
+            <span class="step-num">03</span>
+            <h3 class="step-title">AI Chat Setup</h3>
+            <p class="step-body">Foxy can talk back using Claude, GPT-4, or a local Ollama model. Open <code>clay_chat_popup.py</code> and set your preferred provider:</p>
+            <div class="step-code"># In clay_chat_popup.py — set your API key
+ANTHROPIC_API_KEY = "sk-ant-..."   # Claude
+OPENAI_API_KEY    = "sk-..."       # GPT-4
+
+# Or use local Ollama (no API key needed)
+OLLAMA_MODEL = "llama3"
+OLLAMA_URL   = "http://localhost:11434"</div>
+            <ul class="step-tips">
+              <li>Ollama is free and runs locally — recommended for privacy</li>
+              <li>Claude gives the most natural personality for Foxy</li>
+              <li>The chat popup remembers context within a session</li>
+              <li>Right-click → "Ask PC Health" to let Foxy read your system stats aloud</li>
+            </ul>
+            <div class="step-nav-btns">
+              <button class="step-btn" onclick="showStep(1, document.querySelectorAll('.manual-nav-item')[1])">← Back</button>
+              <button class="step-btn next" onclick="showStep(3, document.querySelectorAll('.manual-nav-item')[3])">Next: Interactions →</button>
+            </div>
+          </div>
+
+          <div class="manual-step" id="step-3">
+            <span class="step-num">04</span>
+            <h3 class="step-title">Interactions</h3>
+            <p class="step-body">Foxy reacts to everything you do. Here's the full interaction map:</p>
+            <ul class="step-tips">
+              <li><strong>Typing</strong> → Foxy plays the PAWING animation</li>
+              <li><strong>Scrolling</strong> → Foxy plays the CHORE animation</li>
+              <li><strong>High CPU (85%+)</strong> → Foxy cries until it drops</li>
+              <li><strong>Low battery (20%)</strong> → Foxy cries until plugged in</li>
+              <li><strong>3 minutes idle</strong> → Foxy curls up and sleeps</li>
+              <li><strong>Active window changes</strong> → Foxy walks to the new window</li>
+              <li><strong>Right-click menu</strong> → Manually trigger any emotion</li>
+            </ul>
+            <div class="step-nav-btns">
+              <button class="step-btn" onclick="showStep(2, document.querySelectorAll('.manual-nav-item')[2])">← Back</button>
+              <button class="step-btn next" onclick="showStep(4, document.querySelectorAll('.manual-nav-item')[4])">Next: Customise →</button>
+            </div>
+          </div>
+
+          <div class="manual-step" id="step-4">
+            <span class="step-num">05</span>
+            <h3 class="step-title">Customisation</h3>
+            <p class="step-body">Foxy's behaviour is fully configurable at the top of <code>omni_fox.py</code>:</p>
+            <div class="step-code"># Speed (ms per frame) — lower = faster animations
+self.anim_timer.start(125)
+
+# Tracking speed (0.01 = slow, 0.15 = fast)
+new_x = current_x + (target_x - current_x) * 0.08
+
+# Idle sleep threshold (seconds)
+if now - self.last_interaction_time > 180:
+
+# Roaming interval (ticks at 60fps)
+if self.roam_timer > 300:</div>
+            <ul class="step-tips">
+              <li>Replace <code>ultimate_fox_spritesheet.png</code> with any compatible spritesheet</li>
+              <li>Add new ROW constants to expose custom animations in the context menu</li>
+              <li>The CELL_WIDTH/HEIGHT must match your spritesheet's frame dimensions exactly</li>
+            </ul>
+            <div class="step-nav-btns">
+              <button class="step-btn" onclick="showStep(3, document.querySelectorAll('.manual-nav-item')[3])">← Back</button>
+              <button class="step-btn next" onclick="showStep(5, document.querySelectorAll('.manual-nav-item')[5])">Next: Troubleshooting →</button>
+            </div>
+          </div>
+
+          <div class="manual-step" id="step-5">
+            <span class="step-num">06</span>
+            <h3 class="step-title">Troubleshooting</h3>
+            <p class="step-body">Common issues and how to fix them:</p>
+            <ul class="step-tips">
+              <li><strong>Foxy doesn't appear</strong> — Check that the spritesheet PNG is in the same folder</li>
+              <li><strong>Window tracking doesn't work</strong> — Windows only; <code>ctypes</code> needs Win32 API access</li>
+              <li><strong>Chat popup is blank</strong> — Check your API key in <code>clay_chat_popup.py</code></li>
+              <li><strong>Foxy freezes</strong> — Reduce animation speed or increase the timer interval</li>
+              <li><strong>High CPU from Foxy herself</strong> — The tracking timer runs at 16ms; increase to 32ms if needed</li>
+              <li><strong>pynput errors</strong> — Run <code>pip install --upgrade pynput</code></li>
+              <li><strong>PyQt6 import error</strong> — Run <code>pip install PyQt6 --force-reinstall</code></li>
+            </ul>
+            <div class="step-nav-btns">
+              <button class="step-btn" onclick="showStep(4, document.querySelectorAll('.manual-nav-item')[4])">← Back</button>
+              <button class="step-btn next" onclick="document.getElementById('support').scrollIntoView({behavior:'smooth'})">Get Support →</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="ornament-divider"><div class="od-line"></div><div class="od-glyph">✦ ✦ ✦</div><div class="od-line r"></div></div>
+
+  <!-- ④ SUPPORT -->
+  <section id="support">
+    <div class="section">
+      <div class="reveal">
+        <p class="section-eyebrow">We're Here</p>
+        <h2 class="section-title">Support &amp; Contact</h2>
+        <p class="section-sub">Foxy's team is small but quick. Reach us through any of these channels and we'll get back to you.</p>
+      </div>
+
+      <div class="support-grid reveal reveal-2">
+        <a href="https://github.com" class="support-card" target="_blank">
+          <span class="support-icon">🐙</span>
+          <div class="support-title">GitHub Issues</div>
+          <div class="support-desc">Bug reports, feature requests, and community discussion. The fastest path to a fix.</div>
+        </a>
+        <a href="mailto:support@foxychat.ai" class="support-card">
+          <span class="support-icon">📬</span>
+          <div class="support-title">Email Support</div>
+          <div class="support-desc">support@foxychat.ai — for billing, account issues, and anything private. We reply within 24h.</div>
+        </a>
+        <a href="#" class="support-card">
+          <span class="support-icon">💬</span>
+          <div class="support-title">Discord Community</div>
+          <div class="support-desc">Join other Foxy users. Share your setups, report issues, and meet the team in real time.</div>
+        </a>
+      </div>
+
+      <!-- CONTACT FORM -->
+      <div class="contact-form reveal reveal-3">
+        <p class="section-eyebrow" style="margin-bottom:1.2rem">Send a Message</p>
+        <div class="form-group">
+          <label class="form-label">Your Name</label>
+          <input type="text" class="form-input" placeholder="Jane Smith" id="contact-name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" class="form-input" placeholder="jane@example.com" id="contact-email">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subject</label>
+          <select class="form-input" style="cursor:pointer">
+            <option value="">Select a topic...</option>
+            <option>Installation help</option>
+            <option>AI chat setup</option>
+            <option>Billing & payments</option>
+            <option>Feature request</option>
+            <option>Bug report</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message</label>
+          <textarea class="form-input" rows="5" placeholder="Tell us what's going on..."></textarea>
+        </div>
+        <button class="form-submit" onclick="submitContact(this)">Send Message</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-logo">Foxy</div>
+    <nav class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="#manual">Manual</a>
+      <a href="#support">Support</a>
+      <a href="https://github.com" target="_blank">GitHub</a>
+    </nav>
+    <p class="footer-copy">© 2026 Foxy Companion — Open source with love ♥</p>
+  </footer>
+
+</div><!-- /content-wrap -->
+
+<!-- ══════════ PAYMENT MODAL ══════════ -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-title">Complete Purchase</div>
+    <div class="modal-plan" id="modal-plan-label">The Companion — $4.99/mo</div>
+
+    <div class="form-group">
+      <label class="form-label">Full Name</label>
+      <input type="text" class="form-input" placeholder="Your name" id="pay-name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input type="email" class="form-input" placeholder="you@example.com" id="pay-email">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Card Number</label>
+      <input type="text" class="form-input" placeholder="4242 4242 4242 4242" maxlength="19" id="pay-card" oninput="formatCard(this)">
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Expiry</label>
+        <input type="text" class="form-input" placeholder="MM / YY" maxlength="7" id="pay-exp" oninput="formatExp(this)">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">CVC</label>
+        <input type="text" class="form-input" placeholder="123" maxlength="3" id="pay-cvc">
+      </div>
+    </div>
+    <button class="form-submit" onclick="processPayment(this)">Pay &amp; Download</button>
+    <div class="secure-note">🔒 256-bit SSL encrypted · Powered by Stripe</div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// PARTICLES
+// ═══════════════════════════════════════════════
+const pc = document.getElementById('particle-canvas');
+const px = pc.getContext('2d');
+let PW = 0, PH = 0;
+const PARTS = [];
+
+function resizePc() {
+  PW = pc.width  = window.innerWidth;
+  PH = pc.height = window.innerHeight;
+}
+resizePc();
+window.addEventListener('resize', resizePc);
+
+for (let i = 0; i < 60; i++) {
+  PARTS.push({
+    x: Math.random() * innerWidth,
+    y: Math.random() * innerHeight,
+    r: Math.random() * 1.4 + 0.3,
+    vx: (Math.random() - 0.5) * 0.22,
+    vy: -Math.random() * 0.28 - 0.04,
+    a: Math.random() * 0.4 + 0.08,
+    h: Math.random() > 0.4 ? 40 : 183,
+    tw: Math.random() * Math.PI * 2,
+  });
+}
+(function animPc() {
+  px.clearRect(0,0,PW,PH);
+  PARTS.forEach(p => {
+    p.x += p.vx; p.y += p.vy; p.tw += 0.035;
+    if (p.y < 0) { p.y = PH; p.x = Math.random() * PW; }
+    if (p.x < 0) p.x = PW; if (p.x > PW) p.x = 0;
+    const a = p.a * (0.7 + 0.3 * Math.sin(p.tw));
+    px.beginPath();
+    px.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    px.fillStyle = `hsla(${p.h},90%,70%,${a})`;
+    px.fill();
+  });
+  requestAnimationFrame(animPc);
+})();
+
+// ═══════════════════════════════════════════════
+// NAVBAR SCROLL
+// ═══════════════════════════════════════════════
+window.addEventListener('scroll', () => {
+  document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 60);
+}, { passive: true });
+
+// ═══════════════════════════════════════════════
+// VIDEO STORY ENGINE
+// ═══════════════════════════════════════════════
+const vid = document.getElementById('story-video');
+const splash = document.getElementById('intro-splash');
+const capBadge = document.getElementById('cap-badge');
+const capText = document.getElementById('cap-text');
+const tlFill = document.getElementById('tl-fill');
+const tlTime = document.getElementById('tl-time');
+const tlDots = document.querySelectorAll('.tl-dot');
+const scrollHint = document.getElementById('scroll-hint');
+
+const CHAPTERS = [
+  { t: 0,      end: 10.005, badge: 'Chapter I',   text: 'Deep in a primeval jungle at dusk — an ancient tome, sealed shut with a wax paw-print, begins to crack open.' },
+  { t: 10.005, end: 20.010, badge: 'Chapter II',  text: 'A small fox, curled alone beneath ancient roots — longing for something she cannot name.' },
+  { t: 20.010, end: 30.015, badge: 'Chapter III', text: 'Cobblestone streets. A glowing window. A developer who smiled gently and made room for a lost fox in his world.' },
+  { t: 30.015, end: 38.058, badge: 'Chapter IV',  text: 'For the first time, she smiled. A warmth rose from within. She was no longer surviving. She was Foxy. She was home.' },
+];
+
+let curChapter = -1;
+let capTimer = null;
+let storyEnded = false;
+
+// Play button
+document.getElementById('play-story').addEventListener('click', () => {
+  vid.currentTime = 0;
+  vid.muted = true;
+  vid.play().then(() => {
+    splash.classList.add('hidden');
+    storyEnded = false;
+    scrollHint.classList.remove('vis');
+  }).catch(() => { vid.muted = true; vid.play(); splash.classList.add('hidden'); });
+});
+
+// Sound toggle
+const soundBtn = document.getElementById('vc-sound');
+soundBtn.addEventListener('click', () => {
+  vid.muted = !vid.muted;
+  soundBtn.textContent = vid.muted ? '🔇' : '🔊';
+});
+
+// Replay
+document.getElementById('vc-replay').addEventListener('click', () => {
+  vid.currentTime = 0;
+  vid.play();
+  splash.style.display = 'none';
+  curChapter = -1;
+  storyEnded = false;
+  scrollHint.classList.remove('vis');
+  hideCaptions();
+});
+
+// Timeline seek
+document.getElementById('tl-track').addEventListener('click', e => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  if (vid.duration) { vid.currentTime = pct * vid.duration; if (vid.paused) vid.play(); }
+  splash.style.display = 'none';
+});
+
+tlDots.forEach(d => {
+  d.addEventListener('click', e => {
+    e.stopPropagation();
+    vid.currentTime = parseFloat(d.dataset.t);
+    if (vid.paused) vid.play();
+    splash.style.display = 'none';
+  });
+});
+
+function showCaption(i) {
+  if (curChapter === i) return;
+  curChapter = i;
+  clearTimeout(capTimer);
+  capBadge.classList.remove('vis');
+  capText.classList.remove('vis');
+  setTimeout(() => {
+    capBadge.textContent = CHAPTERS[i].badge;
+    capText.textContent = CHAPTERS[i].text;
+    capBadge.classList.add('vis');
+    capText.classList.add('vis');
+  }, 60);
+  capTimer = setTimeout(hideCaptions, 4500);
+}
+
+function hideCaptions() {
+  capBadge.classList.remove('vis');
+  capText.classList.remove('vis');
+}
+
+vid.addEventListener('timeupdate', () => {
+  const t = vid.currentTime;
+  const d = vid.duration || 38.058;
+  tlFill.style.width = ((t / d) * 100) + '%';
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  tlTime.textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  tlDots.forEach(dot => dot.classList.toggle('past', t >= parseFloat(dot.dataset.t)));
+  for (let i = CHAPTERS.length - 1; i >= 0; i--) {
+    if (t >= CHAPTERS[i].t) { showCaption(i); break; }
+  }
+});
+
+vid.addEventListener('ended', () => {
+  hideCaptions();
+  if (!storyEnded) {
+    storyEnded = true;
+    setTimeout(() => scrollHint.classList.add('vis'), 400);
+  }
+});
+
+// Click story area to play
+document.getElementById('story').addEventListener('click', e => {
+  if (e.target.closest('.vctrl') || e.target.closest('#tl-track') || e.target.closest('.tl-dot') || e.target.closest('#intro-splash') || e.target.closest('#scroll-hint')) return;
+  if (vid.paused && !splash.classList.contains('hidden') === false) {
+    vid.play().catch(() => {});
+    splash.classList.add('hidden');
+  }
+});
+
+// ═══════════════════════════════════════════════
+// SCROLL REVEAL
+// ═══════════════════════════════════════════════
+const revealEls = document.querySelectorAll('.reveal');
+const revObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('vis'); revObs.unobserve(e.target); }
+  });
+}, { threshold: 0.15 });
+revealEls.forEach(el => revObs.observe(el));
+
+// ═══════════════════════════════════════════════
+// MANUAL STEPS
+// ═══════════════════════════════════════════════
+function showStep(idx, btn) {
+  document.querySelectorAll('.manual-step').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.manual-nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('step-' + idx).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════
+// PAYMENT MODAL
+// ═══════════════════════════════════════════════
+let currentPlan = '';
+
+function openModal(plan, label) {
+  currentPlan = plan;
+  document.getElementById('modal-plan-label').textContent =
+    (plan === 'companion' ? 'The Companion' : 'The Guardian') + ' — ' + label;
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function closeModalOutside(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+function formatCard(input) {
+  let v = input.value.replace(/\D/g,'').substring(0,16);
+  input.value = v.replace(/(\d{4})(?=\d)/g,'$1 ');
+}
+function formatExp(input) {
+  let v = input.value.replace(/\D/g,'').substring(0,4);
+  if (v.length > 2) v = v.slice(0,2) + ' / ' + v.slice(2);
+  input.value = v;
+}
+
+function processPayment(btn) {
+  const name  = document.getElementById('pay-name').value.trim();
+  const email = document.getElementById('pay-email').value.trim();
+  const card  = document.getElementById('pay-card').value.replace(/\s/g,'');
+  if (!name || !email || card.length < 16) {
+    btn.textContent = 'Please fill all fields';
+    btn.style.background = 'rgba(255,60,60,0.5)';
+    setTimeout(() => { btn.textContent = 'Pay & Download'; btn.style.background = ''; }, 2200);
+    return;
+  }
+  if (isValidEmail(email)) {
+    // Capture purchase intent as a lead — fire-and-forget, never blocks checkout
+    postLead({ email: email, name: name, source: 'checkout-' + (currentPlan || 'plan') }).catch(() => {});
+  }
+  btn.textContent = 'Processing...';
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = '✓ Payment Successful — Downloading...';
+    btn.style.background = 'rgba(60,200,100,0.7)';
+    setTimeout(() => {
+      downloadFree(); // trigger download
+      closeModal();
+      btn.textContent = 'Pay & Download';
+      btn.style.background = '';
+      btn.disabled = false;
+    }, 1500);
+  }, 1800);
+}
+
+function downloadFree() {
+  // Replace with actual download URL
+  const a = document.createElement('a');
+  a.href = 'https://github.com';
+  a.target = '_blank';
+  a.click();
+}
+
+function submitContact(btn) {
+  const name  = document.getElementById('contact-name').value.trim();
+  const email = document.getElementById('contact-email').value.trim();
+  if (!isValidEmail(email)) {
+    btn.textContent = 'Please enter a valid email';
+    btn.style.background = 'rgba(255,60,60,0.5)';
+    setTimeout(() => { btn.textContent = 'Send Message'; btn.style.background = ''; }, 2200);
+    return;
+  }
+  btn.textContent = 'Sending...';
+  btn.disabled = true;
+  postLead({ email: email, name: name || undefined, source: 'contact' })
+    .then(res => {
+      if (!res.ok) throw new Error('lead rejected: ' + res.status);
+      btn.textContent = '✓ Message Sent — We\'ll be in touch soon!';
+      btn.style.background = 'rgba(60,200,100,0.5)';
+      setTimeout(() => {
+        btn.textContent = 'Send Message';
+        btn.style.background = '';
+        btn.disabled = false;
+      }, 3000);
+    })
+    .catch(() => {
+      btn.textContent = 'Couldn\'t send — please try again';
+      btn.style.background = 'rgba(255,60,60,0.5)';
+      setTimeout(() => {
+        btn.textContent = 'Send Message';
+        btn.style.background = '';
+        btn.disabled = false;
+      }, 3000);
+    });
+}
+
+// ═══════════════════════════════════════════════
+// BACKEND — LEAD CAPTURE + PAGEVIEW BEACON
+// ═══════════════════════════════════════════════
+// Deployments set window.FOXY_API to the backend origin (e.g. https://app.foxyaudit.com)
+// and must include this marketing site's origin in the backend's CORS_ORIGINS.
+const FOXY_API = window.FOXY_API || 'http://localhost:8000';
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// POST a lead to the backend, attaching any UTM params from the URL
+function postLead(fields) {
+  const q = new URLSearchParams(location.search);
+  ['utm_campaign', 'utm_source', 'utm_medium'].forEach(k => {
+    if (q.get(k)) fields[k] = q.get(k);
+  });
+  return fetch(FOXY_API + '/v1/leads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+}
+
+// Anonymous pageview beacon — fires once on load, silent on failure
+(function trackPageview() {
+  try {
+    const newId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : null;
+    let visitorId = null, sessionId = null;
+    try {
+      visitorId = localStorage.getItem('foxy_vid') || newId();
+      if (visitorId) localStorage.setItem('foxy_vid', visitorId);
+      sessionId = sessionStorage.getItem('foxy_sid') || newId();
+      if (sessionId) sessionStorage.setItem('foxy_sid', sessionId);
+    } catch (e) { /* storage blocked — send the beacon without ids */ }
+    fetch(FOXY_API + '/v1/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path: location.pathname,
+        referrer: document.referrer || undefined,
+        visitor_id: visitorId || undefined,
+        session_id: sessionId || undefined,
+      }),
+    }).catch(() => {});
+  } catch (e) { /* analytics must never break the page */ }
+})();
+
+// ESC to close modal
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
+</body>
+</html>
