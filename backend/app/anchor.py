@@ -136,12 +136,18 @@ def _anchor_evm(root_hash: str, settings: Settings) -> AnchorReceipt:
     if len(root_bytes) != 32:
         raise RuntimeError(f"root_hash must be 32 bytes (64 hex chars), got {len(root_bytes)}")
 
+    # EIP-1559 fees. A legacy gasPrice at/below the base fee is dropped by the
+    # mempool (base fee can exceed a stale eth_gasPrice), so price with headroom.
+    base = w3.eth.get_block("latest").get("baseFeePerGas")
+    priority = w3.to_wei(2, "gwei")
+    fees = ({"maxPriorityFeePerGas": priority, "maxFeePerGas": base * 2 + priority}
+            if base is not None else {"gasPrice": w3.eth.gas_price})
     tx = contract.functions.anchor(root_bytes).build_transaction({
         "from": acct.address,
         "nonce": w3.eth.get_transaction_count(acct.address),
         "gas": 120_000,
-        "gasPrice": w3.eth.gas_price,
         "chainId": w3.eth.chain_id,
+        **fees,
     })
     signed = acct.sign_transaction(tx)
     raw = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")  # web3 v7/v6
