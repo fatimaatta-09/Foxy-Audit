@@ -11,8 +11,18 @@ folders + subdomains — never git branches, never separate databases.
 | 3 · Staff ops console | `foxy-adminpage/index.html` | `https://admin.foxyaudit.tech` | Backend serves it at `/admin/` (staff cookie `Path=/admin`). Caddy 404s everything except `/admin*` on this host. |
 
 The stack (`deploy/docker-compose.prod.yml`): Postgres 16 → alembic migrate →
-API (uvicorn, `--proxy-headers`) → worker (grading, anchoring, rollups, traffic
-partitions) → Caddy (the only service with published ports, 80/443).
+API (uvicorn, `--proxy-headers`, published loopback-only at `127.0.0.1:8085`) →
+worker (grading, anchoring, rollups, traffic partitions).
+
+**Edge proxy — two variants:**
+- **Shared VM (the actual foxyaudit.tech box):** the host's existing nginx owns
+  80/443 (it fronts other apps too). Install `deploy/nginx-foxyaudit.conf` as a
+  vhost + `certbot --nginx` for the four hostnames (instructions in the file's
+  header). The sale page is served straight from the repo checkout
+  (`/home/devops/foxy-audit/foxy-sale-page`), so `git reset --hard` on deploy
+  updates it with no extra copy step.
+- **Dedicated VM:** the compose file ships an optional Caddy service (auto-TLS,
+  owns 80/443) behind a profile: `docker compose --profile edge up -d`.
 
 ## How deploys happen (CI/CD)
 

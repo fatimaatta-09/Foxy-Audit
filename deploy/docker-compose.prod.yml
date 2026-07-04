@@ -67,8 +67,12 @@ services:
       # Dashboard + ops-console HTML live at the repo root, outside the build context.
       - ../foxy-dashboard/foxy-audit-premium.html:/app/foxy-audit-premium.html:ro
       - ../foxy-adminpage/index.html:/app/foxy-adminpage.html:ro
-    # --proxy-headers: real client IP/scheme from Caddy's X-Forwarded-* — needed
-    # for rate-limit keys, traffic ip_hash, and the admin IP allow-list.
+    # Loopback-only publish: the host reverse proxy (nginx on the shared VM, or
+    # the optional caddy service) reaches the API here; never expose publicly.
+    ports:
+      - "127.0.0.1:8085:8000"
+    # --proxy-headers: real client IP/scheme from the proxy's X-Forwarded-* —
+    # needed for rate-limit keys, traffic ip_hash, and the admin IP allow-list.
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000
       --proxy-headers --forwarded-allow-ips=*
@@ -114,9 +118,12 @@ services:
       start_period: 15s
     restart: unless-stopped
 
-  # TLS + routing for all three sites. Certs auto-provisioned via Let's Encrypt
-  # once the DNS A records point at this VM.
+  # OPTIONAL edge proxy for a DEDICATED VM (owns 80/443, auto-TLS). NOT started
+  # by default: the shared foxyaudit.tech VM already runs nginx on 80/443, which
+  # proxies to the backend's loopback port instead (see deploy/nginx-foxyaudit.conf).
+  # Enable on a dedicated box with:  docker compose --profile edge up -d
   caddy:
+    profiles: ["edge"]
     image: caddy:2
     ports:
       - "80:80"
