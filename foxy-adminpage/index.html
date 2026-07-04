@@ -710,13 +710,20 @@ function fauxSelectInit(root){
     document.querySelectorAll('.fauxselect.open').forEach(f=>f.classList.remove('open'));
     if(!wasOpen)root.classList.add('open');
   });
-  root.querySelectorAll('.fauxselect-opt').forEach(opt=>{
-    opt.addEventListener('click',()=>{
-      fauxSet(root.id,opt.dataset.value);
-      root.classList.remove('open');
-      const cb=root.dataset.onchange;
-      if(cb&&typeof window[cb]==='function')window[cb](root);
-    });
+  // Option clicks are handled by DELEGATION on the (persistent) list container,
+  // not by a listener on each option. #dataTable's options are populated
+  // lazily AFTER this runs (goToData) and the filter dropdowns' options are
+  // rebuilt via innerHTML — a per-option listener would miss all of those.
+  // The container element itself never gets replaced, so one handler here
+  // covers every option, present or future.
+  root.querySelector('.fauxselect-list').addEventListener('click',e=>{
+    const opt=e.target.closest('.fauxselect-opt');
+    if(!opt||!root.contains(opt))return;
+    e.stopPropagation();
+    fauxSet(root.id,opt.dataset.value);
+    root.classList.remove('open');
+    const cb=root.dataset.onchange;
+    if(cb&&typeof window[cb]==='function')window[cb](root);
   });
 }
 document.querySelectorAll('.fauxselect').forEach(fauxSelectInit);
