@@ -63,10 +63,15 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - FOXY_DASHBOARD_HTML=/site/foxy-dashboard/foxy-audit-premium.html
+      - FOXY_ADMIN_HTML=/site/foxy-adminpage/index.html
     volumes:
-      # Dashboard + ops-console HTML live at the repo root, outside the build context.
-      - ../foxy-dashboard/foxy-audit-premium.html:/app/foxy-audit-premium.html:ro
-      - ../foxy-adminpage/index.html:/app/foxy-adminpage.html:ro
+      # Dashboard + ops-console HTML live at the repo root, outside the build
+      # context. Mount the DIRECTORIES (not single files): git reset on deploy
+      # replaces files with new inodes, and a single-file bind mount would keep
+      # serving the stale pre-deploy copy until the container is recreated.
+      - ../foxy-dashboard:/site/foxy-dashboard:ro
+      - ../foxy-adminpage:/site/foxy-adminpage:ro
     # Loopback-only publish: the host reverse proxy (nginx on the shared VM, or
     # the optional caddy service) reaches the API here; never expose publicly.
     ports:
