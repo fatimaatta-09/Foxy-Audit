@@ -42,8 +42,9 @@ from .config import get_settings
 from .middleware.admin_guard import AdminIPAllowlistMiddleware
 from .middleware.traffic import TrafficMiddleware
 from .routers import (
-    account, admin_orgs, admin_staff, admin_stats, analytics, anchors, auth_human,
-    auth_staff, billing, health, keys, leads, logs, passport, policies, verify,
+    account, admin_data, admin_orgs, admin_staff, admin_stats, analytics, anchors,
+    auth_human, auth_staff, billing, health, keys, leads, logs, passport, policies,
+    verify,
 )
 
 _settings = get_settings()
@@ -145,7 +146,7 @@ admin_api = FastAPI(title="Foxy Audit Admin", version="0.1.0")
 admin_api.state.limiter = auth_staff.limiter
 admin_api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-for _r in (auth_staff, admin_orgs, admin_staff, admin_stats):
+for _r in (auth_staff, admin_orgs, admin_staff, admin_stats, admin_data):
     admin_api.include_router(_r.router, tags=[_r.__name__.rsplit(".", 1)[-1]])
 
 

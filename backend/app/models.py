@@ -372,3 +372,14 @@ class UsageDaily(Base):
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
+
+class WorkerHeartbeat(Base):
+    """Read-only mapping of the single-row liveness table created by migration
+    0007 (previously managed via raw SQL only in worker.py/health.py). Added
+    for the admin data browser's benefit — never written through the ORM;
+    the worker keeps updating it directly."""
+    __tablename__ = "worker_heartbeat"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    beat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+

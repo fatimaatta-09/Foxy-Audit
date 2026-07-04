@@ -400,6 +400,10 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6.5c0 1.7 3.6 3 8 3s8-1.3 8-3V5.5"/><path d="M4 12v6.5c0 1.7 3.6 3 8 3s8-1.3 8-3V12"/></svg>
       <span>SCHEMA</span>
     </button>
+    <button class="dock-item" data-page="data" onclick="go('data',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h7l2 2h7v12a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 12h8M8 16h5"/></svg>
+      <span>DATA</span>
+    </button>
     <button class="dock-item" data-page="settings" onclick="go('settings',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.6a7.9 7.9 0 000-3.2l2-1.6-2-3.4-2.4 1a8 8 0 00-2.8-1.6L14 2.5h-4l-.2 2.3a8 8 0 00-2.8 1.6l-2.4-1-2 3.4 2 1.6a7.9 7.9 0 000 3.2l-2 1.6 2 3.4 2.4-1a8 8 0 002.8 1.6l.2 2.3h4l.2-2.3a8 8 0 002.8-1.6l2.4 1 2-3.4z"/></svg>
       <span>SETTINGS</span>
@@ -596,6 +600,65 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
       <div id="schemaList"></div>
     </section>
 
+    <!-- ──────────────── DATA ──────────────── -->
+    <section class="page" id="page-data">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">live rows · read/write</div>
+          <h1>Data</h1>
+          <div class="sub">audit_logs, admin_actions, chain_anchors and stripe_events are read-only here — see Schema for why. Everything else can be edited or deleted (operator role required).</div>
+        </div>
+      </div>
+      <div class="clay pad" style="margin-bottom:18px;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:200px;">
+            <div class="flabel" style="margin-top:0;">table</div>
+            <div class="fauxselect" id="dataTable" data-value="" data-onchange="onDataTableChange">
+              <button type="button" class="cin fauxselect-trigger">
+                <span class="fauxselect-label">choose a table…</span>
+                <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="fauxselect-list" id="dataTableOptions"></div>
+            </div>
+          </div>
+          <div style="flex:2;min-width:220px;">
+            <div class="flabel" style="margin-top:0;">search</div>
+            <input class="cin" id="dataSearch" placeholder="free-text search…" oninput="dataRefreshDebounced()">
+          </div>
+          <button class="btn sm" type="button" onclick="addDataFilter()">+ filter</button>
+          <button class="btn sm" type="button" onclick="refreshData()">↻ refresh</button>
+        </div>
+        <div id="dataFilters" style="margin-top:6px;"></div>
+      </div>
+      <div class="clay pad twrap" id="dataResultsWrap" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+          <div class="sub mono" id="dataCount"></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn sm" type="button" onclick="dataPage(-1)">‹ prev</button>
+            <span class="mono sub" id="dataPageLbl"></span>
+            <button class="btn sm" type="button" onclick="dataPage(1)">next ›</button>
+          </div>
+        </div>
+        <table class="tbl" id="dataTbl">
+          <thead><tr id="dataHead"></tr></thead>
+          <tbody id="dataRows"></tbody>
+        </table>
+      </div>
+      <div class="sub mono" id="dataEmpty" style="padding:20px;">choose a table above to get started</div>
+    </section>
+
+    <!-- data-edit modal — outside the page flow so it can float over anything -->
+    <div id="dataEditModal" style="display:none;position:fixed;inset:0;z-index:9500;background:var(--gate-overlay);align-items:center;justify-content:center;padding:20px;" onclick="closeDataEdit()">
+      <div class="clay pad" style="width:420px;max-width:100%;max-height:80vh;overflow-y:auto;" onclick="event.stopPropagation()">
+        <div style="font-weight:800;font-size:15px;margin-bottom:14px;">Edit row</div>
+        <div id="dataEditFields"></div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn" type="button" style="flex:1;" onclick="closeDataEdit()">cancel</button>
+          <button class="btn pri" type="button" style="flex:1;" onclick="saveDataEdit()">save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ──────────────── SETTINGS ──────────────── -->
     <section class="page" id="page-settings">
       <div class="pagehead">
@@ -665,7 +728,7 @@ function fauxSelectInit(root){
       fauxSet(root.id,opt.dataset.value);
       root.classList.remove('open');
       const cb=root.dataset.onchange;
-      if(cb&&typeof window[cb]==='function')window[cb]();
+      if(cb&&typeof window[cb]==='function')window[cb](root);
     });
   });
 }
@@ -827,6 +890,149 @@ function renderSchema(){
   }).join(''):'<div class="sub mono" style="padding:16px;">no migrations match that search</div>';
 }
 
+/* ──────────── data browser ────────────
+   Live rows via /admin/v1/data/*. The backend enforces the real access rules
+   (per-table editable-field allowlist, the 4 permanently-locked tables,
+   viewer-vs-operator gating) — this UI just reflects what the API returns
+   and never assumes a table is mutable client-side. */
+let DATA_TABLE='', DATA_PAGE=1, DATA_TOTAL=0, DATA_LIMIT=25, DATA_META=null, DATA_EDIT_ID=null;
+let DATA_INITED=false, _dataDebounce=null;
+const DATA_FILTERS=[];
+let DATA_ROW_CACHE={};
+
+function goToData(){
+  if(!DATA_INITED){
+    $('dataTableOptions').innerHTML=Object.keys(TABLE_COLUMNS).sort()
+      .map(t=>`<div class="fauxselect-opt" data-value="${esc(t)}">${esc(t)}</div>`).join('');
+    fauxSelectInit($('dataTable'));
+    DATA_INITED=true;
+  }
+  if(DATA_TABLE)refreshData();
+}
+function onDataTableChange(){
+  DATA_TABLE=fauxVal('dataTable');
+  DATA_PAGE=1; DATA_FILTERS.length=0; $('dataFilters').innerHTML=''; $('dataSearch').value='';
+  refreshData();
+}
+function dataRefreshDebounced(){
+  clearTimeout(_dataDebounce);
+  _dataDebounce=setTimeout(()=>{DATA_PAGE=1;refreshData()},300);
+}
+function addDataFilter(){
+  if(!DATA_TABLE){toast('choose a table first');return}
+  DATA_FILTERS.push({col:'',val:''});
+  renderDataFilters();
+}
+function removeDataFilter(i){DATA_FILTERS.splice(i,1);renderDataFilters();DATA_PAGE=1;refreshData()}
+function onFilterColChange(root){
+  const i=parseInt(root.id.replace('filterCol',''),10);
+  DATA_FILTERS[i].col=fauxVal(root.id);
+  DATA_PAGE=1;refreshData();
+}
+function renderDataFilters(){
+  const cols=(TABLE_COLUMNS[DATA_TABLE]||[]).map(c=>c[0]);
+  $('dataFilters').innerHTML=DATA_FILTERS.map((f,i)=>`
+    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+      <div class="fauxselect" id="filterCol${i}" data-value="${esc(f.col)}" data-onchange="onFilterColChange" style="flex:1;">
+        <button type="button" class="cin fauxselect-trigger">
+          <span class="fauxselect-label">${esc(f.col||'column…')}</span>
+          <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="fauxselect-list">${cols.map(c=>`<div class="fauxselect-opt ${f.col===c?'sel':''}" data-value="${esc(c)}">${esc(c)}</div>`).join('')}</div>
+      </div>
+      <input class="cin" style="flex:1;margin-bottom:0;" placeholder="value" value="${esc(f.val)}" oninput="DATA_FILTERS[${i}].val=this.value;dataRefreshDebounced()">
+      <button class="btn sm danger" type="button" onclick="removeDataFilter(${i})">×</button>
+    </div>`).join('');
+  DATA_FILTERS.forEach((f,i)=>fauxSelectInit($('filterCol'+i)));
+}
+async function refreshData(){
+  if(!DATA_TABLE)return;
+  const params=new URLSearchParams();
+  params.set('page',DATA_PAGE);params.set('limit',DATA_LIMIT);
+  const q=$('dataSearch').value.trim(); if(q)params.set('q',q);
+  DATA_FILTERS.forEach(f=>{ if(f.col&&f.val)params.set('col_'+f.col,f.val); });
+  const r=await api('/admin/v1/data/'+DATA_TABLE+'?'+params.toString());
+  if(!r.ok){toast('load failed ('+r.status+')');return}
+  const d=await r.json();
+  DATA_META=d; DATA_TOTAL=d.total; DATA_ROW_CACHE={};
+  if(!d.rows.length){
+    $('dataResultsWrap').style.display='none';
+    $('dataEmpty').textContent=DATA_TOTAL===0?'no rows in this table yet':'no rows match these filters';
+    return;
+  }
+  $('dataEmpty').textContent='';
+  $('dataResultsWrap').style.display='block';
+  const cols=Object.keys(d.rows[0]);
+  const showActions=can('operator')&&(d.editable_fields.length||d.deletable);
+  $('dataHead').innerHTML=cols.map(c=>`<th>${esc(c)}</th>`).join('')+(showActions?'<th></th>':'');
+  $('dataRows').innerHTML=d.rows.map(row=>{
+    const pk=String(row.id!==undefined?row.id:row[cols[0]]);
+    DATA_ROW_CACHE[pk]=row;
+    const cells=cols.map(c=>{
+      let v=row[c];
+      if(v===null||v===undefined)v='—';
+      else if(typeof v==='object')v=JSON.stringify(v);
+      v=String(v);
+      const short=v.length>60?v.slice(0,60)+'…':v;
+      return `<td class="mono" style="font-size:10.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(v)}">${esc(short)}</td>`;
+    }).join('');
+    let actionsCell='';
+    if(showActions){
+      const btns=[];
+      if(d.editable_fields.length)btns.push(`<button class="btn sm" type="button" onclick="openDataEdit('${esc(pk)}')">edit</button>`);
+      if(d.deletable)btns.push(`<button class="btn sm danger" type="button" onclick="deleteDataRow('${esc(pk)}')">delete</button>`);
+      actionsCell=`<td style="white-space:nowrap;">${btns.join(' ')}</td>`;
+    }
+    return `<tr>${cells}${actionsCell}</tr>`;
+  }).join('');
+  const pages=Math.max(1,Math.ceil(DATA_TOTAL/DATA_LIMIT));
+  $('dataCount').textContent=num(DATA_TOTAL)+' row'+(DATA_TOTAL===1?'':'s')+' · '+esc(DATA_TABLE);
+  $('dataPageLbl').textContent='page '+DATA_PAGE+' / '+pages;
+}
+function dataPage(delta){
+  const pages=Math.max(1,Math.ceil(DATA_TOTAL/DATA_LIMIT));
+  const next=DATA_PAGE+delta;
+  if(next<1||next>pages)return;
+  DATA_PAGE=next;refreshData();
+}
+function openDataEdit(pk){
+  const row=DATA_ROW_CACHE[pk];
+  if(!row||!DATA_META){toast('row not found — try refreshing');return}
+  DATA_EDIT_ID=pk;
+  $('dataEditFields').innerHTML=DATA_META.editable_fields.map(f=>{
+    const val=row[f];
+    if(typeof val==='boolean'){
+      return `<label class="sub mono" style="display:flex;align-items:center;gap:8px;margin:12px 0;cursor:pointer;">
+        <input type="checkbox" id="dedit_${esc(f)}" ${val?'checked':''}> ${esc(f)}
+      </label>`;
+    }
+    return `<div class="flabel">${esc(f)}</div><input class="cin" id="dedit_${esc(f)}" value="${esc(val===null||val===undefined?'':String(val))}">`;
+  }).join('');
+  $('dataEditModal').style.display='flex';
+}
+function closeDataEdit(){$('dataEditModal').style.display='none';DATA_EDIT_ID=null}
+async function saveDataEdit(){
+  if(!DATA_META)return;
+  const fields={};
+  for(const f of DATA_META.editable_fields){
+    const el=$('dedit_'+f);
+    if(el.type==='checkbox')fields[f]=el.checked;
+    else fields[f]=(el.value.trim()!==''&&!isNaN(el.value))?Number(el.value):el.value;
+  }
+  const r=await api(`/admin/v1/data/${DATA_TABLE}/${DATA_EDIT_ID}`,{method:'PATCH',
+    headers:{'content-type':'application/json'},body:JSON.stringify({fields})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){toast('saved');closeDataEdit();refreshData()}
+  else toast(d.detail||('save failed ('+r.status+')'));
+}
+async function deleteDataRow(pk){
+  if(!confirm('Delete this row? A snapshot is kept in the audit trail, but this cannot be undone from the UI.'))return;
+  const r=await api(`/admin/v1/data/${DATA_TABLE}/${pk}`,{method:'DELETE'});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){toast('deleted');refreshData()}
+  else toast(d.detail||('delete failed ('+r.status+')'));
+}
+
 function toast(m){const t=$('toast');$('toastMsg').textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3200)}
 function fmtTime(iso){if(!iso)return'—';const d=new Date(iso);return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 function fmtDay(iso){if(!iso)return'—';return new Date(iso).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}
@@ -837,7 +1043,7 @@ function go(page,el){
   $('page-'+page).classList.add('active');
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   if(el)el.classList.add('active');
-  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,schema:renderSchema})[page]();
+  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,schema:renderSchema,data:goToData})[page]();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
