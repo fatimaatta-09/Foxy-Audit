@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>Foxy Audit — Ops Console</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230e0c0a' stroke='%23ffc83d' stroke-width='8'/><text x='50' y='72' font-size='54' text-anchor='middle'>🦊</text></svg>">
-<meta name="theme-color" content="#0e0c0a">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23faf4ea' stroke='%23ff6a1a' stroke-width='8'/><text x='50' y='72' font-size='54' text-anchor='middle'>🦊</text></svg>">
+<meta name="theme-color" content="#eee6d9">
+<script>(function(){try{if(localStorage.getItem('foxy_admin_theme')==='dark'){
+  document.documentElement.dataset.theme='dark';
+  document.querySelector('meta[name="theme-color"]').setAttribute('content','#0e0c0a');
+}}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -14,7 +18,64 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root{
-  /* deep clay base — same system as foxy-audit-premium.html */
+  /* daylight voxel base — internal ops console ONLY. The customer dashboard
+     (foxy-dashboard/) and marketing site (foxy-sale-page/) keep their own
+     dark clay theme unchanged; this page intentionally diverges. */
+  --bg:      #eee6d9;
+  --bg2:     #f5efe4;
+  --surf:    #faf4ea;
+  --surf2:   #fff9f0;
+  --surf3:   #fff3e0;
+  --line:    #20180f;
+
+  --ink:     #20180f;
+  --ink2:    #5c4f3e;
+  --muted:   #6b5a44;
+  --muted2:  #8a7458;
+
+  --fox:     #ff6a1a;
+  --fox2:    #ff8a3d;
+  --fox3:    #d6560f;
+  --foxdeep: #7a3510;
+
+  /* secondary accent — echoes the reference's blue-sphere button detail */
+  --blue:    #3aa0ff;
+  --blue2:   #1c6fce;
+
+  --safe-bg:   #3ecf82;
+  --safe-tx:   #06210f;
+  --breach-bg: #ff5340;
+  --breach-tx: #320505;
+  --warn-bg:   #ffc83d;
+  --warn-tx:   #2a1d00;
+  --info-bg:   #a9cbfa;
+  --info-tx:   #07182e;
+
+  --r-lg: clamp(16px,2.4vw,26px);
+  --r-md: 16px;
+  --r-sm: 11px;
+
+  /* hard offset "block" shadow, re-tuned for a light surface (was rgba(0,0,0,.5-.55)
+     tuned for a near-black bg — that reads muddy on cream, not crisp) */
+  --shadow: rgba(20,14,8,.30);
+  --clay-hi: rgba(0,0,0,.03);
+  --gate-overlay: rgba(24,17,10,.74);
+  --clay: 9px 9px 0 var(--shadow), 0 1px 0 var(--clay-hi) inset;
+  --clay-sm: 5px 5px 0 var(--shadow);
+  --clay-press: 3px 3px 0 var(--shadow);
+
+  /* --disp = display/brand moments only (headlines, KPI numbers, buttons, nav).
+     --body = everything you actually read at length — a plain system sans reads
+     far better than a geometric display font at small sizes/long strings. */
+  --disp: 'Unbounded', system-ui, sans-serif;
+  --body: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: 'Space Mono', monospace;
+}
+
+/* dark mode — same design system, same variable names, just re-toned. Toggled
+   via Settings; persisted to localStorage; applied pre-paint (see the tiny
+   inline script right after <head>) so there's no light-then-dark flash. */
+html[data-theme="dark"]{
   --bg:      #0e0c0a;
   --bg2:     #161310;
   --surf:    #1c1815;
@@ -41,24 +102,17 @@
   --info-bg:   #6ea8ff;
   --info-tx:   #041129;
 
-  --r-lg: clamp(16px,2.4vw,26px);
-  --r-md: 16px;
-  --r-sm: 11px;
-
-  --clay: 9px 9px 0 rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,.04) inset;
-  --clay-sm: 5px 5px 0 rgba(0,0,0,.5);
-  --clay-press: 3px 3px 0 rgba(0,0,0,.5);
-
-  --disp: 'Unbounded', system-ui, sans-serif;
-  --mono: 'Space Mono', monospace;
+  --shadow: rgba(0,0,0,.55);
+  --clay-hi: rgba(255,255,255,.04);
+  --gate-overlay: rgba(6,5,4,.92);
 }
 
 html{-webkit-font-smoothing:antialiased}
 body{
-  font-family:var(--disp);
+  font-family:var(--body);
   background:
-    radial-gradient(circle at 8% 0%, rgba(255,122,46,.07), transparent 45%),
-    radial-gradient(circle at 100% 100%, rgba(255,122,46,.05), transparent 40%),
+    radial-gradient(circle at 8% 0%, rgba(255,106,26,.12), transparent 45%),
+    radial-gradient(circle at 100% 100%, rgba(58,160,255,.08), transparent 40%),
     var(--bg);
   color:var(--ink);
   min-height:100vh;
@@ -78,7 +132,8 @@ body{
   position:fixed;top:0;left:0;bottom:0;z-index:300;
 }
 .dock-mark{
-  width:48px;height:48px;border-radius:16px;background:var(--fox);
+  width:48px;height:48px;border-radius:16px;
+  background:var(--fox);
   border:3px solid #000;box-shadow:var(--clay-sm);
   display:flex;align-items:center;justify-content:center;font-size:22px;
   margin-bottom:6px;transform:rotate(-4deg);
@@ -92,11 +147,12 @@ body{
 .dock-item{
   width:60px;height:60px;border-radius:18px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
-  color:var(--muted);cursor:pointer;position:relative;
+  color:var(--ink);cursor:pointer;position:relative;
   border:2.5px solid transparent;background:none;font-family:var(--disp);
 }
 .dock-item span{font-size:8.5px;font-weight:700;letter-spacing:.3px}
-.dock-item svg{width:19px;height:19px}
+.dock-item svg{width:21px;height:21px}
+.dock-item svg *{stroke-width:2.8}
 .dock-item.active{
   background:var(--fox);color:#000;border-color:#000;
   box-shadow:var(--clay-sm);
@@ -122,7 +178,7 @@ body{
   font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:2.5px;
   text-transform:uppercase;color:var(--fox2);margin-bottom:8px;
 }
-h1{font-size:clamp(21px,2.6vw,30px);font-weight:800;letter-spacing:-.5px;margin-bottom:4px}
+h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;letter-spacing:-.5px;margin-bottom:4px}
 .sub{color:var(--muted);font-size:12px}
 .mono{font-family:var(--mono)}
 
@@ -139,7 +195,7 @@ h1{font-size:clamp(21px,2.6vw,30px);font-weight:800;letter-spacing:-.5px;margin-
 .kpis{grid-template-columns:repeat(auto-fit,minmax(158px,1fr));margin-bottom:22px}
 .kpi{padding:16px 18px;position:relative;overflow:hidden}
 .kpi .klabel{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
-.kpi .kval{font-size:clamp(22px,2.4vw,30px);font-weight:800;margin-top:6px;letter-spacing:-.5px}
+.kpi .kval{font-family:var(--disp);font-size:clamp(22px,2.4vw,30px);font-weight:800;margin-top:6px;letter-spacing:-.5px}
 .kpi .kfoot{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:4px}
 .kpi.hot{background:var(--fox);color:#000}
 .kpi.hot .klabel,.kpi.hot .kfoot{color:rgba(0,0,0,.55)}
@@ -152,7 +208,14 @@ h1{font-size:clamp(21px,2.6vw,30px);font-weight:800;letter-spacing:-.5px;margin-
   text-transform:uppercase;white-space:nowrap;
 }
 .chip.safe{background:var(--safe-bg);color:var(--safe-tx)}
-.chip.bad{background:var(--breach-bg);color:var(--breach-tx)}
+.chip.bad{background:var(--breach-bg);color:var(--breach-tx);position:relative}
+/* small flame-wedge corner accent — reserved for breach/danger only, so it stays
+   a meaningful signal rather than page-wide decoration */
+.chip.bad::after{
+  content:'';position:absolute;top:-3px;right:-3px;width:7px;height:7px;
+  background:var(--fox2);border:1px solid #000;
+  clip-path:polygon(0% 100%,100% 100%,60% 0%);
+}
 .chip.warn{background:var(--warn-bg);color:var(--warn-tx)}
 .chip.info{background:var(--info-bg);color:var(--info-tx)}
 .chip.dim{background:var(--surf3);color:var(--ink2);box-shadow:none}
@@ -180,11 +243,20 @@ h1{font-size:clamp(21px,2.6vw,30px);font-weight:800;letter-spacing:-.5px;margin-
 }
 .btn:hover{transform:translate(1px,1px);box-shadow:var(--clay-press)}
 .btn:active{transform:translate(3px,3px);box-shadow:none}
-.btn.pri{background:var(--fox);color:#000}
+.btn.pri{background:var(--fox);color:#000;position:relative}
+/* small "3D sphere" accent overlapping the button edge — echoes the reference
+   pill button's blue-sphere detail */
+.btn.pri::after{
+  content:'';position:absolute;top:50%;right:-7px;width:14px;height:14px;
+  border-radius:50%;transform:translateY(-50%);border:1.5px solid #000;
+  background:radial-gradient(circle at 35% 30%, #eaf4ff, var(--blue) 55%, var(--blue2) 100%);
+}
 .btn.danger{background:var(--breach-bg);color:var(--breach-tx)}
 .btn.safe{background:var(--safe-bg);color:var(--safe-tx)}
 .btn.sm{padding:6px 11px;font-size:10px;border-radius:10px}
+.btn.sm.pri::after{width:10px;height:10px;right:-5px}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn:disabled::after{display:none}
 
 .cin{
   width:100%;background:var(--bg2);border:2.5px solid var(--line);border-radius:var(--r-sm);
@@ -192,11 +264,48 @@ h1{font-size:clamp(21px,2.6vw,30px);font-weight:800;letter-spacing:-.5px;margin-
   outline:none;margin-bottom:4px;
 }
 .cin:focus{border-color:var(--fox)}
-select.cin{appearance:none}
 .flabel{
   font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.6px;
   text-transform:uppercase;color:var(--muted);margin:12px 0 6px;
 }
+
+/* ════════ CUSTOM DROPDOWN (native <select> popups can't be themed — the open
+   listbox is rendered by the OS in every browser, ignoring CSS. This is a
+   fully custom, fully theme-aware replacement.) ════════ */
+.fauxselect{position:relative}
+.fauxselect-trigger{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  text-align:left;font-family:var(--mono);
+}
+.fauxselect-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fauxselect-chev{width:14px;height:14px;flex-shrink:0;color:var(--ink);transition:transform .15s ease}
+.fauxselect.open .fauxselect-chev{transform:rotate(180deg)}
+.fauxselect-list{
+  display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:50;
+  background:var(--bg2);border:2.5px solid #000;border-radius:var(--r-sm);
+  box-shadow:var(--clay-sm);max-height:220px;overflow-y:auto;
+}
+.fauxselect.open .fauxselect-list{display:block}
+.fauxselect-opt{
+  padding:10px 14px;font-family:var(--mono);font-size:12px;color:var(--ink);cursor:pointer;
+}
+.fauxselect-opt:hover{background:var(--surf2)}
+.fauxselect-opt.sel{background:var(--fox);color:#000;font-weight:700}
+
+/* ════════ CUSTOM TOGGLE SWITCH (dark mode, etc.) ════════ */
+.voxswitch{display:flex;align-items:center;gap:12px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:700}
+.voxswitch input{position:absolute;opacity:0;width:0;height:0}
+.voxswitch-track{
+  position:relative;width:52px;height:28px;flex-shrink:0;border-radius:999px;
+  background:var(--surf3);border:2.5px solid #000;box-shadow:var(--clay-press);
+  transition:background .15s ease;
+}
+.voxswitch-knob{
+  position:absolute;top:1px;left:1px;width:20px;height:20px;border-radius:50%;
+  background:var(--bg2);border:2px solid #000;transition:transform .15s ease;
+}
+.voxswitch input:checked + .voxswitch-track{background:var(--fox)}
+.voxswitch input:checked + .voxswitch-track .voxswitch-knob{transform:translateX(22px);background:#000}
 
 /* ════════ PAGES ════════ */
 .page{display:none}
@@ -231,7 +340,7 @@ select.cin{appearance:none}
 
 /* login gate */
 #gate{
-  display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,5,4,.92);
+  display:none;position:fixed;inset:0;z-index:9999;background:var(--gate-overlay);
   align-items:center;justify-content:center;padding:20px;
 }
 .gatecard{width:360px;max-width:100%}
@@ -292,6 +401,10 @@ select.cin{appearance:none}
     <button class="dock-item" data-page="staff" id="navStaff" onclick="go('staff',this)" style="display:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M15.6 14.6c2.9.2 5 1.7 5.9 4.4"/></svg>
       <span>STAFF</span>
+    </button>
+    <button class="dock-item" data-page="settings" onclick="go('settings',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.6a7.9 7.9 0 000-3.2l2-1.6-2-3.4-2.4 1a8 8 0 00-2.8-1.6L14 2.5h-4l-.2 2.3a8 8 0 00-2.8 1.6l-2.4-1-2 3.4 2 1.6a7.9 7.9 0 000 3.2l-2 1.6 2 3.4 2.4-1a8 8 0 002.8 1.6l.2 2.3h4l.2-2.3a8 8 0 002.8-1.6l2.4 1 2-3.4z"/></svg>
+      <span>SETTINGS</span>
     </button>
 
     <div class="dock-foot">
@@ -378,13 +491,52 @@ select.cin{appearance:none}
         <div class="clay kpi"><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></div>
         <div class="clay kpi"><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr">—</div></div>
       </div>
-      <div class="clay pad twrap">
-        <table class="tbl">
-          <thead><tr>
-            <th>When</th><th>Site</th><th>Method</th><th>Path</th><th>Status</th><th>Latency</th><th>Org</th>
-          </tr></thead>
-          <tbody id="trafRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody>
-        </table>
+      <div class="clay pad">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
+          <div style="flex:1;min-width:160px;">
+            <div class="flabel" style="margin-top:0;">site</div>
+            <div class="fauxselect" id="trafSite" data-value="" data-onchange="renderTraffic">
+              <button type="button" class="cin fauxselect-trigger">
+                <span class="fauxselect-label">all sites</span>
+                <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="fauxselect-list">
+                <div class="fauxselect-opt sel" data-value="">all sites</div>
+                <div class="fauxselect-opt" data-value="marketing">marketing</div>
+                <div class="fauxselect-opt" data-value="app">customer app</div>
+                <div class="fauxselect-opt" data-value="admin">admin</div>
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:160px;">
+            <div class="flabel" style="margin-top:0;">status</div>
+            <div class="fauxselect" id="trafStatus" data-value="" data-onchange="renderTraffic">
+              <button type="button" class="cin fauxselect-trigger">
+                <span class="fauxselect-label">all statuses</span>
+                <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="fauxselect-list">
+                <div class="fauxselect-opt sel" data-value="">all statuses</div>
+                <div class="fauxselect-opt" data-value="2xx">2xx / 3xx — success</div>
+                <div class="fauxselect-opt" data-value="4xx">4xx — client error</div>
+                <div class="fauxselect-opt" data-value="5xx">5xx — server error</div>
+              </div>
+            </div>
+          </div>
+          <div style="flex:2;min-width:200px;">
+            <div class="flabel" style="margin-top:0;">path contains</div>
+            <input class="cin" id="trafPath" placeholder="/v1/logs, /admin/v1/staff…" oninput="renderTraffic()">
+          </div>
+          <button class="btn sm" style="margin-bottom:4px;" onclick="fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTraffic()">clear</button>
+        </div>
+        <div class="twrap">
+          <table class="tbl">
+            <thead><tr>
+              <th>When</th><th>Site</th><th>Method</th><th>Path</th><th>Status</th><th>Latency</th><th>Org</th>
+            </tr></thead>
+            <tbody id="trafRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -410,13 +562,47 @@ select.cin{appearance:none}
           <div class="flabel" style="margin-top:6px;">email</div>
           <input class="cin" id="nsEmail" placeholder="teammate@foxy.audit">
           <div class="flabel">platform role</div>
-          <select class="cin" id="nsRole">
-            <option value="viewer">viewer — read-only</option>
-            <option value="operator">operator — can suspend/enable orgs</option>
-            <option value="superadmin">superadmin — full control</option>
-          </select>
+          <div class="fauxselect" id="nsRole" data-value="viewer">
+            <button type="button" class="cin fauxselect-trigger">
+              <span class="fauxselect-label">viewer — read-only</span>
+              <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="fauxselect-list">
+              <div class="fauxselect-opt sel" data-value="viewer">viewer — read-only</div>
+              <div class="fauxselect-opt" data-value="operator">operator — can suspend/enable orgs</div>
+              <div class="fauxselect-opt" data-value="superadmin">superadmin — full control</div>
+            </div>
+          </div>
           <button class="btn pri" style="margin-top:14px;width:100%;" onclick="createStaff()">Create account</button>
           <div id="nsOut" class="sub mono" style="margin-top:12px;font-size:10.5px;word-break:break-all;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────── SETTINGS ──────────────── -->
+    <section class="page" id="page-settings">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">preferences</div>
+          <h1>Settings</h1>
+          <div class="sub">Local to this browser — doesn't affect other staff.</div>
+        </div>
+      </div>
+      <div class="split">
+        <div class="clay pad">
+          <div style="font-weight:800;font-size:15px;margin-bottom:14px;">Appearance</div>
+          <label class="voxswitch">
+            <input type="checkbox" id="darkModeToggle" onchange="setTheme(this.checked?'dark':'light')">
+            <span class="voxswitch-track"><span class="voxswitch-knob"></span></span>
+            <span>dark mode</span>
+          </label>
+        </div>
+        <div class="clay pad">
+          <div style="font-weight:800;font-size:15px;margin-bottom:14px;">Signed in as</div>
+          <div class="flabel" style="margin-top:0;">email</div>
+          <input class="cin" id="setEmail" readonly style="opacity:.7;">
+          <div class="flabel">platform role</div>
+          <input class="cin" id="setRole" readonly style="opacity:.7;">
         </div>
       </div>
     </section>
@@ -435,6 +621,40 @@ let ME=null;               // {id,email,platform_role}
 const ROLE_RANK={viewer:0,operator:1,superadmin:2};
 const can=min=>ME&&ROLE_RANK[ME.platform_role]>=ROLE_RANK[min];
 
+/* ──────────── custom dropdown (fauxselect) ────────────
+   Native <select> popups are rendered by the OS in every browser and can't be
+   themed, so this is a small fully-custom replacement. Structure: a
+   .fauxselect root (holds the current value in data-value) containing a
+   .fauxselect-trigger button and a .fauxselect-list of .fauxselect-opt divs. */
+function fauxVal(id){return ($(id).dataset.value)||''}
+function fauxSet(id,value){
+  const root=$(id);
+  const opt=root.querySelector(`.fauxselect-opt[data-value="${value}"]`);
+  if(!opt)return;
+  root.dataset.value=value;
+  root.querySelector('.fauxselect-label').textContent=opt.textContent;
+  root.querySelectorAll('.fauxselect-opt').forEach(o=>o.classList.remove('sel'));
+  opt.classList.add('sel');
+}
+function fauxSelectInit(root){
+  root.querySelector('.fauxselect-trigger').addEventListener('click',e=>{
+    e.stopPropagation();
+    const wasOpen=root.classList.contains('open');
+    document.querySelectorAll('.fauxselect.open').forEach(f=>f.classList.remove('open'));
+    if(!wasOpen)root.classList.add('open');
+  });
+  root.querySelectorAll('.fauxselect-opt').forEach(opt=>{
+    opt.addEventListener('click',()=>{
+      fauxSet(root.id,opt.dataset.value);
+      root.classList.remove('open');
+      const cb=root.dataset.onchange;
+      if(cb&&typeof window[cb]==='function')window[cb]();
+    });
+  });
+}
+document.querySelectorAll('.fauxselect').forEach(fauxSelectInit);
+document.addEventListener('click',()=>document.querySelectorAll('.fauxselect.open').forEach(f=>f.classList.remove('open')));
+
 function toast(m){const t=$('toast');$('toastMsg').textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3200)}
 function fmtTime(iso){if(!iso)return'—';const d=new Date(iso);return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 function fmtDay(iso){if(!iso)return'—';return new Date(iso).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}
@@ -445,8 +665,20 @@ function go(page,el){
   $('page-'+page).classList.add('active');
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   if(el)el.classList.add('active');
-  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff})[page]();
+  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings})[page]();
   window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* ──────────── settings / theme ──────────── */
+function setTheme(mode){
+  document.documentElement.dataset.theme=mode;
+  document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#0e0c0a':'#eee6d9');
+  try{localStorage.setItem('foxy_admin_theme',mode)}catch(e){}
+}
+function loadSettings(){
+  $('setEmail').value=ME?ME.email:'';
+  $('setRole').value=ME?ME.platform_role:'';
+  $('darkModeToggle').checked=document.documentElement.dataset.theme==='dark';
 }
 
 /* ──────────── auth gate ──────────── */
@@ -580,14 +812,29 @@ async function orgEnable(id){
 }
 
 /* ──────────── traffic ──────────── */
+let TRAFFIC_ROWS=[];
 async function loadTraffic(){
-  const r=await api('/admin/v1/traffic?limit=100');
+  const r=await api('/admin/v1/traffic?limit=200');
   if(!r.ok){toast('traffic failed ('+r.status+')');return}
   const t=await r.json();const bs=t.by_site||{};
   $('tMkt').textContent=num(bs.marketing);$('tApp').textContent=num(bs.app);
   $('tAdm').textContent=num(bs.admin);$('tErr').textContent=num(t.errors);
-  const rows=t.recent||[];
-  if(!rows.length){$('trafRows').innerHTML='<tr><td colspan="7" class="sub mono">no traffic captured yet</td></tr>';return}
+  TRAFFIC_ROWS=t.recent||[];
+  renderTraffic();
+}
+/* Filters run client-side against the already-fetched batch (the API has no
+   filter params beyond limit) — instant, no re-fetch on every keystroke. */
+function renderTraffic(){
+  const site=fauxVal('trafSite'), status=fauxVal('trafStatus'), path=$('trafPath').value.trim().toLowerCase();
+  const rows=TRAFFIC_ROWS.filter(e=>{
+    if(site&&e.site!==site)return false;
+    if(status==='2xx'&&e.status_code>=400)return false;
+    if(status==='4xx'&&(e.status_code<400||e.status_code>=500))return false;
+    if(status==='5xx'&&e.status_code<500)return false;
+    if(path&&!e.path.toLowerCase().includes(path))return false;
+    return true;
+  });
+  if(!rows.length){$('trafRows').innerHTML=`<tr><td colspan="7" class="sub mono">${TRAFFIC_ROWS.length?'no traffic matches these filters':'no traffic captured yet'}</td></tr>`;return}
   $('trafRows').innerHTML=rows.map(e=>{
     const sc=e.status_code>=500?'bad':e.status_code>=400?'warn':'safe';
     const site=e.site==='marketing'?'info':e.site==='admin'?'warn':'dim';
@@ -620,7 +867,7 @@ async function loadStaff(){
   }).join('');
 }
 async function createStaff(){
-  const email=$('nsEmail').value.trim(),role=$('nsRole').value;
+  const email=$('nsEmail').value.trim(),role=fauxVal('nsRole');
   if(!email){toast('email required');return}
   const r=await api('/admin/v1/staff',{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({email,platform_role:role})});
