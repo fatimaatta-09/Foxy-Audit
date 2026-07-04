@@ -1,0 +1,8 @@
+# Reviewed false positives — documentation placeholders, not real secrets.
+# Each line is a gitleaks fingerprint: <commit>:<file>:<rule>:<line>.
+# backend/README.md: "Authorization: Bearer foxy_sk_..." curl examples.
+# contracts/README.md: "https://eth-sepolia.g.alchemy.com/v2/<key>" placeholder.
+afd12056db8a9d0f210e201fcbad773565043805:contracts/README.md:generic-api-key:37
+988329e3e63f32c18c868863ea22e569b096de04:backend/README.md:curl-auth-header:33
+988329e3e63f32c18c868863ea22e569b096de04:backend/README.md:curl-auth-header:34
+988329e3e63f32c18c868863ea22e569b096de04:backend/README.md:curl-auth-header:43
