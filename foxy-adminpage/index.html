@@ -396,10 +396,6 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M15.6 14.6c2.9.2 5 1.7 5.9 4.4"/></svg>
       <span>STAFF</span>
     </button>
-    <button class="dock-item" data-page="schema" onclick="go('schema',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6.5c0 1.7 3.6 3 8 3s8-1.3 8-3V5.5"/><path d="M4 12v6.5c0 1.7 3.6 3 8 3s8-1.3 8-3V12"/></svg>
-      <span>SCHEMA</span>
-    </button>
     <button class="dock-item" data-page="data" onclick="go('data',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h7l2 2h7v12a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 12h8M8 16h5"/></svg>
       <span>DATA</span>
@@ -581,32 +577,13 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
       </div>
     </section>
 
-    <!-- ──────────────── SCHEMA ──────────────── -->
-    <section class="page" id="page-schema">
-      <div class="pagehead">
-        <div>
-          <div class="eyebrow">database · alembic history</div>
-          <h1>Schema</h1>
-          <div class="sub">All 16 versioned migrations — click one for the full current column structure of every table it touches.</div>
-        </div>
-      </div>
-      <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
-        <div class="clay kpi"><div class="klabel">Migrations</div><div class="kval">16</div></div>
-        <div class="clay kpi"><div class="klabel">Tables</div><div class="kval">14</div></div>
-        <div class="clay kpi"><div class="klabel">RLS-protected</div><div class="kval">4</div></div>
-        <div class="clay kpi"><div class="klabel">Current head</div><div class="kval mono" style="font-size:20px;">0016</div></div>
-      </div>
-      <input class="cin" id="schemaSearch" placeholder="search by revision, title, table, or column…" oninput="renderSchema()" style="margin-bottom:18px;">
-      <div id="schemaList"></div>
-    </section>
-
     <!-- ──────────────── DATA ──────────────── -->
     <section class="page" id="page-data">
       <div class="pagehead">
         <div>
           <div class="eyebrow">live rows · read/write</div>
           <h1>Data</h1>
-          <div class="sub">audit_logs, admin_actions, chain_anchors and stripe_events are read-only here — see Schema for why. Everything else can be edited or deleted (operator role required).</div>
+          <div class="sub">audit_logs, admin_actions, chain_anchors and stripe_events are permanently read-only — editing them would break the tamper-evident chain, the audit trail, or the Stripe idempotency log. Everything else can be edited or deleted (operator role required).</div>
         </div>
       </div>
       <div class="clay pad" style="margin-bottom:18px;">
@@ -717,6 +694,16 @@ function fauxSet(id,value){
   opt.classList.add('sel');
 }
 function fauxSelectInit(root){
+  // Idempotency guard: elements present in the static HTML (trafSite,
+  // trafStatus, nsRole, dataTable) get wired once by the page-load sweep
+  // below, then some are wired AGAIN when their tab first loads (e.g.
+  // goToData()) — without this guard the trigger ends up with two click
+  // listeners that fight each other (one opens, the other immediately
+  // reads the just-changed state and closes it), so the dropdown looked
+  // completely dead. Freshly-recreated nodes (e.g. filter rows rebuilt via
+  // innerHTML=) have no dataset yet, so they still get initialized once.
+  if(root.dataset.fauxInited)return;
+  root.dataset.fauxInited='1';
   root.querySelector('.fauxselect-trigger').addEventListener('click',e=>{
     e.stopPropagation();
     const wasOpen=root.classList.contains('open');
@@ -735,47 +722,12 @@ function fauxSelectInit(root){
 document.querySelectorAll('.fauxselect').forEach(fauxSelectInit);
 document.addEventListener('click',()=>document.querySelectorAll('.fauxselect.open').forEach(f=>f.classList.remove('open')));
 
-/* ──────────── schema browser ────────────
+/* ──────────── table column reference (powers the Data tab's table picker
+   and filter dropdowns) ────────────
    Static reference data, not a live API call — the schema only changes when a
    new migration ships, and hand-maintaining this alongside models.py avoids
    standing up a DB-introspection endpoint for what is fundamentally
-   documentation. TABLE_COLUMNS is each table's FULL CURRENT structure
-   (post every migration that touched it), so an "alter" migration shows the
-   real column list, not just the columns it personally added. */
-const SCHEMA_DATA = [
-  {rev:'0001', title:'organizations + audit_logs + Row-Level Security', kind:'create', tables:['organizations','audit_logs'],
-   note:'The foundational migration. Enables FORCE ROW LEVEL SECURITY on audit_logs with an org_isolation policy — the tenant-isolation pattern every later RLS table (chain_anchors, invoices, usage_daily) follows.'},
-  {rev:'0002', title:'billing: Stripe columns on organizations', kind:'alter', tables:['organizations'],
-   note:'Idempotent (wrapped in a DO $$ … EXCEPTION WHEN duplicate_column block) — these columns were folded into 0001’s initial CREATE TABLE, so on a fresh database this migration is now a no-op safety net.'},
-  {rev:'0003', title:'org_policies — Active Policy Configuration', kind:'create', tables:['org_policies'],
-   note:'One row per org, created with safe defaults on first GET. The Gemini evaluator reads these flags to adjust its system prompt (PII detection, prompt-injection detection, regulated-data mode, token threshold).'},
-  {rev:'0004', title:'add pii_signals to audit_logs', kind:'alter', tables:['audit_logs'],
-   note:'Adds a JSONB column recording which local PII patterns (email, SSN, …) the SDK detected client-side before hashing — the pattern name travels, never the matched text.'},
-  {rev:'0005', title:'grading_status: durable outbox columns', kind:'alter', tables:['audit_logs'],
-   note:'Turns audit_logs into a Postgres outbox for the async Gemini grading poller — grading_status/attempts/timestamps let the worker claim pending rows and retry failures without a separate queue table.'},
-  {rev:'0006', title:'users — human dashboard accounts', kind:'create', tables:['users'],
-   note:'Separate from the org API key: humans log in over a signed cookie session (require_user) while the SDK keeps authenticating with the machine Bearer key (require_org).'},
-  {rev:'0007', title:'worker_heartbeat — poller liveness', kind:'create', tables:['worker_heartbeat'],
-   note:'A single row (id=1) the grading poller updates every loop, so GET /health/ready can detect a stuck worker before the grading queue backs up silently. Not ORM-mapped — read/written via raw SQL only.'},
-  {rev:'0008', title:'api_keys — named multi-key HMAC table', kind:'create', tables:['api_keys','users'],
-   note:'Replaces the single legacy org API key with named, individually-revocable keys hashed with a server pepper (HMAC-SHA256) — a database leak alone can’t recover a usable key. Also adds users.disabled for offboarding.'},
-  {rev:'0009', title:'chain_anchors — public-chain anchoring receipts', kind:'create', tables:['chain_anchors'],
-   note:'Each row proves an org’s hash-chain head was published to a public chain (Sepolia) at a given block — tampering becomes externally detectable, not just provable by internal recompute. RLS-scoped like audit_logs.'},
-  {rev:'0010', title:'staff_users + admin_actions — platform staff', kind:'create', tables:['staff_users','admin_actions'],
-   note:'The internal admin site’s auth and audit trail. Staff are NOT tenant-scoped (no org_id, no RLS) and log in over a completely separate session cookie and signing secret from customers.'},
-  {rev:'0011', title:'organizations — platform/admin metadata', kind:'alter', tables:['organizations'],
-   note:'Adds contact_email, trial_ends_at, deleted_at (soft delete — an org is NEVER hard-deleted), suspended, suspended_reason, monthly_log_quota. All nullable or defaulted so the running app never breaks mid-migration.'},
-  {rev:'0012', title:'traffic_events — partitioned in/out tracking', kind:'create', tables:['traffic_events'],
-   note:'Range-partitioned by created_at (one partition per month) with a DEFAULT partition so an insert never fails if partition creation lags. IP and user-agent are HMAC-hashed at capture — never stored raw.'},
-  {rev:'0013', title:'marketing_leads — pre-signup funnel', kind:'create', tables:['marketing_leads'],
-   note:'Captures a marketing-site conversion before it becomes a paying org. A partial-unique index on lower(email) WHERE status<>’churned’ stops the same active lead from being duplicated.'},
-  {rev:'0014', title:'stripe_events — durable webhook log', kind:'create', tables:['stripe_events'],
-   note:'Every verified Stripe webhook is inserted here FIRST (UNIQUE stripe_event_id, ON CONFLICT DO NOTHING) — a replay is a no-op, turning the formerly fire-and-forget webhook into an auditable, idempotent one.'},
-  {rev:'0015', title:'invoices — per-org billing history', kind:'create', tables:['invoices'],
-   note:'Upserted by the Stripe webhook on invoice.paid | payment_failed | finalized. RLS-scoped like audit_logs — a customer reads only its own rows via GET /v1/invoices; staff read all.'},
-  {rev:'0016', title:'usage_daily — per-org daily rollup', kind:'create', tables:['usage_daily'],
-   note:'Incrementally maintained by a worker thread so admin and customer dashboards never scan the raw audit_logs ledger for a quota widget. Backfilled once from history when this migration ran.'},
-];
+   documentation. Each table's FULL CURRENT column structure. */
 const TABLE_COLUMNS = {
   organizations: [['id','uuid','PK'],['name','text',''],['api_key_hash','varchar(64)','UNIQUE'],
     ['plan_tier','varchar(32)','null'],['stripe_customer_id','varchar(255)','UNIQUE · null'],
@@ -840,56 +792,6 @@ const TABLE_COLUMNS = {
     ['graded_count','integer','default 0'],['failed_count','integer','default 0'],['pending_count','integer','default 0'],
     ['computed_at','timestamptz','default now()']],
 };
-const RLS_TABLES = new Set(['audit_logs','chain_anchors','invoices','usage_daily']);
-let SCHEMA_OPEN=null;
-function schemaMatches(m,q){
-  if(!q)return true;
-  q=q.toLowerCase();
-  if(m.rev.includes(q)||m.title.toLowerCase().includes(q))return true;
-  for(const t of m.tables){
-    if(t.toLowerCase().includes(q))return true;
-    for(const c of (TABLE_COLUMNS[t]||[])) if(c[0].toLowerCase().includes(q))return true;
-  }
-  return false;
-}
-function schemaTableBlock(t,kind){
-  const cols=TABLE_COLUMNS[t]||[];
-  const rls=RLS_TABLES.has(t)?'<span class="chip warn">RLS</span>':'<span class="chip dim">no RLS</span>';
-  return `<div style="margin-top:14px;">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-      <div class="flabel" style="margin:0;">${esc(t)}</div>${rls}
-    </div>
-    <div class="twrap">
-      <table class="tbl">
-        <thead><tr><th>column</th><th>type</th><th>notes</th></tr></thead>
-        <tbody>${cols.map(c=>`<tr><td class="mono">${esc(c[0])}</td><td class="mono">${esc(c[1])}</td><td class="mono" style="font-size:10.5px;color:var(--muted);">${esc(c[2])}</td></tr>`).join('')}</tbody>
-      </table>
-    </div>
-  </div>`;
-}
-function toggleSchema(rev){SCHEMA_OPEN=SCHEMA_OPEN===rev?null:rev;renderSchema()}
-function renderSchema(){
-  const q=$('schemaSearch').value.trim();
-  const list=SCHEMA_DATA.filter(m=>schemaMatches(m,q));
-  $('schemaList').innerHTML=list.length?list.map(m=>{
-    const open=SCHEMA_OPEN===m.rev;
-    const kindChip=m.kind==='create'?'<span class="chip safe">creates table</span>':'<span class="chip info">alters table</span>';
-    const tableChips=m.tables.map(t=>`<span class="chip dim mono">${esc(t)}</span>`).join(' ');
-    return `<div class="clay pad" style="margin-bottom:12px;cursor:pointer;" onclick="toggleSchema('${m.rev}')">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span class="chip warn mono">${esc(m.rev)}</span>
-        <div style="flex:1;min-width:220px;font-weight:800;font-size:13.5px;">${esc(m.title)}</div>
-        ${kindChip}${tableChips}
-        <span class="mono" style="color:var(--muted);font-size:15px;width:14px;text-align:center;">${open?'−':'+'}</span>
-      </div>
-      ${open?`<div style="border-top:2.5px dashed var(--line);margin-top:14px;padding-top:2px;" onclick="event.stopPropagation()">
-        <div class="sub" style="margin-top:12px;line-height:1.5;">${esc(m.note)}</div>
-        ${m.tables.map(t=>schemaTableBlock(t,m.kind)).join('')}
-      </div>`:''}
-    </div>`;
-  }).join(''):'<div class="sub mono" style="padding:16px;">no migrations match that search</div>';
-}
-
 /* ──────────── data browser ────────────
    Live rows via /admin/v1/data/*. The backend enforces the real access rules
    (per-table editable-field allowlist, the 4 permanently-locked tables,
@@ -1043,7 +945,7 @@ function go(page,el){
   $('page-'+page).classList.add('active');
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   if(el)el.classList.add('active');
-  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,schema:renderSchema,data:goToData})[page]();
+  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData})[page]();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
