@@ -9,16 +9,17 @@ isolation (the docker superuser role bypasses RLS).
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..auth import resolve_org
+from .. import ip_allow
+from ..auth import require_role, resolve_org
 from ..db import get_db
-from ..models import Invoice, Organization, UsageDaily
+from ..models import Invoice, Organization, UsageDaily, User
 
 router = APIRouter()
 
@@ -119,3 +120,53 @@ def get_usage(
             for r in rows
         ],
     )
+
+
+class DeleteWorkspaceRequest(BaseModel):
+    confirm_name: str
+
+
+@router.post("/v1/account/delete")
+def delete_workspace(
+    payload: DeleteWorkspaceRequest,
+    request: Request,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete the caller's workspace: set organizations.deleted_at. Every auth
+    path then refuses the org (SDK key, new logins, existing sessions), reversibly
+    (data retained). confirm_name must match the workspace name (accident guard);
+    admin-only via require_role."""
+    org = db.get(Organization, admin.org_id)
+    if org is None or org.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="workspace not found")
+    if payload.confirm_name.strip() != org.name:
+        raise HTTPException(status_code=400,
+                            detail="confirm_name does not match the workspace name")
+    org.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+    request.session.clear()          # the admin's own session is now for a deleted org
+    return {"status": "workspace_deleted", "org_id": str(org.id)}
+
+
+class IpAllowlistRequest(BaseModel):
+    allowlist: str = ""              # comma-separated IPs/CIDRs; empty clears the restriction
+
+
+@router.post("/v1/account/ip-allowlist")
+def set_ip_allowlist(
+    payload: IpAllowlistRequest,
+    request: Request,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Set the org's DASHBOARD IP allow-list (admin-only). Refuses a non-empty
+    list that wouldn't include the caller's own IP — a self-lockout guard."""
+    entries = ip_allow.parse_allowlist(payload.allowlist)
+    if entries and not ip_allow.ip_allowed(ip_allow.client_ip(request), entries):
+        raise HTTPException(status_code=400,
+                            detail="that allow-list would lock you out — include your current IP")
+    org = db.get(Organization, admin.org_id)
+    org.ip_allowlist = ", ".join(entries) if entries else None
+    db.commit()
+    return {"status": "ok", "ip_allowlist": org.ip_allowlist or ""}

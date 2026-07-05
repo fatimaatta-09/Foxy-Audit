@@ -40,7 +40,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import get_settings
 from .middleware.admin_guard import AdminIPAllowlistMiddleware
+from .middleware.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from .middleware.traffic import TrafficMiddleware
+from .observability import RequestIdMiddleware, configure_logging
 from .routers import (
     account, admin_data, admin_orgs, admin_staff, admin_stats, analytics, anchors,
     auth_human, auth_staff, billing, health, keys, leads, logs, passport, policies,
@@ -91,6 +93,7 @@ _ADMIN_HTML = _find_admin_html()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging(get_settings().is_prod)   # structured logs + request id (5E)
     try:
         subprocess.run(["alembic", "current"], check=True, capture_output=True)
     except Exception as e:
@@ -139,6 +142,10 @@ customer_api.add_middleware(
     same_site="lax",
     max_age=_settings.session_max_age,
 )
+# Body-size cap + security headers (headers added last → outermost, on every response). (5B.6)
+customer_api.add_middleware(BodySizeLimitMiddleware)
+customer_api.add_middleware(SecurityHeadersMiddleware)
+customer_api.add_middleware(RequestIdMiddleware)   # outermost: assign/echo X-Request-ID first
 
 
 # ────────────────────────────── admin API (site 3) ───────────────────────────
@@ -176,8 +183,11 @@ admin_api.add_middleware(
     path="/admin",
     domain=(_settings.staff_cookie_domain or None),
 )
-# IP allow-list guard runs OUTERMOST (added last) — blocks before auth/routing.
+# IP allow-list guard blocks before auth/routing (just inside the header/size layer).
 admin_api.add_middleware(AdminIPAllowlistMiddleware)
+admin_api.add_middleware(BodySizeLimitMiddleware)
+admin_api.add_middleware(SecurityHeadersMiddleware)
+admin_api.add_middleware(RequestIdMiddleware)   # outermost: assign/echo X-Request-ID first
 
 
 # ───────────────────────────────── root app ──────────────────────────────────

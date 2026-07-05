@@ -131,6 +131,9 @@ jobs:
 
             cd "$TARGET_DIR"
             git fetch origin main
+            # Remember the currently-deployed commit so a failed smoke test can roll
+            # back to it (empty on a first-ever deploy).
+            PREV="$(git rev-parse HEAD 2>/dev/null || echo '')"
             git reset --hard origin/main
 
             if [ ! -f deploy/.env ]; then
@@ -138,6 +141,33 @@ jobs:
               exit 1
             fi
 
-            docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env \
-              up --build -d --remove-orphans
+            deploy() {
+              docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env \
+                up --build -d --remove-orphans
+            }
+
+            # Smoke test: the backend must answer /health/ready on its loopback
+            # publish (127.0.0.1:8085) within ~60s, or the deploy is considered bad.
+            smoke() {
+              for _ in $(seq 1 30); do
+                if curl -fsS http://127.0.0.1:8085/health/ready >/dev/null 2>&1; then
+                  return 0
+                fi
+                sleep 2
+              done
+              return 1
+            }
+
+            deploy
+            if ! smoke; then
+              echo "::error:: smoke test FAILED — rolling back to ${PREV:-<none>}" >&2
+              docker compose -f deploy/docker-compose.prod.yml logs --tail=60 foxy-backend >&2 || true
+              if [ -n "$PREV" ]; then
+                git reset --hard "$PREV"
+                deploy || true   # best-effort restore of last-good code (DB migrations are forward-only)
+              fi
+              exit 1
+            fi
+
+            echo "smoke test passed — deploy healthy"
             docker image prune -f

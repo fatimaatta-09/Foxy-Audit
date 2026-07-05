@@ -110,7 +110,7 @@ def track(payload: TrackRequest, request: Request, db: Session = Depends(get_db)
         referrer = referrer.split("?", 1)[0][:512]
     ev = TrafficEvent(
         site="marketing", path=payload.path.split("?", 1)[0][:512], method="GET",
-        status_code=200, direction="in",
+        status_code=200,
         ip_hash=hash_key(request.client.host) if request.client else None,
         ua_hash=hash_key(request.headers.get("user-agent")) if request.headers.get("user-agent") else None,
         referrer=referrer, visitor_id=_maybe_uuid(payload.visitor_id),

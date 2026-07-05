@@ -23,6 +23,9 @@ node_modules/
 backend/.env
 *.local
 
+# DB backups (created by deploy/backup.sh on the VM)
+deploy/backups/
+
 # OS / editor
 .DS_Store
 Thumbs.db

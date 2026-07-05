@@ -43,6 +43,9 @@ class Organization(Base):
         DateTime(timezone=True), nullable=True, default=None)
     deleted_at: Mapped[datetime | None] = mapped_column(     # soft delete — never hard-delete an org
         DateTime(timezone=True), nullable=True, default=None)
+    # Per-org DASHBOARD IP allow-list (5K) — comma-separated IPs/CIDRs; empty/NULL
+    # = no restriction. Enforced on session auth only, never on the SDK key.
+    ip_allowlist: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     suspended: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")     # staff access hold (independent of Stripe)
     suspended_reason: Mapped[str | None] = mapped_column(
@@ -123,6 +126,16 @@ class User(Base):
     # (see auth.require_org's human path / auth_human.login).
     disabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")
+    # Email-OTP MFA (opt-in, Phase 5 · 5B.5) — dashboard login, mirrors staff.
+    mfa_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false")
+    mfa_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mfa_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Password-reset link token (Phase 5 · 5D) — SHA-256 hash only, single-use, 1h TTL.
+    reset_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reset_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
@@ -214,6 +227,16 @@ class StaffUser(Base):
         String(16), nullable=False, server_default="viewer")            # viewer|operator|superadmin
     disabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")
+    # Email-OTP MFA (opt-in, Phase 5 · 5B.5)
+    mfa_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false")
+    mfa_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mfa_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Password-reset link token (Phase 5 · 5D) — SHA-256 hash only, single-use, 1h TTL.
+    reset_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reset_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -245,8 +268,8 @@ class AdminAction(Base):
 
 
 class TrafficEvent(Base):
-    """One inbound/outbound request across any of the 3 sites — the "in/out"
-    tracking feed for the admin site. Written OFF the request hot path by
+    """One request across any of the 3 sites — the traffic feed for the admin
+    site. Written OFF the request hot path by
     middleware/traffic.py. Platform-only, NO RLS: org_id is nullable (anonymous
     marketing traffic has none), which structurally rules RLS out, and it is read
     only by staff. Range-partitioned by created_at (see migration 0012), so the
@@ -262,8 +285,6 @@ class TrafficEvent(Base):
     method: Mapped[str] = mapped_column(String(8), nullable=False)
     status_code: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    direction: Mapped[str] = mapped_column(
-        String(3), nullable=False, server_default="in")                 # in|out
     org_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -382,4 +403,25 @@ class WorkerHeartbeat(Base):
 
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     beat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LoginEvent(Base):
+    """Login-attempt history (Phase 5 · 5K) — successes AND failures, for security
+    visibility. Platform/audit table, NO RLS (org_id is nullable for a failed
+    login on an unknown email, which structurally rules RLS out); the history
+    endpoint filters by org_id in app code."""
+    __tablename__ = "login_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True)
 

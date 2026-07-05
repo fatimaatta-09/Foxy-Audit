@@ -12,7 +12,6 @@ Provider is pluggable (config ``anchor_provider``):
   * ``stub``          — deterministic, no external chain (dev / tests / CI).
   * ``evm``           — web3.py -> the AnchorRegistry contract on Sepolia (or any
                         EVM). Configure rpc/key/contract; see contracts/.
-  * ``opentimestamps``— Bitcoin via OpenTimestamps (no wallet/gas; slower).
 
 Framing caution: an anchor makes tampering *externally detectable after the next
 anchor*, not impossible. We say "tamper-evident, independently verifiable".
@@ -165,27 +164,9 @@ def _anchor_evm(root_hash: str, settings: Settings) -> AnchorReceipt:
     )
 
 
-def _anchor_opentimestamps(root_hash: str, settings: Settings) -> AnchorReceipt:
-    """Timestamp the root on Bitcoin via OpenTimestamps (no wallet/gas). The
-    proof starts 'pending' and is later upgraded to a Bitcoin-confirmed proof."""
-    try:
-        import opentimestamps  # noqa: F401
-    except ImportError as e:                      # pragma: no cover
-        raise RuntimeError(
-            "opentimestamps is not installed (pip install opentimestamps) — required for "
-            "anchor_provider=opentimestamps") from e
-    # A full OTS submission (calendar aggregation + .ots proof persistence) is a
-    # later step; the receipt shape is ready for it.
-    return AnchorReceipt(
-        chain="bitcoin", status="pending", tx_hash=None,
-        detail="OpenTimestamps proof requested — confirms on the next Bitcoin block batch",
-    )
-
-
 _PROVIDERS = {
     "stub": _anchor_stub,
     "evm": _anchor_evm,
-    "opentimestamps": _anchor_opentimestamps,
 }
 
 

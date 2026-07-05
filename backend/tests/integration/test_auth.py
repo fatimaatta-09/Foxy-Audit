@@ -104,11 +104,12 @@ def test_member_rbac_forbidden(make_org, add_user, login):
 def test_admin_can_invite_and_disable(make_org, login, client):
     org = make_org()
     c = login(org["admin_email"], org["admin_password"])
-    created = c.post("/v1/auth/users", json={"email": "aud@test.dev", "role": "member"})
+    created = c.post("/v1/auth/users",
+                     json={"email": "aud@test.dev", "role": "member", "password": "audpass1234"})
     assert created.status_code == 200
     body = created.json()
     temp = body["temp_password"]
-    # The invited user can log in with the temp password.
+    # The created user can log in with the password the admin set.
     assert client.post("/v1/auth/login",
                        json={"email": "aud@test.dev", "password": temp}).status_code == 200
     # Admin disables them -> login now 403.
@@ -151,3 +152,42 @@ def test_cross_tenant_login_password_selects_org(make_org, add_user, login):
     assert cb.get("/v1/auth/me").json()["org_id"] == b["org_id"]
     # org A's session must stay scoped to A after B logs in with the same email.
     assert ca.get("/v1/auth/me").json()["org_id"] == a["org_id"]
+
+
+def test_login_is_rate_limited(make_org, client):
+    """Customer login must throttle brute force — staff login already does, the
+    customer login didn't. (Phase 5 · 5B.3)"""
+    org = make_org()
+    codes = [
+        client.post("/v1/auth/login",
+                    json={"email": org["admin_email"], "password": "wrong"}).status_code
+        for _ in range(15)
+    ]
+    assert 429 in codes, f"expected a 429 after repeated attempts, got {codes}"
+
+
+def test_login_rotates_the_session(make_org, client):
+    """A pre-existing (attacker-planted) session must be discarded on login, not
+    merged into the authenticated session — session-fixation guard. (Phase 5 · 5B.4)"""
+    import base64
+    import json
+    from itsdangerous import TimestampSigner
+
+    org = make_org()
+    signer = TimestampSigner("test-session-secret")   # == conftest SESSION_SECRET
+
+    def decode(raw: str) -> dict:
+        return json.loads(base64.b64decode(signer.unsign(raw.strip('"'))))
+
+    # Plant a stray key inside a validly-signed session cookie, then log in.
+    planted = base64.b64encode(json.dumps({"stray": "evil"}).encode())
+    client.cookies.set("session", signer.sign(planted).decode())
+    r = client.post("/v1/auth/login",
+                    json={"email": org["admin_email"], "password": org["admin_password"]})
+    assert r.status_code == 200
+
+    # read the fresh session set by THIS login response (the jar holds two
+    # same-named cookies — the planted one + the new one — so get() is ambiguous)
+    session = decode(r.cookies.get("session"))
+    assert "stray" not in session, "login must clear a pre-existing session (fixation guard)"
+    assert "user_id" in session

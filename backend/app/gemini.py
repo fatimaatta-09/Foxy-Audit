@@ -36,7 +36,8 @@ _BASE_SYSTEM_PROMPT = (
 )
 
 
-def _build_system_prompt(policy_config: dict[str, Any] | None = None) -> str:
+def _build_system_prompt(policy_config: dict[str, Any] | None = None,
+                         history: dict[str, Any] | None = None) -> str:
     """Build a policy-aware system prompt from the org's active config."""
     rules: list[str] = [
         "Flag anomalies — for example implausibly large token counts for the "
@@ -67,6 +68,13 @@ def _build_system_prompt(policy_config: dict[str, Any] | None = None) -> str:
             f"TOKEN THRESHOLD: flag any token_count exceeding {max_tok:,} as a "
             "potential data-exfiltration or runaway generation event."
         )
+    if history:
+        rules.append(
+            "TEMPORAL REASONING: the input carries a recent_history summary of this org's "
+            "last-7-day activity (recent_breaches, recent_graded, breach_rate_pct). Reason "
+            "across time — a rising breach_rate or repeated breaches should raise risk_score "
+            "even for an individually-borderline interaction."
+        )
     return _BASE_SYSTEM_PROMPT + " Active rules: " + " | ".join(rules)
 
 
@@ -76,7 +84,8 @@ def _fallback(reason: str) -> Verdict:
     return Verdict(policy_breach=False, reason="evaluator_unavailable", risk_score=0)
 
 
-def evaluate(meta: dict, policy_config: dict[str, Any] | None = None) -> Verdict:
+def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
+             history: dict[str, Any] | None = None) -> Verdict:
     """Grade interaction metadata against the org's active policy.
 
     Args:
@@ -93,13 +102,13 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None) -> Verdict
     try:
         import google.generativeai as genai
 
-        system_prompt = _build_system_prompt(policy_config)
+        system_prompt = _build_system_prompt(policy_config, history)
         genai.configure(api_key=settings.gemini_api_key)
         model = genai.GenerativeModel(
             settings.gemini_model, system_instruction=system_prompt
         )
         resp = model.generate_content(
-            json.dumps(meta),
+            json.dumps({**meta, "recent_history": history} if history else meta),
             generation_config={"response_mime_type": "application/json", "temperature": 0},
             request_options={"timeout": settings.gemini_timeout},
         )

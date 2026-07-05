@@ -118,7 +118,7 @@ def make_org():
         finally:
             db.close()
         return {
-            "org_id": str(org_id), "api_key": key,
+            "org_id": str(org_id), "api_key": key, "name": name,
             "admin_email": admin_email, "admin_password": admin_password,
             "auth": {"Authorization": f"Bearer {key}"},
         }

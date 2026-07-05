@@ -10,9 +10,12 @@ org's policy config. Chain hashing stays cheap and inline; only grading is async
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
@@ -118,6 +121,103 @@ def list_logs(
         items=[LogListItem.model_validate(r) for r in rows],
         total=total, page=page, limit=limit,
     )
+
+
+@router.get("/v1/logs/breaches")
+def list_breaches(
+    org: Organization = Depends(resolve_org),
+    db: Session = Depends(get_db),
+    since_seq: int = Query(default=0, ge=0,
+                           description="only breaches with seq > this (poller cursor)"),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    """Graded policy breaches for the org with seq > since_seq, ascending by seq.
+
+    The feed the desktop fox polls so it can react to a *real* backend-detected
+    breach (the backend grades asynchronously and, in prod, is remote — so it can
+    never push a UDP event to the desktop's localhost). The poller advances
+    since_seq so a breach the fox already reacted to never re-fires. Declared
+    BEFORE /v1/logs/{seq} so the literal path isn't captured as a seq int.
+    """
+    rows = db.execute(
+        select(AuditLog)
+        .where(
+            AuditLog.org_id == org.id,
+            AuditLog.seq > since_seq,
+            AuditLog.grading_status == "graded",
+            _BREACH,
+        )
+        .order_by(AuditLog.seq.asc())
+        .limit(limit)
+    ).scalars().all()
+    return [
+        {
+            "seq": r.seq,
+            "policy_tag": r.policy_tag,
+            "reason": (r.gemini_verdict or {}).get("reason", ""),
+            "risk_score": (r.gemini_verdict or {}).get("risk_score", 0),
+        }
+        for r in rows
+    ]
+
+
+_EXPORT_COLS = ["seq", "created_at", "policy_tag", "token_count", "prompt_hash",
+                "response_hash", "pii_signals", "prev_hash", "chain_hash",
+                "gemini_verdict", "grading_status", "graded_at"]
+
+
+def _export_row(r: AuditLog) -> dict:
+    return {
+        "seq": r.seq,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "policy_tag": r.policy_tag,
+        "token_count": r.token_count,
+        "prompt_hash": r.prompt_hash,
+        "response_hash": r.response_hash,
+        "pii_signals": r.pii_signals,
+        "prev_hash": r.prev_hash,
+        "chain_hash": r.chain_hash,
+        "gemini_verdict": r.gemini_verdict,
+        "grading_status": r.grading_status,
+        "graded_at": r.graded_at.isoformat() if r.graded_at else None,
+    }
+
+
+@router.get("/v1/logs/export")
+@limiter.limit("6/minute")
+def export_logs(
+    request: Request,
+    org: Organization = Depends(resolve_org),
+    db: Session = Depends(get_db),
+    format: str = Query(default="json", pattern="^(json|csv)$"),
+):
+    """Download the org's ENTIRE audit-log ledger (its own data) as JSON or CSV —
+    data portability for the tenant. Scoped by org_id (+ RLS). Declared BEFORE
+    /v1/logs/{seq} so the literal path isn't captured as a seq int."""
+    rows = db.execute(
+        select(AuditLog).where(AuditLog.org_id == org.id).order_by(AuditLog.seq.asc())
+    ).scalars().all()
+
+    if format == "csv":
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=_EXPORT_COLS)
+        w.writeheader()
+        for r in rows:
+            d = _export_row(r)
+            d["pii_signals"] = "" if d["pii_signals"] is None else json.dumps(d["pii_signals"])
+            d["gemini_verdict"] = "" if d["gemini_verdict"] is None else json.dumps(d["gemini_verdict"])
+            w.writerow(d)
+        return Response(
+            content=buf.getvalue(), media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="foxy-audit-logs.csv"'})
+
+    body = json.dumps(
+        {"org_id": str(org.id), "count": len(rows),
+         "logs": [_export_row(r) for r in rows]},
+        default=str)
+    return Response(
+        content=body, media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="foxy-audit-logs.json"'})
 
 
 @router.get("/v1/logs/{seq}", response_model=LogListItem)

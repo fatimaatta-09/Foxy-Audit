@@ -115,6 +115,36 @@ def test_checkout_provisions_org_and_converts_lead(client):
         db.close()
 
 
+def test_checkout_provisions_a_usable_org(client):
+    """A checkout must leave the org actually USABLE — a peppered API key that
+    authenticates AND an admin user that can log in — not just an orphan org row
+    whose plaintext key was handed only to Stripe. (Phase 5 · 5A.2)"""
+    from app.routers.billing import _handle_checkout
+    from app.models import ApiKey, User
+
+    db = SessionLocal()
+    try:
+        result, org_id = _handle_checkout(
+            db, {"customer": "cus_USE", "customer_email": "new@startup.io",
+                 "subscription": "sub_USE"})
+        db.commit()
+        keys = [k for k in db.query(ApiKey).all()
+                if str(k.org_id) == org_id and k.status == "active"]
+        admins = [u for u in db.query(User).all()
+                  if str(u.org_id) == org_id and u.role == "admin"]
+    finally:
+        db.close()
+
+    assert len(keys) == 1, "checkout must create a peppered API key row"
+    assert len(admins) == 1, "checkout must create an admin user so they can log in"
+    assert admins[0].email == "new@startup.io"
+
+    # the plaintext key it returned must authenticate a real Bearer endpoint
+    r = client.get("/v1/health",
+                   headers={"Authorization": f"Bearer {result['api_key']}"})
+    assert r.status_code == 200
+
+
 def test_invoice_upsert_is_idempotent(client):
     from app.routers.billing import _handle_checkout, _handle_invoice
 

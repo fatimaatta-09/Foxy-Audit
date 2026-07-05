@@ -1,2 +1,3 @@
+# Demo deps (Phase 5 · 5F) — the local SDK (editable) + a pinned requests.
 -e ../sdk
-requests>=2.31
+requests==2.34.2

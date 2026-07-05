@@ -42,7 +42,7 @@ def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch):
     from app.schemas import Verdict
     captured = {}
 
-    def fake_eval(meta, policy_config=None):
+    def fake_eval(meta, policy_config=None, history=None):
         captured["policy_config"] = policy_config
         return Verdict(policy_breach=False, reason="stub", risk_score=0)
 

@@ -42,10 +42,10 @@ _SKIP_PATHS = {"/health/ready", "/", "/v1/track"}
 _INSERT_SQL = text(
     """
     INSERT INTO traffic_events
-        (site, path, method, status_code, latency_ms, direction,
+        (site, path, method, status_code, latency_ms,
          org_id, user_id, staff_id, ip_hash, ua_hash, referrer, created_at)
     VALUES
-        (:site, :path, :method, :status_code, :latency_ms, 'in',
+        (:site, :path, :method, :status_code, :latency_ms,
          :org_id, :user_id, :staff_id, :ip_hash, :ua_hash, :referrer, now())
     """
 )

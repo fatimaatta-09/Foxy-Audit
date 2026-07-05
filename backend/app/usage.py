@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from . import email
 from .config import Settings, get_settings
 from .db import SessionLocal
 
@@ -113,12 +114,62 @@ def maintain_partitions(db: Session, retention_days: int) -> None:
     db.commit()
 
 
+def purge_admin_actions(db: Session, retention_days: int) -> int:
+    """Delete admin_actions rows older than the retention window (the table is
+    append-only and would otherwise grow unbounded). System-only — runs in the
+    worker under a superuser role; staff can never DELETE from it. Returns the
+    number of rows removed."""
+    result = db.execute(
+        text("DELETE FROM admin_actions "
+             "WHERE created_at < now() - make_interval(days => :days)"),
+        {"days": retention_days},
+    )
+    db.commit()
+    return result.rowcount or 0
+
+
+# In-memory last-alert clock for the grading dead-letter check (per worker process).
+_ALERT_STATE: dict = {}
+
+
+def alert_on_grading_failures(db: Session, settings, state: dict, *,
+                              now: float | None = None) -> bool:
+    """If failed (dead-letter) grading rows are at/over the threshold, log a
+    WARNING and — at most once per cooldown — email settings.alert_email. Returns
+    True iff an email was sent. `state` carries the last-alert time across calls."""
+    now = time.time() if now is None else now
+    count = db.execute(
+        text("SELECT count(*) FROM audit_logs WHERE grading_status = 'failed'")
+    ).scalar() or 0
+    if count < settings.grading_failure_alert_threshold:
+        return False
+    log.warning("grading dead-letter: %d row(s) parked in grading_status='failed'", count)
+    last = state.get("last_alert")   # None = never alerted → don't apply cooldown
+    if not settings.alert_email or (
+            last is not None and (now - last) < settings.grading_failure_alert_cooldown):
+        return False
+    ok = email.send_email(
+        to=settings.alert_email,
+        subject=f"[Foxy Audit] {count} grading failure(s) need attention",
+        html=(f"<p><b>{count}</b> interaction(s) are parked in "
+              f"grading_status='failed' — the Gemini judge exhausted all retries. "
+              f"Check the worker logs and the affected org's policy/config.</p>"),
+        text=(f"{count} grading failures are parked in the dead-letter "
+              f"(grading_status='failed'). Investigate the worker."),
+    )
+    if ok:
+        state["last_alert"] = now
+    return ok
+
+
 def run_once(db: Session, settings: Settings | None = None) -> None:
-    """One rollup + partition-maintenance pass (used by the worker loop + tests)."""
+    """One rollup + partition-maintenance + retention + dead-letter-alert pass."""
     settings = settings or get_settings()
     rollup_recent(db)
     if settings.traffic_tracking_enabled:
         maintain_partitions(db, settings.traffic_retention_days)
+    purge_admin_actions(db, settings.admin_actions_retention_days)
+    alert_on_grading_failures(db, settings, _ALERT_STATE)
 
 
 def usage_loop(stopping: dict, s: Settings) -> None:

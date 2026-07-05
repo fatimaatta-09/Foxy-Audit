@@ -20,15 +20,17 @@ import logging
 import secrets
 from datetime import datetime, timezone
 
+import bcrypt
 from fastapi import APIRouter, Header, HTTPException, Request
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
+from ..auth import hash_key
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import Invoice, MarketingLead, Organization, StripeEvent
+from ..models import ApiKey, Invoice, MarketingLead, Organization, StripeEvent, User
 
 log = logging.getLogger("foxy.billing")
 router = APIRouter()
@@ -78,10 +80,13 @@ async def stripe_webhook(
         log.warning("stripe webhook parse error: %s", exc)
         raise HTTPException(status_code=400, detail="Webhook parse error")
 
-    event_id = event.get("id", "")
-    event_type = event.get("type", "")
-    data_obj = event.get("data", {}).get("object", {})
+    # Signature is verified above; read fields from the plain JSON. (The stripe
+    # Event object's .get() is NOT dict-compatible in stripe v15+ — it raises
+    # AttributeError — so never call .get() on it.)
     payload_json = json.loads(body)
+    event_id = payload_json.get("id", "")
+    event_type = payload_json.get("type", "")
+    data_obj = payload_json.get("data", {}).get("object", {})
 
     db: Session = SessionLocal()
     try:
@@ -150,6 +155,22 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     db.add(org)
     db.flush()   # assign org.id without committing
 
+    # Make the org actually USABLE, not just an orphan row (Phase 5 · 5A.2):
+    # a peppered API key (the primary require_org path) + an admin dashboard user
+    # with a temporary password. The plaintext key + temp password are returned so
+    # the caller can deliver them to the customer (email delivery = Phase 5 · 5D).
+    db.add(ApiKey(
+        org_id=org.id, name="primary",
+        key_prefix=plaintext_key[:11] + "…" + plaintext_key[-4:],
+        key_hash=hash_key(plaintext_key), status="active",
+    ))
+    temp_password = "foxy-" + secrets.token_urlsafe(9)
+    db.add(User(
+        org_id=org.id, email=customer_email,
+        password_hash=bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode(),
+        role="admin",
+    ))
+
     # Funnel close: tag an active lead for this email as converted.
     lead = db.execute(
         select(MarketingLead).where(
@@ -162,7 +183,8 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
         lead.converted_org_id = org.id
 
     log.info("Provisioned org %s for customer %s", org.id, customer_id)
-    return {"status": "provisioned", "org_id": str(org.id), "api_key": plaintext_key}, str(org.id)
+    return {"status": "provisioned", "org_id": str(org.id),
+            "api_key": plaintext_key, "temp_password": temp_password}, str(org.id)
 
 
 def _handle_subscription_change(db: Session, subscription: dict) -> tuple[dict, str | None]:

@@ -63,6 +63,11 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - BREVO_SENDER_EMAIL=${BREVO_SENDER_EMAIL:-no-reply@foxyaudit.tech}
+      - BREVO_SENDER_NAME=${BREVO_SENDER_NAME:-Foxy Audit}
+      - DASHBOARD_URL=${DASHBOARD_URL:-https://app.foxyaudit.tech/dashboard}
+      - ADMIN_URL=${ADMIN_URL:-https://admin.foxyaudit.tech/admin/}
       - FOXY_DASHBOARD_HTML=/site/foxy-dashboard/foxy-audit-premium.html
       - FOXY_ADMIN_HTML=/site/foxy-adminpage/index.html
     volumes:
@@ -105,6 +110,14 @@ services:
       - API_KEY_PEPPER=${API_KEY_PEPPER:?}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - BREVO_SENDER_EMAIL=${BREVO_SENDER_EMAIL:-no-reply@foxyaudit.tech}
+      - BREVO_SENDER_NAME=${BREVO_SENDER_NAME:-Foxy Audit}
+      - ALERT_EMAIL=${ALERT_EMAIL:-}
+      - ADMIN_ACTIONS_RETENTION_DAYS=${ADMIN_ACTIONS_RETENTION_DAYS:-365}
+      - GRADING_BREAKER_THRESHOLD=${GRADING_BREAKER_THRESHOLD:-3}
+      - GRADING_BREAKER_COOLDOWN=${GRADING_BREAKER_COOLDOWN:-60}
+      - GRADING_MAX_BACKOFF=${GRADING_MAX_BACKOFF:-60}
       - USAGE_ROLLUP_INTERVAL=${USAGE_ROLLUP_INTERVAL:-300}
       - TRAFFIC_RETENTION_DAYS=${TRAFFIC_RETENTION_DAYS:-90}
       - ANCHOR_ENABLED=${ANCHOR_ENABLED:-false}

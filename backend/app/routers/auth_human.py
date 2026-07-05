@@ -18,9 +18,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .. import login_history, mfa, password_reset
 from ..auth import require_role, require_user
+from ..config import get_settings
 from ..db import get_db
-from ..models import User
+from ..models import LoginEvent, Organization, User
+from .logs import limiter          # reuse the app's single Limiter instance
 
 router = APIRouter()
 
@@ -59,7 +62,8 @@ class CreateUserResponse(BaseModel):
     id: str
     email: str
     role: str
-    temp_password: str
+    temp_password: str | None = None
+    invited: bool = False
     message: str = "Share this temporary password securely — it is shown once."
 
 
@@ -74,7 +78,15 @@ class ChangePasswordRequest(BaseModel):
 _DUMMY_HASH = b"$2b$12$Rz1JAD5efasLHu5D.kolz.QagN8aF7XSazm89wlVY8DJ/cjvNXsrm"
 
 
-@router.post("/v1/auth/login", response_model=MeResponse)
+def _establish_session(request: Request, user: User) -> None:
+    request.session.clear()   # rotate: drop any pre-existing (planted) session
+    request.session["user_id"] = str(user.id)
+    request.session["org_id"] = str(user.org_id)
+    request.session["role"] = user.role
+
+
+@router.post("/v1/auth/login")
+@limiter.limit("10/minute")
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
     pw = payload.password.encode("utf-8")
@@ -89,15 +101,89 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             if user.disabled:
                 disabled_match = True
                 continue                      # keep looking for an active account
-            request.session["user_id"] = str(user.id)
-            request.session["org_id"] = str(user.org_id)
-            request.session["role"] = user.role
-            return MeResponse(email=user.email, role=user.role, org_id=str(user.org_id))
+            org = db.get(Organization, user.org_id)
+            if org is not None and org.deleted_at is not None:
+                raise HTTPException(status_code=403, detail="This workspace has been deleted")
+            # Opt-in email-OTP MFA: email a code and stop — no session until it's
+            # verified at /v1/auth/mfa. (Phase 5 · 5B.5)
+            if user.mfa_enabled:
+                mfa.issue_code(db, user, user.email)
+                return {"mfa_required": True, "email": user.email}
+            _establish_session(request, user)
+            login_history.record(db, request, email, True, user)
+            return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
     if not candidates:
         bcrypt.checkpw(pw, _DUMMY_HASH)       # equalize timing vs. the valid-email path
     if disabled_match:
         raise HTTPException(status_code=403, detail="Account disabled")
+    login_history.record(db, request, email, False)
     raise HTTPException(status_code=401, detail="Invalid email or password")
+
+
+class MfaRequest(BaseModel):
+    email: str
+    code: str
+
+
+@router.post("/v1/auth/mfa")
+@limiter.limit("10/minute")
+def mfa_verify(payload: MfaRequest, request: Request, db: Session = Depends(get_db)):
+    """Step 2 of dashboard MFA: the code resolves the tenant (like the password
+    did across same-email accounts), then the session is established."""
+    email = payload.email.strip().lower()
+    candidates = db.execute(select(User).where(User.email == email)).scalars().all()
+    for user in candidates:
+        if user.mfa_enabled and not user.disabled and mfa.code_valid(user, payload.code):
+            mfa.clear_code(user)
+            db.commit()
+            _establish_session(request, user)
+            login_history.record(db, request, user.email, True, user)
+            return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
+    raise HTTPException(status_code=401, detail="Invalid or expired code")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/v1/auth/forgot-password")
+@limiter.limit("5/minute")
+def forgot_password(payload: ForgotPasswordRequest, request: Request,
+                    db: Session = Depends(get_db)):
+    """Email a reset link to every ACTIVE account with this address. Always 200
+    and silent — never reveals whether the email exists (enumeration-safe)."""
+    email_addr = payload.email.strip().lower()
+    users = db.execute(select(User).where(User.email == email_addr)).scalars().all()
+    base = get_settings().dashboard_url
+    for user in users:
+        if not user.disabled:
+            password_reset.issue_reset(db, user, user.email, base)
+    return {"status": "ok"}
+
+
+@router.post("/v1/auth/reset-password")
+@limiter.limit("5/minute")
+def reset_password(payload: ResetPasswordRequest, request: Request,
+                   db: Session = Depends(get_db)):
+    """Consume a single-use reset token and set the new password."""
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=422,
+                            detail="new password must be at least 8 characters")
+    token_hash = password_reset.hash_token(payload.token)
+    users = db.execute(
+        select(User).where(User.reset_token_hash == token_hash)).scalars().all()
+    for user in users:
+        if not user.disabled and password_reset.token_valid(user, payload.token):
+            user.password_hash = _bcrypt(payload.new_password)
+            password_reset.clear_reset(user)
+            db.commit()
+            return {"status": "password_reset"}
+    raise HTTPException(status_code=401, detail="Invalid or expired reset link")
 
 
 @router.post("/v1/auth/logout")
@@ -109,6 +195,27 @@ def logout(request: Request):
 @router.get("/v1/auth/me", response_model=MeResponse)
 def me(user: User = Depends(require_user)):
     return MeResponse(email=user.email, role=user.role, org_id=str(user.org_id))
+
+
+class LoginHistoryItem(BaseModel):
+    email: str
+    ip: str | None = None
+    user_agent: str | None = None
+    success: bool
+    created_at: str | None = None
+
+
+@router.get("/v1/auth/login-history", response_model=list[LoginHistoryItem])
+def login_history_view(admin: User = Depends(require_role("admin")),
+                       db: Session = Depends(get_db)):
+    """Recent login attempts for the admin's org (successes + attributed failures)."""
+    rows = db.execute(
+        select(LoginEvent).where(LoginEvent.org_id == admin.org_id)
+        .order_by(LoginEvent.created_at.desc()).limit(50)
+    ).scalars().all()
+    return [LoginHistoryItem(
+        email=r.email, ip=r.ip, user_agent=r.user_agent, success=r.success,
+        created_at=r.created_at.isoformat() if r.created_at else None) for r in rows]
 
 
 @router.get("/v1/auth/users", response_model=list[UserListItem])
@@ -130,14 +237,19 @@ def create_user(
     admin: User = Depends(require_role("admin")),
     db: Session = Depends(get_db),
 ):
-    """Admin invites a dashboard user in their org with a temp password."""
+    """Admin adds a dashboard user in their org. Without an explicit password the
+    user is INVITED — created with an unusable random password and emailed a
+    set-password link (5D.2). With a password, it's set directly (shown once)."""
     role = payload.role.strip().lower()
     if role not in _VALID_ROLES:
         raise HTTPException(status_code=422, detail=f"role must be one of {sorted(_VALID_ROLES)}")
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="a valid email is required")
-    temp = payload.password or ("foxy-" + secrets.token_urlsafe(9))
+    invited = not payload.password
+    # An invited account gets an unguessable, unusable password until the invitee
+    # sets their own via the emailed link; a supplied password is used directly.
+    temp = payload.password or secrets.token_urlsafe(32)
 
     user = User(org_id=admin.org_id, email=email, password_hash=_bcrypt(temp), role=role)
     db.add(user)
@@ -147,6 +259,12 @@ def create_user(
         db.rollback()
         raise HTTPException(status_code=409, detail="a user with that email already exists")
     db.refresh(user)
+    if invited:
+        password_reset.issue_reset(db, user, user.email,
+                                   get_settings().dashboard_url, invite=True)
+        return CreateUserResponse(id=str(user.id), email=user.email, role=user.role,
+                                  invited=True,
+                                  message="An invite email with a set-password link was sent.")
     return CreateUserResponse(id=str(user.id), email=user.email, role=user.role,
                               temp_password=temp)
 

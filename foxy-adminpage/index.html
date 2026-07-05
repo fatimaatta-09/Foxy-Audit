@@ -371,6 +371,48 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
     <input class="cin" id="gPass" type="password" autocomplete="current-password" placeholder="••••••••••">
     <div id="gErr" class="gerr"></div>
     <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Sign in</button>
+    <div id="gForgotLink" style="margin-top:10px;font-size:11px;cursor:pointer;text-align:center;text-decoration:underline;opacity:.7;">Forgot password?</div>
+  </form>
+  <form id="gateMfa" class="clay pad gatecard" style="display:none;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:2.5px solid #000;box-shadow:var(--clay-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
+      <div>
+        <div style="font-weight:800;font-size:15px;">Check your email</div>
+        <div class="eyebrow" style="margin:0;">enter the 6-digit code</div>
+      </div>
+    </div>
+    <div class="flabel" style="margin-top:14px;">verification code</div>
+    <input class="cin" id="gCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:5px;text-align:center;font-weight:700;">
+    <div id="gMfaErr" class="gerr"></div>
+    <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Verify &amp; sign in</button>
+    <button class="btn" type="button" id="gMfaBack" style="margin-top:8px;width:100%;background:transparent;">← back</button>
+  </form>
+  <form id="gateForgot" class="clay pad gatecard" style="display:none;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:2.5px solid #000;box-shadow:var(--clay-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
+      <div>
+        <div style="font-weight:800;font-size:15px;">Reset your password</div>
+        <div class="eyebrow" style="margin:0;">we'll email you a link</div>
+      </div>
+    </div>
+    <div class="flabel" style="margin-top:14px;">staff email</div>
+    <input class="cin" id="gForgotEmail" type="email" autocomplete="username" placeholder="you@foxy.audit">
+    <div id="gForgotMsg" class="eyebrow" style="min-height:14px;margin-top:8px;"></div>
+    <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Send reset link</button>
+    <button class="btn" type="button" id="gForgotBack" style="margin-top:8px;width:100%;background:transparent;">← back</button>
+  </form>
+  <form id="gateReset" class="clay pad gatecard" style="display:none;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:2.5px solid #000;box-shadow:var(--clay-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
+      <div>
+        <div style="font-weight:800;font-size:15px;">Choose a new password</div>
+        <div class="eyebrow" style="margin:0;">at least 8 characters</div>
+      </div>
+    </div>
+    <div class="flabel" style="margin-top:14px;">new password</div>
+    <input class="cin" id="gResetPass" type="password" autocomplete="new-password" placeholder="••••••••••">
+    <div id="gResetErr" class="gerr"></div>
+    <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Set new password</button>
   </form>
 </div>
 
@@ -970,6 +1012,10 @@ function loadSettings(){
 
 /* ──────────── auth gate ──────────── */
 async function boot(){
+  if(new URLSearchParams(location.search).get('reset_token')){   // arrived via reset link
+    $('gate').style.display='flex';$('gateForm').style.display='none';$('gateReset').style.display='';
+    $('gResetPass').focus();return;
+  }
   let r;try{r=await api('/admin/v1/auth/me')}catch(e){r=null}
   if(r&&r.ok){enter(await r.json());return}
   $('gate').style.display='flex';
@@ -994,7 +1040,64 @@ $('gateForm').addEventListener('submit',async e=>{
     const d=await r.json().catch(()=>({}));
     $('gErr').textContent=d.detail||d.error||('sign-in failed ('+r.status+')');return;
   }
+  const d=await r.json();
+  if(d&&d.mfa_required){showGateMfa(d.email);return;}   // opt-in email-OTP → step 2
+  enter(d);
+});
+let _mfaEmail=null;
+function showGateMfa(email){
+  _mfaEmail=email;
+  $('gateForm').style.display='none';
+  $('gateMfa').style.display='';
+  $('gCode').value='';$('gMfaErr').textContent='';
+  $('gCode').focus();
+}
+$('gMfaBack').addEventListener('click',()=>{
+  _mfaEmail=null;$('gateMfa').style.display='none';$('gateForm').style.display='';
+  $('gErr').textContent='';$('gPass').value='';
+});
+$('gateMfa').addEventListener('submit',async e=>{
+  e.preventDefault();$('gMfaErr').textContent='';
+  let r;
+  try{
+    r=await api('/admin/v1/auth/mfa',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({email:_mfaEmail,code:$('gCode').value.trim()})});
+  }catch(err){$('gMfaErr').textContent='network error — is the backend running?';return}
+  if(!r.ok){
+    const d=await r.json().catch(()=>({}));
+    $('gMfaErr').textContent=d.detail||d.error||('verification failed ('+r.status+')');return;
+  }
   enter(await r.json());
+});
+/* ──────────── forgot / reset password (5D) ──────────── */
+$('gForgotLink').addEventListener('click',()=>{
+  $('gateForm').style.display='none';$('gateForgot').style.display='';
+  $('gForgotEmail').value=$('gEmail').value||'';$('gForgotMsg').textContent='';$('gForgotEmail').focus();
+});
+$('gForgotBack').addEventListener('click',()=>{$('gateForgot').style.display='none';$('gateForm').style.display='';});
+$('gateForgot').addEventListener('submit',async e=>{
+  e.preventDefault();$('gForgotMsg').textContent='';
+  try{await api('/admin/v1/auth/forgot-password',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({email:$('gForgotEmail').value.trim()})});}
+  catch(err){$('gForgotMsg').textContent='network error';return}
+  $('gForgotMsg').textContent='If that email has an account, a reset link is on its way.';
+});
+$('gateReset').addEventListener('submit',async e=>{
+  e.preventDefault();$('gResetErr').textContent='';
+  if(($('gResetPass').value||'').length<8){$('gResetErr').textContent='password must be at least 8 characters';return;}
+  const token=new URLSearchParams(location.search).get('reset_token');
+  let r;
+  try{
+    r=await api('/admin/v1/auth/reset-password',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({token:token,new_password:$('gResetPass').value})});
+  }catch(err){$('gResetErr').textContent='network error';return}
+  if(!r.ok){
+    const d=await r.json().catch(()=>({}));
+    $('gResetErr').textContent=d.detail||d.error||('reset failed ('+r.status+')');return;
+  }
+  history.replaceState(null,'',location.pathname);
+  $('gateReset').style.display='none';$('gateForm').style.display='';
+  $('gErr').textContent='password reset — please sign in.';
 });
 async function doLogout(){await api('/admin/v1/auth/logout',{method:'POST'});location.reload()}
 
@@ -1160,9 +1263,12 @@ async function createStaff(){
     body:JSON.stringify({email,platform_role:role})});
   const d=await r.json().catch(()=>({}));
   if(!r.ok){toast(d.detail||('create failed ('+r.status+')'));return}
-  $('nsOut').innerHTML=`created <b>${esc(d.email)}</b> (${esc(d.platform_role)})<br>
-    one-time temp password:<br><b style="color:var(--fox2);">${esc(d.temp_password)}</b><br>
-    <span style="color:var(--muted2);">share securely — it is never shown again.</span>`;
+  $('nsOut').innerHTML=d.invited
+    ? `created <b>${esc(d.email)}</b> (${esc(d.platform_role)})<br>
+       <span style="color:var(--fox2);">invite email with a set-password link sent.</span>`
+    : `created <b>${esc(d.email)}</b> (${esc(d.platform_role)})<br>
+       one-time temp password:<br><b style="color:var(--fox2);">${esc(d.temp_password)}</b><br>
+       <span style="color:var(--muted2);">share securely — it is never shown again.</span>`;
   $('nsEmail').value='';loadStaff();
 }
 async function disableStaff(id){

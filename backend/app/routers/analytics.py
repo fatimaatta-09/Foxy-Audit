@@ -1,59 +1,71 @@
+"""GET /v1/analytics/threats — SQL-aggregated threat rollup for the dashboard.
+
+Aggregates in the database (count / avg / group-by / limit) instead of loading the
+org's whole ledger into memory, and is readable by the dashboard *session* OR the
+SDK Bearer key (resolve_org) so the web dashboard — not just the desktop — can use
+it. Timestamps are clean ISO-8601. (Phase 5 · 5A.3)
+"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 
-from ..auth import require_org
+from ..auth import resolve_org
 from ..db import get_db
 from ..models import AuditLog, Organization
 
 router = APIRouter()
 
+_BREACH = AuditLog.gemini_verdict["policy_breach"].astext == "true"
+_RISK = cast(AuditLog.gemini_verdict["risk_score"].astext, Integer)
+
+
 @router.get("/v1/analytics/threats")
 def get_threat_analytics(
-    org: Organization = Depends(require_org),
-    db: Session = Depends(get_db)
+    org: Organization = Depends(resolve_org),
+    db: Session = Depends(get_db),
 ):
-    rows = db.execute(
-        select(AuditLog)
-        .where(AuditLog.org_id == org.id)
-    ).scalars().all()
+    total_threats = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, _BREACH)
+    ).scalar_one()
 
-    top_policies = {}
-    total_risk = 0
-    breach_count = 0
-    high_risk_events = []
+    avg_risk = db.execute(
+        select(func.coalesce(func.avg(_RISK), 0))
+        .where(AuditLog.org_id == org.id, _BREACH)
+    ).scalar_one()
 
-    for row in rows:
-        verdict = row.gemini_verdict or {}
-        if verdict.get("policy_breach"):
-            breach_count += 1
-            tag = row.policy_tag
-            top_policies[tag] = top_policies.get(tag, 0) + 1
-            
-            risk = verdict.get("risk_score", 0)
-            total_risk += risk
-            
-            if risk >= 50:
-                high_risk_events.append({
-                    "seq": row.seq,
-                    "policy_tag": tag,
-                    "risk_score": risk,
-                    "reason": verdict.get("reason", ""),
-                    "timestamp": row.created_at.isoformat() + "Z" if row.created_at else ""
-                })
+    top_policies = [
+        {"tag": tag, "count": cnt}
+        for tag, cnt in db.execute(
+            select(AuditLog.policy_tag, func.count())
+            .where(AuditLog.org_id == org.id, _BREACH)
+            .group_by(AuditLog.policy_tag)
+            .order_by(func.count().desc())
+        ).all()
+    ]
 
-    sorted_policies = sorted([{"tag": k, "count": v} for k, v in top_policies.items()], key=lambda x: x["count"], reverse=True)
-    
-    high_risk_events.sort(key=lambda x: x["seq"], reverse=True)
-    high_risk_events = high_risk_events[:10]
-    
-    avg_risk = int(total_risk / breach_count) if breach_count > 0 else 0
+    recent_high_risk = [
+        {
+            "seq": r.seq,
+            "policy_tag": r.policy_tag,
+            "risk_score": (r.gemini_verdict or {}).get("risk_score", 0),
+            "reason": (r.gemini_verdict or {}).get("reason", ""),
+            "timestamp": r.created_at.isoformat() if r.created_at else "",
+        }
+        for r in db.execute(
+            select(AuditLog)
+            .where(AuditLog.org_id == org.id, _BREACH, _RISK >= 50)
+            .order_by(AuditLog.seq.desc())
+            .limit(10)
+        ).scalars().all()
+    ]
 
     return {
-        "top_policies": sorted_policies,
-        "avg_risk_score": avg_risk,
-        "total_threats": breach_count,
-        "recent_high_risk": high_risk_events
+        "top_policies": top_policies,
+        "avg_risk_score": int(avg_risk),
+        "total_threats": total_threats,
+        "recent_high_risk": recent_high_risk,
     }

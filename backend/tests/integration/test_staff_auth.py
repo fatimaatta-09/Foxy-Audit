@@ -124,7 +124,8 @@ def test_only_superadmin_manages_staff(make_staff, staff_login):
     cs = staff_login(superadmin["email"], superadmin["password"])
     assert cs.get("/admin/v1/staff").status_code == 200
     created = cs.post("/admin/v1/staff",
-                      json={"email": "new@foxy.audit", "platform_role": "viewer"})
+                      json={"email": "new@foxy.audit", "platform_role": "viewer",
+                            "password": "newstaffpass123"})
     assert created.status_code == 200
     body = created.json()
     assert body["platform_role"] == "viewer" and body["temp_password"]
@@ -134,7 +135,8 @@ def test_created_staff_can_log_in(make_staff, staff_login, client):
     superadmin = make_staff(role="superadmin")
     cs = staff_login(superadmin["email"], superadmin["password"])
     body = cs.post("/admin/v1/staff",
-                   json={"email": "fresh@foxy.audit", "platform_role": "operator"}).json()
+                   json={"email": "fresh@foxy.audit", "platform_role": "operator",
+                         "password": "freshpass1234"}).json()
     r = client.post("/admin/v1/auth/login",
                     json={"email": "fresh@foxy.audit", "password": body["temp_password"]})
     assert r.status_code == 200 and r.json()["platform_role"] == "operator"

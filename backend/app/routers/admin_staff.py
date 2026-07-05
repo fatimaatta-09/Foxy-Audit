@@ -16,8 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .. import password_reset
 from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_platform_role
+from ..config import get_settings
 from ..db import get_db
 from ..models import StaffUser
 
@@ -43,7 +45,8 @@ class CreateStaffResponse(BaseModel):
     id: str
     email: str
     platform_role: str
-    temp_password: str
+    temp_password: str | None = None
+    invited: bool = False
     message: str = "Share this temporary password securely — it is shown once."
 
 
@@ -71,7 +74,10 @@ def create_staff(
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="a valid email is required")
-    temp = payload.password or ("foxy-staff-" + secrets.token_urlsafe(9))
+    invited = not payload.password
+    # Invited staff get an unusable random password until they set their own via
+    # the emailed link; a supplied password is used directly. (5D.2)
+    temp = payload.password or secrets.token_urlsafe(32)
     ph = bcrypt.hashpw(temp.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
     new_staff = StaffUser(email=email, password_hash=ph, platform_role=role,
@@ -85,6 +91,12 @@ def create_staff(
         db.rollback()
         raise HTTPException(status_code=409, detail="a staff user with that email already exists")
     db.refresh(new_staff)
+    if invited:
+        password_reset.issue_reset(db, new_staff, new_staff.email,
+                                   get_settings().admin_url, invite=True)
+        return CreateStaffResponse(id=str(new_staff.id), email=new_staff.email,
+                                   platform_role=new_staff.platform_role, invited=True,
+                                   message="An invite email with a set-password link was sent.")
     return CreateStaffResponse(id=str(new_staff.id), email=new_staff.email,
                                platform_role=new_staff.platform_role, temp_password=temp)
 

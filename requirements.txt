@@ -1,0 +1,20 @@
+# Foxy Audit DESKTOP client (omni_fox.py) — the pixel-art compliance-officer fox.
+# Install into a Python 3.13+ environment:
+#     pip install -r requirements.txt
+#     python omni_fox.py
+#
+# These are BOUNDED ranges: the desktop environment isn't captured by CI, so they
+# can't be exact-pinned/verified here the way backend/requirements.txt is. To lock
+# your exact working set for reproducible installs:
+#     pip freeze > requirements.lock
+PyQt6>=6.6,<6.10
+psutil>=5.9,<7
+pynput>=1.7,<2
+requests>=2.31,<3
+
+# ── Optional ────────────────────────────────────────────────────────────────
+# Window-following on non-Windows (import is guarded — safe to omit on Windows):
+#   macOS:  pyobjc-framework-Quartz>=10
+#   Linux:  python-xlib>=0.33
+# Only to regenerate the sprite atlas (build_16frame_atlas.py):
+#   Pillow>=10,<12

@@ -86,6 +86,25 @@ def _policy_config(db: Session, org_id) -> dict | None:
     }
 
 
+def _org_history(db: Session, org_id) -> dict:
+    """Compact last-7-day activity summary for the org, fed to the judge for
+    temporal reasoning (5J). Cheap aggregate over the usage_daily rollup."""
+    oid = org_id if isinstance(org_id, uuid.UUID) else uuid.UUID(str(org_id))
+    row = db.execute(text(
+        "SELECT COALESCE(SUM(breach_count),0) AS breaches, "
+        "       COALESCE(SUM(graded_count),0) AS graded "
+        "FROM usage_daily "
+        "WHERE org_id = :oid AND day >= CURRENT_DATE - INTERVAL '7 days'"),
+        {"oid": oid}).mappings().first()
+    breaches, graded = int(row["breaches"]), int(row["graded"])
+    return {
+        "window_days": 7,
+        "recent_breaches": breaches,
+        "recent_graded": graded,
+        "breach_rate_pct": round(100.0 * breaches / graded, 1) if graded else 0.0,
+    }
+
+
 def _claim_batch(db: Session, batch: int, stuck: int) -> list:
     """Claim up to `batch` rows for grading; returns their metadata mappings."""
     rows = db.execute(_CLAIM_SQL, {"batch": batch, "stuck": stuck}).mappings().all()
@@ -103,7 +122,8 @@ def _grade_one(db: Session, row) -> None:
         "pii_signals": row["pii_signals"],
     }
     policy_config = _policy_config(db, row["org_id"])
-    verdict = gemini.evaluate(meta, policy_config)
+    history = _org_history(db, row["org_id"])
+    verdict = gemini.evaluate(meta, policy_config, history=history)
     # Scope RLS to this row's org before the write-back (no-op under a
     # BYPASSRLS/superuser role, required under a hardened one).
     db.execute(text("SELECT set_config('app.current_org', :oid, true)"),
@@ -125,6 +145,47 @@ def _handle_failure(db: Session, row, max_attempts: int, exc: Exception) -> None
     log.warning("grading %s for %s (attempt %s): %s",
                 "FAILED (dead-letter)" if attempts >= max_attempts else "retry",
                 row["id"], attempts, exc)
+
+
+class CircuitBreaker:
+    """Trips OPEN after `threshold` consecutive systemic failures and stays open
+    for `cooldown` seconds (work is skipped). After the cooldown one trial is
+    allowed; a success closes + resets it, a failure slides the window forward.
+    Keeps the grading poller from hammering a down Gemini / burning attempts (5E.2)."""
+
+    def __init__(self, threshold: int, cooldown: float):
+        self.threshold = threshold
+        self.cooldown = cooldown
+        self.failures = 0
+        self.opened_at: float | None = None
+
+    def on_success(self) -> None:
+        self.failures = 0
+        self.opened_at = None
+
+    def on_failure(self, now: float) -> None:
+        self.failures += 1
+        if self.failures >= self.threshold:
+            self.opened_at = now          # (re)open, sliding the cooldown window
+
+    def allow(self, now: float) -> bool:
+        """True if work should proceed (closed, or a half-open trial post-cooldown)."""
+        return self.opened_at is None or (now - self.opened_at) >= self.cooldown
+
+
+def backoff_delay(failures: int, base: float, cap: float) -> float:
+    """Capped exponential backoff: base, base, 2·base, 4·base … ≤ cap."""
+    if failures <= 0:
+        return base
+    return min(cap, base * (2 ** (failures - 1)))
+
+
+def _interruptible_sleep(stopping: dict, seconds: float) -> None:
+    """Sleep up to `seconds`, waking promptly when shutdown is requested."""
+    waited = 0.0
+    while waited < seconds and not stopping["flag"]:
+        time.sleep(min(1.0, seconds - waited))
+        waited += 1.0
 
 
 def _anchor_loop(stopping: dict, s) -> None:
@@ -178,20 +239,36 @@ def run_forever() -> None:
     threading.Thread(target=usage_loop, args=(stopping, s),
                      name="foxy-usage", daemon=True).start()
 
+    # Circuit-breaker so a Gemini outage doesn't hammer the API or burn attempts:
+    # when whole batches keep failing, trip open and back off (5E.2).
+    breaker = CircuitBreaker(s.grading_breaker_threshold, s.grading_breaker_cooldown)
     while not stopping["flag"]:
+        if not breaker.allow(time.time()):
+            _interruptible_sleep(stopping, s.grading_poll_interval)   # open → wait out cooldown
+            continue
         rows: list = []
         db = SessionLocal()
         try:
             rows = _claim_batch(db, s.grading_batch_size, s.grading_stuck_seconds)
+            ok = fail = 0
             for row in rows:
                 try:
                     _grade_one(db, row)
+                    ok += 1
                 except Exception as exc:   # noqa: BLE001 — never let one row kill the loop
                     _handle_failure(db, row, s.grading_max_attempts, exc)
+                    fail += 1
             # Liveness heartbeat (busy OR idle) so /health/ready can detect a
             # dead/stuck worker before the grading queue backs up silently.
             db.execute(text("UPDATE worker_heartbeat SET beat_at = now() WHERE id = 1"))
             db.commit()
+            if rows:
+                # A whole batch failing with none graded => Gemini is likely down
+                # (systemic) → trip the breaker; any success closes it.
+                if ok == 0 and fail > 0:
+                    breaker.on_failure(time.time())
+                else:
+                    breaker.on_success()
             # NOTE: public-chain anchoring runs in its own thread (_anchor_loop),
             # NOT here — a slow chain RPC must never stall grading or the heartbeat.
         except Exception as exc:           # noqa: BLE001 — claim/DB hiccup: back off
@@ -199,7 +276,12 @@ def run_forever() -> None:
             log.warning("poll loop error: %s", exc)
         finally:
             db.close()
+        # Idle → poll interval; systemic failures → capped exponential backoff.
+        # Interruptible so SIGTERM drains the in-flight batch then exits promptly.
         if not rows:
-            time.sleep(s.grading_poll_interval)
+            _interruptible_sleep(stopping, s.grading_poll_interval)
+        elif breaker.failures > 0:
+            _interruptible_sleep(
+                stopping, backoff_delay(breaker.failures, s.grading_poll_interval, s.grading_max_backoff))
 
     log.info("Foxy grading poller stopped")

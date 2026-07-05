@@ -94,8 +94,9 @@ ctypes / macOS Quartz / Linux Xlib and returns `None` if the optional dep is mis
 
 ## Theming — the key cross-cutting concept
 
-`fox_settings.py` defines `THEMES`, **14 complete design-token dicts that all expose the exact same
-keys** (palette, border, radius, shadow model, fonts). `FoxSettings` wraps `QSettings` (OS-native
+`fox_settings.py` defines `THEMES`, a **token-driven theme system** — design-token dicts that all
+expose the exact same keys (palette, border, radius, shadow model, fonts). It ships a single theme
+(`claymorphism`, matching the web app's clay look); add more by dropping in one fully-populated entry. `FoxSettings` wraps `QSettings` (OS-native
 persistent storage). `FoxSettings.theme_tokens()` returns the active theme merged with defaults so
 optional keys are always present.
 

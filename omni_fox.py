@@ -9,6 +9,7 @@ health, provides governance tips, and offers a chat interface.
 import sys
 import os
 import time
+import json
 import random
 
 import urllib.request
@@ -28,6 +29,7 @@ from eye_tracker import EyeOverlay
 from security_overlay import SecurityOverlay
 from sdk_bridge import SDKBridgeListener
 from dashboard import DashboardWindow
+from breach_poll import plan_reactions
 
 
 # ── Shared matte menu skin (matches the dashboard / chat / settings) ────────
@@ -162,6 +164,57 @@ class StartupHealthWorker(QThread):
                     self.failed.emit(f"HTTP {resp.status}")
         except Exception as e:
             self.failed.emit(str(e))
+
+
+# ── Backend breach poller ──────────────────────────────────────────────────
+class BreachPollWorker(QThread):
+    """Polls the backend so the fox reacts to a REAL, backend-detected policy
+    breach.  Grading is asynchronous, and in production the backend is remote —
+    it can never push a UDP datagram to the desktop's localhost:9999 — so the
+    desktop pulls: GET /v1/logs/breaches?since_seq={cursor}.  The first poll is a
+    baseline (existing breaches are absorbed, not fired) so the fox never floods
+    with stale alerts on launch.  Pure cursor logic lives in breach_poll.py."""
+    breach_detected = pyqtSignal(dict)
+
+    def __init__(self, backend_url: str, org_key: str,
+                 interval: float = 10.0, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+        self.interval = interval
+        self._cursor = 0
+        self._first_poll = True
+
+    def run(self):
+        while not self.isInterruptionRequested():
+            self._poll_once()
+            waited = 0.0
+            while waited < self.interval and not self.isInterruptionRequested():
+                self.msleep(200)
+                waited += 0.2
+
+    def _poll_once(self):
+        url = f"{self.backend_url}/v1/logs/breaches?since_seq={self._cursor}"
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {self.org_key}"})
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                if resp.status != 200:
+                    return
+                breaches = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return  # transient (offline / unreachable) — retry next tick
+        if not isinstance(breaches, list):
+            return
+        to_fire, self._cursor = plan_reactions(
+            breaches, self._cursor, self._first_poll)
+        self._first_poll = False
+        for b in to_fire:
+            self.breach_detected.emit({
+                "reason": b.get("reason", "Policy breach"),
+                "risk_score": b.get("risk_score", 100),
+                "policy": b.get("policy_tag", "default"),
+            })
 
 
 # ── Main fox widget ────────────────────────────────────────────────────────
@@ -318,6 +371,11 @@ class OmniAwareFox(QWidget):
             self._health_worker.succeeded.connect(self._on_health_ok)
             self._health_worker.failed.connect(self._on_health_fail)
             self._health_worker.start()
+
+            # Poll the backend for real graded breaches → fox reacts (5A.1b).
+            self._breach_poller = BreachPollWorker(url, key, parent=self)
+            self._breach_poller.breach_detected.connect(self._on_policy_breach)
+            self._breach_poller.start()
 
         # ── Animation timer: 100 ms ≈ 10 fps ─────────────────────────────
         self.anim_timer = QTimer(self)
@@ -611,6 +669,20 @@ class OmniAwareFox(QWidget):
         reason = payload.get("reason", "Unknown injection")
         score = payload.get("risk_score", 100)
 
+        # 5L: audible cue + a native tray popup, and a tally for the weekly summary.
+        QApplication.beep()
+        try:
+            self.tray_icon.showMessage(
+                "🚨 Policy Breach", f"{reason} (risk {score}/100)",
+                QSystemTrayIcon.MessageIcon.Critical, 6000)
+        except Exception:
+            pass
+        try:
+            _s = self.settings._s
+            _s.setValue("weekly/breaches", _s.value("weekly/breaches", 0, type=int) + 1)
+        except Exception:
+            pass
+
         if self.chat_popup is None:
             self.chat_popup = ChatPopup(self, settings=self.settings)
             self.chat_popup.popup_closed.connect(self._on_chat_closed)
@@ -812,6 +884,34 @@ class OmniAwareFox(QWidget):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
+        # 5L: once a week, surface a short activity summary via the tray.
+        QTimer.singleShot(3000, self._maybe_weekly_summary)
+
+    def _maybe_weekly_summary(self):
+        """Once every 7 days, show a tray summary of the week's breach activity (5L)."""
+        from datetime import datetime, timedelta
+        try:
+            s = self.settings._s
+            last = s.value("weekly/last_summary", "", type=str)
+            now = datetime.now()
+            due = True
+            if last:
+                try:
+                    due = (now - datetime.fromisoformat(last)) >= timedelta(days=7)
+                except ValueError:
+                    due = True
+            if not due:
+                return
+            if last:   # skip the very first run — no full week has elapsed yet
+                breaches = s.value("weekly/breaches", 0, type=int)
+                self.tray_icon.showMessage(
+                    "🦊 Foxy Audit — weekly summary",
+                    f"This week: {breaches} policy breach(es) caught. Stay compliant!",
+                    QSystemTrayIcon.MessageIcon.Information, 8000)
+            s.setValue("weekly/last_summary", now.isoformat())
+            s.setValue("weekly/breaches", 0)
+        except Exception:
+            pass
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
@@ -847,6 +947,11 @@ class OmniAwareFox(QWidget):
         if hasattr(self, "_health_worker") and self._health_worker.isRunning():
             self._health_worker.quit()
             self._health_worker.wait(600)
+
+        if hasattr(self, "_breach_poller") and self._breach_poller.isRunning():
+            self._breach_poller.requestInterruption()
+            self._breach_poller.quit()
+            self._breach_poller.wait(1000)
 
         if self.dashboard is not None:
             self.dashboard.close()

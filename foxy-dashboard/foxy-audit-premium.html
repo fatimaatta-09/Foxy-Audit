@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
 <title>Foxy Audit</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23ff7a2e'/><text x='50' y='72' font-size='62' text-anchor='middle'>🦊</text></svg>">
 <meta name="theme-color" content="#ff7a2e">
@@ -891,10 +892,21 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div class="prow"><div><div class="pname">Weekly digest</div><div class="pdesc">summary of activity every Monday</div></div><label class="toggle"><input type="checkbox" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
             <div class="prow"><div><div class="pname">Key rotation reminders</div><div class="pdesc">nudge after 90 days unrotated</div></div><label class="toggle"><input type="checkbox"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
           </div>
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Access control</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Restrict dashboard access to specific IPs / CIDRs (comma-separated). Blank = allow all. Include your own IP or you'll lock yourself out.</div>
+            <input class="cin" id="ipAllowInput" placeholder="e.g. 203.0.113.4, 10.0.0.0/24" style="margin-bottom:8px;">
+            <button class="btn" onclick="saveIpAllowlist()">Save IP allow-list</button>
+          </div>
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Recent logins</div>
+            <button class="btn" onclick="loadLoginHistory()">Load login history</button>
+            <div id="loginHistOut" style="margin-top:10px;font-size:11px;"></div>
+          </div>
           <div class="clay pad">
             <div style="font-weight:700;font-size:13px;margin-bottom:11px;color:var(--breach-bg);">Danger zone</div>
-            <button class="btn ghost" onclick="showToast('Workspace export started')" style="margin-top:0;">export workspace data</button>
-            <button class="btn danger" onclick="showToast('Delete requires email confirmation')">delete workspace</button>
+            <button class="btn ghost" onclick="exportWorkspaceData()" style="margin-top:0;">export workspace data</button>
+            <button class="btn danger" onclick="deleteWorkspace()">delete workspace</button>
           </div>
         </div>
       </div>
@@ -931,6 +943,39 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div id="authErr" class="fb-res bad" style="min-height:14px;margin-top:10px;"></div>
     <button class="btn pri" type="submit" style="margin-top:6px;">Sign in</button>
     <div class="sub mono" style="margin-top:12px;font-size:10px;">demo · admin@demo.test / adminpass123</div>
+    <div id="forgotLink" class="sub mono" style="margin-top:8px;font-size:10px;cursor:pointer;text-decoration:underline;">Forgot password?</div>
+  </form>
+  <form id="authMfa" class="clay pad" style="display:none;width:340px;max-width:100%;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:2.5px solid #000;box-shadow:var(--clay-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
+      <div><div style="font-weight:800;font-size:15px;">Check your email</div><div class="eyebrow" style="margin:0;">enter the 6-digit code</div></div>
+    </div>
+    <div class="flabel" style="margin-top:0;">verification code</div>
+    <input class="cin" id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:5px;text-align:center;font-weight:700;">
+    <div id="mfaErr" class="fb-res bad" style="min-height:14px;margin-top:10px;"></div>
+    <button class="btn pri" type="submit" style="margin-top:6px;">Verify &amp; sign in</button>
+    <div id="mfaBack" class="sub mono" style="margin-top:12px;font-size:10px;cursor:pointer;">← back to sign-in</div>
+  </form>
+  <form id="authForgot" class="clay pad" style="display:none;width:340px;max-width:100%;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:2.5px solid #000;box-shadow:var(--clay-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
+      <div><div style="font-weight:800;font-size:15px;">Reset your password</div><div class="eyebrow" style="margin:0;">we'll email you a link</div></div>
+    </div>
+    <div class="flabel" style="margin-top:0;">email</div>
+    <input class="cin" id="forgotEmail" type="email" autocomplete="username" placeholder="you@company.com">
+    <div id="forgotMsg" class="sub mono" style="min-height:14px;margin-top:10px;font-size:10px;"></div>
+    <button class="btn pri" type="submit" style="margin-top:6px;">Send reset link</button>
+    <div id="forgotBack" class="sub mono" style="margin-top:12px;font-size:10px;cursor:pointer;">← back to sign-in</div>
+  </form>
+  <form id="authReset" class="clay pad" style="display:none;width:340px;max-width:100%;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:2.5px solid #000;box-shadow:var(--clay-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
+      <div><div style="font-weight:800;font-size:15px;">Choose a new password</div><div class="eyebrow" style="margin:0;">at least 8 characters</div></div>
+    </div>
+    <div class="flabel" style="margin-top:0;">new password</div>
+    <input class="cin" id="resetPass" type="password" autocomplete="new-password" placeholder="••••••••••">
+    <div id="resetErr" class="fb-res bad" style="min-height:14px;margin-top:10px;"></div>
+    <button class="btn pri" type="submit" style="margin-top:6px;">Set new password</button>
   </form>
 </div>
 
@@ -1007,6 +1052,47 @@ function clearVerify(){
   const el=document.getElementById('verifyResult'); el.className='vres'; el.innerHTML='';
 }
 let _exporting=false;
+// real data-export (5D.4): download this org's audit-log ledger (own data)
+function exportWorkspaceData(){
+  const a=document.createElement('a');
+  a.href='/v1/logs/export?format=json'; a.download='foxy-audit-logs.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  showToast('Exporting your audit logs…');
+}
+// soft-delete the workspace (5D.3): confirm by typing the workspace name
+async function deleteWorkspace(){
+  const name=window.prompt('This locks your workspace and signs everyone out (reversible by support). Type your workspace name to confirm:');
+  if(name===null||!name.trim())return;
+  try{
+    const r=await fetch('/v1/account/delete',{method:'POST',credentials:'same-origin',
+      headers:{'content-type':'application/json'},body:JSON.stringify({confirm_name:name.trim()})});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); showToast(d.detail||('delete failed ('+r.status+')')); return; }
+    showToast('Workspace deleted — signing out'); setTimeout(()=>location.reload(),1200);
+  }catch(e){ showToast('Could not reach the server'); }
+}
+// per-org dashboard IP allow-list (5K)
+async function saveIpAllowlist(){
+  const el=document.getElementById('ipAllowInput'); const v=((el&&el.value)||'').trim();
+  try{
+    const r=await fetch('/v1/account/ip-allowlist',{method:'POST',credentials:'same-origin',
+      headers:{'content-type':'application/json'},body:JSON.stringify({allowlist:v})});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); showToast(d.detail||('save failed ('+r.status+')')); return; }
+    showToast('IP allow-list saved');
+  }catch(e){ showToast('Could not reach the server'); }
+}
+// per-org login history (5K)
+async function loadLoginHistory(){
+  try{
+    const r=await fetch('/v1/auth/login-history',{credentials:'same-origin'});
+    if(!r.ok){ showToast('load failed ('+r.status+')'); return; }
+    const rows=await r.json(); const el=document.getElementById('loginHistOut');
+    const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    el.innerHTML = rows.length ? rows.map(e=>`<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);">
+      <b style="color:${e.success?'#2e7d32':'#c62828'};">${e.success?'✓':'✗'}</b>
+      ${esc(e.email)} · ${esc(e.ip||'—')} · ${e.created_at?new Date(e.created_at).toLocaleString():''}</div>`).join('')
+      : '<div style="color:var(--muted);">no login events yet</div>';
+  }catch(e){ showToast('Could not reach the server'); }
+}
 function runExport(){
   if(_exporting)return; _exporting=true;
   const prog=document.getElementById('exportProgress'), pbar=document.getElementById('pbar'), plbl=document.getElementById('plbl');
@@ -1126,6 +1212,10 @@ function runExport(){
   async function loadAll(){ await Promise.all([loadStats(),loadLogs(),loadChainMeta()]); }
 
   async function check(){
+    if(new URLSearchParams(location.search).get('reset_token')){   // arrived via reset link
+      gate.style.display='flex'; $('authForm').style.display='none'; $('authReset').style.display='';
+      $('resetPass').focus(); return;
+    }
     let ok=false; try{ ok=(await api('/v1/auth/me')).status===200; }catch(e){}
     if(ok){ gate.style.display='none'; loadAll(); }
     else{ gate.style.display='flex'; }
@@ -1135,8 +1225,53 @@ function runExport(){
     e.preventDefault(); $('authErr').textContent='';
     let r; try{ r=await api('/v1/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:$('authEmail').value,password:$('authPass').value})}); }
     catch(err){ $('authErr').textContent='Could not reach the server'; return; }
-    if(r.ok){ gate.style.display='none'; loadAll(); }
-    else{ $('authErr').textContent='Invalid email or password'; }
+    if(!r.ok){ $('authErr').textContent='Invalid email or password'; return; }
+    const d=await r.json().catch(()=>({}));
+    if(d&&d.mfa_required){ showAuthMfa(d.email); return; }   // opt-in email-OTP → step 2
+    gate.style.display='none'; loadAll();
+  });
+  let _mfaEmail=null;
+  function showAuthMfa(email){
+    _mfaEmail=email;
+    $('authForm').style.display='none';
+    $('authMfa').style.display='';
+    $('mfaCode').value=''; $('mfaErr').textContent='';
+    $('mfaCode').focus();
+  }
+  $('mfaBack').addEventListener('click',()=>{
+    _mfaEmail=null; $('authMfa').style.display='none'; $('authForm').style.display='';
+    $('authErr').textContent=''; $('authPass').value='';
+  });
+  $('authMfa').addEventListener('submit',async e=>{
+    e.preventDefault(); $('mfaErr').textContent='';
+    let r; try{ r=await api('/v1/auth/mfa',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:_mfaEmail,code:$('mfaCode').value.trim()})}); }
+    catch(err){ $('mfaErr').textContent='Could not reach the server'; return; }
+    if(!r.ok){ const d=await r.json().catch(()=>({})); $('mfaErr').textContent=d.detail||'Invalid or expired code'; return; }
+    gate.style.display='none'; loadAll();
+  });
+
+  // ── forgot / reset password (5D) ──
+  $('forgotLink').addEventListener('click',()=>{
+    $('authForm').style.display='none'; $('authForgot').style.display='';
+    $('forgotEmail').value=$('authEmail').value||''; $('forgotMsg').textContent=''; $('forgotEmail').focus();
+  });
+  $('forgotBack').addEventListener('click',()=>{ $('authForgot').style.display='none'; $('authForm').style.display=''; });
+  $('authForgot').addEventListener('submit',async e=>{
+    e.preventDefault(); $('forgotMsg').textContent='';
+    try{ await api('/v1/auth/forgot-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:$('forgotEmail').value.trim()})}); }
+    catch(err){ $('forgotMsg').textContent='Could not reach the server'; return; }
+    $('forgotMsg').textContent='If that email has an account, a reset link is on its way.';
+  });
+  $('authReset').addEventListener('submit',async e=>{
+    e.preventDefault(); $('resetErr').textContent='';
+    if(($('resetPass').value||'').length<8){ $('resetErr').textContent='Password must be at least 8 characters'; return; }
+    const token=new URLSearchParams(location.search).get('reset_token');
+    let r; try{ r=await api('/v1/auth/reset-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:token,new_password:$('resetPass').value})}); }
+    catch(err){ $('resetErr').textContent='Could not reach the server'; return; }
+    if(!r.ok){ const d=await r.json().catch(()=>({})); $('resetErr').textContent=d.detail||'Invalid or expired reset link'; return; }
+    history.replaceState(null,'',location.pathname);   // drop the token from the URL
+    $('authReset').style.display='none'; $('authForm').style.display='';
+    $('authErr').className='fb-res'; $('authErr').textContent='Password reset — please sign in.';
   });
 
   // add a subtle Log out control to the dock foot
@@ -1271,7 +1406,10 @@ function runExport(){
     const role=(window.prompt('Role — admin or member:','member')||'member').trim().toLowerCase();
     try{ const r=await api('/v1/auth/users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.trim(),role:role})});
       if(!r.ok){ toast('Add failed — '+await errText(r)); return; }
-      const u=await r.json(); revealSecret('Temp password · '+u.email, u.temp_password); toast('Auditor added'); loadTeam();
+      const u=await r.json();
+      if(u.invited){ toast('Invite email sent to '+u.email); }
+      else{ revealSecret('Temp password · '+u.email, u.temp_password); toast('Auditor added'); }
+      loadTeam();
     }catch(e){ toast('Could not reach the server'); }
   };
   window.disableUser=async function(id){

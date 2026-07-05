@@ -15,8 +15,13 @@ class Settings(BaseSettings):
     # startup (so a real deploy can never silently run on the dev session secret).
     foxy_env: str = "dev"
     database_url: str = "postgresql+psycopg://foxy:foxy@localhost:5432/foxy"
+    # Confined, NOLOGIN/NOBYPASSRLS role the app assumes (via `SET LOCAL ROLE`) for
+    # every org-scoped transaction, so the existing FORCE RLS policies actually
+    # filter rows instead of being bypassed by the superuser connection (5B.2).
+    # Empty string disables the role switch (e.g. a DB where the role is absent).
+    db_app_role: str = "foxy_app"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-1.5-pro"
+    gemini_model: str = "gemini-2.5-flash"   # current free-tier model; retired 1.5-pro rejects AQ-prefixed keys
     gemini_timeout: float = 12.0
     # When the judge is unreachable: False = fail-open (write row, no breach),
     # True = fail-closed (flag for human review). The chain row is always written.
@@ -42,10 +47,10 @@ class Settings(BaseSettings):
     # Public-chain anchoring (Phase 3 A1) — periodically publish each org's chain
     # head (latest audit_logs.chain_hash) to a public chain so tampering is
     # externally detectable, not just internally recomputable. Provider is
-    # pluggable: 'stub' (no external chain, for dev/tests), 'evm' (web3 ->
-    # AnchorRegistry on Sepolia/any EVM), or 'opentimestamps' (Bitcoin).
+    # pluggable: 'stub' (no external chain, for dev/tests) or 'evm' (web3 ->
+    # AnchorRegistry on Sepolia/any EVM).
     anchor_enabled: bool = False
-    anchor_provider: str = "stub"              # stub | evm | opentimestamps
+    anchor_provider: str = "stub"              # stub | evm
     anchor_interval_seconds: int = 3600
     anchor_evm_rpc_url: str = ""
     anchor_evm_chain: str = "sepolia"
@@ -58,11 +63,25 @@ class Settings(BaseSettings):
     grading_batch_size: int = 16
     grading_max_attempts: int = 5
     grading_stuck_seconds: int = 300
+    # Dead-letter alerting (5E.1): when >= threshold rows sit in
+    # grading_status='failed', the worker logs a WARNING and emails alert_email
+    # (empty = log only), at most once per cooldown window (seconds).
+    grading_failure_alert_threshold: int = 1
+    grading_failure_alert_cooldown: int = 3600
+    alert_email: str = ""
+    # Grading circuit-breaker (5E.2): after this many consecutive all-failed
+    # batches, stop grading for `cooldown` seconds; backoff is capped at max.
+    grading_breaker_threshold: int = 3
+    grading_breaker_cooldown: float = 60.0
+    grading_max_backoff: float = 60.0
     # In/out traffic tracking (Phase 4 #1). The middleware writes one row per request
     # OFF the hot path; disable for perf tests or to pause capture. Raw partitions
     # older than the retention window are dropped by the worker.
     traffic_tracking_enabled: bool = True
     traffic_retention_days: int = 90
+    # admin_actions (staff audit trail) retention — purged by the worker's
+    # maintenance pass (5D.5). Longer than traffic since it's compliance-relevant.
+    admin_actions_retention_days: int = 365
     # CORS — comma-separated list of allowed origins.
     # NEVER set to * in production; wildcard CORS contradicts our security USP.
     cors_origins: str = (
@@ -80,6 +99,16 @@ class Settings(BaseSettings):
     # Optional IP allow-list for the admin site (comma-separated). Empty = allow all
     # (dev). In prod, restrict admin.foxyaudit.com to office/VPN ranges.
     admin_ip_allowlist: str = ""
+    # Max request body size (bytes); larger POSTs are rejected with 413 (anti-DoS).
+    max_request_bytes: int = 2 * 1024 * 1024
+    # Transactional email via Brevo (staff MFA codes; password resets/invites in 5D).
+    brevo_api_key: str = ""
+    brevo_sender_email: str = "no-reply@foxyaudit.tech"
+    brevo_sender_name: str = "Foxy Audit"
+    # Public base URLs where the customer / staff login pages load — used to build
+    # password-reset links (5D). The reset page detects ?reset_token=… on these.
+    dashboard_url: str = "https://app.foxyaudit.tech/dashboard"
+    admin_url: str = "https://admin.foxyaudit.tech/admin/"
 
     def get_cors_origins(self) -> list[str]:
         # A literal "*" is never allowed — wildcard CORS contradicts the security USP.
