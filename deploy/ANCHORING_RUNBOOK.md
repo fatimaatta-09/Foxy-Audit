@@ -27,9 +27,9 @@ Set these keys, then restart the worker:
 ```bash
 ANCHOR_ENABLED=true
 ANCHOR_PROVIDER=evm
-ANCHOR_EVM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY>
+ANCHOR_EVM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<KEY>   # gitleaks:allow (placeholder, not a secret)
 ANCHOR_EVM_CHAIN=sepolia
-ANCHOR_EVM_PRIVATE_KEY=<funded-sepolia-key>
+ANCHOR_EVM_PRIVATE_KEY=<funded-sepolia-key>   # gitleaks:allow (placeholder, not a secret)
 ANCHOR_EVM_CONTRACT=0x4D4F3359cA43874f9e7e9E158f6E7209dD984F4E
 
 # Safety rails — turn them on with the flip
