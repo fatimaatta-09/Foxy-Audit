@@ -18,19 +18,23 @@ import hashlib
 import json
 import logging
 import secrets
+import uuid
 from datetime import datetime, timezone
 
 import bcrypt
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
+from .. import email, password_reset
 from ..auth import hash_key
 from ..config import get_settings
-from ..db import SessionLocal
+from ..db import SessionLocal, get_db
 from ..models import ApiKey, Invoice, MarketingLead, Organization, StripeEvent, User
+from .logs import limiter
 
 log = logging.getLogger("foxy.billing")
 router = APIRouter()
@@ -44,6 +48,90 @@ def _generate_api_key() -> tuple[str, str]:
     key = "foxy_sk_" + secrets.token_hex(24)
     key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
     return key, key_hash
+
+
+class SignupRequest(BaseModel):
+    email: str
+    name: str | None = None
+    plan: str | None = None          # self-serve signup is always the free tier
+
+
+@router.post("/v1/signup")
+@limiter.limit("5/minute")
+def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_db)):
+    """Self-serve FREE signup (Phase 6 · 6A): provision a usable free-tier org + a
+    peppered SDK key + an INVITED admin (a set-password link is emailed — no shared
+    password). Returns the SDK key ONCE."""
+    email_addr = payload.email.strip().lower()
+    if "@" not in email_addr or "." not in email_addr.split("@")[-1]:
+        raise HTTPException(status_code=422, detail="a valid email is required")
+
+    plaintext_key, key_hash = _generate_api_key()
+    org = Organization(name=(payload.name or email_addr).strip()[:255],
+                       api_key_hash=key_hash, plan_tier="free", contact_email=email_addr)
+    db.add(org)
+    db.flush()
+    db.add(ApiKey(org_id=org.id, name="primary",
+                  key_prefix=plaintext_key[:11] + "…" + plaintext_key[-4:],
+                  key_hash=hash_key(plaintext_key), status="active"))
+    placeholder = bcrypt.hashpw(secrets.token_urlsafe(32).encode(), bcrypt.gensalt()).decode()
+    admin = User(org_id=org.id, email=email_addr, password_hash=placeholder, role="admin")
+    db.add(admin)
+    lead = db.execute(select(MarketingLead).where(
+        func.lower(MarketingLead.email) == email_addr,
+        MarketingLead.status != "churned")).scalars().first()
+    if lead is not None:
+        lead.status, lead.converted_org_id = "converted", org.id
+    db.commit()
+    db.refresh(admin)
+    # Email the invited admin a set-password link (reuse the 5D invite flow).
+    password_reset.issue_reset(db, admin, admin.email, get_settings().dashboard_url, invite=True)
+    return {"status": "created", "org_id": str(org.id), "api_key": plaintext_key,
+            "message": "Check your email to set your password."}
+
+
+class CheckoutRequest(BaseModel):
+    email: str
+    plan: str = "pro"
+
+
+# plan → (price-id config attr, Stripe Checkout mode). Subscriptions recur;
+# the lifetime "guardian" tier is a one-time charge (mode=payment).
+_PLANS = {
+    "pro":       ("stripe_price_pro", "subscription"),
+    "companion": ("stripe_price_companion", "subscription"),
+    "guardian":  ("stripe_price_guardian", "payment"),
+}
+
+
+@router.post("/v1/billing/checkout-session")
+@limiter.limit("5/minute")
+def checkout_session(payload: CheckoutRequest, request: Request):
+    """Create a Stripe Checkout Session for a paid plan and return its URL; the
+    webhook provisions the org once payment completes. (Phase 6 · 6A)"""
+    s = get_settings()
+    if not s.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="billing not configured")
+    plan = _PLANS.get(payload.plan.strip().lower())
+    price_id = getattr(s, plan[0], "") if plan else ""
+    if not plan or not price_id:
+        raise HTTPException(status_code=422, detail="unknown or unconfigured plan")
+    try:
+        import stripe
+        stripe.api_key = s.stripe_secret_key
+        session = stripe.checkout.Session.create(
+            mode=plan[1],
+            line_items=[{"price": price_id, "quantity": 1}],
+            customer_email=payload.email.strip().lower(),
+            success_url=f"{s.dashboard_url}?checkout=success",
+            cancel_url=f"{s.dashboard_url}?checkout=cancel",
+        )
+        return {"checkout_url": session.url}
+    except HTTPException:
+        raise
+    except Exception as exc:                # noqa: BLE001
+        log.warning("checkout session failed: %s", exc)
+        raise HTTPException(status_code=502, detail="could not start checkout")
 
 
 def _ts(value) -> datetime | None:
@@ -119,6 +207,11 @@ async def stripe_webhook(
                 .values(status=final, org_id=org_id, processed_at=func.now())
             )
             db.commit()
+            # Post-commit side-effect (never before the row is durable): a fresh
+            # checkout provision emails the new admin a set-password link + SDK key.
+            if (event_type == "checkout.session.completed"
+                    and result.get("status") == "provisioned"):
+                _deliver_credentials(db, org_id, result.get("api_key", ""))
             return result
         except Exception as exc:  # noqa: BLE001 — persist the failure, never drop the record
             db.rollback()
@@ -156,18 +249,17 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     db.flush()   # assign org.id without committing
 
     # Make the org actually USABLE, not just an orphan row (Phase 5 · 5A.2):
-    # a peppered API key (the primary require_org path) + an admin dashboard user
-    # with a temporary password. The plaintext key + temp password are returned so
-    # the caller can deliver them to the customer (email delivery = Phase 5 · 5D).
+    # a peppered API key (the primary require_org path) + an INVITED admin dashboard
+    # user. The webhook emails a set-password link + the SDK key post-commit, so no
+    # shared plaintext password is ever created (6A credential delivery).
     db.add(ApiKey(
         org_id=org.id, name="primary",
         key_prefix=plaintext_key[:11] + "…" + plaintext_key[-4:],
         key_hash=hash_key(plaintext_key), status="active",
     ))
-    temp_password = "foxy-" + secrets.token_urlsafe(9)
     db.add(User(
         org_id=org.id, email=customer_email,
-        password_hash=bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode(),
+        password_hash=bcrypt.hashpw(secrets.token_urlsafe(32).encode(), bcrypt.gensalt()).decode(),
         role="admin",
     ))
 
@@ -184,7 +276,32 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
 
     log.info("Provisioned org %s for customer %s", org.id, customer_id)
     return {"status": "provisioned", "org_id": str(org.id),
-            "api_key": plaintext_key, "temp_password": temp_password}, str(org.id)
+            "api_key": plaintext_key}, str(org.id)
+
+
+def _deliver_credentials(db: Session, org_id: str | None, api_key: str) -> None:
+    """After a checkout provision COMMITS, email the new admin a set-password link
+    (5D invite) + their SDK key (shown once). Best-effort: a mail failure must never
+    fail the webhook — Stripe would otherwise retry an already-completed provision."""
+    if not org_id:
+        return
+    try:
+        admin = db.execute(
+            select(User).where(User.org_id == uuid.UUID(str(org_id)), User.role == "admin")
+        ).scalars().first()
+        if admin is None:
+            return
+        password_reset.issue_reset(db, admin, admin.email,
+                                   get_settings().dashboard_url, invite=True)
+        if api_key:
+            email.send_email(
+                to=admin.email, subject="Your Foxy Audit API key",
+                html=("<p>Welcome to Foxy Audit! Your SDK key — store it securely, it "
+                      f"is shown only once:</p><pre>{api_key}</pre>"),
+                text=("Welcome to Foxy Audit! Your SDK key — store it securely, it is "
+                      f"shown only once:\n{api_key}"))
+    except Exception as exc:                # noqa: BLE001
+        log.warning("credential delivery failed for org %s: %s", org_id, exc)
 
 
 def _handle_subscription_change(db: Session, subscription: dict) -> tuple[dict, str | None]:

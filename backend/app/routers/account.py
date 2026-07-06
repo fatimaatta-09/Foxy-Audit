@@ -9,6 +9,7 @@ isolation (the docker superuser role bypasses RLS).
 
 from __future__ import annotations
 
+import secrets
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -170,3 +171,35 @@ def set_ip_allowlist(
     org.ip_allowlist = ", ".join(entries) if entries else None
     db.commit()
     return {"status": "ok", "ip_allowlist": org.ip_allowlist or ""}
+
+
+@router.post("/v1/account/badge")
+def mint_badge(
+    request: Request,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Mint (or return the existing) public trust-badge token for this org — admin
+    only. Embed the returned SVG URL anywhere via <img>. Aggregate status only, so
+    the badge never exposes tenant data. (Phase 6 · 6C)"""
+    org = db.get(Organization, admin.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="workspace not found")
+    if not org.public_badge_token:
+        org.public_badge_token = secrets.token_urlsafe(24)
+        db.commit()
+    return {"token": org.public_badge_token, "url": f"/v1/badge/{org.public_badge_token}.svg"}
+
+
+@router.delete("/v1/account/badge")
+def revoke_badge(
+    request: Request,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Revoke the org's public trust badge — the old token immediately 404s. (6C)"""
+    org = db.get(Organization, admin.org_id)
+    if org is not None and org.public_badge_token:
+        org.public_badge_token = None
+        db.commit()
+    return {"status": "revoked"}

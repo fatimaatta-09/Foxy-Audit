@@ -1110,7 +1110,7 @@ footer {
             <li>Basic CPU/RAM alerts</li>
             <li>Click to drag & reposition</li>
           </ul>
-          <button class="price-btn ghost" onclick="downloadFree()">Download Free</button>
+          <button class="price-btn ghost" onclick="openModal('free', 'Free forever')">Get Started Free →</button>
         </div>
 
         <!-- PRO -->
@@ -1429,7 +1429,7 @@ if self.roam_timer > 300:</div>
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
-    <div class="modal-title">Complete Purchase</div>
+    <div class="modal-title" id="modal-title">Complete your order</div>
     <div class="modal-plan" id="modal-plan-label">The Companion — $4.99/mo</div>
 
     <div class="form-group">
@@ -1440,22 +1440,9 @@ if self.roam_timer > 300:</div>
       <label class="form-label">Email Address</label>
       <input type="email" class="form-input" placeholder="you@example.com" id="pay-email">
     </div>
-    <div class="form-group">
-      <label class="form-label">Card Number</label>
-      <input type="text" class="form-input" placeholder="4242 4242 4242 4242" maxlength="19" id="pay-card" oninput="formatCard(this)">
-    </div>
-    <div class="form-row">
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Expiry</label>
-        <input type="text" class="form-input" placeholder="MM / YY" maxlength="7" id="pay-exp" oninput="formatExp(this)">
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">CVC</label>
-        <input type="text" class="form-input" placeholder="123" maxlength="3" id="pay-cvc">
-      </div>
-    </div>
-    <button class="form-submit" onclick="processPayment(this)">Pay &amp; Download</button>
-    <div class="secure-note">🔒 256-bit SSL encrypted · Powered by Stripe</div>
+    <div id="signup-result" style="display:none"></div>
+    <button class="form-submit" id="modal-submit" onclick="submitPlan(this)">Continue</button>
+    <div class="secure-note" id="modal-note">🔒 Secure checkout powered by Stripe</div>
   </div>
 </div>
 
@@ -1655,8 +1642,23 @@ let currentPlan = '';
 
 function openModal(plan, label) {
   currentPlan = plan;
+  const names = { free: 'The Wanderer', companion: 'The Companion', guardian: 'The Guardian' };
   document.getElementById('modal-plan-label').textContent =
-    (plan === 'companion' ? 'The Companion' : 'The Guardian') + ' — ' + label;
+    (names[plan] || 'Foxy Audit') + (label ? ' — ' + label : '');
+  document.getElementById('modal-title').textContent =
+    plan === 'free' ? 'Create your free account' : 'Complete your order';
+  document.getElementById('modal-note').textContent =
+    plan === 'free' ? '🔒 No card required · Free forever'
+                    : '🔒 Secure checkout powered by Stripe';
+  const submit = document.getElementById('modal-submit');
+  const btnLabel = plan === 'free' ? 'Create free account' : 'Continue to secure checkout →';
+  submit.textContent = btnLabel;
+  submit.dataset.label = btnLabel;
+  submit.style.display = '';
+  submit.style.background = '';
+  submit.disabled = false;
+  const box = document.getElementById('signup-result');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
   document.getElementById('modal-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
@@ -1670,43 +1672,66 @@ function closeModalOutside(e) {
   if (e.target === document.getElementById('modal-overlay')) closeModal();
 }
 
-function formatCard(input) {
-  let v = input.value.replace(/\D/g,'').substring(0,16);
-  input.value = v.replace(/(\d{4})(?=\d)/g,'$1 ');
-}
-function formatExp(input) {
-  let v = input.value.replace(/\D/g,'').substring(0,4);
-  if (v.length > 2) v = v.slice(0,2) + ' / ' + v.slice(2);
-  input.value = v;
-}
-
-function processPayment(btn) {
+// Free signup OR paid checkout, decided by the current plan. Free → provision a
+// free-tier account (SDK key shown once + set-password email). Paid → create a
+// Stripe Checkout Session and redirect to Stripe's hosted, PCI-compliant page.
+async function submitPlan(btn) {
   const name  = document.getElementById('pay-name').value.trim();
   const email = document.getElementById('pay-email').value.trim();
-  const card  = document.getElementById('pay-card').value.replace(/\s/g,'');
-  if (!name || !email || card.length < 16) {
-    btn.textContent = 'Please fill all fields';
+  const reset = () => { btn.textContent = btn.dataset.label || 'Continue'; btn.style.background = ''; btn.disabled = false; };
+  if (!isValidEmail(email)) {
+    btn.textContent = 'Enter a valid email';
     btn.style.background = 'rgba(255,60,60,0.5)';
-    setTimeout(() => { btn.textContent = 'Pay & Download'; btn.style.background = ''; }, 2200);
+    setTimeout(reset, 2200);
     return;
   }
-  if (isValidEmail(email)) {
-    // Capture purchase intent as a lead — fire-and-forget, never blocks checkout
-    postLead({ email: email, name: name, source: 'checkout-' + (currentPlan || 'plan') }).catch(() => {});
-  }
-  btn.textContent = 'Processing...';
+  // Capture intent as a lead — fire-and-forget, never blocks the flow.
+  postLead({ email: email, name: name || undefined, source: 'signup-' + (currentPlan || 'plan') }).catch(() => {});
+
   btn.disabled = true;
-  setTimeout(() => {
-    btn.textContent = '✓ Payment Successful — Downloading...';
-    btn.style.background = 'rgba(60,200,100,0.7)';
-    setTimeout(() => {
-      downloadFree(); // trigger download
-      closeModal();
-      btn.textContent = 'Pay & Download';
-      btn.style.background = '';
-      btn.disabled = false;
-    }, 1500);
-  }, 1800);
+  btn.textContent = currentPlan === 'free' ? 'Creating account…' : 'Redirecting to checkout…';
+  try {
+    if (currentPlan === 'free') {
+      const res = await fetch(FOXY_API + '/v1/signup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, name: name || undefined }),
+      });
+      if (!res.ok) throw new Error('signup failed: ' + res.status);
+      showSignupResult(await res.json());
+      btn.style.display = 'none';
+    } else {
+      const res = await fetch(FOXY_API + '/v1/billing/checkout-session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, plan: currentPlan }),
+      });
+      if (!res.ok) throw new Error('checkout failed: ' + res.status);
+      const data = await res.json();
+      if (!data.checkout_url) throw new Error('no checkout url');
+      window.location.href = data.checkout_url;   // hand off to Stripe
+    }
+  } catch (err) {
+    btn.textContent = 'Something went wrong — try again';
+    btn.style.background = 'rgba(255,60,60,0.5)';
+    setTimeout(reset, 2600);
+  }
+}
+
+// Success panel for a free signup: confirmation + the one-time SDK key + download.
+function showSignupResult(data) {
+  const key = (data && data.api_key) ? data.api_key : '';
+  const box = document.getElementById('signup-result');
+  box.innerHTML =
+    '<div style="margin:6px 0 4px;padding:14px;border-radius:12px;text-align:left;' +
+    'background:rgba(60,200,100,0.12);border:1px solid rgba(60,200,100,0.4)">' +
+      '<p style="font-weight:700;margin-bottom:8px">✓ Account created</p>' +
+      '<p style="font-size:0.8rem;margin-bottom:10px">Check your email to set your dashboard password.</p>' +
+      (key ?
+        '<p style="font-size:0.72rem;color:var(--muted);margin-bottom:4px">Your SDK key — shown once, store it safely:</p>' +
+        '<code style="display:block;word-break:break-all;font-size:0.72rem;padding:8px;border-radius:8px;' +
+        'background:rgba(0,0,0,0.28)">' + key + '</code>' : '') +
+      '<button class="price-btn ghost" style="width:100%;margin-top:12px" onclick="downloadFree()">Download the desktop app</button>' +
+    '</div>';
+  box.style.display = 'block';
 }
 
 function downloadFree() {

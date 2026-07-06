@@ -801,6 +801,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div class="erow"><span class="elabel">chain integrity</span><span class="eval ok" id="metaIntegrity">100% — no gaps</span></div>
           <div class="erow"><span class="elabel">chain head</span><span class="eval mono" id="metaHead">a3f9c1dd…7e02</span></div>
           <div class="erow"><span class="elabel">org id</span><span class="eval mono" id="metaOrg">ORG‑4F2A9C‑GIKI</span></div>
+          <div class="erow"><span class="elabel">anchor SLA</span><span class="eval" id="metaSLA">—</span></div>
           <div style="margin-top:16px;border-top:2px dashed var(--line);padding-top:14px;">
             <div class="krow"><div class="ic-chip dark sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="var(--fox)"/></svg></span></div><div class="kbody"><div class="kname">June 2026 — all tenants</div><div class="kmeta">142 entries · 2026-06-21</div></div><span class="stitle-act" onclick="showToast('Downloading…')">download</span></div>
             <div class="krow"><div class="ic-chip dark sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="var(--fox)"/></svg></span></div><div class="kbody"><div class="kname">May 2026 — foxy-prod-01</div><div class="kmeta">88 entries · 2026-06-01</div></div><span class="stitle-act" onclick="showToast('Downloading…')">download</span></div>
@@ -902,6 +903,13 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Recent logins</div>
             <button class="btn" onclick="loadLoginHistory()">Load login history</button>
             <div id="loginHistOut" style="margin-top:10px;font-size:11px;"></div>
+          </div>
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Trust badge</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Embed a live, public “audited by Foxy” badge on your site. It shows aggregate status only — verified state, audited count, last-anchor freshness — never your logs or workspace id.</div>
+            <button class="btn" onclick="mintBadge()">Generate badge</button>
+            <button class="btn ghost" onclick="revokeBadge()" style="margin-left:8px;">Revoke</button>
+            <div id="badgeOut" style="margin-top:12px;display:none;"></div>
           </div>
           <div class="clay pad">
             <div style="font-weight:700;font-size:13px;margin-bottom:11px;color:var(--breach-bg);">Danger zone</div>
@@ -1080,6 +1088,31 @@ async function saveIpAllowlist(){
     showToast('IP allow-list saved');
   }catch(e){ showToast('Could not reach the server'); }
 }
+// embeddable public trust badge (6C)
+async function mintBadge(){
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  try{
+    const r=await fetch('/v1/account/badge',{method:'POST',credentials:'same-origin'});
+    if(!r.ok){ showToast('could not generate badge ('+r.status+')'); return; }
+    const d=await r.json();
+    const url=location.origin+d.url;
+    const snippet='<a href="'+location.origin+'/dashboard"><img src="'+url+'" alt="Audited by Foxy Audit" height="58"></a>';
+    const out=document.getElementById('badgeOut');
+    out.style.display='block';
+    out.innerHTML='<div style="margin-bottom:8px;"><img src="'+esc(url)+'" alt="Foxy Audit trust badge" height="58"></div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Embed code (click to copy):</div>'
+      +'<textarea class="cin" readonly rows="2" style="width:100%;font-family:var(--mono);font-size:10px;" onclick="this.select();document.execCommand&&document.execCommand(\'copy\');">'+esc(snippet)+'</textarea>';
+    showToast('Badge ready — copy the embed code');
+  }catch(e){ showToast('Could not reach the server'); }
+}
+async function revokeBadge(){
+  try{
+    const r=await fetch('/v1/account/badge',{method:'DELETE',credentials:'same-origin'});
+    if(!r.ok){ showToast('revoke failed ('+r.status+')'); return; }
+    const out=document.getElementById('badgeOut'); if(out){ out.style.display='none'; out.innerHTML=''; }
+    showToast('Badge revoked');
+  }catch(e){ showToast('Could not reach the server'); }
+}
 // per-org login history (5K)
 async function loadLoginHistory(){
   try{
@@ -1149,7 +1182,7 @@ function runExport(){
     const t=new Date(it.created_at).toLocaleTimeString();
     const td='padding:11px 10px;border-bottom:2px dashed var(--line);';
     return '<tr>'
-      +'<td style="'+td+'"><span class="ltag '+cls+'" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">#'+it.seq+'</span>'+(it.policy_tag||'')+'</td>'
+      +'<td style="'+td+'"><span class="ltag '+cls+'" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">#'+it.seq+'</span>'+(it.policy_tag||'')+(it.agent?' <span style="color:var(--muted);font-family:var(--mono);font-size:9px;">· '+it.agent+'</span>':'')+'</td>'
       +'<td style="'+td+'font-family:var(--mono);font-size:10px;color:var(--muted);">'+shortHash(it.chain_hash)+'</td>'
       +'<td style="'+td+'"><span class="pill '+cls+'"><i></i>'+v+'</span></td>'
       +'<td style="'+td+'font-family:var(--mono);font-size:10px;color:var(--muted);">'+t+'</td>'
@@ -1159,7 +1192,7 @@ function runExport(){
     const {v,cls}=verdictOf(it);
     const t=new Date(it.created_at).toLocaleTimeString();
     return '<div class="lrow"><div class="ltag '+cls+'">#'+it.seq+'</div>'
-      +'<div class="lbody"><div class="lname">'+(it.policy_tag||'')+'</div><div class="lhash">'+shortHash(it.chain_hash)+'</div></div>'
+      +'<div class="lbody"><div class="lname">'+(it.policy_tag||'')+(it.agent?' <span style="color:var(--muted);font-size:10px;">· '+it.agent+'</span>':'')+'</div><div class="lhash">'+shortHash(it.chain_hash)+'</div></div>'
       +'<div class="lright"><span class="pill '+cls+'"><i></i>'+v+'</span><div class="ltime">'+t+'</div></div></div>';
   }
 
@@ -1182,6 +1215,8 @@ function runExport(){
       const head=$('metaHead'); if(head&&l.items&&l.items[0])head.textContent=shortHash(l.items[0].chain_hash);
       const me=await (await api('/v1/auth/me')).json();
       const org=$('metaOrg'); if(org&&me.org_id)org.textContent=me.org_id;
+      try{ const sla=await (await api('/v1/anchors/sla')).json();
+        const sl=$('metaSLA'); if(sl&&sla.cadence_human) sl.textContent='every '+sla.cadence_human+(sla.plan_tier?' · '+sla.plan_tier:''); }catch(_){}
     }catch(e){}
   }
   async function verifyChain(){

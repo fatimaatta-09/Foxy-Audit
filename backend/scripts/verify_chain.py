@@ -56,6 +56,7 @@ def main() -> None:
             expected = compute_chain_hash(
                 org_id=org.id, prompt_hash=r.prompt_hash, response_hash=r.response_hash,
                 token_count=r.token_count, policy_tag=r.policy_tag, seq=r.seq, prev_hash=prev,
+                agent=r.agent,
             )
             ok = expected == r.chain_hash
             print(f"  seq {r.seq:>4}  {'PASS' if ok else 'FAIL'}  {r.chain_hash[:16]}...")

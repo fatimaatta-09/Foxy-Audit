@@ -95,6 +95,7 @@ def recompute_head(db: Session, org_id, upto_seq: int) -> str | None:
         prev = compute_chain_hash(
             org_id=org_id, prompt_hash=row.prompt_hash, response_hash=row.response_hash,
             token_count=row.token_count, policy_tag=row.policy_tag, seq=row.seq, prev_hash=prev,
+            agent=row.agent,
         )
         last = prev
     return last
@@ -190,11 +191,15 @@ def latest_anchor(db: Session, org_id) -> ChainAnchor | None:
 
 
 def anchor_org(db: Session, org_id, settings: Settings | None = None,
-               force: bool = False) -> ChainAnchor | None:
+               force: bool = False, respect_cadence: bool = False) -> ChainAnchor | None:
     """Anchor one org's current chain head. Returns the ChainAnchor row, or None
     if the org has no logs, or (unless force) its head hasn't advanced since the
     last successful anchor. A provider failure is persisted as status='failed'
-    (a visible receipt), never silently dropped."""
+    (a visible receipt), never silently dropped.
+
+    respect_cadence (set by the automatic worker sweep, NOT manual 'anchor now'):
+    even with an advanced head, skip if the last anchor is younger than the org's
+    per-tier cadence — the configurable anchor SLA (6E)."""
     settings = settings or get_settings()
     org_id = org_id if isinstance(org_id, uuid.UUID) else uuid.UUID(str(org_id))
     _scope(db, org_id)
@@ -205,8 +210,21 @@ def anchor_org(db: Session, org_id, settings: Settings | None = None,
 
     if not force:
         prev = latest_anchor(db, org_id)
-        if prev is not None and prev.last_seq == last_seq and prev.status != "failed":
-            return None   # head hasn't advanced since a non-failed anchor
+        if prev is not None and prev.status != "failed":
+            if prev.last_seq == last_seq:
+                return None   # head hasn't advanced since a non-failed anchor
+            # 6E: automatic sweeps also honor the org's per-tier anchor cadence —
+            # even with an advanced head, don't re-anchor within the cadence window.
+            if respect_cadence and prev.anchored_at is not None:
+                plan_tier = db.execute(
+                    select(Organization.plan_tier).where(Organization.id == org_id)
+                ).scalar_one_or_none()
+                cadence = settings.anchor_cadence_for(plan_tier)
+                anchored_at = prev.anchored_at
+                if anchored_at.tzinfo is None:
+                    anchored_at = anchored_at.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - anchored_at).total_seconds() < cadence:
+                    return None   # within the tier's cadence window — wait
 
     try:
         receipt = run_provider(head_hash, settings)
@@ -240,7 +258,7 @@ def anchor_all_due(db: Session, settings: Settings | None = None) -> int:
     anchored = 0
     for oid in org_ids:
         try:
-            if anchor_org(db, oid, settings) is not None:
+            if anchor_org(db, oid, settings, respect_cadence=True) is not None:
                 anchored += 1
         except Exception as exc:                    # noqa: BLE001 — one org must not stop the sweep
             db.rollback()

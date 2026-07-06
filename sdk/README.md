@@ -38,6 +38,20 @@ def summarize(text: str) -> str:
     ...
 ```
 
+### Attributing the model (`agent`)
+
+Pass `agent=` to record *which* model produced the interaction. The backend folds it into the
+tamper-evident hash chain, so the attribution can't be altered after the fact:
+
+```python
+@foxy.audit(policy="soc2", agent="gpt-4o")
+def ask_model(prompt: str) -> str:
+    ...
+```
+
+`agent` is optional — rows logged without it hash exactly as before, so existing chains keep
+verifying.
+
 ## Configuration
 
 | Setting        | Kwarg          | Env var             | Default                  |

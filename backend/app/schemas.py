@@ -19,6 +19,10 @@ class LogIngest(BaseModel):
     token_count: int = Field(ge=0, le=10_000_000)
     policy_tag: str = Field(pattern=r"^[a-z0-9_]{1,32}$")
     pii_signals: list[str] | None = None
+    # which model produced it (6B); charset-locked (like policy_tag) so it's safe
+    # to render raw and can't smuggle HTML/delimiters into the chain blob.
+    agent: str | None = Field(default=None, max_length=128,
+                              pattern=r"^[A-Za-z0-9_.\-: /]{1,128}$")
 
     @field_validator("prompt_hash", "response_hash")
     @classmethod
@@ -72,6 +76,7 @@ class LogListItem(BaseModel):
     response_hash: str
     token_count: int
     policy_tag: str
+    agent: str | None = None
     pii_signals: list[str] | None = None
     chain_hash: str
     gemini_verdict: dict[str, Any] | None = None

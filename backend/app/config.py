@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Stripe billing integration
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    # Stripe Checkout price IDs per paid plan — self-serve onboarding (6A).
+    stripe_price_pro: str = ""
+    stripe_price_companion: str = ""
+    stripe_price_guardian: str = ""    # one-time (lifetime) — Checkout mode=payment
     # Human session auth (dashboard login) — signs the CUSTOMER session cookie.
     # MUST be overridden with a strong random value in production (SESSION_SECRET).
     session_secret: str = "dev-insecure-session-secret-change-me"
@@ -52,6 +56,15 @@ class Settings(BaseSettings):
     anchor_enabled: bool = False
     anchor_provider: str = "stub"              # stub | evm
     anchor_interval_seconds: int = 3600
+    # Per-tier anchor cadence (6E) — the automatic worker sweep publishes an org's
+    # chain head at most once per its plan tier's cadence (seconds). Manual "anchor
+    # now" is NOT gated. Unknown/unset tiers use anchor_cadence_default. NOTE:
+    # bounded by anchor_interval_seconds (the sweep frequency) — a sub-hour cadence
+    # needs a shorter sweep too.
+    anchor_cadence_free: int = 86400          # 24h
+    anchor_cadence_pro: int = 21600           # 6h
+    anchor_cadence_enterprise: int = 3600     # 1h
+    anchor_cadence_default: int = 86400       # fallback for unknown/unset tiers
     anchor_evm_rpc_url: str = ""
     anchor_evm_chain: str = "sepolia"
     anchor_evm_private_key: str = ""           # funded testnet key; required for 'evm'
@@ -120,6 +133,14 @@ class Settings(BaseSettings):
 
     def get_admin_ip_allowlist(self) -> list[str]:
         return [o.strip() for o in self.admin_ip_allowlist.split(",") if o.strip()]
+
+    def anchor_cadence_for(self, plan_tier: str | None) -> int:
+        """Seconds between automatic anchors for a plan tier (6E); default fallback."""
+        return {
+            "free": self.anchor_cadence_free,
+            "pro": self.anchor_cadence_pro,
+            "enterprise": self.anchor_cadence_enterprise,
+        }.get((plan_tier or "").strip().lower(), self.anchor_cadence_default)
 
     @property
     def is_prod(self) -> bool:

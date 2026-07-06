@@ -68,6 +68,35 @@ def test_hash_ok_udp_emitted():
         sock.close()
 
 
+def test_agent_included_in_payload(monkeypatch):
+    """audit(policy, agent=…) puts the agent into the backend payload (6B)."""
+    from foxy_audit import dispatch
+    captured = {}
+    monkeypatch.setattr(dispatch, "submit", lambda cfg, payload: captured.update(payload))
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)   # enabled → dispatch fires
+
+    @foxy.audit("demo", agent="gpt-4o")
+    def ask(prompt: str) -> str:
+        return "resp"
+
+    ask("hi")
+    assert captured.get("agent") == "gpt-4o"
+
+
+def test_agent_absent_by_default(monkeypatch):
+    from foxy_audit import dispatch
+    captured = {}
+    monkeypatch.setattr(dispatch, "submit", lambda cfg, payload: captured.update(payload))
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)
+
+    @foxy.audit("demo")
+    def ask(prompt: str) -> str:
+        return "resp"
+
+    ask("hi")
+    assert not captured.get("agent")          # no agent when not specified
+
+
 def test_no_key_means_http_disabled_but_udp_enabled():
     foxy = FoxyClient(api_key="")
     assert foxy.enabled is False

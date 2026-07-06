@@ -64,8 +64,12 @@ class FoxyClient:
     def enabled(self) -> bool:
         return self.cfg.enabled
 
-    def audit(self, policy: str = "default"):
-        """Return a decorator that audits the wrapped LLM-calling function."""
+    def audit(self, policy: str = "default", agent: str | None = None):
+        """Return a decorator that audits the wrapped LLM-calling function.
+
+        `agent` records which model/agent produced the interaction (e.g.
+        "gpt-4o", "claude-3-opus"); the backend folds it into the tamper-evident
+        hash chain so it can't be altered after the fact (6B)."""
         if not _POLICY_RE.match(policy):
             log.warning("foxy-audit: invalid policy tag %r; falling back to 'default'", policy)
             policy = "default"
@@ -75,21 +79,21 @@ class FoxyClient:
                 @functools.wraps(fn)
                 async def awrapper(*args, **kwargs):
                     response = await fn(*args, **kwargs)
-                    self.log_interaction(_extract_prompt(args, kwargs), response, policy)
+                    self.log_interaction(_extract_prompt(args, kwargs), response, policy, agent)
                     return response
                 return awrapper
 
             @functools.wraps(fn)
             def wrapper(*args, **kwargs):
                 response = fn(*args, **kwargs)
-                self.log_interaction(_extract_prompt(args, kwargs), response, policy)
+                self.log_interaction(_extract_prompt(args, kwargs), response, policy, agent)
                 return response
             return wrapper
 
         return decorator
 
     # ── internal ──────────────────────────────────────────────────────────
-    def log_interaction(self, prompt, response, policy: str) -> None:
+    def log_interaction(self, prompt, response, policy: str, agent: str | None = None) -> None:
         """Perform cryptographic hashing synchronously and push to AsyncDispatcher."""
         import time
         try:
@@ -110,6 +114,8 @@ class FoxyClient:
                 "timestamp": timestamp,
                 "pii_signals": pii.detect_pii(prompt_s, response_s),
             }
+            if agent:
+                payload["agent"] = agent
             # raw text goes out of scope here — never stored or transmitted
 
             if self.cfg.desktop_ping:

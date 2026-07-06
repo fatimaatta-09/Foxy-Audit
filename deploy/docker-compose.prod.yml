@@ -63,6 +63,9 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_PRICE_COMPANION=${STRIPE_PRICE_COMPANION:-}
+      - STRIPE_PRICE_GUARDIAN=${STRIPE_PRICE_GUARDIAN:-}
+      - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO:-}
       - BREVO_API_KEY=${BREVO_API_KEY:-}
       - BREVO_SENDER_EMAIL=${BREVO_SENDER_EMAIL:-no-reply@foxyaudit.tech}
       - BREVO_SENDER_NAME=${BREVO_SENDER_NAME:-Foxy Audit}
@@ -70,6 +73,12 @@ services:
       - ADMIN_URL=${ADMIN_URL:-https://admin.foxyaudit.tech/admin/}
       - FOXY_DASHBOARD_HTML=/site/foxy-dashboard/foxy-audit-premium.html
       - FOXY_ADMIN_HTML=/site/foxy-adminpage/index.html
+      # Anchor SLA cadences (6E) — the API reports them via /v1/anchors/sla; keep
+      # in sync with the worker service below (which enforces them).
+      - ANCHOR_CADENCE_FREE=${ANCHOR_CADENCE_FREE:-86400}
+      - ANCHOR_CADENCE_PRO=${ANCHOR_CADENCE_PRO:-21600}
+      - ANCHOR_CADENCE_ENTERPRISE=${ANCHOR_CADENCE_ENTERPRISE:-3600}
+      - ANCHOR_CADENCE_DEFAULT=${ANCHOR_CADENCE_DEFAULT:-86400}
     volumes:
       # Dashboard + ops-console HTML live at the repo root, outside the build
       # context. Mount the DIRECTORIES (not single files): git reset on deploy
@@ -123,6 +132,10 @@ services:
       - ANCHOR_ENABLED=${ANCHOR_ENABLED:-false}
       - ANCHOR_PROVIDER=${ANCHOR_PROVIDER:-stub}
       - ANCHOR_INTERVAL_SECONDS=${ANCHOR_INTERVAL_SECONDS:-3600}
+      - ANCHOR_CADENCE_FREE=${ANCHOR_CADENCE_FREE:-86400}
+      - ANCHOR_CADENCE_PRO=${ANCHOR_CADENCE_PRO:-21600}
+      - ANCHOR_CADENCE_ENTERPRISE=${ANCHOR_CADENCE_ENTERPRISE:-3600}
+      - ANCHOR_CADENCE_DEFAULT=${ANCHOR_CADENCE_DEFAULT:-86400}
       - ANCHOR_EVM_RPC_URL=${ANCHOR_EVM_RPC_URL:-}
       - ANCHOR_EVM_CHAIN=${ANCHOR_EVM_CHAIN:-sepolia}
       - ANCHOR_EVM_PRIVATE_KEY=${ANCHOR_EVM_PRIVATE_KEY:-}

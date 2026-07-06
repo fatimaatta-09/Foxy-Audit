@@ -52,6 +52,11 @@ class Organization(Base):
         String(255), nullable=True, default=None)
     monthly_log_quota: Mapped[int | None] = mapped_column(   # NULL = unlimited
         Integer, nullable=True, default=None)
+    # Opt-in embeddable public trust badge (6C). NULL = no badge; minted on demand,
+    # revocable. Resolves the org for the PUBLIC GET /v1/badge/{token}.svg — never
+    # exposes org_id/name, only aggregate status. Unique so a token maps to one org.
+    public_badge_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
@@ -69,6 +74,9 @@ class AuditLog(Base):
     response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     policy_tag: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Which agent/model produced this interaction (6B). Folded into the chain hash
+    # when present (tamper-evident); nullable — pre-6B rows have none.
+    agent: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     pii_signals: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     chain_hash: Mapped[str] = mapped_column(String(64), nullable=False)

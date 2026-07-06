@@ -54,6 +54,29 @@ def test_known_vector_is_stable():
     assert h == "872eb2c206bcb995773ab1b9a43a031c6d8488761c976ce3d341921a81aa2f79"
 
 
+def test_no_agent_is_backward_compatible():
+    """A row with no agent must hash EXACTLY as before 6B — otherwise every
+    pre-6B chain would stop verifying. agent=None ≡ agent absent ≡ the frozen
+    golden vector from test_known_vector_is_stable."""
+    args = dict(org_id="org-1", prompt_hash="a" * 64, response_hash="b" * 64,
+                token_count=100, policy_tag="hipaa_basic", seq=1, prev_hash=GENESIS_HASH)
+    golden = "872eb2c206bcb995773ab1b9a43a031c6d8488761c976ce3d341921a81aa2f79"
+    assert compute_chain_hash(**args) == golden
+    assert compute_chain_hash(**args, agent=None) == golden
+
+
+def test_agent_is_bound_into_the_hash():
+    """When an agent is present it is folded into the chain hash (tamper-evident):
+    changing the agent changes the hash, and the recipe appends `|agent=<agent>`."""
+    import hashlib
+    args = dict(org_id="org-1", prompt_hash="a" * 64, response_hash="b" * 64,
+                token_count=100, policy_tag="hipaa_basic", seq=1, prev_hash=GENESIS_HASH)
+    with_agent = compute_chain_hash(**args, agent="gpt-4o")
+    assert with_agent != compute_chain_hash(**args)          # agent alters the hash
+    blob = "org-1|" + "a" * 64 + "|" + "b" * 64 + "|100|hipaa_basic|1|agent=gpt-4o"
+    assert with_agent == hashlib.sha256((blob + GENESIS_HASH).encode()).hexdigest()
+
+
 def test_chain_recomputes_intact():
     """An untampered chain re-verifies exactly like the /v1/verify route does."""
     stored = _build_chain(ROWS)

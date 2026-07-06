@@ -76,6 +76,7 @@ def generate_passport(
             policy_tag=row.policy_tag,
             seq=row.seq,
             prev_hash=prev_hash,
+            agent=row.agent,
         )
         if expected != row.chain_hash:
             chain_intact = False

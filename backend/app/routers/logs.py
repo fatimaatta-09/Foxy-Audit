@@ -20,8 +20,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
 
+from ..anchor import latest_anchor
 from ..auth import require_org, resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
+from ..config import get_settings
 from ..db import get_db
 from ..models import AuditLog, Organization
 from ..schemas import (
@@ -81,11 +83,13 @@ def ingest_batch(
             policy_tag=item.policy_tag,
             seq=seq,
             prev_hash=prev_hash,
+            agent=item.agent,
         )
         rows.append(AuditLog(
             org_id=org.id, seq=seq,
             prompt_hash=item.prompt_hash, response_hash=item.response_hash,
             token_count=item.token_count, policy_tag=item.policy_tag,
+            agent=item.agent,
             pii_signals=item.pii_signals,
             prev_hash=prev_hash, chain_hash=chain_hash,
             gemini_verdict=None,          # grading_status defaults to 'pending'
@@ -161,7 +165,7 @@ def list_breaches(
     ]
 
 
-_EXPORT_COLS = ["seq", "created_at", "policy_tag", "token_count", "prompt_hash",
+_EXPORT_COLS = ["seq", "created_at", "policy_tag", "agent", "token_count", "prompt_hash",
                 "response_hash", "pii_signals", "prev_hash", "chain_hash",
                 "gemini_verdict", "grading_status", "graded_at"]
 
@@ -171,6 +175,7 @@ def _export_row(r: AuditLog) -> dict:
         "seq": r.seq,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "policy_tag": r.policy_tag,
+        "agent": r.agent,
         "token_count": r.token_count,
         "prompt_hash": r.prompt_hash,
         "response_hash": r.response_hash,
@@ -180,6 +185,20 @@ def _export_row(r: AuditLog) -> dict:
         "gemini_verdict": r.gemini_verdict,
         "grading_status": r.grading_status,
         "graded_at": r.graded_at.isoformat() if r.graded_at else None,
+    }
+
+
+def _anchor_export(a) -> dict | None:
+    """The org's latest anchor receipt, embedded in the JSON export so the
+    open-source verifier can offline-compare it — and, with --anchor, confirm the
+    root live on the public chain (Phase 6 · 6D). None when the org has no anchor."""
+    if a is None:
+        return None
+    return {
+        "chain": a.chain, "status": a.status, "root_hash": a.root_hash,
+        "last_seq": a.last_seq, "tx_hash": a.tx_hash, "block_number": a.block_number,
+        "anchored_at": a.anchored_at.isoformat() if a.anchored_at else None,
+        "contract": get_settings().anchor_evm_contract or None,
     }
 
 
@@ -213,6 +232,7 @@ def export_logs(
 
     body = json.dumps(
         {"org_id": str(org.id), "count": len(rows),
+         "anchor": _anchor_export(latest_anchor(db, org.id)),
          "logs": [_export_row(r) for r in rows]},
         default=str)
     return Response(

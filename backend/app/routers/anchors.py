@@ -17,10 +17,37 @@ from sqlalchemy.orm import Session
 
 from .. import anchor as anchor_engine
 from ..auth import require_role, resolve_org
+from ..config import get_settings
 from ..db import get_db
 from ..models import ChainAnchor, Organization, User
 
 router = APIRouter()
+
+
+def _human_interval(secs: int) -> str:
+    if secs >= 86400 and secs % 86400 == 0:
+        d = secs // 86400
+        return f"{d} day" + ("s" if d != 1 else "")
+    if secs >= 3600 and secs % 3600 == 0:
+        h = secs // 3600
+        return f"{h} hour" + ("s" if h != 1 else "")
+    m = max(1, secs // 60)
+    return f"{m} minute" + ("s" if m != 1 else "")
+
+
+class AnchorSLA(BaseModel):
+    plan_tier: str | None = None
+    cadence_seconds: int
+    cadence_human: str
+
+
+@router.get("/v1/anchors/sla", response_model=AnchorSLA)
+def anchor_sla(org: Organization = Depends(resolve_org)):
+    """This org's automatic-anchor SLA — the cadence for its plan tier (6E). Manual
+    'anchor now' is always available; this is how often the worker anchors for you."""
+    secs = get_settings().anchor_cadence_for(org.plan_tier)
+    return AnchorSLA(plan_tier=org.plan_tier, cadence_seconds=secs,
+                     cadence_human=_human_interval(secs))
 
 
 class AnchorItem(BaseModel):

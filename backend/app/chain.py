@@ -24,6 +24,12 @@ def compute_chain_hash(
     policy_tag: str,
     seq: int,
     prev_hash: str,
+    agent: str | None = None,
 ) -> str:
     data_blob = f"{org_id}|{prompt_hash}|{response_hash}|{token_count}|{policy_tag}|{seq}"
+    # `agent` (which model produced the interaction) is appended ONLY when present,
+    # so rows written before 6B hash byte-for-byte identically — the whole pre-6B
+    # chain keeps verifying, while agent-bearing rows are tamper-evident. (6B)
+    if agent:
+        data_blob += f"|agent={agent}"
     return hashlib.sha256((data_blob + prev_hash).encode("utf-8")).hexdigest()

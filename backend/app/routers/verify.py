@@ -77,6 +77,7 @@ def verify(
             policy_tag=row.policy_tag,
             seq=row.seq,
             prev_hash=prev_hash,
+            agent=row.agent,
         )
         if expected != row.chain_hash:
             return VerifyResponse(
