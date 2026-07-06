@@ -58,7 +58,6 @@ class FoxyClient:
             desktop_ping=desktop_ping,
             timeout=timeout,
         )
-        self.last_hash = "GENESIS_HASH"
 
     @property
     def enabled(self) -> bool:
@@ -95,23 +94,18 @@ class FoxyClient:
     # ── internal ──────────────────────────────────────────────────────────
     def log_interaction(self, prompt, response, policy: str, agent: str | None = None) -> None:
         """Perform cryptographic hashing synchronously and push to AsyncDispatcher."""
-        import time
         try:
             prompt_s = "" if prompt is None else str(prompt)
             response_s = "" if response is None else str(response)
-            timestamp = time.time()
-            
-            # Using self.last_hash, prompt, response, and timestamp synchronously
-            combined = f"{self.last_hash}{prompt_s}{response_s}{timestamp}"
-            self.last_hash = hashing.sha256_hex(combined)
-            
+
+            # The backend owns the tamper-evident hash chain (it re-derives each
+            # link server-side), so the SDK only ships the per-interaction hashes;
+            # a client-side chain_hash/timestamp would just be ignored.
             payload = {
                 "prompt_hash": hashing.sha256_hex(prompt_s),
                 "response_hash": hashing.sha256_hex(response_s),
                 "token_count": hashing.estimate_tokens(prompt_s, response_s),
                 "policy_tag": policy,
-                "chain_hash": self.last_hash,
-                "timestamp": timestamp,
                 "pii_signals": pii.detect_pii(prompt_s, response_s),
             }
             if agent:

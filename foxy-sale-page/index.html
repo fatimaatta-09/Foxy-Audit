@@ -1230,8 +1230,8 @@ footer {
 pip install PyQt6 psutil pynput requests
 
 # Download Foxy
-git clone https://github.com/yourusername/foxy-companion
-cd foxy-companion
+git clone https://github.com/fatimaatta-09/Foxy-Audit
+cd Foxy-Audit
 
 # Run Foxy
 python omni_fox.py</div>
@@ -1366,7 +1366,7 @@ if self.roam_timer > 300:</div>
       </div>
 
       <div class="support-grid reveal reveal-2">
-        <a href="https://github.com" class="support-card" target="_blank">
+        <a href="https://github.com/fatimaatta-09/Foxy-Audit/issues" class="support-card" target="_blank">
           <span class="support-icon">🐙</span>
           <div class="support-title">GitHub Issues</div>
           <div class="support-desc">Bug reports, feature requests, and community discussion. The fastest path to a fix.</div>
@@ -1391,7 +1391,7 @@ if self.roam_timer > 300:</div>
         </div>
         <div class="form-group">
           <label class="form-label">Subject</label>
-          <select class="form-input" style="cursor:pointer">
+          <select class="form-input" style="cursor:pointer" id="contact-subject">
             <option value="">Select a topic...</option>
             <option>Installation help</option>
             <option>AI chat setup</option>
@@ -1403,7 +1403,7 @@ if self.roam_timer > 300:</div>
         </div>
         <div class="form-group">
           <label class="form-label">Message</label>
-          <textarea class="form-input" rows="5" placeholder="Tell us what's going on..."></textarea>
+          <textarea class="form-input" rows="5" placeholder="Tell us what's going on..." id="contact-message"></textarea>
         </div>
         <button class="form-submit" onclick="submitContact(this)">Send Message</button>
       </div>
@@ -1418,7 +1418,7 @@ if self.roam_timer > 300:</div>
       <a href="#download">Download</a>
       <a href="#manual">Manual</a>
       <a href="#support">Support</a>
-      <a href="https://github.com" target="_blank">GitHub</a>
+      <a href="https://github.com/fatimaatta-09/Foxy-Audit" target="_blank">GitHub</a>
     </nav>
     <p class="footer-copy">© 2026 Foxy Companion — Open source with love ♥</p>
   </footer>
@@ -1735,16 +1735,18 @@ function showSignupResult(data) {
 }
 
 function downloadFree() {
-  // Replace with actual download URL
-  const a = document.createElement('a');
-  a.href = 'https://github.com';
-  a.target = '_blank';
-  a.click();
+  // A packaged one-click installer is on the roadmap; today the desktop app ships
+  // from source, so send users to the on-page install manual (real, working steps).
+  const manual = document.getElementById('manual');
+  if (manual) manual.scrollIntoView({ behavior: 'smooth' });
+  else location.hash = '#manual';
 }
 
 function submitContact(btn) {
-  const name  = document.getElementById('contact-name').value.trim();
-  const email = document.getElementById('contact-email').value.trim();
+  const name    = document.getElementById('contact-name').value.trim();
+  const email   = document.getElementById('contact-email').value.trim();
+  const subject = document.getElementById('contact-subject').value.trim();
+  const message = document.getElementById('contact-message').value.trim();
   if (!isValidEmail(email)) {
     btn.textContent = 'Please enter a valid email';
     btn.style.background = 'rgba(255,60,60,0.5)';
@@ -1753,7 +1755,13 @@ function submitContact(btn) {
   }
   btn.textContent = 'Sending...';
   btn.disabled = true;
-  postLead({ email: email, name: name || undefined, source: 'contact' })
+  postLead({
+    email: email,
+    name: name || undefined,
+    subject: subject || undefined,
+    message: message || undefined,
+    source: 'contact',
+  })
     .then(res => {
       if (!res.ok) throw new Error('lead rejected: ' + res.status);
       btn.textContent = '✓ Message Sent — We\'ll be in touch soon!';

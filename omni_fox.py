@@ -14,6 +14,7 @@ import random
 
 import urllib.request
 import urllib.error
+import webbrowser
 
 import psutil
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QMenu, QSystemTrayIcon
@@ -787,6 +788,15 @@ class OmniAwareFox(QWidget):
         self.dashboard.show_animated()
         self.dashboard.raise_()
         self.dashboard.activateWindow()
+
+    def open_web_dashboard(self):
+        """Open the browser dashboard (site 2) in the default browser — the full
+        web app, distinct from the local desktop console (teammate issue #2)."""
+        url = self.settings.web_dashboard_url()
+        try:
+            webbrowser.open(url)
+        except Exception as exc:
+            print(f"[foxy] could not open web dashboard {url!r}: {exc}")
         self._recheck_backend()
 
     def _recheck_backend(self):
@@ -809,7 +819,8 @@ class OmniAwareFox(QWidget):
         menu.setStyleSheet(_matte_menu_qss())
 
         # ── Compliance actions ──
-        menu.addAction("📊 Open Dashboard",     self.open_dashboard)
+        menu.addAction("📊 Desktop Console",    self.open_dashboard)
+        menu.addAction("🌐 Open Web Dashboard", self.open_web_dashboard)
         menu.addAction("📋 Compliance Status", self.show_compliance_status)
         menu.addAction("🖥️ PC Health",          self.ask_pc_health)
         menu.addAction("💬 Open Chat",          self.open_chat)
@@ -876,7 +887,8 @@ class OmniAwareFox(QWidget):
         tray_menu.setStyleSheet(_matte_menu_qss())
         
         tray_menu.addAction("🦊 Show Foxy", self._show_from_tray)
-        tray_menu.addAction("📊 Dashboard", self.open_dashboard)
+        tray_menu.addAction("📊 Desktop Console", self.open_dashboard)
+        tray_menu.addAction("🌐 Open Web Dashboard", self.open_web_dashboard)
         tray_menu.addAction("⚙️ Settings", self.open_settings)
         tray_menu.addSeparator()
         tray_menu.addAction("❌ Quit", QApplication.instance().quit)

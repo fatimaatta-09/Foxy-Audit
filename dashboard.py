@@ -89,6 +89,31 @@ class VerifyWorker(QThread):
             self.failed.emit(str(e))
 
 
+class StatsWorker(QThread):
+    """Calls GET /v1/stats and emits the aggregate dashboard stats (7B)."""
+    succeeded = pyqtSignal(dict)   # {total_logged, breaches, clean_rate, judge_model, avg_seconds_to_verdict, ...}
+    failed    = pyqtSignal(str)
+
+    def __init__(self, backend_url: str, org_key: str, parent=None):
+        super().__init__(parent)
+        self.backend_url = backend_url.rstrip("/")
+        self.org_key = org_key
+
+    def run(self):
+        url = f"{self.backend_url}/v1/stats"
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {self.org_key}"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.succeeded.emit(data)
+        except urllib.error.HTTPError as e:
+            self.failed.emit(f"HTTP {e.code}: {e.reason}")
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class RefreshWorker(QThread):
     """Calls GET /v1/logs?page=1&limit=50 and emits the rows."""
     succeeded = pyqtSignal(dict)   # {items, total, page, limit}
@@ -878,13 +903,12 @@ class DashboardWindow(QWidget):
             os.path.dirname(os.path.abspath(__file__)), "ultimate_fox_spritesheet.png")
 
         # ── live state ──
+        # Session-live counters give instant feedback on UDP events; the tiles are
+        # authoritative from the backend (/v1/stats + /v1/verify), polled below.
+        # No local score/block-height/hash synthesis — those are the real chain's.
         self._start_ts       = time.time()
         self._logs_total     = 0
         self._flagged_total  = 0
-        self._risk_scores: deque[int] = deque(maxlen=128)
-        self._score          = 100.0
-        self._last_hash      = hashlib.sha256(b"foxy-genesis").hexdigest()
-        self._block_height   = 0
         self._connected      = None
         self._drag_pos       = QPoint()
         self._recent_events: deque = deque(maxlen=7)
@@ -922,6 +946,14 @@ class DashboardWindow(QWidget):
         self._tick.timeout.connect(self._on_tick)
         self._tick.start(1000)
         self._refresh_stats()
+
+        # Poll the backend for the authoritative tile values (/v1/stats + /v1/verify).
+        # /v1/verify recomputes the whole chain, so keep the cadence gentle (15s),
+        # not on the 1s animation tick.
+        self._backend_poll = QTimer(self)
+        self._backend_poll.timeout.connect(self._refresh_backend)
+        self._backend_poll.start(15000)
+        QTimer.singleShot(400, self._refresh_backend)   # initial fill shortly after open
 
     # ── construction ────────────────────────────────────────────────────────
     def _build(self, t: dict):
@@ -1104,9 +1136,9 @@ class DashboardWindow(QWidget):
         # ── stats row (4 KPIs) ──
         kpis = QHBoxLayout()
         kpis.setSpacing(14)
-        self.kpi_logs = KpiTile(t, "Interactions", "0", "logged this session", INFO_BLUE)
+        self.kpi_logs = KpiTile(t, "Interactions", "0", "logged to ledger", INFO_BLUE)
         self.kpi_flagged = KpiTile(t, "Policy Breaches", "0", "flagged by AI judge", BAD_RED)
-        self.kpi_risk = KpiTile(t, "Avg Risk Score", "—", "across flagged events", WARN_AMBER)
+        self.kpi_risk = KpiTile(t, "Time to Verdict", "—", "ingest → judged", WARN_AMBER)
         self.kpi_chain = KpiTile(t, "Ledger Blocks", "0", "hash-chained", OK_GREEN)
         for wgt in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
             kpis.addWidget(wgt)
@@ -1613,14 +1645,15 @@ class DashboardWindow(QWidget):
             self.m_batt.set_value(hw.get("battery", 100))
 
     def on_hash_ok(self, payload: dict):
+        # Live UDP event → session counter + table row for instant feedback. The
+        # real chain hash for this interaction is computed server-side; a live ping
+        # doesn't carry it, so we don't fabricate one (it arrives via the /v1/logs
+        # refresh). The tiles are corrected by the next /v1/stats poll.
         self._logs_total += 1
-        self._block_height += 1
         policy = payload.get("policy", "default")
-        self._last_hash = self._next_hash(policy)
-        self._score = min(100.0, self._score + 0.3)
         self._add_event({
             "time": datetime.now().strftime("%H:%M:%S"),
-            "kind": "ok", "policy": policy, "hash": self._last_hash,
+            "kind": "ok", "policy": policy, "hash": "",
             "tokens": payload.get("tokens", ""), "risk": None,
         })
         self._refresh_stats()
@@ -1628,16 +1661,12 @@ class DashboardWindow(QWidget):
     def on_policy_breach(self, payload: dict):
         self._logs_total += 1
         self._flagged_total += 1
-        self._block_height += 1
         reason = payload.get("reason", "Policy violation")
         risk = int(payload.get("risk_score", 100))
         policy = payload.get("policy", "default")
-        self._risk_scores.append(risk)
-        self._last_hash = self._next_hash(policy)
-        self._score = max(0.0, self._score - risk / 9.0)
         self._add_event({
             "time": datetime.now().strftime("%H:%M:%S"),
-            "kind": "breach", "policy": policy, "hash": self._last_hash,
+            "kind": "breach", "policy": policy, "hash": "",
             "tokens": payload.get("tokens", ""), "risk": risk, "reason": reason,
         })
         self._refresh_stats()
@@ -1651,30 +1680,52 @@ class DashboardWindow(QWidget):
         self.table.add_event(ev)
         self.audit_count.setText(f"{self.table.rowCount()} records")
 
-    # ── derived metrics ──
-    def _next_hash(self, policy: str) -> str:
-        seed = f"{self._last_hash}|{policy}|{self._block_height}|{time.time()}"
-        return hashlib.sha256(seed.encode()).hexdigest()
-
+    # ── session-live counters (backend poll is authoritative for everything else) ──
     def _refresh_stats(self):
+        # Immediate feedback from live UDP events; /v1/stats + /v1/verify overwrite
+        # these with the real ledger-wide numbers on the next poll.
         self.kpi_logs.set_value(f"{self._logs_total:,}")
         self.kpi_flagged.set_value(f"{self._flagged_total:,}")
-        if self._risk_scores:
-            avg = sum(self._risk_scores) / len(self._risk_scores)
-            self.kpi_risk.set_value(
-                f"{avg:.0f}",
-                accent=(OK_GREEN if avg < 40 else WARN_AMBER if avg < 70 else BAD_RED))
-        self.kpi_chain.set_value(f"{self._block_height:,}")
+
+    # ── real backend tiles (7B) ──
+    def _refresh_backend(self):
+        """Poll /v1/stats + /v1/verify and drive the tiles from real data."""
+        url = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if not (url and key):
+            return
+        self._stats_worker = StatsWorker(url, key, self)
+        self._stats_worker.succeeded.connect(self._on_stats_success)
+        self._stats_worker.start()
+        self._stats_verify = VerifyWorker(url, key, self)
+        self._stats_verify.succeeded.connect(self._on_verify_stats)
+        self._stats_verify.start()
+
+    def _on_stats_success(self, s: dict):
+        total = int(s.get("total_logged", 0))
+        self.kpi_logs.set_value(f"{total:,}")
+        self.kpi_flagged.set_value(f"{int(s.get('breaches', 0)):,}")
+        clean = float(s.get("clean_rate", 100.0))
         if hasattr(self, "hero_num"):
-            self.hero_num.setText(f"{self._score:.0f}")
+            self.hero_num.setText(f"{clean:.0f}")          # real compliance score
+        ttv = s.get("avg_seconds_to_verdict")
+        self.kpi_risk.set_value(
+            "—" if ttv is None else f"{float(ttv):.1f}s",
+            accent=OK_GREEN if (ttv is not None and float(ttv) < 5) else WARN_AMBER)
         if hasattr(self, "verif_num"):
-            self.verif_num.setText(f"{self._logs_total:,} events")
-            self.verif_hash.setText("•••• •••• •••• ••••")
-        intact = self._score > 35
-        root = hashlib.sha256(f"{self._last_hash}{self._block_height}".encode()).hexdigest()
-        self.chain_meta.setText(f"{self._block_height:,} blocks · "
+            self.verif_num.setText(f"{total:,} events")
+
+    def _on_verify_stats(self, v: dict):
+        count = int(v.get("count", 0))
+        intact = bool(v.get("ok", False))
+        anchor = v.get("last_anchor") or {}
+        root = anchor.get("root_hash")
+        self.kpi_chain.set_value(f"{count:,}")
+        self.chain_meta.setText(f"{count:,} blocks · "
                                 + ("chain intact" if intact else "review required"))
-        self.chain_hash.setText(f"root {root[:28]}…")
+        self.chain_hash.setText(f"root {root[:28]}…" if root else "root — (not yet anchored)")
+        if hasattr(self, "verif_hash"):
+            self.verif_hash.setText(f"{root[:19]}…" if root else "•••• •••• •••• ••••")
         self.chain_state.setText("VERIFIED" if intact else "REVIEW")
         self.chain_state.setStyleSheet(
             f"color: {OK_GREEN if intact else WARN_AMBER}; font-size: 15px;"
@@ -1724,10 +1775,6 @@ class DashboardWindow(QWidget):
         mm, ss = divmod(rem, 60)
         if hasattr(self, "uptime_lbl"):
             self.uptime_lbl.setText(f"Uptime {hh:02d}:{mm:02d}:{ss:02d}")
-        if self._score < 100.0:
-            self._score = min(100.0, self._score + 0.1)
-            if hasattr(self, "hero_num"):
-                self.hero_num.setText(f"{self._score:.0f}")
 
     def _on_refresh_clicked(self):
         """Fetch real history from GET /v1/logs and repopulate the table."""

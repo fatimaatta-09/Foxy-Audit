@@ -113,6 +113,8 @@ class StatsResponse(BaseModel):
     breaches: int
     clean_rate: float            # percent, 0-100
     avg_token_count: float
+    judge_model: str             # the real configured Gemini judge model
+    avg_seconds_to_verdict: float | None   # avg graded_at - created_at; None if none graded
     grading: GradingCounts
     activity_7d: list[ActivityDay]
 

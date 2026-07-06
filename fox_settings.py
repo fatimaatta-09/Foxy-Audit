@@ -164,6 +164,14 @@ class FoxSettings:
     def set_backend_url(self, url: str):
         self._s.setValue("foxy/backend_url", url)
 
+    def web_dashboard_url(self) -> str:
+        """The browser dashboard (site 2), distinct from the desktop console."""
+        return self._s.value("foxy/web_dashboard_url",
+                             "https://app.foxyaudit.tech/dashboard", type=str)
+
+    def set_web_dashboard_url(self, url: str):
+        self._s.setValue("foxy/web_dashboard_url", url)
+
     # ── behaviour tuning ──
     def reaction_cooldown(self) -> float:
         return self._s.value("behavior/cooldown", 4.0, type=float)

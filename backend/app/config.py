@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     anchor_evm_chain: str = "sepolia"
     anchor_evm_private_key: str = ""           # funded testnet key; required for 'evm'
     anchor_evm_contract: str = ""              # deployed AnchorRegistry address
+    # Anchoring safety rails (7C) — keep a live EVM anchor from silently failing:
+    #  * refuse to submit when the funded wallet is below this floor (wei); 0 = off.
+    #  * alert (log + email alert_email) when the newest confirmed anchor is older
+    #    than this many seconds (0 = off), or when an org's latest anchor is 'failed',
+    #    at most once per anchor_alert_cooldown seconds.
+    anchor_wallet_min_balance_wei: int = 0
+    anchor_stale_alert_seconds: int = 0
+    anchor_alert_cooldown: int = 3600
     # Per-org usage rollup + traffic-partition maintenance (worker thread, app/usage.py)
     usage_rollup_interval: int = 300
     # Durable grading queue (Postgres outbox poller — app/worker.py)

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, SmallInteger, String,
-    UniqueConstraint, func,
+    Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -319,6 +319,8 @@ class MarketingLead(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
     utm_campaign: Mapped[str | None] = mapped_column(String(128), nullable=True)
     utm_source: Mapped[str | None] = mapped_column(String(128), nullable=True)
     utm_medium: Mapped[str | None] = mapped_column(String(128), nullable=True)

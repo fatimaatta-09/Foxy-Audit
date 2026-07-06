@@ -83,6 +83,23 @@ def test_agent_included_in_payload(monkeypatch):
     assert captured.get("agent") == "gpt-4o"
 
 
+def test_payload_omits_vestigial_fields(monkeypatch):
+    """The backend ignores chain_hash/timestamp; the SDK must not send them (7A-1)."""
+    from foxy_audit import dispatch
+    captured = {}
+    monkeypatch.setattr(dispatch, "submit", lambda cfg, payload: captured.update(payload))
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)   # enabled → dispatch fires
+
+    @foxy.audit("demo")
+    def ask(prompt: str) -> str:
+        return "resp"
+
+    ask("hi")
+    assert captured, "expected a payload to be dispatched"
+    assert "chain_hash" not in captured
+    assert "timestamp" not in captured
+
+
 def test_agent_absent_by_default(monkeypatch):
     from foxy_audit import dispatch
     captured = {}

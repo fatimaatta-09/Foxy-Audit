@@ -30,7 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import gemini
-from .anchor import anchor_all_due
+from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_due
 from .config import get_settings
 from .db import SessionLocal
 from .models import OrgPolicy
@@ -201,6 +201,8 @@ def _anchor_loop(stopping: dict, s) -> None:
             n = anchor_all_due(db, s)
             if n:
                 log.info("anchored %s org(s)", n)
+            # 7C: page someone if anchors are failing or the chain went stale.
+            alert_on_anchor_problems(db, s, _ANCHOR_ALERT_STATE)
         except Exception as exc:               # noqa: BLE001 — a bad sweep must not kill the thread
             log.warning("anchor loop error: %s", exc)
         finally:

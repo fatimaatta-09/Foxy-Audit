@@ -32,6 +32,22 @@ def test_lead_capture_and_dedup(client):
         db.close()
 
 
+def test_lead_captures_contact_message(client):
+    """The contact form's subject + message must be persisted, not dropped (7A-2)."""
+    r = client.post("/v1/leads", json={
+        "email": "asker@corp.com", "name": "Ask", "source": "contact",
+        "subject": "Bug report", "message": "The fox vanished on my second monitor.",
+    })
+    assert r.status_code == 200
+    db = SessionLocal()
+    try:
+        row = db.query(MarketingLead).filter(MarketingLead.email == "asker@corp.com").one()
+        assert row.subject == "Bug report"
+        assert row.message == "The fox vanished on my second monitor."
+    finally:
+        db.close()
+
+
 def test_marketing_beacon_writes_traffic(client):
     assert client.post("/v1/track", json={"path": "/pricing?ref=x"}).status_code == 200
     db = SessionLocal()

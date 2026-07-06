@@ -32,6 +32,8 @@ class LeadRequest(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     company: str | None = Field(default=None, max_length=255)
     source: str | None = Field(default=None, max_length=64)
+    subject: str | None = Field(default=None, max_length=128)
+    message: str | None = Field(default=None, max_length=4000)
     utm_campaign: str | None = Field(default=None, max_length=128)
     utm_source: str | None = Field(default=None, max_length=128)
     utm_medium: str | None = Field(default=None, max_length=128)
@@ -74,6 +76,8 @@ def create_lead(payload: LeadRequest, request: Request, db: Session = Depends(ge
         existing.name = payload.name or existing.name
         existing.company = payload.company or existing.company
         existing.source = payload.source or existing.source
+        existing.subject = payload.subject or existing.subject
+        existing.message = payload.message or existing.message
         existing.utm_campaign = payload.utm_campaign or existing.utm_campaign
         existing.utm_source = payload.utm_source or existing.utm_source
         existing.utm_medium = payload.utm_medium or existing.utm_medium
@@ -82,6 +86,7 @@ def create_lead(payload: LeadRequest, request: Request, db: Session = Depends(ge
 
     lead = MarketingLead(
         email=email, name=payload.name, company=payload.company, source=payload.source,
+        subject=payload.subject, message=payload.message,
         utm_campaign=payload.utm_campaign, utm_source=payload.utm_source,
         utm_medium=payload.utm_medium,
     )

@@ -272,6 +272,12 @@ def stats(
         select(func.coalesce(func.avg(AuditLog.token_count), 0))
         .where(AuditLog.org_id == org.id)
     ).scalar_one()
+    # Real average time-to-verdict (ingest → graded), in seconds; None if nothing
+    # has been graded yet. Replaces the dashboard's fabricated "42ms judge latency".
+    avg_verdict = db.execute(
+        select(func.avg(func.extract("epoch", AuditLog.graded_at - AuditLog.created_at)))
+        .where(AuditLog.org_id == org.id, AuditLog.graded_at.isnot(None))
+    ).scalar_one()
 
     gc = {"pending": 0, "in_progress": 0, "graded": 0, "failed": 0}
     for status, cnt in db.execute(
@@ -298,5 +304,7 @@ def stats(
     return StatsResponse(
         total_logged=total, breaches=breaches, clean_rate=clean_rate,
         avg_token_count=round(float(avg_tokens), 1),
+        judge_model=get_settings().gemini_model,
+        avg_seconds_to_verdict=round(float(avg_verdict), 1) if avg_verdict is not None else None,
         grading=GradingCounts(**gc), activity_7d=activity,
     )

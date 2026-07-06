@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from . import email
 from .chain import GENESIS_HASH, compute_chain_hash
 from .config import Settings, get_settings
 from .models import AuditLog, ChainAnchor, Organization
@@ -115,6 +117,18 @@ def _anchor_stub(root_hash: str, settings: Settings) -> AnchorReceipt:
     )
 
 
+def _ensure_wallet_funded(balance_wei: int, settings: Settings) -> None:
+    """Refuse to anchor when the funded wallet is below the configured floor (7C).
+    A doomed transaction still burns nothing on-chain (it never lands) but wastes a
+    nonce/round-trip and, worse, hides the real problem — an empty key — behind a
+    generic 'failed' receipt. Raising here surfaces it explicitly. floor 0 = off."""
+    floor = settings.anchor_wallet_min_balance_wei
+    if floor > 0 and balance_wei < floor:
+        raise RuntimeError(
+            f"anchor wallet balance {balance_wei} wei is below the configured floor "
+            f"{floor} wei — top up the funded key; refusing to submit a doomed anchor")
+
+
 def _anchor_evm(root_hash: str, settings: Settings) -> AnchorReceipt:
     """Submit root to the AnchorRegistry contract on an EVM chain via web3.py."""
     if not settings.anchor_evm_rpc_url:
@@ -130,6 +144,7 @@ def _anchor_evm(root_hash: str, settings: Settings) -> AnchorReceipt:
 
     w3 = Web3(Web3.HTTPProvider(settings.anchor_evm_rpc_url))
     acct = w3.eth.account.from_key(settings.anchor_evm_private_key)
+    _ensure_wallet_funded(w3.eth.get_balance(acct.address), settings)
     contract = w3.eth.contract(
         address=Web3.to_checksum_address(settings.anchor_evm_contract), abi=_ANCHOR_ABI)
     root_bytes = bytes.fromhex(root_hash)         # 64 hex chars -> 32 bytes (bytes32)
@@ -247,6 +262,60 @@ def anchor_org(db: Session, org_id, settings: Settings | None = None,
     log.info("anchored org %s @ seq %s -> %s tx=%s status=%s",
              org_id, last_seq, receipt.chain, receipt.tx_hash, receipt.status)
     return row
+
+
+# In-memory last-alert clock for the anchor-health check (per worker process).
+_ANCHOR_ALERT_STATE: dict = {}
+
+
+def alert_on_anchor_problems(db: Session, settings, state: dict, *,
+                             now: float | None = None) -> bool:
+    """If any org's LATEST anchor is 'failed', or its newest confirmed anchor is
+    older than anchor_stale_alert_seconds, log a WARNING and — at most once per
+    anchor_alert_cooldown — email settings.alert_email (7C). Mirrors the grading
+    dead-letter alert (usage.alert_on_grading_failures). Returns True iff an email
+    was sent. Runs unscoped in the worker (superuser bypasses RLS → sees all orgs).
+    `state` carries the last-alert time across calls."""
+    now = time.time() if now is None else now
+    failed = db.execute(text(
+        "SELECT count(*) FROM ("
+        "  SELECT DISTINCT ON (org_id) status FROM chain_anchors"
+        "  ORDER BY org_id, anchored_at DESC, id DESC"
+        ") t WHERE status = 'failed'"
+    )).scalar() or 0
+    stale = 0
+    if settings.anchor_stale_alert_seconds > 0:
+        cutoff = datetime.fromtimestamp(
+            now - settings.anchor_stale_alert_seconds, tz=timezone.utc)
+        stale = db.execute(text(
+            "SELECT count(*) FROM ("
+            "  SELECT DISTINCT ON (org_id) confirmed_at FROM chain_anchors"
+            "  WHERE status = 'confirmed'"
+            "  ORDER BY org_id, anchored_at DESC, id DESC"
+            ") t WHERE confirmed_at < :cutoff"
+        ), {"cutoff": cutoff}).scalar() or 0
+
+    if failed == 0 and stale == 0:
+        return False
+    log.warning("anchor health: %d org(s) with a failed latest anchor, "
+                "%d with a stale confirmed anchor", failed, stale)
+    last = state.get("last_alert")   # None = never alerted → don't apply cooldown
+    if not settings.alert_email or (
+            last is not None and (now - last) < settings.anchor_alert_cooldown):
+        return False
+    ok = email.send_email(
+        to=settings.alert_email,
+        subject="[Foxy Audit] anchoring needs attention",
+        html=(f"<p>Public-chain anchoring health check:</p><ul>"
+              f"<li><b>{failed}</b> org(s) whose latest anchor is <b>failed</b></li>"
+              f"<li><b>{stale}</b> org(s) whose newest confirmed anchor is stale</li>"
+              f"</ul><p>Check the worker logs and the funded wallet balance.</p>"),
+        text=(f"{failed} org(s) have a failed latest anchor; {stale} have a stale "
+              f"confirmed anchor. Check the worker logs and the funded wallet."),
+    )
+    if ok:
+        state["last_alert"] = now
+    return ok
 
 
 def anchor_all_due(db: Session, settings: Settings | None = None) -> int:

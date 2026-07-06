@@ -519,7 +519,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <div class="pg-head">
         <div>
           <div class="eyebrow">Governance‑as‑Code</div>
-          <div class="h1">Yo Fatima<span class="fox-dot">.</span> here's the vibe check.</div>
+          <div class="h1">Yo <span id="greetName">there</span><span class="fox-dot">.</span> here's the vibe check.</div>
           <div class="sub">org‑4F2A9C · synced 2 min ago · all systems foxy</div>
         </div>
         <button class="btn pri sm" onclick="go('export',null)">
@@ -553,7 +553,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div class="stat"><div class="v fox">317</div><div class="l">Breaches stopped</div></div>
         <div class="stat"><div class="v danger">3</div><div class="l">Open alerts</div></div>
         <div class="stat"><div class="v">99.3%</div><div class="l">Clean rate</div></div>
-        <div class="stat"><div class="v">42ms</div><div class="l">Judge latency</div></div>
+        <div class="stat"><div class="v">—</div><div class="l">Time to verdict</div></div>
       </div>
 
       <div class="g2" style="margin-bottom:16px;">
@@ -612,7 +612,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div class="arow"><div class="adot a"></div><div><div class="atxt">Toxic output flagged · foxy-dev-01</div><div class="atime">yesterday, 22:14</div></div></div>
             <div style="border-top:2px dashed var(--line);margin-top:10px;padding-top:13px;">
               <div class="gauge"><div class="gauge-row"><span>Clean rate</span><b>99.3%</b></div><div class="gtrack"><div class="gfill" style="width:99.3%"></div></div></div>
-              <div class="gauge"><div class="gauge-row"><span>Judge latency</span><b>42 ms</b></div><div class="gtrack"><div class="gfill" style="width:42%"></div></div></div>
+              <div class="gauge"><div class="gauge-row"><span>Time to verdict</span><b id="gVerdict">—</b></div><div class="gtrack"><div class="gfill" id="gVerdictBar" style="width:0%"></div></div></div>
             </div>
           </div>
         </div>
@@ -749,7 +749,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <!-- ═════════════ POLICY ═════════════ -->
     <div class="page" id="page-policy">
       <div class="pg-head">
-        <div><div class="eyebrow">Gemini 1.5 Pro · AI Judge</div><div class="h1">Policy ruleset<span class="fox-dot">.</span></div><div class="sub">what the Judge flags or blocks — applies across all tenants</div></div>
+        <div><div class="eyebrow" id="judgeModelLabel">AI Judge</div><div class="h1">Policy ruleset<span class="fox-dot">.</span></div><div class="sub">what the Judge flags or blocks — applies across all tenants</div></div>
         <button class="btn pri sm" onclick="savePolicy()">save ruleset</button>
       </div>
       <div class="g2">
@@ -1155,6 +1155,9 @@ function runExport(){
     return {v:'pending',cls:'warn'};
   }
   const shortHash=h=>(h||'').slice(0,8)+'…'+(h||'').slice(-4);
+  // 7A-3 helpers: real time-to-verdict + real model name (no hardcoded fibs)
+  const fmtVerdict=sec=>sec==null?'—':(sec<1?Math.round(sec*1000)+'ms':sec.toFixed(1)+'s');
+  const prettyModel=id=>String(id||'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 
   async function loadStats(){
     let s; try{ s=await (await api('/v1/stats')).json(); }catch(e){ return; }
@@ -1163,6 +1166,16 @@ function runExport(){
     if(dv[0])dv[0].textContent=money(s.breaches);
     if(dv[1])dv[1].textContent=(s.grading&&s.grading.failed)||0;
     if(dv[2])dv[2].textContent=s.clean_rate+'%';
+    // real time-to-verdict (replaces the old fabricated "42ms judge latency")
+    const ttv=fmtVerdict(s.avg_seconds_to_verdict);
+    if(dv[3])dv[3].textContent=ttv;
+    const gv=$('gVerdict'); if(gv)gv.textContent=ttv;
+    const gb=$('gVerdictBar'); if(gb)gb.style.width=(s.avg_seconds_to_verdict==null?0:Math.min(100,Math.round(s.avg_seconds_to_verdict/10*100)))+'%';
+    // real judge model (replaces the hardcoded "Gemini 1.5 Pro")
+    const jm=$('judgeModelLabel'); if(jm&&s.judge_model)jm.textContent=prettyModel(s.judge_model)+' · AI Judge';
+    // real greeting from the signed-in user (replaces the hardcoded "Yo Fatima")
+    try{ const me=await (await api('/v1/auth/me')).json(); const gn=$('greetName');
+      if(gn&&me&&me.email){ const lp=me.email.split('@')[0]; gn.textContent=lp.charAt(0).toUpperCase()+lp.slice(1); } }catch(_){}
     const sub=document.querySelector('#page-dashboard .sub');
     if(sub)sub.textContent=money(s.total_logged)+' events logged · '+((s.grading&&s.grading.pending)||0)+' pending grading';
     const av=document.querySelectorAll('#page-analytics .stats .stat .v');
