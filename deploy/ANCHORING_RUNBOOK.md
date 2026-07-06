@@ -42,12 +42,18 @@ ALERT_EMAIL=ops@foxyaudit.tech                    # must be set for alerts to se
 Note: a sub-hour per-tier cadence also needs a smaller `ANCHOR_INTERVAL_SECONDS`
 (the sweep frequency bounds how often the cadence can fire).
 
-Restart the worker (compose service that runs `app.worker_main`):
+Recreate the worker so it loads the new env. `docker compose restart` does NOT
+re-read changed env values — you must `up` so the container is recreated. The
+service is `foxy-worker` (runs `app.worker_main`). Run from the repo root:
 
 ```bash
-cd /path/to/deploy && docker compose -f docker-compose.prod.yml restart worker
-docker compose -f docker-compose.prod.yml logs -f worker   # watch it come up
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env \
+  up -d --force-recreate foxy-worker
+docker compose -f deploy/docker-compose.prod.yml logs -f foxy-worker   # watch it come up
 ```
+
+(Pushing to `main` also triggers CD, which runs `up --build -d` for the whole
+stack and recreates the worker the same way.)
 
 On startup you should see:
 `Public-chain anchoring ON (provider=evm interval=3600s)`.
@@ -65,7 +71,7 @@ On startup you should see:
 
 - **`status: "failed"`, detail mentions the balance floor** → the funded wallet is
   below `ANCHOR_WALLET_MIN_BALANCE_WEI`. Top it up from a faucet.
-- **`status: "failed"`, other detail** → read `docker compose logs worker` (RPC URL
+- **`status: "failed"`, other detail** → read `docker compose -f deploy/docker-compose.prod.yml logs foxy-worker` (RPC URL
   and key are redacted from the persisted detail, not from your own logs). Common
   causes: bad RPC URL, wrong contract address, RPC rate limit.
 - **No new anchors appearing** → check `ANCHOR_ENABLED=true`, the worker restarted,
@@ -76,5 +82,6 @@ On startup you should see:
 
 ## Rolling back
 
-Set `ANCHOR_PROVIDER=stub` (or `ANCHOR_ENABLED=false`) and restart the worker.
+Set `ANCHOR_PROVIDER=stub` (or `ANCHOR_ENABLED=false`) and recreate the worker
+(`up -d --force-recreate foxy-worker`).
 Existing real receipts remain valid and verifiable; new anchors go back to stub.

@@ -140,6 +140,9 @@ services:
       - ANCHOR_EVM_CHAIN=${ANCHOR_EVM_CHAIN:-sepolia}
       - ANCHOR_EVM_PRIVATE_KEY=${ANCHOR_EVM_PRIVATE_KEY:-}
       - ANCHOR_EVM_CONTRACT=${ANCHOR_EVM_CONTRACT:-}
+      - ANCHOR_WALLET_MIN_BALANCE_WEI=${ANCHOR_WALLET_MIN_BALANCE_WEI:-0}
+      - ANCHOR_STALE_ALERT_SECONDS=${ANCHOR_STALE_ALERT_SECONDS:-0}
+      - ANCHOR_ALERT_COOLDOWN=${ANCHOR_ALERT_COOLDOWN:-3600}
     command: python -m app.worker_main
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os,psycopg,datetime as d,sys; u=os.environ['DATABASE_URL'].replace('+psycopg',''); c=psycopg.connect(u); r=c.execute('SELECT beat_at FROM worker_heartbeat WHERE id=1').fetchone(); c.close(); sys.exit(0 if r and r[0] and (d.datetime.now(d.timezone.utc)-r[0]).total_seconds()<30 else 1)\""]
