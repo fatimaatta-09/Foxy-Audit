@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     stripe_price_pro: str = ""
     stripe_price_companion: str = ""
     stripe_price_guardian: str = ""    # one-time (lifetime) — Checkout mode=payment
+    # Google SSO — the OAuth 2.0 Web Client ID (public). Empty = "Sign in with
+    # Google" disabled (POST /v1/auth/google returns 503). No client secret needed:
+    # we only verify Google ID tokens, whose audience must equal this client id.
+    google_oauth_client_id: str = ""
     # Human session auth (dashboard login) — signs the CUSTOMER session cookie.
     # MUST be overridden with a strong random value in production (SESSION_SECRET).
     session_secret: str = "dev-insecure-session-secret-change-me"

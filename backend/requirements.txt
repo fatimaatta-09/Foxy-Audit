@@ -20,3 +20,6 @@ weasyprint>=62,<64
 # Public-chain anchoring (Phase 3 A1). Only needed for anchor_provider=evm; the
 # import is lazy so the app + the 'stub' provider run fine without it installed.
 web3==7.16.0
+# Google SSO — verify Google ID tokens server-side for "Sign in with Google".
+# (Already resolved transitively via google-generativeai; pinned explicitly here.)
+google-auth==2.55.1

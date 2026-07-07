@@ -134,6 +134,10 @@ class User(Base):
     # (see auth.require_org's human path / auth_human.login).
     disabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")
+    # Google SSO link (nullable, globally unique): set on first Google sign-in so
+    # the identity resolves unambiguously thereafter. Google users have an unusable
+    # placeholder password_hash (they authenticate via Google, not a password).
+    google_sub: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     # Email-OTP MFA (opt-in, Phase 5 · 5B.5) — dashboard login, mirrors staff.
     mfa_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")

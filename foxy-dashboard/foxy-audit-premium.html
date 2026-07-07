@@ -938,6 +938,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 <div class="toast" id="toast"><i></i><span id="toast-msg"></span></div>
 
 <!-- ═══ login gate (added for live backend integration) ═══ -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <div id="authGate" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,5,4,.88);align-items:center;justify-content:center;padding:20px;">
   <form id="authForm" class="clay pad" style="width:340px;max-width:100%;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
@@ -950,6 +951,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <input class="cin" id="authPass" type="password" value="adminpass123" autocomplete="current-password">
     <div id="authErr" class="fb-res bad" style="min-height:14px;margin-top:10px;"></div>
     <button class="btn pri" type="submit" style="margin-top:6px;">Sign in</button>
+    <div id="googleWrap" style="display:none;margin-top:14px;">
+      <div class="sub mono" style="text-align:center;font-size:10px;opacity:.55;margin:0 0 8px;">— or —</div>
+      <div id="googleBtn" style="display:flex;justify-content:center;"></div>
+    </div>
     <div class="sub mono" style="margin-top:12px;font-size:10px;">demo · admin@demo.test / adminpass123</div>
     <div id="forgotLink" class="sub mono" style="margin-top:8px;font-size:10px;cursor:pointer;text-decoration:underline;">Forgot password?</div>
   </form>
@@ -1290,6 +1295,27 @@ function runExport(){
     _mfaEmail=null; $('authMfa').style.display='none'; $('authForm').style.display='';
     $('authErr').textContent=''; $('authPass').value='';
   });
+
+  // ── Google SSO (feature-flagged: the button only appears if configured) ──
+  async function onGoogleCred(resp){
+    $('authErr').textContent='';
+    let r; try{ r=await api('/v1/auth/google',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential:resp.credential})}); }
+    catch(err){ $('authErr').textContent='Could not reach the server'; return; }
+    if(!r.ok){ $('authErr').textContent='Google sign-in failed'; return; }
+    gate.style.display='none'; loadAll();   // no OTP for a verified Google identity
+  }
+  async function initGoogleSignin(){
+    let cid=''; try{ cid=(await (await api('/v1/auth/google/config')).json()).client_id||''; }catch(e){}
+    if(!cid) return;                         // feature off → leave the button hidden
+    let tries=0;
+    (function ready(){
+      if(!(window.google&&google.accounts&&google.accounts.id)){ if(tries++<40){ setTimeout(ready,100); } return; }
+      google.accounts.id.initialize({client_id:cid, callback:onGoogleCred});
+      google.accounts.id.renderButton($('googleBtn'),{theme:'outline',size:'large',text:'continue_with',shape:'pill',width:296});
+      $('googleWrap').style.display='block';
+    })();
+  }
+  initGoogleSignin();
   $('authMfa').addEventListener('submit',async e=>{
     e.preventDefault(); $('mfaErr').textContent='';
     let r; try{ r=await api('/v1/auth/mfa',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:_mfaEmail,code:$('mfaCode').value.trim()})}); }

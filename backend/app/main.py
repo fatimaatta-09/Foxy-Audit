@@ -45,8 +45,8 @@ from .middleware.traffic import TrafficMiddleware
 from .observability import RequestIdMiddleware, configure_logging
 from .routers import (
     account, admin_data, admin_orgs, admin_staff, admin_stats, analytics, anchors,
-    auth_human, auth_staff, badge, billing, health, keys, leads, logs, passport, policies,
-    verify,
+    auth_google, auth_human, auth_staff, badge, billing, health, keys, leads, logs,
+    passport, policies, verify,
 )
 
 _settings = get_settings()
@@ -108,7 +108,7 @@ customer_api = FastAPI(title="Foxy Audit", version="0.1.0")
 customer_api.state.limiter = logs.limiter
 customer_api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-for _r in (auth_human, health, logs, verify, passport, keys, billing, policies,
+for _r in (auth_human, auth_google, health, logs, verify, passport, keys, billing, policies,
            analytics, anchors, leads, account, badge):
     customer_api.include_router(_r.router, tags=[_r.__name__.rsplit(".", 1)[-1]])
 

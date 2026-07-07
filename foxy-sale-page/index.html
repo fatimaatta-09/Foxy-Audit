@@ -202,6 +202,7 @@
 
   @media(max-width:800px){ .how-grid,.price-grid{grid-template-columns:1fr;} }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -617,6 +618,28 @@ document.querySelectorAll('[data-lead]').forEach(el => el.addEventListener('clic
   openLeadModal(el.dataset.lead, el.getAttribute('data-lead-title') || 'Get started');
 }));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && leadBackdrop.classList.contains('open')) closeLeadModal(); });
+/* Google SSO: verify on the app origin (sets the session cookie, same-site), then land on the dashboard */
+(async function initSalesGoogle(){
+  let cid = '';
+  try { cid = (await (await fetch(FOXY_API + '/v1/auth/google/config')).json()).client_id || ''; } catch (e) {}
+  if (!cid) return;                    // feature off → no button
+  function onCred(resp){
+    fetch(FOXY_API + '/v1/auth/google', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: resp.credential }),
+    }).then(r => { if (!r.ok) throw 0; window.location.href = FOXY_API + '/dashboard'; })
+      .catch(() => { if (leadMsg) { leadMsg.style.color = 'var(--warn-bg)'; leadMsg.textContent = 'Google sign-in failed — try again.'; } });
+  }
+  let tries = 0;
+  (function ready(){
+    if (!(window.google && google.accounts && google.accounts.id)) { if (tries++ < 40) setTimeout(ready, 100); return; }
+    google.accounts.id.initialize({ client_id: cid, callback: onCred });
+    google.accounts.id.renderButton(document.getElementById('leadGoogleBtn'),
+      { theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 280 });
+    var w = document.getElementById('leadGoogleWrap'); if (w) w.style.display = 'block';
+  })();
+})();
 </script>
 
 <div class="modal-backdrop" id="leadBackdrop"></div>
@@ -636,6 +659,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && leadBackdr
       Send it
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
     </a>
+    <div id="leadGoogleWrap" style="display:none;margin-top:12px;">
+      <div style="text-align:center;font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--muted);margin-bottom:8px;">— OR —</div>
+      <div id="leadGoogleBtn" style="display:flex;justify-content:center;"></div>
+    </div>
     <p id="leadMsg" style="font-family:var(--mono);font-size:11px;margin-top:10px;min-height:14px;letter-spacing:.04em;"></p>
   </div>
 </div>
