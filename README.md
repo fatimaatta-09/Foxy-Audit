@@ -34,7 +34,7 @@ We provide a lightweight Python SDK (`pip install foxy-audit`) that intercepts A
             [ Redis ]
                │
                ▼  (Background Worker Consumption)
-     [ Gemini 1.5 Pro ] ──► (Policy & Compliance Evaluation)
+     [ Gemini 2.5 Flash ] ──► (Policy & Compliance Evaluation)
                │
                ▼  (Chained Hash Construction)
   [ PostgreSQL Hash-Chain Ledger ] ──► [ Foxy Audit UI Dashboard ]
@@ -46,7 +46,7 @@ We provide a lightweight Python SDK (`pip install foxy-audit`) that intercepts A
 
 - **Cryptographically Chained Integrity** — Every database row is anchored to the row before it via a sequential SHA-256 hash chain (each row's hash includes the previous row's hash). If a historical row is edited, its hash — and every hash after it — no longer recomputes, exposing exactly where the tampering began. (This is a hash chain, not a Merkle tree or a blockchain.)
 
-- **Intelligent Policy Grading** — A background worker powered by Google Gemini 1.5 Pro evaluates telemetry data against strict regulatory frameworks in real-time.
+- **Intelligent Policy Grading** — A background worker powered by Google Gemini 2.5 Flash evaluates telemetry data against strict regulatory frameworks in real-time.
 
 - **The "Foxy" UI** — A sleek, claymorphism-styled enterprise portal designed for compliance officers to visually verify cryptographic proofs, interact with their audit logs, and download verification PDFs with a single click.
 
@@ -86,7 +86,7 @@ def call_medical_llm(user_prompt: str):
 | Developer SDK | Native Python Wrapper, `hashlib`, `requests-async` |
 | Backend Core | Python FastAPI, SQLAlchemy (PostgreSQL Object Mapping) |
 | Asynchronous Queueing | Redis / BullMQ Task Management |
-| AI Evaluation Layer | Google Gemini 1.5 Pro (Asynchronous Compliance Parsing) |
+| AI Evaluation Layer | Google Gemini 2.5 Flash (Asynchronous Compliance Parsing) |
 | Auditor Interface | Next.js, Tailwind CSS, Anime.js (Cryptographic UI animations) |
 | Deployment | Production-ready for Railway (Backend) and Vercel (Frontend) |
 

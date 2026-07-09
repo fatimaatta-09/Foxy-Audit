@@ -16,7 +16,7 @@ import threading
 import time
 import requests
 
-from . import transport, udp
+from . import udp
 from .config import FoxyConfig
 
 log = logging.getLogger("foxy_audit")

@@ -38,7 +38,10 @@ WIDTH = COLS * CELL_W
 HEIGHT = ROWS * CELL_H
 
 WORKSPACE_DIR = Path(__file__).resolve().parent
-ARTIFACT_DIR = Path(r"C:\Users\Fatima Rehman\.gemini\antigravity-ide\brain\13280880-7874-4627-8b17-f1ed24a4add4")
+# Source of the original 4x4 generated sheets. Set FOXY_ATLAS_SRC to point at them;
+# if unset (or the path is absent) the builder falls back to expanding the current
+# atlas in place — so no developer-specific absolute path is committed.
+ARTIFACT_DIR = Path(os.environ.get("FOXY_ATLAS_SRC") or (WORKSPACE_DIR / "_atlas_src")).expanduser()
 OUTPUT = WORKSPACE_DIR / "ultimate_fox_spritesheet.png"
 
 # Map the 4x4 generated sheets to (StartRow, EndRow) in the final atlas

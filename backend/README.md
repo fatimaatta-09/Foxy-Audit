@@ -2,7 +2,7 @@
 
 FastAPI ingestion service: validates interaction metadata, writes it into a
 tamper-evident **sequential hash chain** in PostgreSQL (with Row-Level Security
-for tenant isolation), and grades each interaction with **Gemini 1.5 Pro**.
+for tenant isolation), and grades each interaction with **Gemini 2.5 Flash**.
 
 ## Endpoints
 

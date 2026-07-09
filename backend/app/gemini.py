@@ -1,4 +1,4 @@
-"""Gemini 1.5 Pro compliance/security judge.
+"""Gemini compliance/security judge (model from settings.gemini_model; default gemini-2.5-flash).
 
 Receives ONLY structural metadata (opaque hashes, token count, policy tag) — never
 raw text — and returns a strict JSON verdict. Hardened against prompt injection via

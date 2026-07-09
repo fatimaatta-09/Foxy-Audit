@@ -1,6 +1,8 @@
 """Multi-tenant isolation: one org must never see another org's logs, stats,
-keys, or anchors. (RLS is bypassed by the superuser role, so this proves the
-app-level org_id scoping that actually enforces isolation in this deployment.)"""
+keys, or anchors. This file exercises the app-level org_id scoping over the API.
+The database-level guarantee — Postgres RLS under the confined `foxy_app` role —
+is proven separately in test_rls.py (a scoped, unfiltered SELECT sees only its
+own org's rows)."""
 
 from __future__ import annotations
 

@@ -2,9 +2,10 @@
 Theme + persistent settings layer for the OmniAware Fox desktop pet.
 
 - FoxSettings wraps QSettings (OS-native storage: registry / plist / .ini)
-- THEMES holds the full design tokens for 14 distinct visual themes.
-  Every theme exposes exactly the same keys so calling code never needs to
-  special-case any particular style.
+- THEMES holds the full design tokens for the app's single visual theme
+  (claymorphism, matching the web app). It's token-driven so a new theme is one
+  fully-populated entry away, but the look is intentionally constant — there is no
+  in-app theme picker.
 
 Shadow/border model
 ───────────────────
@@ -95,10 +96,6 @@ class FoxSettings:
     # ── theme ──
     def theme(self) -> str:
         return self._s.value("theme", DEFAULT_THEME, type=str)
-
-    def set_theme(self, name: str):
-        if name in THEMES:
-            self._s.setValue("theme", name)
 
     def theme_tokens(self) -> dict:
         t = THEMES.get(self.theme(), THEMES[DEFAULT_THEME])
