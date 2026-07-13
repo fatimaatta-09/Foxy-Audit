@@ -1,7 +1,7 @@
-# Foxy Audit DESKTOP client (omni_fox.py) — the pixel-art compliance-officer fox.
-# Install into a Python 3.13+ environment:
-#     pip install -r requirements.txt
-#     python omni_fox.py
+# Foxy Audit DESKTOP client (desktop/omni_fox.py) — the pixel-art compliance-officer fox.
+# From the repo root, into a Python 3.13+ environment:
+#     pip install -r desktop/requirements.txt
+#     python desktop/omni_fox.py
 #
 # These are BOUNDED ranges: the desktop environment isn't captured by CI, so they
 # can't be exact-pinned/verified here the way backend/requirements.txt is. To lock

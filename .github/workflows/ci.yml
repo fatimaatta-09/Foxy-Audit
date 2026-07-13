@@ -115,6 +115,6 @@ jobs:
       - name: Byte-compile desktop modules
         run: |
           python -m py_compile \
-            omni_fox.py dashboard.py clay_chat_popup.py fox_settings.py \
-            settings_dialog.py sdk_bridge.py ai_providers.py \
-            window_tracker.py eye_tracker.py security_overlay.py
+            desktop/omni_fox.py desktop/dashboard.py desktop/clay_chat_popup.py desktop/fox_settings.py \
+            desktop/settings_dialog.py desktop/sdk_bridge.py desktop/ai_providers.py \
+            desktop/window_tracker.py desktop/eye_tracker.py desktop/security_overlay.py

@@ -24,22 +24,22 @@ No dependency manifest, test suite, or lint config exists. Python 3.13+ (compile
 cp313/cp314).
 
 ```bash
-# Install deps (no requirements.txt — these are the imports actually used)
+# The desktop app lives in desktop/. Install its deps (or: pip install -r desktop/requirements.txt):
 pip install PyQt6 psutil pynput requests
 #   optional, only for window-following on non-Windows:
 #     macOS → pip install pyobjc-framework-Quartz      Linux → pip install python-xlib
 #   only for regenerating the spritesheet → pip install Pillow
 
 # Run the app (it os.chdir()s to its own directory on startup)
-python omni_fox.py
+python desktop/omni_fox.py
 
 # Most UI widget modules have a standalone __main__ preview harness with a fake fox —
 # use these to iterate on a widget without launching the whole app:
-python clay_chat_popup.py        # chat popup preview
+python desktop/clay_chat_popup.py        # chat popup preview
 
 # Rebuild the sprite atlas (needs Pillow + the external ARTIFACT_DIR hardcoded in the file,
 # which won't exist on your machine — it falls back to expanding the current atlas in place):
-python build_16frame_atlas.py
+python desktop/build_16frame_atlas.py
 ```
 
 There are no automated tests. Verify changes by running the app or a module's `__main__` preview.

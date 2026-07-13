@@ -7,7 +7,7 @@ Drives the whole walking skeleton with one `@foxy.audit`-decorated function.
 1. Backend running (see [../backend/README.md](../backend/README.md)) on `http://127.0.0.1:8000`,
    with an org seeded — keep the printed `FOXY_API_KEY`.
 2. Desktop fox running so you can watch it react:
-   - `python ../omni_fox.py`
+   - `python ../desktop/omni_fox.py`
    - In its Settings: **Backend URL** = `http://127.0.0.1:8000`, **Org Key** = your `foxy_sk_...`.
    - Open the dashboard (right-click the fox → Dashboard) to watch the Blind Audit Log fill.
 
