@@ -68,7 +68,8 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
 
     plaintext_key, key_hash = _generate_api_key()
     org = Organization(name=(payload.name or email_addr).strip()[:255],
-                       api_key_hash=key_hash, plan_tier="free", contact_email=email_addr)
+                       api_key_hash=key_hash, plan_tier="free", contact_email=email_addr,
+                       monthly_log_quota=get_settings().quota_for("free"))
     db.add(org)
     db.flush()
     db.add(ApiKey(org_id=org.id, name="primary",

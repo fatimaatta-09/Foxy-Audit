@@ -47,9 +47,12 @@ class UsageDay(BaseModel):
 
 
 class UsageQuota(BaseModel):
+    plan_tier: str | None = None
     monthly_log_quota: int | None = None   # NULL = unlimited
     used_this_month: int = 0
     remaining: int | None = None           # NULL when unlimited
+    usage_pct: int | None = None           # 0..100+, NULL when unlimited
+    over_quota: bool = False               # soft flag — ingestion is NEVER blocked
 
 
 class UsageResponse(BaseModel):
@@ -106,11 +109,15 @@ def get_usage(
     ).scalar_one()
 
     quota = org.monthly_log_quota
+    used = int(used_this_month)
     return UsageResponse(
         quota=UsageQuota(
+            plan_tier=org.plan_tier,
             monthly_log_quota=quota,
-            used_this_month=int(used_this_month),
-            remaining=None if quota is None else max(0, quota - int(used_this_month)),
+            used_this_month=used,
+            remaining=None if quota is None else max(0, quota - used),
+            usage_pct=None if not quota else round(used / quota * 100),
+            over_quota=bool(quota is not None and used >= quota),
         ),
         days=[
             UsageDay(

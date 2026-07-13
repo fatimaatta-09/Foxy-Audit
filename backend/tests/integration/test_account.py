@@ -126,3 +126,84 @@ def test_staff_session_rejected_on_account_routes(make_staff, staff_login):
     cs = staff_login(s["email"], s["password"])
     assert cs.get("/v1/invoices").status_code == 401
     assert cs.get("/v1/usage").status_code == 401
+
+
+# ───────────────────────── soft usage quotas (Phase 3) ───────────────────────
+
+def test_quota_for_tiers():
+    from app.config import get_settings
+    s = get_settings()
+    assert s.quota_for("free") == 1000
+    assert s.quota_for("companion") == 50000
+    assert s.quota_for("pro") == 50000
+    assert s.quota_for("guardian") is None        # 0 = unlimited (lifetime tier)
+    assert s.quota_for("nonsense") is None         # unknown = unlimited
+    assert s.quota_for(None) is None
+
+
+def test_usage_over_quota_flag_and_pct(make_org, login, client):
+    from app import usage
+    a = make_org()
+    rows = [{"prompt_hash": _h(f"p{i}"), "response_hash": _h(f"r{i}"),
+             "token_count": 10, "policy_tag": "test"} for i in range(4)]
+    assert client.post("/v1/logs/batch", json=rows, headers=a["auth"]).status_code == 202
+    db = SessionLocal()
+    try:
+        usage.rollup_recent(db)
+        org = db.get(Organization, uuid.UUID(a["org_id"]))
+        org.monthly_log_quota = 3
+        org.plan_tier = "companion"
+        db.commit()
+    finally:
+        db.close()
+    q = login(a["admin_email"], a["admin_password"]).get("/v1/usage").json()["quota"]
+    assert q["plan_tier"] == "companion"
+    assert q["over_quota"] is True                  # 4 used >= 3 quota
+    assert q["usage_pct"] == 133                    # round(4 / 3 * 100)
+    assert q["remaining"] == 0
+
+
+def test_usage_under_quota_not_over(make_org, login, client):
+    from app import usage
+    a = make_org()
+    rows = [{"prompt_hash": _h(f"p{i}"), "response_hash": _h(f"r{i}"),
+             "token_count": 10, "policy_tag": "test"} for i in range(4)]
+    client.post("/v1/logs/batch", json=rows, headers=a["auth"])
+    db = SessionLocal()
+    try:
+        usage.rollup_recent(db)
+        org = db.get(Organization, uuid.UUID(a["org_id"]))
+        org.monthly_log_quota = 10
+        db.commit()
+    finally:
+        db.close()
+    q = login(a["admin_email"], a["admin_password"]).get("/v1/usage").json()["quota"]
+    assert q["over_quota"] is False
+    assert q["usage_pct"] == 40
+
+
+def test_ingest_never_blocked_by_quota(make_org, client):
+    """Soft quota: ingestion still returns 202 even far over the limit."""
+    a = make_org()
+    db = SessionLocal()
+    try:
+        org = db.get(Organization, uuid.UUID(a["org_id"]))
+        org.monthly_log_quota = 1
+        db.commit()
+    finally:
+        db.close()
+    rows = [{"prompt_hash": _h(f"p{i}"), "response_hash": _h(f"r{i}"),
+             "token_count": 10, "policy_tag": "test"} for i in range(5)]
+    assert client.post("/v1/logs/batch", json=rows, headers=a["auth"]).status_code == 202
+
+
+def test_signup_assigns_free_quota(client, monkeypatch):
+    """Self-serve signup provisions the org with the free-tier monthly quota."""
+    from app.routers import billing as billing_mod
+    monkeypatch.setattr(billing_mod.password_reset, "issue_reset", lambda *a, **k: None)
+    r = client.post("/v1/signup", json={"email": "quota-user@test.dev"})
+    assert r.status_code == 200, r.text
+    key = r.json()["api_key"]
+    q = client.get("/v1/usage", headers={"Authorization": f"Bearer {key}"}).json()["quota"]
+    assert q["plan_tier"] == "free"
+    assert q["monthly_log_quota"] == 1000

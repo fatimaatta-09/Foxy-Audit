@@ -59,7 +59,8 @@ def _provision_google_org(db: Session, email: str, name: str | None, sub: str) -
     org = Organization(
         name=((name or email).strip() or email)[:255],
         api_key_hash=hashlib.sha256(plaintext_key.encode("utf-8")).hexdigest(),
-        plan_tier="free", contact_email=email)
+        plan_tier="free", contact_email=email,
+        monthly_log_quota=get_settings().quota_for("free"))
     db.add(org)
     db.flush()
     db.add(ApiKey(org_id=org.id, name="primary",

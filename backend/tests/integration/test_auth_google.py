@@ -20,7 +20,8 @@ def _configure(monkeypatch, claims: dict):
     """Turn the feature on + stub Google token verification to return `claims`."""
     from app.routers import auth_google
     monkeypatch.setattr(auth_google, "get_settings",
-                        lambda: types.SimpleNamespace(google_oauth_client_id="test-client-id"))
+                        lambda: types.SimpleNamespace(google_oauth_client_id="test-client-id",
+                                                      quota_for=lambda tier: 1000))
     monkeypatch.setattr(auth_google, "_verify_google_token",
                         lambda credential, client_id: claims)
 

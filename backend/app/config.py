@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     anchor_cadence_pro: int = 21600           # 6h
     anchor_cadence_enterprise: int = 3600     # 1h
     anchor_cadence_default: int = 86400       # fallback for unknown/unset tiers
+    # Per-tier MONTHLY LOG QUOTA (Phase 3, SOFT): surfaced via /v1/usage + warned on in
+    # the dashboard, but NEVER blocks ingestion. 0 = unlimited. Assigned to
+    # organizations.monthly_log_quota at provisioning.
+    monthly_quota_free: int = 1000            # matches the sales page (1,000 calls / mo)
+    monthly_quota_companion: int = 50000
+    monthly_quota_pro: int = 50000
+    monthly_quota_guardian: int = 0           # 0 = unlimited (lifetime tier)
     anchor_evm_rpc_url: str = ""
     anchor_evm_chain: str = "sepolia"
     anchor_evm_private_key: str = ""           # funded testnet key; required for 'evm'
@@ -153,6 +160,16 @@ class Settings(BaseSettings):
             "pro": self.anchor_cadence_pro,
             "enterprise": self.anchor_cadence_enterprise,
         }.get((plan_tier or "").strip().lower(), self.anchor_cadence_default)
+
+    def quota_for(self, plan_tier: str | None) -> int | None:
+        """Monthly log quota for a plan tier (Phase 3, soft). None = unlimited."""
+        q = {
+            "free": self.monthly_quota_free,
+            "companion": self.monthly_quota_companion,
+            "pro": self.monthly_quota_pro,
+            "guardian": self.monthly_quota_guardian,
+        }.get((plan_tier or "").strip().lower(), 0)
+        return None if q <= 0 else q
 
     @property
     def is_prod(self) -> bool:
