@@ -520,7 +520,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div>
           <div class="eyebrow">Governance‑as‑Code</div>
           <div class="h1">Yo <span id="greetName">there</span><span class="fox-dot">.</span> here's the vibe check.</div>
-          <div class="sub">org‑4F2A9C · synced 2 min ago · all systems foxy</div>
+          <div class="sub">—</div>
         </div>
         <button class="btn pri sm" onclick="go('export',null)">
           <span class="glyph" style="width:13px;height:13px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 4 5-4"/></svg></span>
@@ -534,7 +534,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <span class="hb-tag">Org‑wide AI health</span>
             <span class="hb-live"><i></i>LIVE</span>
           </div>
-          <div class="hb-num">48,219</div>
+          <div class="hb-num">—</div>
           <div class="hb-foot">interactions logged today</div>
         </div>
         <div class="hero-tiles">
@@ -550,9 +550,9 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       </div>
 
       <div class="stats">
-        <div class="stat"><div class="v fox">317</div><div class="l">Breaches stopped</div></div>
+        <div class="stat"><div class="v fox">0</div><div class="l">Breaches stopped</div></div>
         <div class="stat"><div class="v danger" id="statOpenAlerts">0</div><div class="l">Open alerts</div></div>
-        <div class="stat"><div class="v">99.3%</div><div class="l">Clean rate</div></div>
+        <div class="stat"><div class="v">—</div><div class="l">Clean rate</div></div>
         <div class="stat"><div class="v">—</div><div class="l">Time to verdict</div></div>
       </div>
 
@@ -568,9 +568,9 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
                 </div>
                 <div>
                   <div class="feye">audit health</div>
-                  <div class="fnum">48,219 events</div>
+                  <div class="fnum">— events</div>
                 </div>
-                <div class="fbottom"><span>7E02 •••• •••• A3F9</span><span>FOXY</span></div>
+                <div class="fbottom"><span>•••• •••• •••• ••••</span><span>FOXY</span></div>
               </div>
               <div class="face face-b" onclick="event.stopPropagation()">
                 <div class="fb-head">Quick hash check — local only</div>
@@ -596,9 +596,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div class="stitle-act" onclick="go('ledger',null)">view all</div>
           </div>
           <div class="clay pad" id="recentLedger">
-            <div class="lrow"><div class="ltag breach">B</div><div class="lbody"><div class="lname">foxy-dev-03 flagged</div><div class="lhash">b71de4ac…0a9c</div></div><div class="lright"><span class="pill breach"><i></i>breach</span><div class="ltime">14:01:54</div></div></div>
-            <div class="lrow"><div class="ltag safe">A</div><div class="lbody"><div class="lname">foxy-prod-01 cleared</div><div class="lhash">a3f9c1dd…7e02</div></div><div class="lright"><span class="pill safe"><i></i>safe</span><div class="ltime">14:02:11</div></div></div>
-            <div class="lrow"><div class="ltag warn">D</div><div class="lbody"><div class="lname">foxy-dev-01 flagged</div><div class="lhash">d8217a39…91e6</div></div><div class="lright"><span class="pill warn"><i></i>flag</span><div class="ltime">13:50:47</div></div></div>
+            <div class="lrow"><div class="lbody"><div class="lname" style="color:var(--muted);">loading…</div></div></div>
           </div>
         </div>
       </div>
@@ -632,10 +630,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div><div class="eyebrow">Security posture</div><div class="h1">Threat analytics<span class="fox-dot">.</span></div><div class="sub">unresolved alerts and weekly trend</div></div>
       </div>
       <div class="stats" style="margin-bottom:22px;">
-        <div class="stat"><div class="v fox">48,219</div><div class="l">Total logged</div></div>
-        <div class="stat"><div class="v">317</div><div class="l">Breaches prevented</div></div>
+        <div class="stat"><div class="v fox">—</div><div class="l">Total logged</div></div>
+        <div class="stat"><div class="v">0</div><div class="l">Breaches prevented</div></div>
         <div class="stat"><div class="v danger" id="statActiveAlerts">0</div><div class="l">Active alerts</div></div>
-        <div class="stat"><div class="v">99.3%</div><div class="l">Clean rate</div></div>
+        <div class="stat"><div class="v">—</div><div class="l">Clean rate</div></div>
       </div>
       <div class="g2">
         <div class="clay pad">
@@ -673,11 +671,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <th style="font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:left;padding:0 10px 11px;border-bottom:2px dashed var(--line);">time</th>
           </tr></thead>
           <tbody id="ledgerBody">
-          <tr><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="ltag safe" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">A</span>foxy-prod-01</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">a3f9c1dd…7e02</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="pill safe"><i></i>safe</span></td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">14:02:11</td></tr>
-          <tr><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="ltag breach" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">B</span>foxy-dev-03</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">b71de4ac…0a9c</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="pill breach"><i></i>breach</span></td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">14:01:54</td></tr>
-          <tr><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="ltag safe" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">P</span>foxy-prod-01</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">19fa22b1…c4d1</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="pill safe"><i></i>safe</span></td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">13:58:30</td></tr>
-          <tr><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="ltag safe" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">P</span>foxy-prod-02</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">5c0be8ff…33ff</td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);"><span class="pill safe"><i></i>safe</span></td><td style="padding:11px 10px;border-bottom:2px dashed var(--line);font-family:var(--mono);font-size:10px;color:var(--muted);">13:55:02</td></tr>
-          <tr><td style="padding:11px 10px;"><span class="ltag warn" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">D</span>foxy-dev-01</td><td style="padding:11px 10px;font-family:var(--mono);font-size:10px;color:var(--muted);">d8217a39…91e6</td><td style="padding:11px 10px;"><span class="pill warn"><i></i>flag</span></td><td style="padding:11px 10px;font-family:var(--mono);font-size:10px;color:var(--muted);">13:50:47</td></tr>
+          <tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -714,7 +708,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
               <div class="face face-f">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="fchip"></div><div class="fhint">quick lookup ↻</div></div>
                 <div><div class="feye">sha‑256 · prev+prompt+resp+ts</div><div class="fnum" style="font-size:17px;">paste any hash<br>to check status</div></div>
-                <div class="fbottom"><span>7E02 •••• •••• A3F9</span><span>AUDIT</span></div>
+                <div class="fbottom"><span>•••• •••• •••• ••••</span><span>AUDIT</span></div>
               </div>
               <div class="face face-b" onclick="event.stopPropagation()">
                 <div class="fb-head">hash lookup · mock ledger</div>
@@ -782,7 +776,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div style="font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.6;">only verdicts and hashes are included — raw prompts and responses are never exported</div>
           <div class="flabel" style="margin-top:0;">from</div><input class="cin" type="date" value="2026-06-01">
           <div class="flabel">to</div><input class="cin" type="date" value="2026-06-28">
-          <div class="flabel">tenant scope</div><select><option>all tenants</option><option>foxy-prod-01</option><option>foxy-prod-02</option></select>
+          <div class="flabel">tenant scope</div><select><option>all tenants</option></select>
           <div class="flabel">format</div><select><option>PDF — signed &amp; tamper-evident</option><option>JSON hash bundle</option><option>CSV summary</option></select>
           <button class="btn pri" onclick="runExport()">generate passport</button>
           <div id="exportProgress" style="display:none;margin-top:10px;">
@@ -794,7 +788,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Chain metadata</div></div></div>
           <div class="erow"><span class="elabel">records</span><span class="eval" id="metaRecords">—</span></div>
           <div class="erow"><span class="elabel">chain integrity</span><span class="eval ok" id="metaIntegrity">100% — no gaps</span></div>
-          <div class="erow"><span class="elabel">chain head</span><span class="eval mono" id="metaHead">a3f9c1dd…7e02</span></div>
+          <div class="erow"><span class="elabel">chain head</span><span class="eval mono" id="metaHead">—</span></div>
           <div class="erow"><span class="elabel">org id</span><span class="eval mono" id="metaOrg">ORG‑4F2A9C‑GIKI</span></div>
           <div class="erow"><span class="elabel">anchor SLA</span><span class="eval" id="metaSLA">—</span></div>
           <div style="margin-top:16px;border-top:2px dashed var(--line);padding-top:14px;font-size:11px;color:var(--muted);line-height:1.6;">
@@ -1021,7 +1015,7 @@ async function sha256(text){
   const buf=await crypto.subtle.digest('SHA-256',enc);
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-const mockLedger={'a3f9c17e02':'safe','b71de40a9c':'breach','5c0be833ff':'safe','d8217a91e6':'flag'};
+const mockLedger={};   // Phase 2 wires the real per-hash lookup; no fabricated entries here
 
 async function quickVerify(){
   const p=document.getElementById('qPrompt').value, r=document.getElementById('qResponse').value,
