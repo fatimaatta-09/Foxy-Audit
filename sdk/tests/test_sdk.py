@@ -48,7 +48,7 @@ def test_host_exception_not_masked():
         assert str(e) == "host error"
 
 
-def test_hash_ok_udp_emitted():
+def test_evaluating_udp_emitted():
     sock, port = _udp_listener()
     try:
         foxy = FoxyClient(api_key="", udp_port=port)   # no key → HTTP disabled, UDP still fires
@@ -60,7 +60,8 @@ def test_hash_ok_udp_emitted():
         ask("a prompt")
         data, _ = sock.recvfrom(4096)
         msg = json.loads(data.decode())
-        assert msg["event"] == "hash_ok"
+        # the instant ping is "evaluating" (grading pending) — never a premature verdict
+        assert msg["event"] == "evaluating"
         assert msg["policy"] == "hipaa_basic"
         assert isinstance(msg["tokens"], int)
         assert "ts" in msg

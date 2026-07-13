@@ -357,6 +357,7 @@ class OmniAwareFox(QWidget):
 
         # ── SDK Bridge ────────────────────────────────────────────────────
         self.sdk_bridge = SDKBridgeListener()
+        self.sdk_bridge.evaluating.connect(self._on_sdk_evaluating)
         self.sdk_bridge.hash_confirmed.connect(self._on_sdk_hash_ok)
         self.sdk_bridge.policy_breach.connect(self._on_policy_breach)
         self.sdk_bridge.start()
@@ -646,6 +647,18 @@ class OmniAwareFox(QWidget):
         QTimer.singleShot(3000, self._hide_speech)
 
     # ── SDK Bridge Callbacks ───────────────────────────────────────────────
+    def _on_sdk_evaluating(self, payload: dict):
+        """SDK logged a call; grading is PENDING. Show a neutral 'thinking' beat —
+        NOT green (that would imply a verdict before the Judge has run). The breach
+        poller turns the fox red on the real verdict; otherwise it settles to idle."""
+        now = time.time()
+        if now - self._last_hash_ok < 5.0:
+            return  # debounce busy SDKs (shared with hash_ok)
+        self._last_hash_ok = now
+        if self._is_hidden_in_tray:
+            return
+        self._set_state("THINKING", ROW_THINKING, 1.5)
+
     def _on_sdk_hash_ok(self, payload: dict):
         now = time.time()
         if now - self._last_hash_ok < 5.0:
@@ -790,9 +803,25 @@ class OmniAwareFox(QWidget):
         self.dashboard.activateWindow()
 
     def open_web_dashboard(self):
-        """Open the browser dashboard (site 2) in the default browser — the full
-        web app, distinct from the local desktop console (teammate issue #2)."""
+        """Open the browser dashboard (site 2) in the default browser — the full web app,
+        distinct from the local desktop console. Mints a one-time auto-login handoff token
+        (POST /v1/auth/handoff with the org key) so the person lands ALREADY logged in;
+        falls back to the bare URL if the backend/key isn't set or the mint fails."""
         url = self.settings.web_dashboard_url()
+        backend = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if backend and key:
+            try:
+                req = urllib.request.Request(
+                    f"{backend.rstrip('/')}/v1/auth/handoff", data=b"", method="POST",
+                    headers={"Authorization": f"Bearer {key}"})
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    token = json.loads(r.read().decode("utf-8")).get("token")
+                if token:
+                    sep = "&" if "?" in url else "?"
+                    url = f"{url}{sep}handoff={token}"
+            except Exception as exc:
+                print(f"[foxy] handoff mint failed, opening bare dashboard: {exc}")
         try:
             webbrowser.open(url)
         except Exception as exc:

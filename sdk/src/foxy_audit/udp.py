@@ -2,8 +2,9 @@
 
 Speaks the exact protocol of the desktop app's sdk_bridge listener:
 a JSON datagram (<= 4096 bytes) sent to 127.0.0.1:9999, with an `event` of
-either "hash_ok" or "policy_breach". This is purely cosmetic ambient feedback
-(the fox glows green / red); the authoritative record is the HTTP-written
+"evaluating" (grading pending — fired instantly), "policy_breach", or the legacy
+"hash_ok". This is purely cosmetic ambient feedback (the fox reacts); the
+authoritative record is the HTTP-written
 ledger row, so packet loss here is harmless. The whole send is wrapped so it
 can never raise into the SDK or the host application.
 """

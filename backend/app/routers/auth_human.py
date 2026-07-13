@@ -8,8 +8,10 @@ header, and the two never collide.
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,10 +21,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import login_history, mfa, password_reset
-from ..auth import require_role, require_user
+from ..auth import require_role, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
-from ..models import LoginEvent, Organization, User
+from ..models import AuthHandoffToken, LoginEvent, Organization, User
 from .logs import limiter          # reuse the app's single Limiter instance
 
 router = APIRouter()
@@ -190,6 +192,61 @@ def reset_password(payload: ResetPasswordRequest, request: Request,
 def logout(request: Request):
     request.session.clear()
     return {"status": "logged_out"}
+
+
+# ── Desktop pet → dashboard auto-login handoff (single-use, short-TTL token) ──
+HANDOFF_TTL = timedelta(seconds=120)
+
+
+class HandoffRedeemRequest(BaseModel):
+    token: str
+
+
+@router.post("/v1/auth/handoff")
+def create_handoff(org: Organization = Depends(resolve_org), db: Session = Depends(get_db)):
+    """Mint a single-use ~2-minute token for this org's admin. The desktop pet (which
+    holds the org API key) calls this, then opens the dashboard with ?handoff=<token> so
+    the person lands already logged in — no bare unauthenticated link, no retyped password."""
+    admin = db.execute(
+        select(User).where(User.org_id == org.id, User.role == "admin",
+                           User.disabled.is_(False)).order_by(User.email)
+    ).scalars().first()
+    if admin is None:
+        raise HTTPException(status_code=404, detail="no active admin user for this workspace")
+    raw = secrets.token_urlsafe(32)
+    db.add(AuthHandoffToken(
+        token_hash=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+        user_id=admin.id, org_id=org.id,
+        expires_at=datetime.now(timezone.utc) + HANDOFF_TTL,
+    ))
+    db.commit()
+    return {"token": raw, "expires_in": int(HANDOFF_TTL.total_seconds())}
+
+
+@router.post("/v1/auth/handoff/redeem")
+@limiter.limit("30/minute")
+def redeem_handoff(payload: HandoffRedeemRequest, request: Request,
+                   db: Session = Depends(get_db)):
+    """Redeem a handoff token (unauthenticated — the token IS the credential): require it
+    to be single-use + unexpired, mark it used, and establish the dashboard session."""
+    token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
+    row = db.execute(
+        select(AuthHandoffToken).where(AuthHandoffToken.token_hash == token_hash)
+    ).scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if row is None or row.used_at is not None or row.expires_at < now:
+        raise HTTPException(status_code=401, detail="Invalid or expired handoff")
+    user = db.get(User, row.user_id)
+    if user is None or user.disabled:
+        raise HTTPException(status_code=401, detail="Invalid or expired handoff")
+    org = db.get(Organization, user.org_id)
+    if org is None or org.deleted_at is not None:
+        raise HTTPException(status_code=403, detail="This workspace has been deleted")
+    row.used_at = now
+    db.commit()
+    _establish_session(request, user)
+    login_history.record(db, request, user.email, True, user)
+    return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
 
 
 @router.get("/v1/auth/me", response_model=MeResponse)

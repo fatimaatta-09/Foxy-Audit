@@ -1269,6 +1269,12 @@ function runExport(){
       gate.style.display='flex'; $('authForm').style.display='none'; $('authReset').style.display='';
       $('resetPass').focus(); return;
     }
+    // Desktop-pet handoff: redeem a one-time token → session, then continue already logged in.
+    const ho=new URLSearchParams(location.search).get('handoff');
+    if(ho){
+      try{ await api('/v1/auth/handoff/redeem',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:ho})}); }catch(e){}
+      const u=new URL(location.href); u.searchParams.delete('handoff'); history.replaceState(null,'',u.toString());
+    }
     let ok=false; try{ ok=(await api('/v1/auth/me')).status===200; }catch(e){}
     if(ok){ gate.style.display='none'; loadAll(); }
     else{ gate.style.display='flex'; }

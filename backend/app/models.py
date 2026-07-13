@@ -443,3 +443,23 @@ class LoginEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True)
 
+
+class AuthHandoffToken(Base):
+    """Single-use, short-TTL token for the desktop pet -> dashboard auto-login handoff.
+    The pet (holding the org API key) mints one via POST /v1/auth/handoff; the dashboard
+    redeems ?handoff=<token> to establish a session. Only the SHA-256 hash is stored. No
+    RLS — it's auth plumbing, resolved by a hash lookup and gated on unused + unexpired."""
+    __tablename__ = "auth_handoff_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+

@@ -114,7 +114,7 @@ class FoxyClient:
 
             if self.cfg.desktop_ping:
                 udp.send_ping(
-                    {"event": "hash_ok", "policy": policy, "tokens": payload["token_count"]},
+                    {"event": "evaluating", "policy": policy, "tokens": payload["token_count"]},
                     self.cfg.udp_host,
                     self.cfg.udp_port,
                 )

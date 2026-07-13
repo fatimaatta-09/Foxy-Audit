@@ -35,7 +35,8 @@ MAX_PACKET_SIZE = 4096
 class SDKBridgeListener(QThread):
     """Lightweight UDP listener for local SDK telemetry pings."""
 
-    hash_confirmed = pyqtSignal(dict)   # {"event": "hash_ok", ...}
+    evaluating     = pyqtSignal(dict)   # {"event": "evaluating", ...} — grading pending
+    hash_confirmed = pyqtSignal(dict)   # {"event": "hash_ok", ...} (legacy)
     policy_breach  = pyqtSignal(dict)   # {"event": "policy_breach", ...}
 
     def __init__(self, host: str = SDK_LISTEN_HOST,
@@ -79,7 +80,9 @@ class SDKBridgeListener(QThread):
 
         event = payload.get("event", "")
 
-        if event == "hash_ok":
+        if event == "evaluating":
+            self.evaluating.emit(payload)
+        elif event == "hash_ok":
             self.hash_confirmed.emit(payload)
         elif event == "policy_breach":
             self.policy_breach.emit(payload)

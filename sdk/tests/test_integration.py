@@ -1,7 +1,7 @@
 """End-to-end SDK integration test against a stdlib mock backend + fake fox.
 
 Proves the full dispatch path without Postgres or Gemini:
-  • the instant `hash_ok` UDP ping is emitted per audited call,
+  • the instant `evaluating` UDP ping is emitted per audited call,
   • the AsyncDispatcher POSTs a BATCH (a JSON list) to {endpoint}/v1/logs/batch
     with a Bearer header, and each item carries only hashes / token_count /
     policy_tag (never raw text),
@@ -107,8 +107,8 @@ def test_full_dispatch_batches_hashes_only():
         # ── first audited call ──
         assert ask("a patient prompt") == "a clinical summary response"
 
-        green = _recv_event(sock, 2.0)
-        assert green and green["event"] == "hash_ok" and green["policy"] == "hipaa_basic", green
+        pending = _recv_event(sock, 2.0)
+        assert pending and pending["event"] == "evaluating" and pending["policy"] == "hipaa_basic", pending
 
         assert _wait_for_delivered(backend, 1), "backend never received the first batch"
         path, headers, body = backend.requests[0]
@@ -125,8 +125,8 @@ def test_full_dispatch_batches_hashes_only():
 
         # ── second call: also delivered (a later batch or coalesced) ──
         ask("another prompt")
-        green2 = _recv_event(sock, 2.0)
-        assert green2 and green2["event"] == "hash_ok", green2
+        pending2 = _recv_event(sock, 2.0)
+        assert pending2 and pending2["event"] == "evaluating", pending2
 
         assert _wait_for_delivered(backend, 2), "second call was never delivered"
         delivered = _delivered(backend)
