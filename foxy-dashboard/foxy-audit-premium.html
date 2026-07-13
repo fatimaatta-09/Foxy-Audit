@@ -518,7 +518,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div class="page active" id="page-dashboard">
       <div class="pg-head">
         <div>
-          <div class="eyebrow">Governance‑as‑Code</div>
+          <div class="eyebrow">Compliance overview</div>
           <div class="h1">Yo <span id="greetName">there</span><span class="fox-dot">.</span> here's the vibe check.</div>
           <div class="sub">—</div>
         </div>
@@ -618,7 +618,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div class="tool" onclick="go('policy',null)"><div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="var(--fox)"/></svg></span></div><div class="tool-name">Policy rules</div><div class="tool-desc">configure the AI Judge</div></div>
             <div class="tool" onclick="go('export',null)"><div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="var(--fox)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 4 5-4"/></svg></span></div><div class="tool-name">Export</div><div class="tool-desc">compliance passport pdf</div></div>
             <div class="tool" onclick="go('keys',null)"><div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="var(--fox)"/></svg></span></div><div class="tool-name">API keys</div><div class="tool-desc">manage tenants</div></div>
-            <div class="tool" onclick="go('ledger',null)"><div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v4l-3 3 3 3v6H4v-6l3-3-3-3z" fill="var(--fox)"/></svg></span></div><div class="tool-name">Audit ledger</div><div class="tool-desc">zero‑knowledge log</div></div>
+            <div class="tool" onclick="go('ledger',null)"><div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v4l-3 3 3 3v6H4v-6l3-3-3-3z" fill="var(--fox)"/></svg></span></div><div class="tool-name">Audit ledger</div><div class="tool-desc">tamper-proof log</div></div>
           </div>
         </div>
       </div>
@@ -680,11 +680,11 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <!-- ═════════════ VERIFY ═════════════ -->
     <div class="page" id="page-verify">
       <div class="pg-head">
-        <div><div class="eyebrow">Auditor's engine · client‑side only</div><div class="h1">Verification sandbox<span class="fox-dot">.</span></div><div class="sub">nothing leaves the browser — SHA‑256 computed locally</div></div>
+        <div><div class="eyebrow">Prove it</div><div class="h1">Verify a record<span class="fox-dot">.</span></div><div class="sub">Confirm any logged AI interaction is exactly as recorded — untampered.</div></div>
       </div>
       <div class="g2">
         <div class="clay pad">
-          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="7" stroke="#000" stroke-width="2.3" fill="none"/></svg></span></div><div class="txt">Recompute payload hash</div></div></div>
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="7" stroke="#000" stroke-width="2.3" fill="none"/></svg></span></div><div class="txt">Check a single record</div></div></div>
           <div class="flabel" style="margin-top:0;">raw prompt</div>
           <textarea class="cin" id="vPrompt" placeholder="paste exact original prompt text…" rows="3"></textarea>
           <div class="flabel">raw response</div>
@@ -707,28 +707,29 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div class="flipcard" id="flipCardVerify" onclick="document.getElementById('flipCardVerify').classList.toggle('flipped')">
               <div class="face face-f">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="fchip"></div><div class="fhint">quick lookup ↻</div></div>
-                <div><div class="feye">sha‑256 · prev+prompt+resp+ts</div><div class="fnum" style="font-size:17px;">paste any hash<br>to check status</div></div>
+                <div><div class="feye">tamper-proof fingerprint</div><div class="fnum" style="font-size:17px;">paste any hash<br>to check status</div></div>
                 <div class="fbottom"><span>•••• •••• •••• ••••</span><span>AUDIT</span></div>
               </div>
               <div class="face face-b" onclick="event.stopPropagation()">
-                <div class="fb-head">hash lookup · mock ledger</div>
+                <div class="fb-head">check a hash against the ledger</div>
                 <input class="fb-in" id="q2Hash" placeholder="paste hash from ledger…" style="width:100%;">
                 <button class="fb-go" onclick="quickVerify2()">check ledger</button>
                 <div class="fb-res" id="quickResult2"></div>
               </div>
             </div>
           </div>
-          <div class="clay pad" style="margin-top:16px;">
-            <div style="font-weight:700;font-size:11.5px;margin-bottom:9px;">hash construction</div>
+          <details class="clay pad" style="margin-top:16px;">
+            <summary style="font-weight:700;font-size:11.5px;cursor:pointer;">How the fingerprint works <span style="color:var(--muted);font-weight:500;">· advanced</span></summary>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin:10px 0;">Each record is sealed with a SHA-256 fingerprint of the one before it plus the prompt, response and time — so altering anything breaks the chain and is instantly detectable.</div>
             <div class="codebox">
               input = prev_hash + prompt + response + ts<br>
               hash &nbsp;= SHA256(UTF8(input))<br>
               isVerified = (local === ledger)
             </div>
-          </div>
+          </details>
           <div class="clay pad" style="margin-top:14px;">
-            <div style="font-weight:700;font-size:11.5px;margin-bottom:6px;">live chain check</div>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:11px;">recompute the entire server-side hash chain and detect any tampering (GET /v1/verify)</div>
+            <div style="font-weight:700;font-size:11.5px;margin-bottom:6px;">Check the whole ledger</div>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:11px;">One click re-checks every record on the server and flags any tampering.</div>
             <button class="btn pri" id="chainCheckBtn" style="margin-top:0;">verify live ledger chain</button>
             <div class="vres" id="chainCheckResult"></div>
           </div>
