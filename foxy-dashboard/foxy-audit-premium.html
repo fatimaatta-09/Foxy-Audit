@@ -470,7 +470,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div class="dock-item" data-page="analytics" onclick="go('analytics',this)" style="position:relative;">
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 17l5-6 4 3 6-9"/><circle cx="3" cy="17" r="2" fill="currentColor" stroke="none"/><circle cx="18" cy="5" r="2" fill="currentColor" stroke="none"/></svg></span>
       <span>Threats</span>
-      <span class="dock-pip">3</span>
+      <span class="dock-pip" id="threatPip" style="display:none;">3</span>
     </div>
     <div class="dock-item" data-page="ledger" onclick="go('ledger',this)">
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v4l-3 3 3 3v6H4v-6l3-3-3-3z" fill="currentColor" opacity=".85"/></svg></span>
@@ -551,7 +551,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 
       <div class="stats">
         <div class="stat"><div class="v fox">317</div><div class="l">Breaches stopped</div></div>
-        <div class="stat"><div class="v danger">3</div><div class="l">Open alerts</div></div>
+        <div class="stat"><div class="v danger" id="statOpenAlerts">0</div><div class="l">Open alerts</div></div>
         <div class="stat"><div class="v">99.3%</div><div class="l">Clean rate</div></div>
         <div class="stat"><div class="v">—</div><div class="l">Time to verdict</div></div>
       </div>
@@ -607,11 +607,9 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Active alerts</div></div><div class="stitle-act" onclick="go('analytics',null)">see all</div></div>
           <div class="clay pad">
-            <div class="arow"><div class="adot r"></div><div><div class="atxt">3 prompt injections blocked · foxy-dev-03</div><div class="atime">today, 14:01</div></div></div>
-            <div class="arow"><div class="adot r"></div><div><div class="atxt">PII pattern blocked · foxy-prod-02</div><div class="atime">today, 13:55</div></div></div>
-            <div class="arow"><div class="adot a"></div><div><div class="atxt">Toxic output flagged · foxy-dev-01</div><div class="atime">yesterday, 22:14</div></div></div>
+            <div id="homeAlerts"><div class="arow"><div class="adot"></div><div><div class="atxt" style="color:var(--muted);">loading…</div></div></div></div>
             <div style="border-top:2px dashed var(--line);margin-top:10px;padding-top:13px;">
-              <div class="gauge"><div class="gauge-row"><span>Clean rate</span><b>99.3%</b></div><div class="gtrack"><div class="gfill" style="width:99.3%"></div></div></div>
+              <div class="gauge"><div class="gauge-row"><span>Clean rate</span><b id="gClean">—</b></div><div class="gtrack"><div class="gfill" id="gCleanBar" style="width:0%"></div></div></div>
               <div class="gauge"><div class="gauge-row"><span>Time to verdict</span><b id="gVerdict">—</b></div><div class="gtrack"><div class="gfill" id="gVerdictBar" style="width:0%"></div></div></div>
             </div>
           </div>
@@ -636,15 +634,13 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <div class="stats" style="margin-bottom:22px;">
         <div class="stat"><div class="v fox">48,219</div><div class="l">Total logged</div></div>
         <div class="stat"><div class="v">317</div><div class="l">Breaches prevented</div></div>
-        <div class="stat"><div class="v danger">3</div><div class="l">Active alerts</div></div>
+        <div class="stat"><div class="v danger" id="statActiveAlerts">0</div><div class="l">Active alerts</div></div>
         <div class="stat"><div class="v">99.3%</div><div class="l">Clean rate</div></div>
       </div>
       <div class="g2">
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Active alerts</div></div></div>
-          <div class="arow"><div class="adot r"></div><div><div class="atxt">3 prompt injections blocked on foxy-dev-03</div><div class="atime">today, 14:01</div></div></div>
-          <div class="arow"><div class="adot r"></div><div><div class="atxt">PII pattern blocked on foxy-prod-02</div><div class="atime">today, 13:55</div></div></div>
-          <div class="arow"><div class="adot a"></div><div><div class="atxt">Toxic output flagged on foxy-dev-01</div><div class="atime">yesterday, 22:14</div></div></div>
+          <div id="anaAlerts"><div class="arow"><div class="adot"></div><div><div class="atxt" style="color:var(--muted);">loading…</div></div></div></div>
         </div>
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" fill="#000"/></svg></span></div><div class="txt">Activity — last 7 days</div></div></div>
@@ -796,15 +792,13 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         </div>
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Chain metadata</div></div></div>
-          <div class="erow"><span class="elabel">last export</span><span class="eval">2026-06-21 · all tenants</span></div>
-          <div class="erow"><span class="elabel">records</span><span class="eval" id="metaRecords">142 hash entries</span></div>
+          <div class="erow"><span class="elabel">records</span><span class="eval" id="metaRecords">—</span></div>
           <div class="erow"><span class="elabel">chain integrity</span><span class="eval ok" id="metaIntegrity">100% — no gaps</span></div>
           <div class="erow"><span class="elabel">chain head</span><span class="eval mono" id="metaHead">a3f9c1dd…7e02</span></div>
           <div class="erow"><span class="elabel">org id</span><span class="eval mono" id="metaOrg">ORG‑4F2A9C‑GIKI</span></div>
           <div class="erow"><span class="elabel">anchor SLA</span><span class="eval" id="metaSLA">—</span></div>
-          <div style="margin-top:16px;border-top:2px dashed var(--line);padding-top:14px;">
-            <div class="krow"><div class="ic-chip dark sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="var(--fox)"/></svg></span></div><div class="kbody"><div class="kname">June 2026 — all tenants</div><div class="kmeta">142 entries · 2026-06-21</div></div><span class="stitle-act" onclick="showToast('Downloading…')">download</span></div>
-            <div class="krow"><div class="ic-chip dark sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="var(--fox)"/></svg></span></div><div class="kbody"><div class="kname">May 2026 — foxy-prod-01</div><div class="kmeta">88 entries · 2026-06-01</div></div><span class="stitle-act" onclick="showToast('Downloading…')">download</span></div>
+          <div style="margin-top:16px;border-top:2px dashed var(--line);padding-top:14px;font-size:11px;color:var(--muted);line-height:1.6;">
+            Passports are generated on demand and open in a new tab — the server doesn't keep a download archive.
           </div>
         </div>
       </div>
@@ -1169,8 +1163,10 @@ function runExport(){
     const hb=document.querySelector('#page-dashboard .hb-num'); if(hb)hb.textContent=money(s.total_logged);
     const dv=document.querySelectorAll('#page-dashboard .stats .stat .v');
     if(dv[0])dv[0].textContent=money(s.breaches);
-    if(dv[1])dv[1].textContent=(s.grading&&s.grading.failed)||0;
+    // dv[1] "Open alerts" is set from the real threat feed in loadThreats (not grading failures)
     if(dv[2])dv[2].textContent=s.clean_rate+'%';
+    const gc=$('gClean'); if(gc)gc.textContent=s.clean_rate+'%';
+    const gcb=$('gCleanBar'); if(gcb)gcb.style.width=Math.max(0,Math.min(100,Number(s.clean_rate)||0))+'%';
     // real time-to-verdict (replaces the old fabricated "42ms judge latency")
     const ttv=fmtVerdict(s.avg_seconds_to_verdict);
     if(dv[3])dv[3].textContent=ttv;
@@ -1186,7 +1182,7 @@ function runExport(){
     const av=document.querySelectorAll('#page-analytics .stats .stat .v');
     if(av[0])av[0].textContent=money(s.total_logged);
     if(av[1])av[1].textContent=money(s.breaches);
-    if(av[2])av[2].textContent=(s.grading&&s.grading.failed)||0;
+    // av[2] "Active alerts" is set from the real threat feed in loadThreats
     if(av[3])av[3].textContent=s.clean_rate+'%';
     // 7-day activity sparkline
     const bars=document.querySelectorAll('#page-analytics .spark .sbar');

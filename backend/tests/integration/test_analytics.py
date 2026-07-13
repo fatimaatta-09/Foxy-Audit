@@ -94,3 +94,17 @@ def test_threats_timestamps_are_valid_iso(make_org, client, monkeypatch):
     for e in data["recent_high_risk"]:
         # the old "…+00:00Z" raises here; a clean ISO value parses
         _dt.datetime.fromisoformat(e["timestamp"])
+
+
+def test_threats_recent_high_risk_include_agent(make_org, client, monkeypatch):
+    """The alert feed carries agent/model attribution (6B) so the dashboard renders
+    '<policy> · <agent>' rows instead of the old hardcoded device names."""
+    from app.schemas import Verdict
+    org = make_org()
+    payload = [{"prompt_hash": _h("pa"), "response_hash": _h("ra"),
+                "token_count": 77, "policy_tag": "hipaa", "agent": "gpt-4o"}]
+    assert client.post("/v1/logs/batch", headers=org["auth"], json=payload).status_code == 202
+    _grade(monkeypatch, lambda meta: Verdict(policy_breach=True, reason="tripped", risk_score=88))
+    data = client.get("/v1/analytics/threats", headers=org["auth"]).json()
+    assert data["recent_high_risk"], "expected a high-risk event"
+    assert data["recent_high_risk"][0]["agent"] == "gpt-4o"

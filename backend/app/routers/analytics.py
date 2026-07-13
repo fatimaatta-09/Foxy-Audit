@@ -51,6 +51,7 @@ def get_threat_analytics(
         {
             "seq": r.seq,
             "policy_tag": r.policy_tag,
+            "agent": r.agent,   # model/agent attribution (6B) — the dashboard renders "<policy> · <agent>"
             "risk_score": (r.gemini_verdict or {}).get("risk_score", 0),
             "reason": (r.gemini_verdict or {}).get("reason", ""),
             "timestamp": r.created_at.isoformat() if r.created_at else "",

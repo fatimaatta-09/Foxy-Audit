@@ -44,12 +44,32 @@ def generate_passport(
     org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
     days: int = Query(default=30, ge=1, le=365),
+    date_from: str | None = Query(default=None, description="ISO date YYYY-MM-DD; overrides `days`"),
+    date_to: str | None = Query(default=None, description="ISO date YYYY-MM-DD; defaults to now"),
 ):
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    now = datetime.now(timezone.utc)
+
+    def _parse(d: str | None):
+        if not d:
+            return None
+        try:
+            return datetime.fromisoformat(d).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+    # An explicit from/to range (dashboard date pickers) overrides the rolling
+    # `days` window. window_end is exclusive-of-next-day so the whole 'to' day counts.
+    start = _parse(date_from)
+    end_day = _parse(date_to)
+    window_end = (end_day + timedelta(days=1)) if end_day else now
+    if start is None:
+        start = now - timedelta(days=days)
 
     rows = db.execute(
         select(AuditLog)
-        .where(AuditLog.org_id == org.id, AuditLog.created_at >= cutoff)
+        .where(AuditLog.org_id == org.id,
+               AuditLog.created_at >= start,
+               AuditLog.created_at < window_end)
         .order_by(AuditLog.seq.asc())
     ).scalars().all()
 
@@ -134,8 +154,8 @@ def generate_passport(
         org_name=org.name,
         org_id=str(org.id),
         plan_tier=getattr(org, "plan_tier", None),
-        date_from=cutoff.strftime("%Y-%m-%d"),
-        date_to=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        date_from=start.strftime("%Y-%m-%d"),
+        date_to=(end_day or now).strftime("%Y-%m-%d"),
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         total_events=total_events,
         compliant_events=compliant_events,
