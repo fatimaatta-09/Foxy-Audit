@@ -1015,7 +1015,7 @@ async function sha256(text){
   const buf=await crypto.subtle.digest('SHA-256',enc);
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-const mockLedger={};   // Phase 2 wires the real per-hash lookup; no fabricated entries here
+// per-hash lookup now hits GET /v1/verify/hash/{hash} (see quickVerify2) — no fabricated data
 
 async function quickVerify(){
   const p=document.getElementById('qPrompt').value, r=document.getElementById('qResponse').value,
@@ -1029,14 +1029,21 @@ async function quickVerify(){
   el.className='fb-res '+(match?'ok':'bad');
   el.textContent=match?'✓ match — intact':'✕ no match — tampered';
 }
-function quickVerify2(){
-  const raw=document.getElementById('q2Hash').value.trim().toLowerCase();
-  const norm=raw.replace(/[^a-f0-9]/g,'');
+async function quickVerify2(){
+  const norm=document.getElementById('q2Hash').value.trim().toLowerCase().replace(/[^a-f0-9]/g,'');
   const el=document.getElementById('quickResult2');
-  if(!raw){el.className='fb-res';el.textContent='';return;}
-  const key=Object.keys(mockLedger).find(k=>k.replace(/[^a-f0-9]/g,'')===norm);
-  if(key){const v=mockLedger[key];el.className='fb-res '+(v==='breach'?'bad':'ok');el.textContent=v==='breach'?'✕ ledger: breach':'✓ ledger: '+v;}
-  else{el.className='fb-res bad';el.textContent='✕ not found';}
+  if(!norm){el.className='fb-res';el.textContent='';return;}
+  el.className='fb-res';el.textContent='checking ledger…';
+  try{
+    const r=await fetch('/v1/verify/hash/'+encodeURIComponent(norm),{credentials:'same-origin'});
+    if(r.status===401){el.className='fb-res bad';el.textContent='sign in to check the ledger';return;}
+    const d=await r.json();
+    if(!d.found){el.className='fb-res bad';el.textContent='✕ not in ledger';return;}
+    if(!d.verified){el.className='fb-res bad';el.textContent='⚠ found but TAMPERED · seq '+d.seq;return;}
+    const bad=d.status==='breach';
+    el.className='fb-res '+(bad?'bad':'ok');
+    el.textContent=(bad?'✕':'✓')+' in ledger · seq '+d.seq+' · '+d.status;
+  }catch(e){el.className='fb-res bad';el.textContent='could not reach the server';}
 }
 async function runVerify(){
   const p=document.getElementById('vPrompt').value, r=document.getElementById('vResponse').value,

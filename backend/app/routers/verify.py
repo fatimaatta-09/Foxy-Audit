@@ -91,3 +91,59 @@ def verify(
 
     return VerifyResponse(ok=True, count=total, first_broken_seq=None,
                           detail="chain intact", last_anchor=anchor)
+
+
+@router.get("/v1/verify/hash/{chain_hash}")
+def verify_hash(
+    chain_hash: str,
+    org: Organization = Depends(resolve_org),
+    db: Session = Depends(get_db),
+):
+    """Look up a SINGLE ledger entry by its chain hash and report whether it belongs
+    to the caller's org, its verdict, and whether that row still recomputes intact.
+    Backs the dashboard "paste any hash to check status" card with real data (there
+    is no per-hash lookup elsewhere; /v1/verify recomputes the whole chain)."""
+    h = (chain_hash or "").strip().lower()
+    row = db.execute(
+        select(AuditLog).where(AuditLog.org_id == org.id, AuditLog.chain_hash == h)
+    ).scalar_one_or_none()
+    if row is None:
+        return {"found": False, "chain_hash": h}
+
+    # Recompute THIS row's hash (needs the predecessor's stored hash) so we can report
+    # verified vs tampered without recomputing the entire chain.
+    prev_hash = GENESIS_HASH
+    if row.seq > 1:
+        prev_hash = db.execute(
+            select(AuditLog.chain_hash)
+            .where(AuditLog.org_id == org.id, AuditLog.seq == row.seq - 1)
+        ).scalar_one_or_none() or GENESIS_HASH
+    expected = compute_chain_hash(
+        org_id=org.id, prompt_hash=row.prompt_hash, response_hash=row.response_hash,
+        token_count=row.token_count, policy_tag=row.policy_tag, seq=row.seq,
+        prev_hash=prev_hash, agent=row.agent,
+    )
+    verified = (expected == row.chain_hash)
+
+    verdict = row.gemini_verdict or {}
+    if not verified:
+        status = "tampered"
+    elif row.grading_status == "graded" and verdict.get("policy_breach"):
+        status = "breach"
+    elif row.grading_status == "graded":
+        status = "safe"
+    elif row.grading_status == "failed":
+        status = "flag"
+    else:
+        status = "pending"
+
+    return {
+        "found": True,
+        "seq": row.seq,
+        "chain_hash": row.chain_hash,
+        "policy_tag": row.policy_tag,
+        "agent": row.agent,
+        "verified": verified,
+        "status": status,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
