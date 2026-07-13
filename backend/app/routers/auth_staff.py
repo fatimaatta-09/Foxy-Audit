@@ -28,8 +28,9 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import StaffUser
 
-# Own limiter (registered on the admin sub-app in main.py) — the customer login
-# has none today; a brute-force guard on the *admin* login especially matters.
+# Own limiter (registered on the admin sub-app in main.py). The customer login is
+# rate-limited too (auth_human: 10/minute); the *admin* login keeps its own guard
+# because a brute-force there matters most.
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
