@@ -740,7 +740,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <!-- ═════════════ POLICY ═════════════ -->
     <div class="page" id="page-policy">
       <div class="pg-head">
-        <div><div class="eyebrow" id="judgeModelLabel">AI Judge</div><div class="h1">Policy ruleset<span class="fox-dot">.</span></div><div class="sub">what the Judge flags or blocks — applies across all tenants</div></div>
+        <div><div class="eyebrow" id="judgeModelLabel">AI Judge</div><div class="h1">Policy ruleset<span class="fox-dot">.</span></div><div class="sub">what the Judge flags or blocks across your workspace</div></div>
         <button class="btn pri sm" onclick="savePolicy()">save ruleset</button>
       </div>
       <div class="g2">
@@ -755,14 +755,15 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div class="flabel" style="margin-top:0;">max tokens per interaction</div>
           <input class="cin" id="polMaxTokens" type="number" min="1" step="1000" value="50000">
           <div class="flabel">enforcement mode</div>
-          <select><option>block on breach — highest protection</option><option>flag only, allow through</option><option>silent monitor (log only)</option></select>
+          <select id="polEnforcement"><option value="block">block on breach — highest protection</option><option value="flag">flag only, allow through</option><option value="monitor">silent monitor (log only)</option></select>
           <div class="flabel">confidence threshold</div>
-          <select><option>high — fewer false positives</option><option selected>balanced (default)</option><option>low — catch every edge case</option></select>
-          <div class="flabel">scope</div>
-          <select><option>all tenants</option><option>production only</option><option>dev only</option></select>
+          <select id="polConfidence"><option value="high">high — fewer false positives</option><option value="balanced">balanced (default)</option><option value="low">low — catch every edge case</option></select>
           <div class="flabel">notification on breach</div>
-          <select><option>immediate alert</option><option>batch — hourly digest</option><option>no notification</option></select>
+          <select id="polNotify"><option value="immediate">immediate alert</option><option value="digest">batch — hourly digest</option><option value="none">no notification</option></select>
         </div>
+      </div>
+      <div class="clay pad" style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.65;">
+        These preferences are saved to your workspace as part of your compliance policy. Foxy Audit stores only a tamper-proof hash and the verdict of each interaction — <b>never the raw prompt or response</b>. See our <a href="https://foxyaudit.tech/privacy.html" style="color:var(--fox2);" target="_blank" rel="noopener">Privacy Policy</a> for how your data is handled.
       </div>
     </div>
 
@@ -1405,12 +1406,17 @@ function runExport(){
       if($('polInjection'))$('polInjection').checked=!!p.prompt_injection;
       if($('polRegulated'))$('polRegulated').checked=!!p.regulated_data_mode;
       if($('polMaxTokens'))$('polMaxTokens').value=p.max_token_threshold;
+      if($('polEnforcement')&&p.enforcement_mode)$('polEnforcement').value=p.enforcement_mode;
+      if($('polConfidence')&&p.confidence_threshold)$('polConfidence').value=p.confidence_threshold;
+      if($('polNotify')&&p.notify_on_breach)$('polNotify').value=p.notify_on_breach;
     }catch(e){}
   };
   window.savePolicy=async function(){
     const mt=parseInt(($('polMaxTokens')||{}).value,10);
     const body={ pii_detection:!!($('polPii')||{}).checked, prompt_injection:!!($('polInjection')||{}).checked,
-      regulated_data_mode:!!($('polRegulated')||{}).checked, max_token_threshold:(mt>0?mt:50000) };
+      regulated_data_mode:!!($('polRegulated')||{}).checked, max_token_threshold:(mt>0?mt:50000),
+      enforcement_mode:($('polEnforcement')||{}).value||'block', confidence_threshold:($('polConfidence')||{}).value||'balanced',
+      notify_on_breach:($('polNotify')||{}).value||'immediate' };
     try{ const r=await api('/v1/policies',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       toast(r.ok?'Policy ruleset saved and propagated':('Save failed — '+await errText(r)));
     }catch(e){ toast('Could not reach the server'); }

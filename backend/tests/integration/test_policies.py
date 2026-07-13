@@ -62,3 +62,36 @@ def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch):
         "pii_detection": False, "prompt_injection": False,
         "regulated_data_mode": True, "max_token_threshold": 777,
     }
+
+
+# ── Judge-sensitivity fields are now REAL persisted policy, not cosmetic (Phase 5) ──
+
+def test_judge_sensitivity_fields_persist(make_org, client, login):
+    org = make_org()
+    p = client.get("/v1/policies", headers=org["auth"]).json()
+    assert p["enforcement_mode"] == "block"           # safe defaults on first read
+    assert p["confidence_threshold"] == "balanced"
+    assert p["notify_on_breach"] == "immediate"
+
+    ca = login(org["admin_email"], org["admin_password"])
+    updated = ca.put("/v1/policies", json={
+        "pii_detection": True, "prompt_injection": True,
+        "regulated_data_mode": False, "max_token_threshold": 50000,
+        "enforcement_mode": "flag", "confidence_threshold": "high",
+        "notify_on_breach": "digest",
+    }).json()
+    assert updated["enforcement_mode"] == "flag"
+    assert updated["confidence_threshold"] == "high"
+    assert updated["notify_on_breach"] == "digest"
+    assert client.get("/v1/policies", headers=org["auth"]).json() == updated   # persisted
+
+
+def test_invalid_judge_sensitivity_value_rejected(make_org, login):
+    org = make_org()
+    ca = login(org["admin_email"], org["admin_password"])
+    r = ca.put("/v1/policies", json={
+        "pii_detection": True, "prompt_injection": True,
+        "regulated_data_mode": False, "max_token_threshold": 50000,
+        "enforcement_mode": "explode",                # not an allowed value
+    })
+    assert r.status_code == 422

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy · Foxy Audit</title>
+<meta name="description" content="How Foxy Audit collects, uses, and protects your data. We store cryptographic hashes and AI-judge verdicts of your interactions — never the raw prompts or responses.">
+<style>
+  :root{ --bg:#17120f; --card:#211a16; --line:#3a2e26; --fox:#ff7a2e; --fox2:#ffb020; --ink:#f4ece6; --muted:#a89a8e; --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  *{box-sizing:border-box;} html{scroll-behavior:smooth;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;font-size:15px;
+    background-image:radial-gradient(circle at 8% 0%,rgba(255,122,46,.06),transparent 42%),radial-gradient(circle at 100% 100%,rgba(255,122,46,.04),transparent 40%);}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 22px 80px;}
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:34px;flex-wrap:wrap;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;letter-spacing:-.01em;}
+  .brand .dot{width:26px;height:26px;border-radius:8px;background:var(--fox);border:2.5px solid #000;box-shadow:4px 4px 0 rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:15px;}
+  .brand span{color:var(--fox);}
+  a{color:var(--fox2);text-decoration:none;} a:hover{text-decoration:underline;}
+  .home{font-size:13px;color:var(--muted);}
+  h1{font-size:34px;line-height:1.1;margin:6px 0 6px;letter-spacing:-.02em;}
+  .updated{color:var(--muted);font-size:12.5px;font-family:var(--mono);margin-bottom:26px;}
+  .card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:22px 24px;box-shadow:8px 8px 0 rgba(0,0,0,.45);margin-bottom:18px;}
+  .lead{font-size:16px;color:var(--ink);}
+  h2{font-size:18px;margin:26px 0 8px;letter-spacing:-.01em;}
+  h2:first-child{margin-top:0;}
+  p{margin:9px 0;color:#e7ddd4;}
+  ul{margin:9px 0;padding-left:20px;} li{margin:6px 0;color:#e7ddd4;}
+  .muted{color:var(--muted);} strong{color:#fff;}
+  .pill{display:inline-block;background:rgba(255,122,46,.14);color:var(--fox2);border:1px solid rgba(255,122,46,.3);border-radius:999px;padding:2px 10px;font-size:11px;font-family:var(--mono);}
+  .foot{margin-top:34px;color:var(--muted);font-size:12.5px;text-align:center;}
+  .foot a{margin:0 8px;}
+  code{font-family:var(--mono);font-size:12.5px;background:#000;padding:1px 6px;border-radius:5px;color:var(--fox2);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><span class="dot">🦊</span>Foxy <span>Audit</span></a>
+    <a class="home" href="/">← Back to home</a>
+  </header>
+
+  <h1>Privacy Policy</h1>
+  <div class="updated">Last updated: 13 July 2026</div>
+
+  <div class="card">
+    <p class="lead">Foxy Audit is a compliance-evidence platform. The single most important thing to know: <strong>we never store the raw content of your AI prompts or responses.</strong> Our audit ledger records only a cryptographic <span class="pill">SHA-256</span> fingerprint of each interaction plus the AI-judge's verdict — enough to prove nothing was tampered with, without ever holding your sensitive text.</p>
+  </div>
+
+  <div class="card">
+    <h2>Who this covers</h2>
+    <p>This policy describes how Foxy Audit ("we", "us") handles information for the customer dashboard at <code>app.foxyaudit.tech</code>, the marketing site at <code>foxyaudit.tech</code>, and the <code>@foxy.audit</code> SDK. It applies to account holders and the visitors of our sites.</p>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li><strong>Account &amp; organization data</strong> — your name, email, organization name, and role. If you sign in with Google, we store your Google account's stable identifier and verified email (never your Google password).</li>
+      <li><strong>API keys</strong> — stored only as a salted <span class="pill">HMAC-SHA256</span> hash; the plaintext key is shown to you once and never retained.</li>
+      <li><strong>Audit records</strong> — for each AI interaction your SDK reports: a SHA-256 hash of the prompt, a SHA-256 hash of the response, token counts, a policy tag, the model/agent name, the AI-judge's verdict, and non-identifying signals about whether personal data patterns were detected. <strong>The raw prompt and response text are hashed on your side and are never transmitted to or stored by us.</strong></li>
+      <li><strong>Usage &amp; billing</strong> — daily counts of logs, tokens, and breaches, plus billing records synced from Stripe.</li>
+      <li><strong>Security telemetry</strong> — request metadata for rate-limiting and abuse prevention. Client IP addresses and user-agent strings are stored only as one-way <strong>hashes</strong>, never in raw form.</li>
+    </ul>
+
+    <h2>What we do NOT collect</h2>
+    <ul>
+      <li>The raw text of your prompts or your AI models' responses.</li>
+      <li>The contents of the data your AI systems process.</li>
+      <li>We do not sell your data, and we do not use it to train models.</li>
+    </ul>
+
+    <h2>How we use it</h2>
+    <ul>
+      <li>To run the service: build and verify your tamper-evident audit chain, grade interactions against your policy, and generate compliance passports.</li>
+      <li>To operate accounts, authentication, billing, and support.</li>
+      <li>To secure the platform (rate-limiting, abuse detection, tenant isolation).</li>
+    </ul>
+
+    <h2>Sub-processors we share data with</h2>
+    <p>We use a small set of trusted providers strictly to deliver the service:</p>
+    <ul>
+      <li><strong>Google (Gemini API)</strong> — grades interaction <em>metadata</em> against your policy. Raw prompts/responses are not sent.</li>
+      <li><strong>Stripe</strong> — payment processing and invoices.</li>
+      <li><strong>Google Identity</strong> — optional "Sign in with Google".</li>
+      <li><strong>Brevo</strong> — transactional email (verification, password resets, alerts).</li>
+      <li><strong>Cloud hosting</strong> — the servers that run the platform.</li>
+    </ul>
+
+    <h2>Data retention</h2>
+    <p>Audit records are retained for as long as your workspace is active so your compliance history stays intact. You can export your records at any time (the Compliance Passport) and delete your workspace, which removes access and schedules your data for deletion. Hashed security telemetry is retained for a limited window (by default 90 days) and then purged.</p>
+
+    <h2>Security</h2>
+    <ul>
+      <li>All traffic is encrypted in transit (TLS).</li>
+      <li>Secrets and API keys are stored only as salted hashes; IPs/user-agents are hashed.</li>
+      <li>Strict per-organization isolation is enforced at the database level (row-level security) as well as in application code.</li>
+      <li>Optional public-chain anchoring lets you prove your ledger's integrity to an external, independent source.</li>
+    </ul>
+
+    <h2>Your rights &amp; controls</h2>
+    <ul>
+      <li><strong>Access &amp; export</strong> — download your records via the Compliance Passport.</li>
+      <li><strong>Deletion</strong> — delete your workspace from the dashboard.</li>
+      <li><strong>Data controls</strong> — your organization's Policy settings let you configure PII handling and enforcement in the dashboard.</li>
+      <li>Depending on your location, you may have additional rights (access, correction, erasure, portability). Contact us to exercise them.</li>
+    </ul>
+
+    <h2>Cookies</h2>
+    <p>We use a single, first-party session cookie to keep you signed in. We do not use third-party advertising or cross-site tracking cookies.</p>
+
+    <h2>Changes</h2>
+    <p>We'll update this page when our practices change and revise the "last updated" date above. Material changes will be communicated to account holders.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about privacy or a data request? Email <a href="mailto:privacy@foxyaudit.tech">privacy@foxyaudit.tech</a>.</p>
+  </div>
+
+  <div class="foot">
+    <a href="/">Home</a> · <a href="/terms.html">Terms of Service</a> · <a href="/privacy.html">Privacy Policy</a><br>
+    © 2026 Foxy Audit. Cryptographic compliance, not a promise.
+  </div>
+</div>
+</body>
+</html>

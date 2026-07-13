@@ -109,6 +109,10 @@ class OrgPolicy(Base):
     prompt_injection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     regulated_data_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     max_token_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=50000)
+    # Judge sensitivity (Phase 5) — persisted policy preferences surfaced on the dashboard.
+    enforcement_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default="block")
+    confidence_threshold: Mapped[str] = mapped_column(String(16), nullable=False, server_default="balanced")
+    notify_on_breach: Mapped[str] = mapped_column(String(16), nullable=False, server_default="immediate")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

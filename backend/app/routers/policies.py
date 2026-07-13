@@ -9,6 +9,8 @@ empty. Gemini grading reads these flags via gemini.evaluate(meta, policy_config)
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -25,6 +27,22 @@ class PolicyConfig(BaseModel):
     prompt_injection: bool = True
     regulated_data_mode: bool = False
     max_token_threshold: int = Field(default=50_000, ge=1, le=10_000_000)
+    # Judge sensitivity (Phase 5) — how strictly the Judge acts + how you're notified.
+    enforcement_mode: Literal["block", "flag", "monitor"] = "block"
+    confidence_threshold: Literal["high", "balanced", "low"] = "balanced"
+    notify_on_breach: Literal["immediate", "digest", "none"] = "immediate"
+
+
+def _to_config(row: OrgPolicy) -> "PolicyConfig":
+    return PolicyConfig(
+        pii_detection=row.pii_detection,
+        prompt_injection=row.prompt_injection,
+        regulated_data_mode=row.regulated_data_mode,
+        max_token_threshold=row.max_token_threshold,
+        enforcement_mode=row.enforcement_mode,
+        confidence_threshold=row.confidence_threshold,
+        notify_on_breach=row.notify_on_breach,
+    )
 
 
 def _get_or_create(org: Organization, db: Session) -> OrgPolicy:
@@ -45,12 +63,7 @@ def get_policies(
 ) -> PolicyConfig:
     """Return the org's current compliance policy settings."""
     row = _get_or_create(org, db)
-    return PolicyConfig(
-        pii_detection=row.pii_detection,
-        prompt_injection=row.prompt_injection,
-        regulated_data_mode=row.regulated_data_mode,
-        max_token_threshold=row.max_token_threshold,
-    )
+    return _to_config(row)
 
 
 @router.put("/v1/policies", response_model=PolicyConfig)
@@ -75,11 +88,9 @@ def update_policies(
     row.prompt_injection = body.prompt_injection
     row.regulated_data_mode = body.regulated_data_mode
     row.max_token_threshold = body.max_token_threshold
+    row.enforcement_mode = body.enforcement_mode
+    row.confidence_threshold = body.confidence_threshold
+    row.notify_on_breach = body.notify_on_breach
     db.commit()
     db.refresh(row)
-    return PolicyConfig(
-        pii_detection=row.pii_detection,
-        prompt_injection=row.prompt_injection,
-        regulated_data_mode=row.regulated_data_mode,
-        max_token_threshold=row.max_token_threshold,
-    )
+    return _to_config(row)
