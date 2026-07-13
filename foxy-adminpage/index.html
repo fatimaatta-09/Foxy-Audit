@@ -804,7 +804,7 @@ const TABLE_COLUMNS = {
     ['key_hash','varchar(64)','UNIQUE · HMAC-SHA256'],['status','varchar(16)',"default 'active'"],
     ['created_at','timestamptz','default now()'],['last_used_at','timestamptz','null'],['revoked_at','timestamptz','null']],
   chain_anchors: [['id','uuid','PK'],['org_id','uuid','FK → organizations.id'],['root_hash','varchar(64)','chain head at anchor time'],
-    ['last_seq','bigint',''],['chain','varchar(32)','sepolia | stub | bitcoin'],['tx_hash','varchar(128)','null'],
+    ['last_seq','bigint',''],['chain','varchar(32)','sepolia | stub'],['tx_hash','varchar(128)','null'],
     ['block_number','bigint','null'],['status','varchar(16)',"default 'pending'"],['detail','varchar(500)','null'],
     ['anchored_at','timestamptz','default now()'],['confirmed_at','timestamptz','null']],
   staff_users: [['id','uuid','PK'],['email','varchar(320)','UNIQUE'],['password_hash','text','bcrypt'],

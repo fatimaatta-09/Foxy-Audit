@@ -204,7 +204,7 @@ class ChainAnchor(Base):
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
     root_hash: Mapped[str] = mapped_column(String(64), nullable=False)   # chain head at anchor time
     last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)    # seq of the head row
-    chain: Mapped[str] = mapped_column(String(32), nullable=False)       # sepolia | stub | bitcoin
+    chain: Mapped[str] = mapped_column(String(32), nullable=False)       # sepolia | stub
     tx_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     block_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(
