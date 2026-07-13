@@ -337,35 +337,35 @@ const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-li
 const SLIDES = [
   {
     ghost: "HASH.", accentHex: "#ff7a2e", accentTx:"var(--ink)",
-    cardTitle: "@foxy.audit()", cardEyebrow: "One decorator",
+    cardTitle: "@foxy.audit()", cardEyebrow: "One decorator", cta: "Get your API key",
     modalDesc: "Wrap any model call — OpenAI, Anthropic, your own fine-tune — with one Python decorator. Every input, output, and verdict is captured and hashed on the way past, with no changes to your architecture.",
     features: ["Works with any LLM provider or self-hosted model","Zero added latency in the request path","Drop-in — no SDK migration required"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L2 12l6 6"/><path d="M16 6l6 6-6 6"/></svg>`
   },
   {
     ghost: "CHAIN.", accentHex: "#ffc83d", accentTx:"var(--warn-tx)",
-    cardTitle: "Hash Chain", cardEyebrow: "Sequential integrity",
+    cardTitle: "Hash Chain", cardEyebrow: "Sequential integrity", cta: "Start a chain free",
     modalDesc: "Each record's hash includes the one directly before it. Edit, delete, or backdate any past entry and the whole chain stops matching — instantly and mathematically, with no manual review needed.",
     features: ["Tamper-evident by construction, not by policy","Break one record, break every one after it","Independently re-computable by any auditor"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--warn-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`
   },
   {
     ghost: "PROVE.", accentHex: "#3ddc84", accentTx:"var(--safe-tx)",
-    cardTitle: "Verify Chain", cardEyebrow: "One click, live",
+    cardTitle: "Verify Chain", cardEyebrow: "One click, live", cta: "Verify your first chain",
     modalDesc: "Your buyer doesn't need to trust your word or read a single log line. They paste in the chain, hit verify, and get a pass or fail — checkable by anyone, in seconds.",
     features: ["Public verification endpoint, no login needed","Runs the same math your system used to build it","Shareable link for procurement and audit teams"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--safe-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>`
   },
   {
     ghost: "PASSPORT.", accentHex: "#8a3611", accentTx:"var(--ink)",
-    cardTitle: "Compliance Passport", cardEyebrow: "Export & share",
+    cardTitle: "Compliance Passport", cardEyebrow: "Export & share", cta: "Export your first passport",
     modalDesc: "Turn months of AI activity into a single exportable document mapped to NIST AI RMF and EU AI Act clauses — the artifact your legal and procurement teams actually want to see.",
     features: ["One-click PDF export for audits and RFPs","Maps directly to NIST AI RMF & EU AI Act","Always reflects your live, current chain"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg>`
   },
   {
     ghost: "GUARD.", accentHex: "#c9b7ff", accentTx:"var(--guard-tx)",
-    cardTitle: "Active-Defense Judge", cardEyebrow: "Gemini 2.5 Flash",
+    cardTitle: "Active-Defense Judge", cardEyebrow: "Gemini 2.5 Flash", cta: "Turn on the judge",
     modalDesc: "A second AI model watches every call in real time, scoring it against your policy before it's chained. Risky outputs get flagged and logged the moment they happen, not weeks later in a review.",
     features: ["Real-time policy scoring on every call","Configurable rules — no code changes to update policy","Flags feed straight into the audit ledger"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--guard-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
@@ -533,8 +533,9 @@ function openModal(i){
     <p class="modal-desc">${s.modalDesc}</p>
     <ul class="modal-features">${featuresHtml}</ul>
     ${extra}
-    <a class="modal-cta" href="#pricing">
-      ${s.isPricing ? 'Choose a plan' : 'See pricing'}
+    ${s.isPricing
+      ? `<a class="modal-cta" href="#pricing" onclick="setTimeout(closeModal,50)">Choose a plan`
+      : `<a class="modal-cta" href="#" onclick="closeModal();openLeadModal('signup-free','${s.cta||'Start free'}');return false;">${s.cta||'Start free'}`}
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
     </a>`;
 
