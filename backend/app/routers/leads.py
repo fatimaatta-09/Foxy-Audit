@@ -77,7 +77,15 @@ def create_lead(payload: LeadRequest, request: Request, db: Session = Depends(ge
         existing.company = payload.company or existing.company
         existing.source = payload.source or existing.source
         existing.subject = payload.subject or existing.subject
-        existing.message = payload.message or existing.message
+        if payload.message and payload.message.strip():
+            new_msg = payload.message.strip()
+            if existing.message and new_msg not in existing.message:
+                # Preserve prior messages (e.g. multiple support notes) instead of
+                # overwriting — append with a label, keep the most recent ~16k chars.
+                label = payload.subject or existing.source or "message"
+                existing.message = (existing.message.rstrip() + f"\n\n--- {label} ---\n" + new_msg)[-16000:]
+            elif not existing.message:
+                existing.message = new_msg
         existing.utm_campaign = payload.utm_campaign or existing.utm_campaign
         existing.utm_source = payload.utm_source or existing.utm_source
         existing.utm_medium = payload.utm_medium or existing.utm_medium
