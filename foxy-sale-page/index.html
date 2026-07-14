@@ -46,8 +46,9 @@
     --mono: 'Space Mono', monospace;
   }
   *{box-sizing:border-box;}
-  html{scroll-behavior:smooth;}
+  html{scroll-behavior:smooth;scrollbar-width:none;-ms-overflow-style:none;}   /* hide the default scrollbar (page still scrolls) */
   html,body{margin:0;padding:0;background:var(--bg);}
+  html::-webkit-scrollbar, body::-webkit-scrollbar{display:none;width:0;height:0;}
   body{font-family:var(--mono);color:var(--ink);}
   ::selection{background:var(--fox);color:var(--bg);}
   a{color:inherit;}
@@ -140,7 +141,7 @@
   #foxTrailPath{fill:none;stroke:var(--fox);stroke-width:3;stroke-linecap:round;stroke-dasharray:0.5 12;opacity:.5;}
   .fox-mascot{position:absolute;top:0;left:0;z-index:6;width:96px;height:104px;pointer-events:none;transform-origin:50% 72%;
     background-image:url('/fox-sprite.png');background-repeat:no-repeat;background-size:768px 624px;
-    filter:drop-shadow(0 9px 12px rgba(0,0,0,.5));transition:left .5s cubic-bezier(.4,0,.2,1), top .5s cubic-bezier(.4,0,.2,1);will-change:left,top,transform;}
+    filter:drop-shadow(0 9px 12px rgba(0,0,0,.5));transition:left .12s linear, top .12s linear;will-change:left,top,transform;}
   .fox-mascot.fox-hidden{display:none;}
   @media (max-width:1024px){ #foxTrail, .fox-mascot{display:none;} }   /* no clear gutter beside content */
   @media (prefers-reduced-motion: reduce){ .fox-mascot{transition:none;} }
@@ -936,7 +937,7 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
     fox.style.backgroundPosition = (-col * CW) + 'px ' + (-row * CH) + 'px';
   }
 
-  let ticking = false, scrollTimer = null, hidden = true, scrolling = false, spots = [];
+  let ticking = false, scrollTimer = null, hidden = true, scrolling = false, samples = [];
   function buildPath(){
     const H = document.documentElement.scrollHeight, W = document.documentElement.clientWidth;
     if (W < 1024){ hidden = true; fox.classList.add('fox-hidden'); svg.style.display = 'none'; return; }
@@ -956,7 +957,6 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
     if (btn){ const b = btn.getBoundingClientRect(); p.push({ x: b.left + b.width / 2 + window.scrollX, y: b.top + b.height / 2 + window.scrollY }); }
     else p.push({ x: W / 2, y: H - 120 });
     for (let i = 1; i < p.length; i++){ if (p[i].y <= p[i - 1].y) p[i].y = p[i - 1].y + 10; }   // keep Y strictly increasing
-    spots = p;
     // trail: mostly-straight legs with only a light hand-drawn wobble
     const fract = v => v - Math.floor(v);
     const noise = i => fract(Math.sin(i * 12.9898) * 43758.5453) * 2 - 1;
@@ -973,21 +973,32 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
     svg.setAttribute('width', W); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     path.setAttribute('d', d);
+    const total = path.getTotalLength(); samples = [];
+    for (let i = 0; i <= 300; i++){ const pt = path.getPointAtLength(i / 300 * total); samples.push({ x: pt.x, y: pt.y }); }
   }
   function place(){
     ticking = false;
-    if (hidden || spots.length < 2) return;
-    // snap to the actual spot nearest the current view (document positions, resolution-independent)
-    const focus = window.scrollY + window.innerHeight * 0.5;
-    let ti = 0;
-    for (let i = 0; i < spots.length; i++){ if (spots[i].y <= focus) ti = i; else break; }
-    if (window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 3) ti = spots.length - 1;   // always land on the button at the very bottom
-    const cur = spots[ti], prev = spots[Math.max(0, ti - 1)];
-    fox.style.left = (cur.x - CW / 2) + 'px';
-    fox.style.top = (cur.y - CH * 0.82) + 'px';                     // CSS transition glides the fox spot-to-spot
-    const dx = cur.x - prev.x, dy = Math.max(0, cur.y - prev.y);
-    if (dx < -1) lastS = -1; else if (dx > 1) lastS = 1;
-    const tilt = scrolling ? Math.min(24, Math.atan2(dy, Math.abs(dx) + 40) * 180 / Math.PI) : 0;
+    if (hidden || samples.length < 2) return;
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    let x, y, sa;
+    if (window.scrollY >= maxScroll - 3){                            // at the very bottom: sit on the button (last point), any resolution
+      const last = samples[samples.length - 1]; x = last.x; y = last.y; sa = last;
+    } else {
+      const targetY = window.scrollY + window.innerHeight * 0.5;     // fox moves continuously along the trail with the scroll
+      let lo = 0, hi = samples.length - 1;
+      if (targetY <= samples[0].y) hi = 0;
+      else if (targetY >= samples[hi].y) lo = hi;
+      else while (lo < hi - 1){ const mid = (lo + hi) >> 1; if (samples[mid].y < targetY) lo = mid; else hi = mid; }
+      const s0 = samples[lo], s1 = samples[Math.min(samples.length - 1, lo + 1)];
+      const fr = Math.min(1, Math.max(0, (targetY - s0.y) / ((s1.y - s0.y) || 1)));
+      x = s0.x + (s1.x - s0.x) * fr; y = s0.y + (s1.y - s0.y) * fr;
+      sa = samples[Math.min(samples.length - 1, lo + 4)];
+    }
+    fox.style.left = (x - CW / 2) + 'px';
+    fox.style.top = (y - CH * 0.82) + 'px';
+    const dx = sa.x - x, dy = Math.max(0, sa.y - y);
+    if (dx < -0.5) lastS = -1; else if (dx > 0.5) lastS = 1;
+    const tilt = scrolling ? Math.min(26, Math.atan2(dy, Math.abs(dx) + 30) * 180 / Math.PI) : 0;
     fox.style.transform = 'rotate(' + tilt.toFixed(1) + 'deg) scaleX(' + lastS + ')';
     action = scrolling ? ROW_WALK : ROW_STAND;
   }
