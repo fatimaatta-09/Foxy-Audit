@@ -137,10 +137,9 @@
   .card-fox-topper{display:none !important;}   /* 8 static toppers replaced by the single traveling fox */
   #foxTrail{position:absolute;top:0;left:0;z-index:2;pointer-events:none;overflow:visible;}
   #foxTrailPath{fill:none;stroke:var(--fox);stroke-width:3;stroke-linecap:round;stroke-dasharray:0.5 12;opacity:.5;}
-  .fox-mascot{position:absolute;top:0;left:0;z-index:6;width:96px;height:104px;pointer-events:none;
-    background-image:url('/fox-sprite.png');background-repeat:no-repeat;background-size:768px 3744px;
-    filter:drop-shadow(0 9px 12px rgba(0,0,0,.5));transition:left .3s cubic-bezier(.22,1,.36,1), top .3s cubic-bezier(.22,1,.36,1);will-change:left,top;}
-  .fox-mascot.face-left{transform:scaleX(-1);}
+  .fox-mascot{position:absolute;top:0;left:0;z-index:6;width:96px;height:104px;pointer-events:none;transform-origin:50% 72%;
+    background-image:url('/fox-sprite.png');background-repeat:no-repeat;background-size:768px 624px;
+    filter:drop-shadow(0 9px 12px rgba(0,0,0,.5));transition:left .3s cubic-bezier(.22,1,.36,1), top .3s cubic-bezier(.22,1,.36,1);will-change:left,top,transform;}
   .fox-mascot.fox-hidden{display:none;}
   @media (max-width:1024px){ #foxTrail, .fox-mascot{display:none;} }   /* no clear gutter beside content */
   @media (prefers-reduced-motion: reduce){ .fox-mascot{transition:none;} }
@@ -929,8 +928,8 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
 
   // Sprite geometry: ultimate_fox_spritesheet, 192x208 cells x 8 cols, drawn at 0.5x.
   const CW = 96, CH = 104, COLS = 8, FRAMES = 24;
-  const ROW_WALK = 18, ROW_STAND = 30;         // row offsets into the sheet (action_index * 3)
-  let action = ROW_STAND, frame = 0, lastFrameT = 0;
+  const ROW_WALK = 0, ROW_STAND = 3;           // cropped sheet: walk rows 0-2, stand rows 3-5
+  let action = ROW_STAND, frame = 0, lastFrameT = 0, lastS = 1;
   function drawFrame(){
     const f = frame % FRAMES, col = f % COLS, row = action + Math.floor(f / COLS);
     fox.style.backgroundPosition = (-col * CW) + 'px ' + (-row * CH) + 'px';
@@ -971,13 +970,16 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
     const ahead = path.getPointAtLength(Math.min(len, p * len + 6));
     fox.style.left = (at.x - CW / 2) + 'px';
     fox.style.top = (at.y - CH * 0.82) + 'px';           // feet ~ on the line
-    fox.classList.toggle('face-left', ahead.x < at.x - 0.4);
+    const dx = ahead.x - at.x, dy = Math.max(0, ahead.y - at.y);
+    lastS = dx < -0.4 ? -1 : 1;                          // face the drift direction
+    const tilt = Math.min(34, Math.atan2(dy, Math.abs(dx) + 26) * 180 / Math.PI);
+    fox.style.transform = 'rotate(' + tilt.toFixed(1) + 'deg) scaleX(' + lastS + ')';   // lean into the descent
   }
   function onScroll(){
     if (!ticking){ ticking = true; requestAnimationFrame(place); }
     action = ROW_WALK;                                   // walk while scrolling
     clearTimeout(moveTimer);
-    moveTimer = setTimeout(() => { action = ROW_STAND; frame = 0; drawFrame(); }, 200);
+    moveTimer = setTimeout(() => { action = ROW_STAND; frame = 0; drawFrame(); fox.style.transform = 'scaleX(' + lastS + ')'; }, 200);
   }
   function tick(t){
     if (action === ROW_WALK && t - lastFrameT > 70){ lastFrameT = t; frame++; drawFrame(); }
