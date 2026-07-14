@@ -966,7 +966,7 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
     addSpots('#team');
     addSpots('#support');
     const btn = document.querySelector('[data-lead="cta-hero"]');
-    if (btn){ const b = btn.getBoundingClientRect(); p.push({ x: b.left + b.width / 2 + window.scrollX, y: b.top + b.height / 2 + window.scrollY }); }
+    if (btn){ const b = btn.getBoundingClientRect(); p.push({ x: b.left - 60 + window.scrollX, y: b.top + b.height / 2 + 33 + window.scrollY }); }   // rest to the LEFT of the button, at its mid-height
     else p.push({ x: W / 2, y: H - 120 });
     for (let i = 1; i < p.length; i++){ if (p[i].y <= p[i - 1].y) p[i].y = p[i - 1].y + 10; }   // keep Y strictly increasing
     spots = p;
