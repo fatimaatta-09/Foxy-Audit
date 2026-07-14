@@ -936,60 +936,70 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
     fox.style.backgroundPosition = (-col * CW) + 'px ' + (-row * CH) + 'px';
   }
 
-  let len = 0, ticking = false, moveTimer = null, hidden = true;
+  let ticking = false, scrollTimer = null, hidden = true, scrolling = false, samples = [];
   function buildPath(){
     const H = document.documentElement.scrollHeight, W = document.documentElement.clientWidth;
     if (W < 1024){ hidden = true; fox.classList.add('fox-hidden'); svg.style.display = 'none'; return; }
     hidden = false; fox.classList.remove('fox-hidden'); svg.style.display = '';
-    // waypoints: blue start (low-left of hero) -> the 8 original fox spots -> "Get started free" button
-    const pts = [{ x: Math.max(40, W * 0.04), y: window.innerHeight * 0.82 }];
-    document.querySelectorAll('.card-fox-topper').forEach(t => {
+    // spots the fox sits on, top to bottom: blue start -> How(3) -> above pricing button -> Team(2) -> Support(3) -> Get started
+    const p = [{ x: Math.max(40, W * 0.04), y: window.innerHeight * 0.82 }];
+    const addSpots = sel => document.querySelectorAll(sel + ' .card-fox-topper').forEach((t, k) => {
       const c = t.parentElement && t.parentElement.getBoundingClientRect();
-      if (c) pts.push({ x: c.left + c.width / 2 + window.scrollX, y: c.top + window.scrollY - 24 });
+      if (c) p.push({ x: c.left + c.width / 2 + window.scrollX, y: c.top + window.scrollY - 20 + k * 44 });   // spread same-row spots down so the fox walks across them
     });
+    addSpots('#how');
+    const gc = document.querySelector('[data-lead="signup-companion"]');
+    if (gc){ const r = gc.getBoundingClientRect(); p.push({ x: r.left + r.width / 2 + window.scrollX, y: r.top + window.scrollY - 28 }); }   // above the pricing button
+    addSpots('#team');
+    addSpots('#support');
     const btn = document.querySelector('[data-lead="cta-hero"]');
-    if (btn){ const b = btn.getBoundingClientRect(); pts.push({ x: b.left + b.width / 2 + window.scrollX, y: b.top + b.height / 2 + window.scrollY }); }
-    else pts.push({ x: W / 2, y: H - 120 });
-    // hand-drawn (deliberately un-smooth) line: short straight segments + a little deterministic wobble
+    if (btn){ const b = btn.getBoundingClientRect(); p.push({ x: b.left + b.width / 2 + window.scrollX, y: b.top + b.height / 2 + window.scrollY }); }
+    else p.push({ x: W / 2, y: H - 120 });
+    for (let i = 1; i < p.length; i++){ if (p[i].y <= p[i - 1].y) p[i].y = p[i - 1].y + 10; }   // keep Y strictly increasing
+    // trail: mostly-straight legs with only a light hand-drawn wobble
     const fract = v => v - Math.floor(v);
-    const noise = i => fract(Math.sin(i * 12.9898) * 43758.5453) * 2 - 1;   // stable pseudo-random -1..1
-    let d = '', idx = 1;
-    for (let s = 0; s < pts.length - 1; s++){
-      const a = pts[s], b = pts[s + 1];
-      const dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy) || 1;
-      const segs = Math.max(2, Math.round(dist / 52));
-      const nx = -dy / dist, ny = dx / dist;               // perpendicular unit
-      for (let k = (s === 0 ? 0 : 1); k <= segs; k++){
-        const t = k / segs;
-        let x = a.x + dx * t, y = a.y + dy * t;
-        if (k > 0 && k < segs){ const j = noise(idx++) * 13; x += nx * j; y += ny * j; }   // jitter mid-segment
-        d += (s === 0 && k === 0 ? 'M ' : ' L ') + x.toFixed(1) + ' ' + y.toFixed(1);
+    const noise = i => fract(Math.sin(i * 12.9898) * 43758.5453) * 2 - 1;
+    let d = 'M ' + p[0].x.toFixed(1) + ' ' + p[0].y.toFixed(1), idx = 1;
+    for (let s = 0; s < p.length - 1; s++){
+      const a = p[s], b = p[s + 1], dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy) || 1;
+      const segs = Math.max(1, Math.round(dist / 86)), nx = -dy / dist, ny = dx / dist;
+      for (let k = 1; k <= segs; k++){
+        const t = k / segs; let x = a.x + dx * t, y = a.y + dy * t;
+        if (k < segs){ const j = noise(idx++) * 5; x += nx * j; y += ny * j; }
+        d += ' L ' + x.toFixed(1) + ' ' + y.toFixed(1);
       }
     }
     svg.setAttribute('width', W); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     path.setAttribute('d', d);
-    len = path.getTotalLength();
+    const total = path.getTotalLength(); samples = [];
+    for (let i = 0; i <= 260; i++){ const pt = path.getPointAtLength(i / 260 * total); samples.push({ x: pt.x, y: pt.y }); }
   }
   function place(){
     ticking = false;
-    if (hidden || !len) return;
-    const scrollable = (document.documentElement.scrollHeight - window.innerHeight) || 1;
-    const p = Math.min(1, Math.max(0, window.scrollY / scrollable));
-    const at = path.getPointAtLength(p * len);
-    const ahead = path.getPointAtLength(Math.min(len, p * len + 6));
-    fox.style.left = (at.x - CW / 2) + 'px';
-    fox.style.top = (at.y - CH * 0.82) + 'px';           // feet ~ on the line
-    const dx = ahead.x - at.x, dy = Math.max(0, ahead.y - at.y);
-    lastS = dx < -0.4 ? -1 : 1;                          // face the drift direction
-    const tilt = Math.min(34, Math.atan2(dy, Math.abs(dx) + 26) * 180 / Math.PI);
-    fox.style.transform = 'rotate(' + tilt.toFixed(1) + 'deg) scaleX(' + lastS + ')';   // lean into the descent
+    if (hidden || samples.length < 2) return;
+    const targetY = window.scrollY + window.innerHeight * 0.46;   // fox tracks the scroll (stays near mid-viewport)
+    let lo = 0, hi = samples.length - 1;
+    if (targetY <= samples[0].y) hi = 0;
+    else if (targetY >= samples[hi].y) lo = hi;
+    else while (lo < hi - 1){ const mid = (lo + hi) >> 1; if (samples[mid].y < targetY) lo = mid; else hi = mid; }
+    const s0 = samples[lo], s1 = samples[Math.min(samples.length - 1, lo + 1)];
+    const fr = Math.min(1, Math.max(0, (targetY - s0.y) / ((s1.y - s0.y) || 1)));
+    const x = s0.x + (s1.x - s0.x) * fr, y = s0.y + (s1.y - s0.y) * fr;
+    fox.style.left = (x - CW / 2) + 'px';
+    fox.style.top = (y - CH * 0.82) + 'px';
+    const sa = samples[Math.min(samples.length - 1, lo + 4)];
+    const dx = sa.x - x, dy = Math.max(0, sa.y - y);
+    lastS = dx < -0.4 ? -1 : 1;
+    action = scrolling ? ROW_WALK : ROW_STAND;
+    const tilt = scrolling ? Math.min(28, Math.atan2(dy, Math.abs(dx) + 30) * 180 / Math.PI) : 0;
+    fox.style.transform = 'rotate(' + tilt.toFixed(1) + 'deg) scaleX(' + lastS + ')';
   }
   function onScroll(){
+    scrolling = true;
     if (!ticking){ ticking = true; requestAnimationFrame(place); }
-    action = ROW_WALK;                                   // walk while scrolling
-    clearTimeout(moveTimer);
-    moveTimer = setTimeout(() => { action = ROW_STAND; frame = 0; drawFrame(); fox.style.transform = 'scaleX(' + lastS + ')'; }, 200);
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => { scrolling = false; action = ROW_STAND; frame = 0; drawFrame(); requestAnimationFrame(place); }, 150);
   }
   function tick(t){
     if (action === ROW_WALK && t - lastFrameT > 70){ lastFrameT = t; frame++; drawFrame(); }
