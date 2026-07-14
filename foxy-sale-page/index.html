@@ -133,16 +133,19 @@
   @media (prefers-reduced-motion: reduce){ .card, .ghost, .stage{transition-duration:1ms !important;} }
 
   /* ---------------- FOX MASCOT (real product photography, embedded — no external files) ---------------- */
-  .fox-mascot{position:absolute;left:22px;bottom:110px;z-index:55;width:140px;pointer-events:none;
-    animation:foxBob 3s ease-in-out infinite;filter:drop-shadow(0 14px 18px rgba(0,0,0,.45));}
-  .fox-mascot img{width:100%;height:auto;display:block;transition:opacity 260ms ease, transform 380ms cubic-bezier(.34,1.56,.64,1);}
+  /* Scroll companion: position (top/left) is driven by scrollFox(); it descends the
+     viewport and weaves as you scroll. foxBob (transform) + pose scaleX are unaffected. */
+  .fox-mascot{position:fixed;left:22px;top:16vh;z-index:100;width:118px;pointer-events:none;
+    animation:foxBob 3s ease-in-out infinite;filter:drop-shadow(0 16px 20px rgba(0,0,0,.55));
+    transition:top .45s cubic-bezier(.22,1,.36,1), left .55s cubic-bezier(.22,1,.36,1);will-change:top,left;}
+  .fox-mascot img{width:100%;height:auto;display:block;transition:transform 420ms cubic-bezier(.34,1.56,.64,1);}
   .fox-mascot.pose-left img{transform:scaleX(-1);}
   .fox-mascot.pose-right img,
   .fox-mascot.pose-idle img,
   .fox-mascot.pose-thinking img{transform:scaleX(1);}
-  @keyframes foxBob{ 0%,100%{transform:translateY(0);} 50%{transform:translateY(-7px);} }
-  @media (max-width:640px){ .fox-mascot{width:92px;left:12px;bottom:96px;} }
-  @media (prefers-reduced-motion: reduce){ .fox-mascot{animation-duration:1ms;} }
+  @keyframes foxBob{ 0%,100%{transform:translateY(0);} 50%{transform:translateY(-8px);} }
+  @media (max-width:640px){ .fox-mascot{width:74px;} }
+  @media (prefers-reduced-motion: reduce){ .fox-mascot{animation-duration:1ms;transition:none;} }
 
   /* ---------------- MODAL (card detail) ---------------- */
   .modal-backdrop{position:fixed;inset:0;background:rgba(6,5,4,.7);backdrop-filter:blur(6px);
@@ -771,7 +774,7 @@ function render(){
   stageEl.style.background = `radial-gradient(closest-side, ${accent.startsWith('var')?'#8a361140':accent+'28'}, transparent 72%), var(--bg)`;
   [...dotsEl.children].forEach((d,i)=> d.classList.toggle('active', i===active));
   layout();
-  if (typeof updateFoxPose === 'function') updateFoxPose();
+  /* fox mascot is now scroll-driven (see scrollFox) — no longer carousel-coupled */
 }
 
 function goTo(i){
@@ -920,6 +923,32 @@ document.querySelectorAll('#faqWrap .faq-item').forEach(item => {
 buildCards();
 render();
 setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) next(); }, 5600);
+
+/* ---------------- scroll companion: the fox travels down the page as you scroll ---------------- */
+(function scrollFox(){
+  const fox = document.getElementById('foxMascot');
+  if (!fox) return;
+  setFoxPose('right');                      // give it an image immediately
+  let ticking = false;
+  function update(){
+    ticking = false;
+    const vh = window.innerHeight, vw = window.innerWidth;
+    const scrollable = (document.documentElement.scrollHeight - vh) || 1;
+    const p = Math.min(1, Math.max(0, window.scrollY / scrollable));   // 0 (top) .. 1 (bottom)
+    const swings = 3.2;
+    const fw = fox.offsetWidth || 118;
+    const amp = Math.max(20, (vw - fw) / 2 - vw * 0.07);               // horizontal reach
+    const weave = -Math.cos(p * Math.PI * swings);                     // start left, weave across
+    fox.style.top = (14 + p * 64) + 'vh';                             // descend 14vh -> 78vh
+    fox.style.left = ((vw - fw) / 2 + weave * amp) + 'px';
+    const dir = Math.sin(p * Math.PI * swings);                        // direction of travel
+    setFoxPose(dir >= 0 ? 'right' : 'left');
+  }
+  const onScroll = () => { if (!ticking){ ticking = true; requestAnimationFrame(update); } };
+  window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('resize', onScroll, {passive:true});
+  update();
+})();
 
 /* ── Foxy Audit backend: pageview + signup/checkout + lead & support capture ── */
 const FOXY_API = window.FOXY_API ||
