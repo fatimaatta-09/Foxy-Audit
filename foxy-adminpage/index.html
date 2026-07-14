@@ -159,6 +159,13 @@ body{
   transform:translateX(2px) rotate(-2deg);
 }
 .dock-item:hover:not(.active){background:var(--surf2);color:var(--ink)}
+.dock-badge{position:absolute;top:2px;right:5px;min-width:17px;height:17px;padding:0 3px;border-radius:9px;background:#ff3b30;color:#fff;font-family:var(--mono);font-size:9.5px;font-weight:700;line-height:17px;text-align:center;border:2px solid #000;}
+.dock-mark{position:relative;}
+.dock-mark .dock-badge{top:-5px;right:-5px;}
+.inbox-row{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:9px 9px;cursor:pointer;color:var(--ink);font-family:var(--disp);border-radius:8px;}
+.inbox-row:hover{background:var(--surf2);}
+.inbox-row.on{background:var(--fox);color:#000;}
+.inbox-row.on .sub,.inbox-row.on .mono{color:#000 !important;opacity:.75;}
 .dock-foot{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px}
 .dock-user{
   width:48px;height:48px;border-radius:14px;background:var(--surf3);
@@ -419,7 +426,7 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
 <div class="app" id="app" style="visibility:hidden;">
   <!-- ═══ dock ═══ -->
   <nav class="dock">
-    <div class="dock-mark">🦊</div>
+    <div class="dock-mark">🦊<span class="dock-badge" id="logoBadge" style="display:none;"></span></div>
     <div class="dock-ops">INTERNAL</div>
 
     <button class="dock-item active" data-page="overview" onclick="go('overview',this)">
@@ -441,6 +448,11 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
     <button class="dock-item" data-page="data" onclick="go('data',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h7l2 2h7v12a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 12h8M8 16h5"/></svg>
       <span>DATA</span>
+    </button>
+    <button class="dock-item" data-page="inbox" onclick="go('inbox',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+      <span>INBOX</span>
+      <span class="dock-badge" id="inboxBadge" style="display:none;">0</span>
     </button>
     <button class="dock-item" data-page="settings" onclick="go('settings',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.6a7.9 7.9 0 000-3.2l2-1.6-2-3.4-2.4 1a8 8 0 00-2.8-1.6L14 2.5h-4l-.2 2.3a8 8 0 00-2.8 1.6l-2.4-1-2 3.4 2 1.6a7.9 7.9 0 000 3.2l-2 1.6 2 3.4 2.4-1a8 8 0 002.8 1.6l.2 2.3h4l.2-2.3a8 8 0 002.8-1.6l2.4 1 2-3.4z"/></svg>
@@ -677,6 +689,22 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
         </div>
       </div>
     </div>
+
+    <!-- ──────────────── INBOX ──────────────── -->
+    <section class="page" id="page-inbox">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">support · from the sales site</div>
+          <h1>Inbox</h1>
+          <div class="sub">Contact &amp; support messages. Claiming or replying <b>locks</b> a message to you — others can read but not reply.</div>
+        </div>
+        <button class="btn" onclick="loadInbox()">↻ Refresh</button>
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start;">
+        <div class="clay" style="padding:6px;max-height:72vh;overflow:auto;"><div id="inboxList"><div class="sub" style="padding:16px;">Loading…</div></div></div>
+        <div class="clay pad" id="inboxDetail" style="min-height:320px;"><div class="sub" style="text-align:center;padding:60px 0;">Select a message to read &amp; reply.</div></div>
+      </div>
+    </section>
 
     <!-- ──────────────── SETTINGS ──────────────── -->
     <section class="page" id="page-settings">
@@ -994,9 +1022,75 @@ function go(page,el){
   $('page-'+page).classList.add('active');
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   if(el)el.classList.add('active');
-  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData})[page]();
+  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox})[page]();
   window.scrollTo({top:0,behavior:'smooth'});
 }
+
+/* ──────────── support inbox ──────────── */
+let INBOX=[], INBOX_OPEN=null;
+async function loadInbox(){
+  let r;try{r=await api('/admin/v1/inbox')}catch(e){r=null}
+  if(!r||!r.ok){$('inboxList').innerHTML='<div class="sub" style="padding:16px;">Failed to load.</div>';return;}
+  const d=await r.json(); INBOX=d.items||[]; updateInboxBadge(d.unread);
+  renderInboxList();
+  if(INBOX_OPEN){const it=INBOX.find(x=>x.id===INBOX_OPEN); it?renderInboxDetail(it):($('inboxDetail').innerHTML='<div class="sub" style="text-align:center;padding:60px 0;">Select a message to read &amp; reply.</div>');}
+}
+function renderInboxList(){
+  if(!INBOX.length){$('inboxList').innerHTML='<div class="sub" style="padding:16px;">No messages yet.</div>';return;}
+  $('inboxList').innerHTML=INBOX.map(it=>{
+    const lock=it.claimed_by?`<span style="color:var(--fox);font-weight:700;">● ${esc(it.claimed_by.split('@')[0])}</span>`:'';
+    const done=it.replied_at?'<span style="color:#2ea043;font-weight:700;">✓ replied</span>':'';
+    const dot=it.read?'':'<span style="color:#ff3b30;">● </span>';
+    return `<button class="inbox-row${it.id===INBOX_OPEN?' on':''}" onclick="openMessage('${it.id}')">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+        <span style="font-weight:${it.read?600:800};font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${dot}${esc(it.email)}</span>
+        <span class="sub mono" style="font-size:9px;white-space:nowrap;">${fmtTime(it.created_at)}</span>
+      </div>
+      <div class="sub" style="font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc((it.message||'').slice(0,72))}</div>
+      <div style="margin-top:3px;font-size:10px;display:flex;gap:10px;">${done}${lock}</div>
+    </button>`;}).join('');
+}
+async function openMessage(id){
+  INBOX_OPEN=id; const it=INBOX.find(x=>x.id===id); if(!it)return;
+  if(!it.read){try{await api('/admin/v1/inbox/'+id+'/read',{method:'POST'})}catch(e){} it.read=true; updateInboxBadge(INBOX.filter(x=>!x.read).length);}
+  renderInboxList(); renderInboxDetail(it);
+}
+function renderInboxDetail(it){
+  const other=it.claimed_by_id&&ME&&it.claimed_by_id!==ME.id;
+  const mine=it.claimed_by_id&&ME&&it.claimed_by_id===ME.id;
+  const prior=it.reply?`<div style="margin-top:16px;padding:12px 14px;border-left:3px solid var(--fox);background:var(--surf2);border-radius:6px;"><div class="eyebrow" style="margin:0 0 4px;">replied · ${fmtTime(it.replied_at)}</div><div style="font-size:13px;white-space:pre-wrap;">${esc(it.reply)}</div></div>`:'';
+  let foot='';
+  if(other){
+    foot=`<div style="margin-top:16px;background:var(--surf2);border:2px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--muted);font-size:12px;">🔒 Locked by <b>${esc(it.claimed_by)}</b> — read-only.${ME&&ME.platform_role==='superadmin'?` <a href="#" onclick="releaseMsg('${it.id}');return false;" style="color:var(--fox);">force release</a>`:''}</div>`;
+  }else{
+    const claim=it.claimed_by_id?'':`<a href="#" onclick="claimMsg('${it.id}');return false;" class="sub" style="font-size:11px;color:var(--fox);">claim (lock to me)</a>`;
+    const rel=mine?`<a href="#" onclick="releaseMsg('${it.id}');return false;" class="sub" style="font-size:10px;">release lock</a>`:'';
+    foot=`<textarea id="replyBox" class="cin" placeholder="Write a reply — this emails ${esc(it.email)}…" style="width:100%;min-height:110px;margin-top:16px;resize:vertical;"></textarea>
+      <div style="display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn pri" onclick="sendReply('${it.id}')">Send reply</button>
+        ${claim}${rel}
+        <span id="replyMsg" class="sub" style="font-size:11px;"></span>
+      </div>`;
+  }
+  $('inboxDetail').innerHTML=`
+    <div class="eyebrow" style="margin:0;">${esc(it.source||'message')} · ${fmtTime(it.created_at)}</div>
+    <h2 style="margin:5px 0 3px;font-size:18px;">${esc(it.subject||'(no subject)')}</h2>
+    <div class="sub mono" style="font-size:11px;">from <a href="mailto:${esc(it.email)}" style="color:var(--fox);">${esc(it.email)}</a>${it.company?' · '+esc(it.company):''}</div>
+    <div style="margin-top:16px;font-size:14px;line-height:1.65;white-space:pre-wrap;">${esc(it.message||'')}</div>
+    ${prior}${foot}`;
+}
+async function sendReply(id){
+  const box=$('replyBox'); if(!box)return; const msg=(box.value||'').trim(); const st=$('replyMsg');
+  if(!msg){st.textContent='Write something first.';return;}
+  st.textContent='Sending…';
+  let r;try{r=await api('/admin/v1/inbox/'+id+'/reply',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:msg})})}catch(e){r=null}
+  if(r&&r.ok){st.textContent='✓ Sent & emailed.'; await loadInbox();}
+  else{let e={};try{e=await r.json()}catch(_){} st.textContent=(e.detail||'Failed to send.');}
+}
+async function claimMsg(id){let r;try{r=await api('/admin/v1/inbox/'+id+'/claim',{method:'POST'})}catch(e){r=null} if(r&&!r.ok){const e=await r.json().catch(()=>({}));alert(e.detail||'Could not claim.');} loadInbox();}
+async function releaseMsg(id){try{await api('/admin/v1/inbox/'+id+'/release',{method:'POST'})}catch(e){} loadInbox();}
+function updateInboxBadge(n){n=n||0;['inboxBadge','logoBadge'].forEach(id=>{const b=$(id);if(!b)return;if(n>0){b.textContent=n>99?'99+':n;b.style.display='';}else b.style.display='none';});}
+async function pollInbox(){try{const r=await api('/admin/v1/inbox/unread-count');if(r.ok){updateInboxBadge((await r.json()).unread);}}catch(e){}}
 
 /* ──────────── settings / theme ──────────── */
 function setTheme(mode){
@@ -1028,6 +1122,7 @@ function enter(me){
   $('avatar').title=me.email+' · '+me.platform_role;
   if(can('superadmin'))$('navStaff').style.display='';
   loadOverview();
+  pollInbox(); if(!window.__inboxTimer) window.__inboxTimer=setInterval(pollInbox,20000);
 }
 $('gateForm').addEventListener('submit',async e=>{
   e.preventDefault();$('gErr').textContent='';
