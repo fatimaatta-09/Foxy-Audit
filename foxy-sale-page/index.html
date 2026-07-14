@@ -939,34 +939,32 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
   let len = 0, ticking = false, moveTimer = null, hidden = true;
   function buildPath(){
     const H = document.documentElement.scrollHeight, W = document.documentElement.clientWidth;
-    const wrap = document.querySelector('#how .wrap') || document.querySelector('.wrap');
-    const contentW = wrap ? wrap.getBoundingClientRect().width : Math.min(1120, W * 0.86);
-    const contentLeft = (W - contentW) / 2;
-    if (contentLeft < 116){                               // not enough side margin for a clean sweep
-      hidden = true; fox.classList.add('fox-hidden'); svg.style.display = 'none'; return;
-    }
+    if (W < 1024){ hidden = true; fox.classList.add('fox-hidden'); svg.style.display = 'none'; return; }
     hidden = false; fox.classList.remove('fox-hidden'); svg.style.display = '';
-    const laneL = contentLeft * 0.5, laneR = W - contentLeft * 0.5;   // mid-margin lanes on both sides
-    const startY = window.innerHeight * 0.42;
-    const foot = document.querySelector('footer');
-    const endY = foot ? foot.getBoundingClientRect().top + window.scrollY + 40 : H - 80;
-    // waypoints: hero(left) -> each section centre, alternating margins -> footer(centre).
-    // Sits in the empty side-margins at each section and only crosses the middle in the gaps between them.
-    const pts = [{ x: laneL, y: startY }];
-    ['#how', '#pricing', '#team', '#support', '.cta-band'].forEach(sel => {
-      const el = document.querySelector(sel);
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      pts.push({ x: (pts.length % 2) ? laneR : laneL, y: (r.top + r.bottom) / 2 + window.scrollY });
+    // waypoints: blue start (low-left of hero) -> the 8 original fox spots -> "Get started free" button
+    const pts = [{ x: Math.max(40, W * 0.04), y: window.innerHeight * 0.82 }];
+    document.querySelectorAll('.card-fox-topper').forEach(t => {
+      const c = t.parentElement && t.parentElement.getBoundingClientRect();
+      if (c) pts.push({ x: c.left + c.width / 2 + window.scrollX, y: c.top + window.scrollY - 24 });
     });
-    pts.push({ x: W / 2, y: endY });
-    // Catmull-Rom -> cubic bezier: a smooth sweeping serpentine
-    let d = 'M ' + pts[0].x.toFixed(1) + ' ' + pts[0].y.toFixed(1);
-    for (let i = 0; i < pts.length - 1; i++){
-      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
-      const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
-      const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
-      d += ' C ' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ', ' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ', ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+    const btn = document.querySelector('[data-lead="cta-hero"]');
+    if (btn){ const b = btn.getBoundingClientRect(); pts.push({ x: b.left + b.width / 2 + window.scrollX, y: b.top + b.height / 2 + window.scrollY }); }
+    else pts.push({ x: W / 2, y: H - 120 });
+    // hand-drawn (deliberately un-smooth) line: short straight segments + a little deterministic wobble
+    const fract = v => v - Math.floor(v);
+    const noise = i => fract(Math.sin(i * 12.9898) * 43758.5453) * 2 - 1;   // stable pseudo-random -1..1
+    let d = '', idx = 1;
+    for (let s = 0; s < pts.length - 1; s++){
+      const a = pts[s], b = pts[s + 1];
+      const dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy) || 1;
+      const segs = Math.max(2, Math.round(dist / 52));
+      const nx = -dy / dist, ny = dx / dist;               // perpendicular unit
+      for (let k = (s === 0 ? 0 : 1); k <= segs; k++){
+        const t = k / segs;
+        let x = a.x + dx * t, y = a.y + dy * t;
+        if (k > 0 && k < segs){ const j = noise(idx++) * 13; x += nx * j; y += ny * j; }   // jitter mid-segment
+        d += (s === 0 && k === 0 ? 'M ' : ' L ') + x.toFixed(1) + ' ' + y.toFixed(1);
+      }
     }
     svg.setAttribute('width', W); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
