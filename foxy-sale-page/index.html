@@ -135,7 +135,8 @@
   /* ---------------- FOX MASCOT (real product photography, embedded — no external files) ---------------- */
   /* One sprite fox walks a dotted orange path down the LEFT gutter (see foxPath()) — never over text. */
   .card-fox-topper{display:none !important;}   /* 8 static toppers replaced by the single traveling fox */
-  #foxTrail{position:absolute;top:0;left:0;z-index:2;pointer-events:none;overflow:visible;}
+  #foxTrail{position:absolute;top:0;left:0;z-index:1;pointer-events:none;overflow:visible;}
+  .wrap{position:relative;z-index:2;}   /* content sits above the trail so the dotted line never crosses text */
   #foxTrailPath{fill:none;stroke:var(--fox);stroke-width:3;stroke-linecap:round;stroke-dasharray:0.5 12;opacity:.5;}
   .fox-mascot{position:absolute;top:0;left:0;z-index:6;width:96px;height:104px;pointer-events:none;transform-origin:50% 72%;
     background-image:url('/fox-sprite.png');background-repeat:no-repeat;background-size:768px 624px;
@@ -938,23 +939,34 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
   let len = 0, ticking = false, moveTimer = null, hidden = true;
   function buildPath(){
     const H = document.documentElement.scrollHeight, W = document.documentElement.clientWidth;
-    const wrap = document.querySelector('.wrap');
-    const contentLeft = wrap ? wrap.getBoundingClientRect().left : W * 0.16;
-    const laneL = 12, laneR = contentLeft - CW - 14;      // left gutter, left of the content column
-    if (laneR - laneL < 24){                              // no clear room beside the content
+    const wrap = document.querySelector('#how .wrap') || document.querySelector('.wrap');
+    const contentW = wrap ? wrap.getBoundingClientRect().width : Math.min(1120, W * 0.86);
+    const contentLeft = (W - contentW) / 2;
+    if (contentLeft < 116){                               // not enough side margin for a clean sweep
       hidden = true; fox.classList.add('fox-hidden'); svg.style.display = 'none'; return;
     }
     hidden = false; fox.classList.remove('fox-hidden'); svg.style.display = '';
-    const cx = (laneL + laneR) / 2 + CW / 2, amp = (laneR - laneL) / 2;
+    const laneL = contentLeft * 0.5, laneR = W - contentLeft * 0.5;   // mid-margin lanes on both sides
     const startY = window.innerHeight * 0.42;
     const foot = document.querySelector('footer');
-    const endY = foot ? foot.getBoundingClientRect().top + window.scrollY + 40 : H - 90;
-    const CYCLES = 2.2, STEPS = 44;                       // gentle, even weave down the gutter
-    let d = '';
-    for (let i = 0; i <= STEPS; i++){
-      const t = i / STEPS, y = startY + t * (endY - startY);
-      const x = cx + Math.sin(t * Math.PI * CYCLES) * amp;
-      d += (i === 0 ? 'M ' : ' L ') + x.toFixed(1) + ' ' + y.toFixed(1);
+    const endY = foot ? foot.getBoundingClientRect().top + window.scrollY + 40 : H - 80;
+    // waypoints: hero(left) -> each section centre, alternating margins -> footer(centre).
+    // Sits in the empty side-margins at each section and only crosses the middle in the gaps between them.
+    const pts = [{ x: laneL, y: startY }];
+    ['#how', '#pricing', '#team', '#support', '.cta-band'].forEach(sel => {
+      const el = document.querySelector(sel);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      pts.push({ x: (pts.length % 2) ? laneR : laneL, y: (r.top + r.bottom) / 2 + window.scrollY });
+    });
+    pts.push({ x: W / 2, y: endY });
+    // Catmull-Rom -> cubic bezier: a smooth sweeping serpentine
+    let d = 'M ' + pts[0].x.toFixed(1) + ' ' + pts[0].y.toFixed(1);
+    for (let i = 0; i < pts.length - 1; i++){
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+      d += ' C ' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ', ' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ', ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
     }
     svg.setAttribute('width', W); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
