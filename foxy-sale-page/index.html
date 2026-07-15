@@ -200,6 +200,20 @@
     filter:drop-shadow(0 8px 10px rgba(0,0,0,.4));pointer-events:none;z-index:3;}
   .how-num{font-family:var(--disp);font-weight:900;font-size:28px;color:var(--fox);margin:0 0 12px;}
   .how-card h3{font-family:var(--disp);font-size:16px;margin:0 0 10px;}
+  /* support cards — contextual CTAs */
+  .sup-cta{display:inline-flex;align-items:center;gap:6px;margin-top:16px;font-family:var(--disp);font-weight:700;font-size:12.5px;letter-spacing:.01em;color:var(--fox);text-decoration:none;transition:gap .15s ease;}
+  .sup-cta:hover{gap:11px;}
+  .sup-cta span{transition:transform .15s ease;}
+  .sup-cta:hover span{transform:translateX(2px);}
+  /* support SLA table */
+  .sla-table{max-width:640px;margin:46px auto 0;border:2px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surf);box-shadow:var(--clay-sm);}
+  .sla-row{display:grid;grid-template-columns:1.1fr 1.5fr 1.2fr;gap:14px;padding:14px 22px;border-bottom:1px solid var(--line);align-items:center;}
+  .sla-row:last-child{border-bottom:none;}
+  .sla-row span{font-size:13px;color:var(--muted);}
+  .sla-row span:first-child{font-family:var(--disp);font-weight:700;color:var(--ink);font-size:13.5px;}
+  .sla-row.sla-head{background:var(--fox);}
+  .sla-row.sla-head span{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#1a1206;}
+  @media(max-width:560px){.sla-row{grid-template-columns:1fr 1fr 1fr;gap:8px;padding:11px 14px;}.sla-row span{font-size:11px;}.sla-row span:first-child{font-size:11.5px;}}
   .how-card p{font-size:13px;margin:0;}
 
   /* ---- download section ---- */
@@ -452,18 +466,24 @@
         <p class="how-num">💬</p>
         <h3>Live chat</h3>
         <p>Talk to a real engineer in-app — most chats get a first reply in under 10 minutes during business hours.</p>
+        <a class="sup-cta" href="https://app.foxyaudit.tech/dashboard">Open the app <span aria-hidden="true">→</span></a>
       </div>
       <div class="how-card">
         <img class="card-fox-topper" data-fox="4" alt="">
         <p class="how-num">✉️</p>
         <h3>Email support</h3>
         <p>Write to <a href="mailto:support@foxyaudit.tech" style="color:var(--fox);">support@foxyaudit.tech</a> — every plan gets a same-business-day response.</p>
+        <a class="sup-cta" href="mailto:support@foxyaudit.tech">Email us <span aria-hidden="true">→</span></a>
       </div>
       <div class="how-card">
         <img class="card-fox-topper" data-fox="7" alt="">
         <p class="how-num">📚</p>
         <h3>Help Center</h3>
         <p>Setup guides, SDK references, and troubleshooting for every step from install to your first audit passport.</p>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;">
+          <a class="sup-cta" href="#how">How it works <span aria-hidden="true">→</span></a>
+          <a class="sup-cta" href="#pricing">Get started <span aria-hidden="true">→</span></a>
+        </div>
       </div>
     </div>
 
