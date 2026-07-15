@@ -93,23 +93,53 @@
     transition:
       left 650ms cubic-bezier(.4,0,.2,1), bottom 650ms cubic-bezier(.4,0,.2,1),
       height 650ms cubic-bezier(.4,0,.2,1), transform 720ms cubic-bezier(.22,1.4,.36,1),
-      filter 650ms cubic-bezier(.4,0,.2,1), opacity 650ms cubic-bezier(.4,0,.2,1);
+      filter 650ms cubic-bezier(.4,0,.2,1), opacity 650ms cubic-bezier(.4,0,.2,1),
+      box-shadow 500ms ease, border-color 400ms ease, background 400ms ease;
     will-change:transform,filter,opacity,left,bottom,height;
-    background:var(--surf);border:1px solid var(--line);box-shadow:var(--clay-lg);
+    /* clear iOS liquid glass — near-zero fill, faint lens blur, glowing accent edge */
+    background:rgba(255,255,255,.035);
+    backdrop-filter:blur(2.5px) saturate(1.9) brightness(1.1);-webkit-backdrop-filter:blur(2.5px) saturate(1.9) brightness(1.1);
+    border:1.2px solid var(--acc, var(--line));
+    box-shadow:0 0 18px -5px var(--glow), 0 26px 60px -32px rgba(0,0,0,.9);
     overflow:hidden;cursor:pointer;
   }
-  .card.is-center{box-shadow:var(--clay-lg), 0 34px 70px -24px rgba(0,0,0,.65);}
-  .card-top{height:44%;display:flex;align-items:center;justify-content:center;position:relative;}
-  .card-top svg{width:38%;height:38%;position:relative;z-index:2;}
-  .card-top::after{content:'';position:absolute;inset:0;
-    background-image:radial-gradient(rgba(0,0,0,.18) 1px, transparent 1px);background-size:10px 10px;opacity:.5;}
-  .card-body{padding:16px 16px 0;}
+  .card.is-center{box-shadow:0 0 30px -4px var(--glow), 0 40px 80px -30px rgba(0,0,0,.95);}
+  /* edge lensing — light bending around the rim like the edge of a lens */
+  .card::before{content:'';position:absolute;inset:0;z-index:3;pointer-events:none;border-radius:inherit;
+    box-shadow:
+      inset 0 1.5px 1px rgba(255,255,255,.55),
+      inset 1.5px 0 1px rgba(255,255,255,.22),
+      inset -1.5px 0 1px rgba(255,255,255,.16),
+      inset 0 -2px 2px rgba(255,255,255,.20),
+      inset 0 14px 26px -16px rgba(255,255,255,.22);}
+  /* curved specular sweep across the top — the wet gloss */
+  .card::after{content:'';position:absolute;inset:0;z-index:3;pointer-events:none;border-radius:inherit;
+    background:radial-gradient(120% 46% at 50% -10%, rgba(255,255,255,.24), rgba(255,255,255,0) 62%);}
+  .card-top{height:44%;display:flex;align-items:center;justify-content:center;position:relative;
+    background:radial-gradient(circle at 50% 44%, var(--soft), transparent 66%);}
+  .card-top svg{width:38%;height:38%;position:relative;z-index:2;stroke:var(--acc);
+    filter:drop-shadow(0 0 6px var(--glow));}
+  /* dim glow behind the icon */
+  .card-top::after{content:'';position:absolute;width:46%;aspect-ratio:1;border-radius:50%;
+    background:var(--acc);filter:blur(24px);opacity:.3;}
+  /* divider between the icon and the text */
+  .card-top::before{content:'';position:absolute;left:18px;right:18px;bottom:0;height:1px;z-index:4;
+    background:linear-gradient(90deg, transparent, var(--acc) 50%, transparent);opacity:.6;}
+  .card-body{padding:16px 16px 0;position:relative;z-index:5;}
   .card-eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;}
   .card-title{font-family:var(--disp);font-weight:700;font-size:clamp(13px,1.4vw,17px);color:var(--ink);margin:0;line-height:1.15;}
-  .card-hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;opacity:0;transform:translateY(4px);
+  .card-hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;opacity:0;transform:translateY(4px);z-index:5;
     transition:opacity 300ms,transform 300ms;font-family:var(--mono);font-size:9px;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--ink);}
+    text-transform:uppercase;color:var(--muted);}
   .card.is-center .card-hint{opacity:.85;transform:translateY(0);}
+  /* quiet state — non-centre cards drop their detail so nothing smears through the glass */
+  .card .card-body,.card .card-top svg{transition:opacity .5s ease, filter .4s ease;}
+  .card:not(.is-center) .card-body,
+  .card:not(.is-center) .card-hint{opacity:0;}
+  .card:not(.is-center) .card-top::before{opacity:0;}
+  .card:not(.is-center) .card-top::after{opacity:.1;}
+  .card:not(.is-center) .card-top svg{filter:none;opacity:.65;}
+  .card:not(.is-center){border-color:var(--dim);box-shadow:0 22px 55px -30px rgba(0,0,0,.85);}
 
   .controls{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:16px;}
   .navbtn{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -628,7 +658,7 @@ const SLIDES = [
     ctaLabel: "Try verification", ctaHref: "#how"
   },
   {
-    ghost: "PASSPORT.", accentHex: "#8a3611", accentTx:"var(--ink)",
+    ghost: "PASSPORT.", accentHex: "#d9722e", accentTx:"var(--ink)",
     cardTitle: "Compliance Passport", cardEyebrow: "Export & share",
     modalDesc: "Turn months of AI activity into a single exportable document mapped to NIST AI RMF and EU AI Act clauses — the artifact your legal and procurement teams actually want to see.",
     features: ["One-click PDF export for audits and RFPs","Maps directly to NIST AI RMF & EU AI Act","Always reflects your live, current chain"],
@@ -644,12 +674,12 @@ const SLIDES = [
     ctaLabel: "Enable the judge", ctaHref: "#pricing"
   },
   {
-    ghost: "PLANS.", accentHex: "var(--plan-bg)", accentTx:"var(--plan-tx)",
+    ghost: "PLANS.", accentHex: "#ffb020", accentTx:"var(--plan-tx)",
     cardTitle: "See Pricing", cardEyebrow: "Simple, usage-based",
     modalDesc: "Start free, pay for what you verify. Every plan includes the full hash chain and public verify endpoint — higher tiers add the compliance passport, active-defense judge, and dedicated support.",
     features: ["Starter: 1,000 verified calls / month, free","Companion: passport + AI judge, $4.99/mo","Guardian: lifetime license, $39 once"],
     isPricing:true,
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--plan-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
     ctaLabel: "Choose a plan", ctaHref: "#pricing"
   }
 ];
@@ -728,6 +758,13 @@ function safeAccentHex(s){
   return (typeof val === 'string' && val.trim() !== '') ? val : FALLBACK_ACCENT;
 }
 
+function hexToRgb(h){
+  const m = /^#?([0-9a-f]{6})$/i.exec((h || '').trim());
+  if (!m) return [255, 122, 46];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
 function buildCards(){
   cardsEl.innerHTML = '';
   SLIDES.forEach((s, i) => {
@@ -736,10 +773,15 @@ function buildCards(){
     card.dataset.index = i;
     const icon = safeIcon(s);
     const accent = safeAccentHex(s);
+    const [r, g, b] = hexToRgb(accent);
+    card.style.setProperty('--acc', accent);
+    card.style.setProperty('--glow', `rgba(${r},${g},${b},.55)`);
+    card.style.setProperty('--soft', `rgba(${r},${g},${b},.18)`);
+    card.style.setProperty('--dim',  `rgba(${r},${g},${b},.3)`);
     const eyebrow = safeSlideField(s, 'cardEyebrow', FALLBACK_EYEBROW, 40);
     const title = safeSlideField(s, 'cardTitle', FALLBACK_TITLE, 60);
     card.innerHTML = `
-      <div class="card-top" style="background:${accent}">${icon}</div>
+      <div class="card-top">${icon}</div>
       <div class="card-body">
         <p class="card-eyebrow">${eyebrow}</p>
         <p class="card-title">${title}</p>
@@ -775,11 +817,11 @@ function styleFor(role){
     case 'center': return { left:'50%', bottom:'0%', height: mobile?'84%':'86%',
       transform:`translateX(-50%) scale(${mobile?1.1:1.12})`, filter:'blur(0px)', opacity:1, zIndex:20 };
     case 'left': return { left: mobile?'8%':'21%', bottom: mobile?'6%':'2%', height: mobile?'42%':'50%',
-      transform:'translateX(-50%) scale(1)', filter:'blur(3px)', opacity:.5, zIndex:10 };
+      transform:'translateX(-50%) scale(1)', filter:'blur(1.2px)', opacity:.55, zIndex:10 };
     case 'right': return { left: mobile?'92%':'79%', bottom: mobile?'6%':'2%', height: mobile?'42%':'50%',
-      transform:'translateX(-50%) scale(1)', filter:'blur(3px)', opacity:.5, zIndex:10 };
+      transform:'translateX(-50%) scale(1)', filter:'blur(1.2px)', opacity:.55, zIndex:10 };
     default: return { left:'50%', bottom: mobile?'4%':'0%', height: mobile?'30%':'36%',
-      transform:'translateX(-50%) scale(1)', filter:'blur(5px)', opacity:.65, zIndex:5 };
+      transform:'translateX(-50%) scale(.9)', filter:'blur(2.5px)', opacity:0, zIndex:5 };
   }
 }
 
