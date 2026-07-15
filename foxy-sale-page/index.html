@@ -210,7 +210,7 @@
   section{position:relative;padding:88px 24px;}
   .wrap{max-width:1040px;margin:0 auto;padding:0 24px;}
   .sec-eb{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--fox);margin:0 0 14px;text-align:center;position:relative;z-index:2;}
-  .sec-h{font-family:var(--disp);font-weight:700;font-size:clamp(24px,3.6vw,38px);text-align:center;margin:0 0 48px;color:var(--ink);line-height:1.2;position:relative;z-index:2;background:var(--bg);isolation:isolate;}
+  .sec-h{font-family:var(--disp);font-weight:700;font-size:clamp(24px,3.6vw,38px);text-align:center;margin:0 0 48px;color:var(--ink);line-height:1.2;}
 
   .how-sec{background:var(--surf2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
   .how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;}
@@ -226,7 +226,7 @@
   .sup-cta span{transition:transform .15s ease;}
   .sup-cta:hover span{transform:translateX(2px);}
   /* support SLA table */
-  .sla-table{max-width:640px;margin:46px auto 0;border:2px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surf);box-shadow:var(--clay-sm);}
+  .sla-table{max-width:640px;margin:46px auto 0;border:1.3px solid rgba(255,122,46,.32);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.04);backdrop-filter:blur(3px) saturate(1.6) brightness(1.05);-webkit-backdrop-filter:blur(3px) saturate(1.6) brightness(1.05);box-shadow:0 0 20px -9px rgba(255,122,46,.35), 0 26px 60px -34px rgba(0,0,0,.9);}
   .sla-row{display:grid;grid-template-columns:1.1fr 1.5fr 1.2fr;gap:14px;padding:14px 22px;border-bottom:1px solid var(--line);align-items:center;}
   .sla-row:last-child{border-bottom:none;}
   .sla-row span{font-size:13px;color:var(--muted);}
@@ -358,7 +358,7 @@
   /* ---- how it works: real code + the pipeline ---- */
   .how-sub{text-align:center;color:var(--muted);max-width:580px;margin:0 auto 40px;font-size:15px;line-height:1.6;}
   .code-wrap{max-width:680px;margin:0 auto 18px;}
-  .code-card{background:#141110;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--clay-sm);}
+  .code-card{background:rgba(20,17,16,.55);backdrop-filter:blur(10px) saturate(1.2);-webkit-backdrop-filter:blur(10px) saturate(1.2);border:1.3px solid rgba(255,122,46,.32);border-radius:16px;overflow:hidden;box-shadow:0 0 20px -9px rgba(255,122,46,.35), 0 26px 60px -34px rgba(0,0,0,.9);}
   .code-bar{display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid var(--line);background:#100d0c;}
   .code-bar i{width:11px;height:11px;border-radius:50%;display:block;}
   .code-bar i:nth-child(1){background:#ff5f57;} .code-bar i:nth-child(2){background:#febc2e;} .code-bar i:nth-child(3){background:#28c840;}
@@ -419,6 +419,7 @@
   @media(max-width:600px){ .corner-fox{right:10px;bottom:10px;} .cf-bubble{display:none;} }
   @media (prefers-reduced-motion: reduce){ .cf-sprite{animation:none;} }
   @keyframes cfBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  #supEmail:focus,#supMsg:focus{border-color:var(--fox) !important;box-shadow:0 0 16px -6px rgba(255,122,46,.6);}
 
   /* ---------- liquid glass on the remaining content cards ---------- */
   .how-card:not(.founder-card), .calc-card, .enterprise-card, .faq-item, .step{
@@ -689,9 +690,9 @@
     <div style="max-width:520px;margin:30px auto 0;display:flex;flex-direction:column;gap:12px;">
       <p style="text-align:center;color:var(--muted);margin:0 0 4px;">Or send us a note — we read every message:</p>
       <input id="supEmail" type="email" placeholder="you@company.com" autocomplete="email"
-             style="padding:13px 14px;background:var(--surf);border:2px solid var(--line);border-radius:12px;color:var(--ink);font-family:var(--mono);font-size:13px;outline:none;">
+             style="padding:13px 14px;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,122,46,.32);border-radius:12px;color:var(--ink);font-family:var(--mono);font-size:13px;outline:none;backdrop-filter:blur(4px) saturate(1.4);-webkit-backdrop-filter:blur(4px) saturate(1.4);">
       <textarea id="supMsg" rows="4" placeholder="How can we help?"
-             style="padding:13px 14px;background:var(--surf);border:2px solid var(--line);border-radius:12px;color:var(--ink);font-family:inherit;font-size:14px;line-height:1.5;outline:none;resize:vertical;"></textarea>
+             style="padding:13px 14px;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,122,46,.32);border-radius:12px;color:var(--ink);font-family:inherit;font-size:14px;line-height:1.5;outline:none;resize:vertical;backdrop-filter:blur(4px) saturate(1.4);-webkit-backdrop-filter:blur(4px) saturate(1.4);"></textarea>
       <a class="modal-cta" id="supSend" href="#" style="align-self:center;">Send message
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
       <p id="supStatus" style="text-align:center;font-family:var(--mono);font-size:11px;min-height:14px;letter-spacing:.04em;"></p>
