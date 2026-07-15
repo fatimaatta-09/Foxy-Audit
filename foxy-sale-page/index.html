@@ -163,18 +163,8 @@
   @media (max-width:640px){ .cta span{display:none;} .carousel-wrap{top:64px;bottom:94px;} }
   @media (prefers-reduced-motion: reduce){ .card, .ghost, .stage{transition-duration:1ms !important;} }
 
-  /* ---------------- FOX MASCOT (real product photography, embedded — no external files) ---------------- */
-  /* One sprite fox walks a dotted orange path down the LEFT gutter (see foxPath()) — never over text. */
-  .card-fox-topper{display:none !important;}   /* 8 static toppers replaced by the single traveling fox */
-  #foxTrail{position:absolute;top:0;left:0;z-index:1;pointer-events:none;overflow:visible;}
-  .wrap{position:relative;z-index:2;}   /* content sits above the trail so the dotted line never crosses text */
-  #foxTrailPath{fill:none;stroke:var(--fox);stroke-width:3;stroke-linecap:round;stroke-dasharray:0.5 12;opacity:.5;}
-  .fox-mascot{position:absolute;top:0;left:0;z-index:6;width:96px;height:104px;pointer-events:none;transform-origin:50% 72%;
-    background-image:url('/fox-sprite.png');background-repeat:no-repeat;background-size:768px 624px;
-    filter:drop-shadow(0 9px 12px rgba(0,0,0,.5));transition:left .12s linear, top .12s linear;will-change:left,top,transform;}
-  .fox-mascot.fox-hidden{display:none;}
-  @media (max-width:1024px){ #foxTrail, .fox-mascot{display:none;} }   /* no clear gutter beside content */
-  @media (prefers-reduced-motion: reduce){ .fox-mascot{transition:none;} }
+  .card-fox-topper{display:none !important;}   /* static card toppers — hidden */
+  .wrap{position:relative;z-index:2;}
 
   /* ---------------- MODAL (card detail) ---------------- */
   .modal-backdrop{position:fixed;inset:0;background:rgba(6,5,4,.7);backdrop-filter:blur(6px);
@@ -391,12 +381,71 @@
   .step p b{color:var(--ink);font-weight:600;}
   @media(max-width:900px){ .flow{grid-template-columns:repeat(2,1fr);} }
   @media(max-width:540px){ .flow{grid-template-columns:1fr;} }
+  /* ---------- sticky top nav (folds in the old brand + login) ---------- */
+  .brand,.login-link{display:none !important;}
+  .topnav{position:fixed;top:0;left:0;right:0;z-index:120;display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:11px clamp(16px,4vw,40px);background:rgba(14,12,10,.72);
+    backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line);}
+  .tn-brand{display:flex;align-items:center;gap:8px;font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.02em;color:var(--ink);text-decoration:none;text-transform:uppercase;}
+  .tn-brand img{width:19px;height:21px;}
+  .tn-links{display:flex;gap:24px;}
+  .tn-links a{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-decoration:none;transition:color .15s;}
+  .tn-links a:hover{color:var(--ink);}
+  .tn-actions{display:flex;align-items:center;gap:14px;}
+  .tn-login{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);text-decoration:none;opacity:.85;}
+  .tn-login:hover{opacity:1;}
+  .tn-cta{font-family:var(--disp);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.02em;color:var(--bg);background:var(--fox);border-radius:10px;padding:9px 16px;text-decoration:none;box-shadow:var(--clay-sm);transition:transform .15s;}
+  .tn-cta:hover{transform:translateY(-2px);}
+  @media(max-width:760px){ .tn-links{display:none;} }
+  #how,#pricing,#team,#support,#faq{scroll-margin-top:78px;}   /* clear the fixed nav on jump */
+
+  /* ---------- side dot-rail ---------- */
+  .dotrail{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:110;display:flex;flex-direction:column;gap:15px;}
+  .dot{position:relative;width:11px;height:11px;border-radius:50%;background:transparent;border:1.6px solid var(--muted);display:block;transition:background .2s,transform .2s,border-color .2s;}
+  .dot:hover{border-color:var(--fox);transform:scale(1.2);}
+  .dot.active{background:var(--fox);border-color:var(--fox);}
+  .dot span{position:absolute;right:22px;top:50%;transform:translateY(-50%);white-space:nowrap;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);background:var(--surf);border:1px solid var(--line);border-radius:6px;padding:4px 8px;opacity:0;pointer-events:none;transition:opacity .18s;box-shadow:var(--clay-sm);}
+  .dot:hover span{opacity:1;}
+  @media(max-width:900px){ .dotrail{display:none;} }
+
+  /* ---------- fixed corner buddy ---------- */
+  .corner-fox{position:fixed;right:18px;bottom:16px;z-index:110;cursor:pointer;display:flex;flex-direction:column;align-items:flex-end;gap:8px;
+    opacity:0;transform:translateY(16px);pointer-events:none;transition:opacity .35s ease,transform .35s ease;}
+  .corner-fox.visible{opacity:1;transform:none;pointer-events:auto;}
+  .cf-sprite{width:72px;height:78px;background:url('/fox-sprite.png') no-repeat;background-size:576px 468px;background-position:0 -234px;filter:drop-shadow(0 8px 14px rgba(0,0,0,.55));animation:cfBob 3.4s ease-in-out infinite;}
+  .cf-bubble{background:var(--surf);border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.03em;color:var(--ink);box-shadow:var(--clay-sm);white-space:nowrap;opacity:0;transform:translateY(6px);transition:opacity .3s,transform .3s;}
+  .corner-fox.show-bubble .cf-bubble{opacity:1;transform:none;}
+  .cf-bubble b{color:var(--fox);}
+  @media(max-width:600px){ .corner-fox{right:10px;bottom:10px;} .cf-bubble{display:none;} }
+  @media (prefers-reduced-motion: reduce){ .cf-sprite{animation:none;} }
+  @keyframes cfBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 </style>
 </head>
 <body>
+<header class="topnav">
+  <a class="tn-brand" href="#stage"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <nav class="tn-links">
+    <a href="#how">How it works</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#faq">FAQ</a>
+    <a href="#support">Contact</a>
+  </nav>
+  <div class="tn-actions">
+    <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
+    <a class="tn-cta" href="#pricing">Get started</a>
+  </div>
+</header>
+<nav class="dotrail" aria-label="Section navigation">
+  <a href="#stage" data-sec="stage" class="dot"><span>Top</span></a>
+  <a href="#how" data-sec="how" class="dot"><span>How it works</span></a>
+  <a href="#pricing" data-sec="pricing" class="dot"><span>Pricing</span></a>
+  <a href="#support" data-sec="support" class="dot"><span>Contact</span></a>
+</nav>
+<div class="corner-fox" id="cornerFox" title="Get started">
+  <div class="cf-bubble">Ready when you are — <b>Get started →</b></div>
+  <div class="cf-sprite"></div>
+</div>
 <a class="login-link" href="https://app.foxyaudit.tech/dashboard">Log in</a>
-<svg id="foxTrail" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path id="foxTrailPath" d=""></path></svg>
-<div class="fox-mascot" id="foxMascot" aria-hidden="true"></div>
 
 <div class="stage" id="stage">
   <div class="grain"></div>
@@ -527,7 +576,7 @@
     </div>
 
     <p class="sec-eb" style="margin-top:76px;">Frequently asked</p>
-    <h2 class="sec-h" style="margin-bottom:26px;">FAQ</h2>
+    <h2 class="sec-h" id="faq" style="margin-bottom:26px;">FAQ</h2>
     <div class="faq-wrap" id="faqWrap" style="margin-top:0;">
       <div class="faq-item">
         <button class="faq-q">Do you ever see our raw prompts?
@@ -1212,6 +1261,36 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
   window.addEventListener('load', rebuild);
   setTimeout(rebuild, 500); setTimeout(rebuild, 1600);   // re-measure after images/fonts settle
   drawFrame(); rebuild(); requestAnimationFrame(tick);
+})();
+
+/* ---------------- section nav: dot-rail active state + fixed corner buddy ---------------- */
+(function sectionNav(){
+  const dots = [...document.querySelectorAll('.dotrail .dot')];
+  const secs = dots.map(d => ({ dot:d, el:document.getElementById(d.dataset.sec) })).filter(s => s.el);
+  function onScroll(){
+    const line = window.scrollY + window.innerHeight * 0.4;
+    let cur = secs[0];
+    for (const s of secs){ if (s.el.getBoundingClientRect().top + window.scrollY <= line) cur = s; }
+    dots.forEach(d => d.classList.toggle('active', !!cur && d === cur.dot));
+  }
+  window.addEventListener('scroll', onScroll, { passive:true });
+  window.addEventListener('resize', onScroll, { passive:true });
+  onScroll();
+
+  const cf = document.getElementById('cornerFox');
+  if (cf){
+    const pricing = document.getElementById('pricing');
+    cf.addEventListener('click', () => { if (pricing) pricing.scrollIntoView({ behavior:'smooth' }); });
+    const cfScroll = () => {
+      const vh = window.innerHeight;
+      cf.classList.toggle('visible', window.scrollY > vh * 0.5);       // hide on the hero
+      let nearPricing = false;
+      if (pricing){ const r = pricing.getBoundingClientRect(); nearPricing = r.top < vh * 0.85 && r.bottom > 0; }
+      cf.classList.toggle('show-bubble', window.scrollY > vh * 0.6 && !nearPricing);
+    };
+    window.addEventListener('scroll', cfScroll, { passive:true });
+    cfScroll();
+  }
 })();
 
 /* ── Foxy Audit backend: pageview + signup/checkout + lead & support capture ── */
