@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cookie Policy — Foxy Audit</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0e0c0a;--surf:#1c1815;--line:#322b23;--ink:#f7f1e8;--muted:#8c8174;--fox:#ff7a2e;
+    --font:"Poppins",ui-rounded,"Segoe UI",system-ui,sans-serif;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);line-height:1.65;-webkit-font-smoothing:antialiased;}
+  a{color:var(--fox);}
+  .top{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(18px,5vw,40px);
+    background:rgba(14,12,10,.8);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;color:var(--ink);text-decoration:none;font-size:14px;}
+  .brand img{width:20px;height:22px;}
+  .top a.back{font-size:12px;letter-spacing:.08em;text-transform:uppercase;text-decoration:none;color:var(--muted);}
+  .top a.back:hover{color:var(--fox);}
+  main{max-width:760px;margin:0 auto;padding:48px clamp(20px,5vw,32px) 90px;}
+  .eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--fox);margin:0 0 10px;font-weight:600;}
+  h1{font-size:clamp(28px,5vw,40px);font-weight:800;margin:0 0 8px;line-height:1.12;}
+  .updated{color:var(--muted);font-size:13px;margin:0 0 8px;}
+  .lede{color:var(--muted);font-size:15px;margin:0 0 36px;}
+  h2{font-size:20px;font-weight:700;margin:38px 0 12px;}
+  h3{font-size:15px;font-weight:700;margin:22px 0 8px;}
+  p,li{color:#d7cebf;font-size:14.5px;}
+  ul{padding-left:20px;}
+  .note{background:var(--surf);border:1px solid var(--line);border-left:3px solid var(--fox);border-radius:10px;padding:14px 16px;font-size:13px;color:var(--muted);margin:26px 0;}
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin:16px 0;}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:13px;}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:#d7cebf;}
+  th{background:var(--surf);color:var(--ink);font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;}
+  tr:last-child td{border-bottom:none;}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--surf);padding:1px 6px;border-radius:5px;color:var(--ink);}
+  footer{border-top:1px solid var(--line);padding:26px clamp(20px,5vw,40px);text-align:center;color:var(--muted);font-size:12px;display:flex;gap:18px;justify-content:center;flex-wrap:wrap;}
+  footer a{color:var(--muted);text-decoration:none;}
+  footer a:hover{color:var(--fox);}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <a class="back" href="/">← Back to site</a>
+</header>
+<main>
+  <p class="eyebrow">Legal</p>
+  <h1>Cookie Policy</h1>
+  <p class="updated">Last updated: 15 July 2026 · Version 1.0</p>
+  <p class="lede">This policy explains the cookies and similar local-storage technologies Foxy Audit uses, why, and how you can control them. We use <strong>no advertising or third-party tracking cookies</strong> — an auditing product has no business embedding trackers.</p>
+
+  <h2>1. What cookies are</h2>
+  <p>Cookies are small text files a site stores in your browser to remember things between requests and visits — for example, that you are securely logged in, or that you dismissed this banner. "Local storage" and "session storage" work similarly but are read only by the site's own code. We refer to all of these together as "cookies" below.</p>
+
+  <h2>2. Categories we use</h2>
+  <h3>Strictly necessary <span style="color:var(--muted);font-weight:400;">— always on</span></h3>
+  <p>Required for the site to work securely. These cannot be switched off, because without them you could not log in, stay logged in, or be protected against cross-site request forgery.</p>
+  <h3>Analytics <span style="color:var(--muted);font-weight:400;">— optional</span></h3>
+  <p>Help us understand which pages are used and whether anything is slow or broken. Ours are <strong>first-party and cookieless</strong>: we count page views on our own servers and, only with your permission, store an anonymous visitor id locally. No data is sent to any third party.</p>
+  <h3>Functional <span style="color:var(--muted);font-weight:400;">— optional</span></h3>
+  <p>Would remember interface preferences (such as a dashboard layout or time zone). We do not use any functional cookies yet; the category is listed so the choice is available if we add them.</p>
+
+  <h2>3. The cookies we set</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Name</th><th>Category</th><th>Purpose</th><th>Expiry</th><th>Flags</th></tr></thead>
+    <tbody>
+      <tr><td><code>session</code></td><td>Necessary</td><td>Keeps you logged into your dashboard</td><td>Session</td><td>HttpOnly · Secure · SameSite=Lax</td></tr>
+      <tr><td><code>foxy_staff_session</code></td><td>Necessary</td><td>Keeps staff logged into the admin console</td><td>Session</td><td>HttpOnly · Secure · SameSite=Strict</td></tr>
+      <tr><td><code>foxy_csrf</code></td><td>Necessary</td><td>Anti-CSRF double-submit token</td><td>180 days</td><td>Secure · SameSite=Lax</td></tr>
+      <tr><td><code>foxy_consent</code></td><td>Necessary</td><td>Remembers your cookie choices</td><td>12 months</td><td>Secure · SameSite=Lax</td></tr>
+      <tr><td><code>foxy_vid</code> <span style="color:var(--muted)">(local storage)</span></td><td>Analytics</td><td>Anonymous first-party visitor id</td><td>Until you clear it</td><td>Set only with consent</td></tr>
+      <tr><td><code>foxy_sid</code> <span style="color:var(--muted)">(session storage)</span></td><td>Analytics</td><td>Anonymous session id</td><td>Ends with the tab</td><td>Set only with consent</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>4. What we do <em>not</em> use</h2>
+  <ul>
+    <li>No advertising or marketing cookies.</li>
+    <li>No third-party tracking pixels (no Meta, Google Ads, or data brokers).</li>
+    <li>No cross-site tracking or fingerprinting.</li>
+  </ul>
+
+  <h2>5. How analytics works</h2>
+  <p>When analytics is enabled, each page view sends a small first-party request to our own backend containing the page path and, if you consented, an anonymous visitor/session id. Your IP address and browser user-agent are one-way hashed (HMAC) on our server and never stored in raw form. There is no third-party analytics provider.</p>
+
+  <h2>6. Managing your choices</h2>
+  <p>On your first visit you are asked to choose. You can change your mind at any time using the <strong>"Cookie preferences"</strong> link in our footer, which reopens the consent panel. You can also block or delete cookies in your browser settings, though strictly-necessary cookies are required for login to work.</p>
+
+  <h2>7. Your regional rights</h2>
+  <p><strong>EU / EEA / UK (GDPR):</strong> non-essential cookies (analytics) are off until you opt in, and rejecting is as easy as accepting.</p>
+  <p><strong>California (CCPA/CPRA):</strong> we do not sell or share personal information. You can opt out of analytics at any time via the preferences panel.</p>
+
+  <h2>8. Changes &amp; contact</h2>
+  <p>We may update this policy as the product changes; the version and date above will move. Questions? Email <a href="mailto:privacy@foxyaudit.tech">privacy@foxyaudit.tech</a>.</p>
+
+  <div class="note">This document is provided as a good-faith description of our current practices and is not legal advice. Have it reviewed by qualified counsel before relying on it for compliance.</div>
+</main>
+<footer>
+  <a href="/">Home</a>
+  <a href="/privacy-policy.html">Privacy Policy</a>
+  <a href="mailto:privacy@foxyaudit.tech">Contact</a>
+  <span>© 2026 Foxy Audit</span>
+</footer>
+</body>
+</html>

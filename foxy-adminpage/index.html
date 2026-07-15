@@ -742,6 +742,8 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
 
 <script>
 'use strict';
+/* CSRF double-submit: echo the foxy_csrf cookie in X-CSRF-Token on every non-GET request */
+(function(){const _f=window.fetch;const tok=()=>{const m=document.cookie.match('(^|;)\\s*foxy_csrf\\s*=\\s*([^;]+)');return m?decodeURIComponent(m[2]):'';};window.fetch=function(input,init){try{const method=((init&&init.method)||'GET').toUpperCase();if(method!=='GET'&&method!=='HEAD'){const t=tok();if(t){init=init||{};const h=new Headers(init.headers||{});if(!h.has('X-CSRF-Token'))h.set('X-CSRF-Token',t);init.headers=h;}}}catch(e){}return _f.call(this,input,init);};})();
 const $=id=>document.getElementById(id);
 const api=(p,o)=>fetch(p,Object.assign({credentials:'same-origin'},o||{}));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

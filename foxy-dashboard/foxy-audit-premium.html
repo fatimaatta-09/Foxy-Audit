@@ -990,6 +990,8 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 </div>
 
 <script>
+/* CSRF double-submit: echo the foxy_csrf cookie in X-CSRF-Token on every non-GET request */
+(function(){const _f=window.fetch;const tok=()=>{const m=document.cookie.match('(^|;)\\s*foxy_csrf\\s*=\\s*([^;]+)');return m?decodeURIComponent(m[2]):'';};window.fetch=function(input,init){try{const method=((init&&init.method)||'GET').toUpperCase();if(method!=='GET'&&method!=='HEAD'){const t=tok();if(t){init=init||{};const h=new Headers(init.headers||{});if(!h.has('X-CSRF-Token'))h.set('X-CSRF-Token',t);init.headers=h;}}}catch(e){}return _f.call(this,input,init);};})();
 function go(page,navEl){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+page); if(pg)pg.classList.add('active');

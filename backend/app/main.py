@@ -40,6 +40,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import get_settings
 from .middleware.admin_guard import AdminIPAllowlistMiddleware
+from .middleware.csrf import CSRFMiddleware
 from .middleware.security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from .middleware.traffic import TrafficMiddleware
 from .observability import RequestIdMiddleware, configure_logging
@@ -142,6 +143,8 @@ customer_api.add_middleware(
     same_site="lax",
     max_age=_settings.session_max_age,
 )
+# Double-submit CSRF for cookie-authenticated dashboard actions (Bearer/SDK exempt).
+customer_api.add_middleware(CSRFMiddleware, secure=_settings.is_prod)
 # Body-size cap + security headers (headers added last → outermost, on every response). (5B.6)
 customer_api.add_middleware(BodySizeLimitMiddleware)
 customer_api.add_middleware(SecurityHeadersMiddleware)
@@ -183,6 +186,8 @@ admin_api.add_middleware(
     path="/admin",
     domain=(_settings.staff_cookie_domain or None),
 )
+# Double-submit CSRF for cookie-authenticated admin actions.
+admin_api.add_middleware(CSRFMiddleware, secure=_settings.is_prod)
 # IP allow-list guard blocks before auth/routing (just inside the header/size layer).
 admin_api.add_middleware(AdminIPAllowlistMiddleware)
 admin_api.add_middleware(BodySizeLimitMiddleware)

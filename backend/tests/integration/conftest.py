@@ -133,6 +133,9 @@ def login():
         c = TestClient(app)
         r = c.post("/v1/auth/login", json={"email": email, "password": password})
         assert r.status_code == 200, f"login failed: {r.status_code} {r.text}"
+        csrf = c.cookies.get("foxy_csrf")            # echo the double-submit token on later writes
+        if csrf:
+            c.headers.update({"X-CSRF-Token": csrf})
         return c
     return _login
 
@@ -184,5 +187,8 @@ def staff_login():
         c = TestClient(app)
         r = c.post("/admin/v1/auth/login", json={"email": email, "password": password})
         assert r.status_code == 200, f"staff login failed: {r.status_code} {r.text}"
+        csrf = c.cookies.get("foxy_csrf")            # echo the double-submit token on later writes
+        if csrf:
+            c.headers.update({"X-CSRF-Token": csrf})
         return c
     return _login
