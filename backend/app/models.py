@@ -316,6 +316,25 @@ class TrafficEvent(Base):
         DateTime(timezone=True), primary_key=True, server_default=func.now())   # partition key
 
 
+class ConsentEvent(Base):
+    """One cookie-consent decision from the marketing banner — an auditable trail
+    for GDPR/CCPA. IP/UA are HMAC-hashed (never raw), like traffic_events. Platform-
+    only, no RLS (anonymous marketing visitors, read by staff)."""
+    __tablename__ = "consent_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now())
+    region: Mapped[str | None] = mapped_column(String(8), nullable=True)      # eu|us|other
+    regime: Mapped[str | None] = mapped_column(String(8), nullable=True)      # gdpr|ccpa
+    analytics: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    functional: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    policy_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ua_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 class MarketingLead(Base):
     """A marketing-site conversion before it becomes a paying org. Platform-only,
     NO RLS (no org_id until conversion; pre-sales data never on a customer path)."""
