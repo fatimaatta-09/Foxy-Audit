@@ -18,6 +18,7 @@ from .. import email as email_mod
 from ..auth import require_staff
 from ..db import get_db
 from ..models import MarketingLead, StaffUser
+from .leads import PRIORITY_SOURCES
 
 router = APIRouter()
 
@@ -25,6 +26,11 @@ router = APIRouter()
 def _is_message():
     """Filter: leads that actually carry a written note (not bare signup leads)."""
     return [MarketingLead.message.isnot(None), func.length(func.trim(MarketingLead.message)) > 0]
+
+
+def _is_priority(lead: MarketingLead) -> bool:
+    """Enterprise/custom inquiries page superadmins and sort to the top of the inbox."""
+    return (lead.source or "").strip().lower() in PRIORITY_SOURCES
 
 
 def _iso(dt):
@@ -41,6 +47,7 @@ class InboxItem(BaseModel):
     message: str | None = None
     created_at: str | None = None
     read: bool = False
+    priority: bool = False                 # enterprise/custom inquiry — sorts to the top
     claimed_by: str | None = None          # email of the staff member who holds it
     claimed_by_id: str | None = None
     claimed_at: str | None = None
@@ -58,6 +65,7 @@ def _serialize(lead: MarketingLead, staff_by_id: dict) -> InboxItem:
         id=str(lead.id), email=lead.email, name=lead.name, company=lead.company,
         source=lead.source, subject=lead.subject, message=lead.message,
         created_at=_iso(lead.created_at), read=lead.read_at is not None,
+        priority=_is_priority(lead),
         claimed_by=staff_by_id.get(lead.claimed_by),
         claimed_by_id=str(lead.claimed_by) if lead.claimed_by else None,
         claimed_at=_iso(lead.claimed_at), reply=lead.reply, replied_at=_iso(lead.replied_at))
@@ -67,6 +75,7 @@ def _serialize(lead: MarketingLead, staff_by_id: dict) -> InboxItem:
 def list_inbox(staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
     rows = db.execute(select(MarketingLead).where(*_is_message())
                       .order_by(MarketingLead.created_at.desc()).limit(500)).scalars().all()
+    rows = sorted(rows, key=lambda r: not _is_priority(r))   # priority first, newest-first within each group (stable)
     ids = {r.claimed_by for r in rows if r.claimed_by}
     staff_by_id: dict = {}
     if ids:

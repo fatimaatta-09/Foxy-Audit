@@ -79,3 +79,28 @@ def test_release_frees_the_lock(client, make_staff, staff_login):
     b = make_staff(role="operator")
     cb = staff_login(b["email"], b["password"])
     assert cb.post(f"/admin/v1/inbox/{lid}/claim").status_code == 200          # free again
+
+
+def test_enterprise_lead_is_priority_and_sorts_first(client, make_staff, staff_login):
+    _msg_lead(client, "normal@corp.com")                                       # ordinary support note
+    client.post("/v1/leads", json={"email": "biz@corp.com", "name": "Big Co",
+                                   "source": "enterprise", "subject": "custom",
+                                   "message": "We need SSO + on-prem."})       # priority
+    s = make_staff(role="operator")
+    cs = staff_login(s["email"], s["password"])
+    items = cs.get("/admin/v1/inbox").json()["items"]
+    assert items[0]["email"] == "biz@corp.com" and items[0]["priority"] is True  # sorts to the top
+    assert any(i["email"] == "normal@corp.com" and i["priority"] is False for i in items)
+
+
+def test_enterprise_contact_notifies_superadmins(client, make_staff, monkeypatch):
+    import app.routers.leads as leads
+    sent = []
+    monkeypatch.setattr(leads.email_mod, "send_email", lambda **kw: sent.append(kw) or True)
+    boss = make_staff(role="superadmin")
+    client.post("/v1/leads", json={"email": "founder-lead@corp.com", "name": "Ada",
+                                   "source": "enterprise", "message": "Need a custom SLA."})
+    tos = [k["to"] for k in sent]
+    assert boss["email"] in tos                                                # superadmin paged
+    assert "founder-lead@corp.com" in tos                                      # sender confirmation
+    assert any("custom SLA" in (k.get("text") or "") for k in sent)

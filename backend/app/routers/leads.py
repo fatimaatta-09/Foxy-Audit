@@ -11,20 +11,68 @@ middleware, and keeps only the path (no query string).
 
 from __future__ import annotations
 
+import html as _html
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .. import email as email_mod
 from ..auth import hash_key
-from ..db import get_db
-from ..models import MarketingLead, TrafficEvent
+from ..db import SessionLocal, get_db
+from ..models import MarketingLead, StaffUser, TrafficEvent
 from .logs import limiter          # reuse the app's single Limiter instance
 
 router = APIRouter()
+
+# Sources whose messages are high-priority: they page every superadmin on arrival
+# and sort to the top of the admin inbox (see admin_inbox._is_priority).
+PRIORITY_SOURCES = {"enterprise"}
+
+
+def _esc(s: str | None) -> str:
+    return _html.escape(s or "")
+
+
+def _notify_priority_contact(name: str | None, email_addr: str, message: str | None) -> None:
+    """Best-effort alert for a new priority (enterprise) contact — runs as a
+    BackgroundTask so it never blocks /v1/leads. Emails every ENABLED superadmin at
+    their registered staff address, plus a confirmation to the sender. send_email
+    already swallows its own errors; we only guard the DB read."""
+    db = SessionLocal()
+    try:
+        recipients = [s.email for s in db.execute(
+            select(StaffUser).where(StaffUser.platform_role == "superadmin",
+                                    StaffUser.disabled.is_(False))
+        ).scalars().all()]
+    except Exception:                       # noqa: BLE001 — notification is best-effort
+        recipients = []
+    finally:
+        db.close()
+
+    who = (name or email_addr or "Someone").strip()
+    body = (message or "").strip()
+    alert_html = (
+        f"<p><b>{_esc(who)}</b> &lt;{_esc(email_addr)}&gt; sent a <b>priority</b> enterprise inquiry:</p>"
+        f"<blockquote style='border-left:3px solid #ff7a2e;padding-left:12px;color:#333'>"
+        f"{_esc(body).replace(chr(10), '<br>')}</blockquote>"
+        f"<p>Open it in the admin inbox to claim &amp; reply.</p>")
+    alert_text = (f"{who} <{email_addr}> sent a PRIORITY enterprise inquiry:\n\n{body}\n\n"
+                  "Open the admin inbox to claim & reply.")
+    for r in recipients:
+        email_mod.send_email(to=r, subject=f"\U0001f534 Priority contact — {who}",
+                             html=alert_html, text=alert_text)
+
+    email_mod.send_email(
+        to=email_addr, subject="We got your message — Foxy Audit",
+        html=("<p>Thanks for reaching out to Foxy Audit about a custom plan.</p>"
+              "<p>Your message is with our team and we'll get back to you shortly.</p>"
+              "<p style='color:#888;font-size:12px'>— Foxy Audit</p>"),
+        text=("Thanks for reaching out to Foxy Audit about a custom plan.\n"
+              "Your message is with our team and we'll get back to you shortly.\n\n— Foxy Audit"))
 
 
 class LeadRequest(BaseModel):
@@ -62,10 +110,13 @@ def _maybe_uuid(v: str | None):
 
 @router.post("/v1/leads", response_model=LeadResponse)
 @limiter.limit("20/minute")
-def create_lead(payload: LeadRequest, request: Request, db: Session = Depends(get_db)):
+def create_lead(payload: LeadRequest, request: Request, background: BackgroundTasks,
+                db: Session = Depends(get_db)):
     """Record a marketing lead. If an ACTIVE lead already exists for this email,
     update its details instead of duplicating (matches the partial-unique index)."""
     email = payload.email.strip().lower()
+    is_priority = (payload.source or "").strip().lower() in PRIORITY_SOURCES
+    has_msg = bool(payload.message and payload.message.strip())
     existing = db.execute(
         select(MarketingLead).where(
             func.lower(MarketingLead.email) == email,
@@ -90,6 +141,8 @@ def create_lead(payload: LeadRequest, request: Request, db: Session = Depends(ge
         existing.utm_source = payload.utm_source or existing.utm_source
         existing.utm_medium = payload.utm_medium or existing.utm_medium
         db.commit()
+        if is_priority and has_msg:
+            background.add_task(_notify_priority_contact, payload.name, email, payload.message)
         return LeadResponse(status="updated", id=str(existing.id))
 
     lead = MarketingLead(
@@ -111,6 +164,8 @@ def create_lead(payload: LeadRequest, request: Request, db: Session = Depends(ge
         ).scalars().first()
         return LeadResponse(status="updated", id=str(existing.id) if existing else "")
     db.refresh(lead)
+    if is_priority and has_msg:
+        background.add_task(_notify_priority_contact, payload.name, email, payload.message)
     return LeadResponse(status="created", id=str(lead.id))
 
 

@@ -512,7 +512,7 @@
         <h3>Need something custom?</h3>
         <p>SSO, on-prem deployment, a bespoke SLA, or zero-knowledge payloads for regulated teams — let's talk.</p>
       </div>
-      <a class="price-btn ghost" href="#" data-lead="enterprise" data-lead-title="Talk to sales">Talk to sales</a>
+      <a class="price-btn ghost" href="#" id="openContact">Contact us</a>
     </div>
 
     <p class="sec-eb" style="margin-top:76px;">Frequently asked</p>
@@ -692,6 +692,32 @@
       <div id="leadGoogleBtn" style="display:flex;justify-content:center;"></div>
     </div>
     <p id="leadMsg" style="font-family:var(--mono);font-size:11px;margin-top:10px;min-height:14px;letter-spacing:.04em;"></p>
+  </div>
+</div>
+
+<!-- enterprise contact modal (name + email + message → priority inbox) -->
+<div class="modal-backdrop" id="contactBackdrop"></div>
+<div class="modal-card" id="contactCard">
+  <div class="modal-top" style="background:var(--fox)">
+    <button class="modal-close" id="contactClose" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="modal-body">
+    <p class="modal-eb">Enterprise · priority</p>
+    <h3 class="modal-title">Contact us</h3>
+    <p class="modal-desc">SSO, on-prem, a custom SLA — tell us what you need. This goes straight to the founders.</p>
+    <input id="contactName" type="text" placeholder="Your name" autocomplete="name"
+           style="width:100%;margin:16px 0 10px;padding:13px 14px;background:var(--surf);border:2px solid var(--line);border-radius:12px;color:var(--ink);font-family:var(--mono);font-size:13px;outline:none;">
+    <input id="contactEmail" type="email" placeholder="you@company.com" autocomplete="email"
+           style="width:100%;margin:0 0 10px;padding:13px 14px;background:var(--surf);border:2px solid var(--line);border-radius:12px;color:var(--ink);font-family:var(--mono);font-size:13px;outline:none;">
+    <textarea id="contactMsg" rows="4" placeholder="What do you need?"
+           style="width:100%;padding:13px 14px;background:var(--surf);border:2px solid var(--line);border-radius:12px;color:var(--ink);font-family:inherit;font-size:14px;line-height:1.5;outline:none;resize:vertical;"></textarea>
+    <a class="modal-cta" id="contactSubmit" href="#">
+      Send message
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </a>
+    <p id="contactStatus" style="font-family:var(--mono);font-size:11px;margin-top:10px;min-height:14px;letter-spacing:.04em;"></p>
   </div>
 </div>
 
@@ -1261,6 +1287,34 @@ document.querySelectorAll('[data-lead]').forEach(el => el.addEventListener('clic
   openLeadModal(el.dataset.lead, el.getAttribute('data-lead-title') || 'Get started');
 }));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && leadBackdrop.classList.contains('open')) closeLeadModal(); });
+
+/* enterprise contact modal → /v1/leads (source=enterprise → priority inbox + superadmin alert) */
+const contactBackdrop = document.getElementById('contactBackdrop');
+const contactCard = document.getElementById('contactCard');
+function openContactModal(){ contactBackdrop.classList.add('open'); contactCard.classList.add('open'); document.body.style.overflow='hidden'; setTimeout(()=>{ const n=document.getElementById('contactName'); if(n)n.focus(); },120); }
+function closeContactModal(){ contactBackdrop.classList.remove('open'); contactCard.classList.remove('open'); document.body.style.overflow=''; const st=document.getElementById('contactStatus'); if(st)st.textContent=''; }
+contactBackdrop.addEventListener('click', closeContactModal);
+document.getElementById('contactClose').addEventListener('click', closeContactModal);
+const openContactBtn = document.getElementById('openContact');
+if (openContactBtn) openContactBtn.addEventListener('click', e => { e.preventDefault(); openContactModal(); });
+document.getElementById('contactSubmit').addEventListener('click', async e => {
+  e.preventDefault();
+  const name = (document.getElementById('contactName').value || '').trim();
+  const email = (document.getElementById('contactEmail').value || '').trim();
+  const msg = (document.getElementById('contactMsg').value || '').trim();
+  const st = document.getElementById('contactStatus');
+  if (!isValidEmail(email)) { st.style.color='var(--warn-bg)'; st.textContent='Enter a valid email.'; return; }
+  if (!msg) { st.style.color='var(--warn-bg)'; st.textContent='Tell us what you need.'; return; }
+  st.style.color='var(--muted)'; st.textContent='Sending…';
+  try {
+    const r = await fetch(FOXY_API + '/v1/leads', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name, email, source:'enterprise', subject:'Custom / enterprise inquiry', message: msg }) });
+    if (!r.ok) throw 0;
+    st.style.color='var(--safe-bg)'; st.textContent='✓ Sent — a founder will be in touch shortly.';
+    setTimeout(closeContactModal, 2600);
+  } catch (_) { st.style.color='var(--warn-bg)'; st.textContent="Couldn't send — please try again."; }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && contactBackdrop.classList.contains('open')) closeContactModal(); });
 /* Google SSO: verify on the app origin, then land on the dashboard */
 (async function initSalesGoogle(){
   let cid = '';

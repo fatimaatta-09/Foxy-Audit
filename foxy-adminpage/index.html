@@ -166,6 +166,7 @@ body{
 .inbox-row:hover{background:var(--surf2);}
 .inbox-row.on{background:var(--fox);color:#000;}
 .inbox-row.on .sub,.inbox-row.on .mono{color:#000 !important;opacity:.75;}
+.inbox-row.pri{box-shadow:inset 3px 0 0 #ff3b30;}
 .dock-foot{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px}
 .dock-user{
   width:48px;height:48px;border-radius:14px;background:var(--surf3);
@@ -1041,13 +1042,14 @@ function renderInboxList(){
     const lock=it.claimed_by?`<span style="color:var(--fox);font-weight:700;">● ${esc(it.claimed_by.split('@')[0])}</span>`:'';
     const done=it.replied_at?'<span style="color:#2ea043;font-weight:700;">✓ replied</span>':'';
     const dot=it.read?'':'<span style="color:#ff3b30;">● </span>';
-    return `<button class="inbox-row${it.id===INBOX_OPEN?' on':''}" onclick="openMessage('${it.id}')">
+    const pri=it.priority?'<span style="background:#ff3b30;color:#fff;font-size:8px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:5px;">⚡ PRIORITY</span>':'';
+    return `<button class="inbox-row${it.priority?' pri':''}${it.id===INBOX_OPEN?' on':''}" onclick="openMessage('${it.id}')">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
         <span style="font-weight:${it.read?600:800};font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${dot}${esc(it.email)}</span>
         <span class="sub mono" style="font-size:9px;white-space:nowrap;">${fmtTime(it.created_at)}</span>
       </div>
       <div class="sub" style="font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc((it.message||'').slice(0,72))}</div>
-      <div style="margin-top:3px;font-size:10px;display:flex;gap:10px;">${done}${lock}</div>
+      <div style="margin-top:4px;font-size:10px;display:flex;gap:8px;align-items:center;">${pri}${done}${lock}</div>
     </button>`;}).join('');
 }
 async function openMessage(id){
