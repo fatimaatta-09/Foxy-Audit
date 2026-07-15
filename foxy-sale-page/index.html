@@ -343,6 +343,10 @@
     background:radial-gradient(120% 38% at 50% -8%, rgba(255,255,255,.16), rgba(255,255,255,0) 60%);}
   .price-card > *{position:relative;z-index:2;}
   .price-card:hover{border-color:var(--fox);box-shadow:0 0 34px -3px rgba(255,122,46,.6), 0 32px 72px -30px rgba(0,0,0,.95);transform:translateY(-5px);}
+  .price-card .price-pill{position:absolute;top:13px;right:13px;z-index:3;
+    font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:#2a1400;background:var(--fox);border-radius:20px;padding:5px 11px;
+    box-shadow:0 3px 12px -3px rgba(255,122,46,.7);}
   .price-name{font-family:var(--disp);font-weight:700;font-size:15px;margin:0 0 6px;}
   .price-amt{font-family:var(--disp);font-weight:900;font-size:34px;margin:0;line-height:1;}
   .price-amt span{font-family:var(--mono);font-weight:400;font-size:13px;color:var(--muted);}
@@ -478,6 +482,7 @@
         <a class="price-btn" href="#" data-lead="signup-free" data-lead-title="Start free">Start free</a>
       </div>
       <div class="price-card is-best">
+        <span class="price-pill">Most popular</span>
         <p class="price-name">Companion</p>
         <p class="price-amt">$4.99<span>/mo</span></p>
         <p class="price-tag">For teams shipping AI to real customers.</p>
