@@ -412,7 +412,7 @@
   .corner-fox{position:fixed;right:18px;bottom:16px;z-index:110;cursor:pointer;display:flex;flex-direction:column;align-items:flex-end;gap:8px;
     opacity:0;transform:translateY(16px);pointer-events:none;transition:opacity .35s ease,transform .35s ease;}
   .corner-fox.visible{opacity:1;transform:none;pointer-events:auto;}
-  .cf-sprite{width:72px;height:78px;background:url('/fox-sprite.png') no-repeat;background-size:576px 468px;background-position:0 -234px;filter:drop-shadow(0 8px 14px rgba(0,0,0,.55));}
+  .cf-sprite{width:72px;height:78px;background:url('/ultimate_fox_spritesheet.png') no-repeat;background-size:576px 2808px;background-position:0 -2340px;filter:drop-shadow(0 8px 14px rgba(0,0,0,.55));}
   .cf-bubble{background:var(--surf);border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.03em;color:var(--ink);box-shadow:var(--clay-sm);white-space:nowrap;opacity:0;transform:translateY(6px);transition:opacity .3s,transform .3s;}
   .corner-fox.show-bubble .cf-bubble{opacity:1;transform:none;}
   .cf-bubble b{color:var(--fox);}
@@ -1290,36 +1290,39 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
     };
     window.addEventListener('scroll', cfScroll, { passive:true });
     cfScroll();
-    // bring the fox to life from the sprite sheet: idle stand, walk-in-place on
-    // hover, and random idle-breaks (trot / glance the other way) so it emotes.
-    // NOTE: fox-sprite.png is cropped to walk (rows 0-2) + stand (rows 3-5) only.
+    // full atlas: the fox stays STILL on its standing pose and only RARELY plays a
+    // random emote (cheer/loving/pawing/shy/cuddle/thinking/alert), then settles again.
+    // ultimate_fox_spritesheet: 8 cols, 24 frames/action, ROWS_PER_ACTION=3.
     const sp = cf.querySelector('.cf-sprite');
     const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (sp && !reduce){
-      const CW = 72, CH = 78, COLS = 8, FRAMES = 24, ROW_STAND = 3, ROW_WALK = 0;
-      let action = ROW_STAND, frame = 0, last = 0, facing = 1, hovering = false, walkUntil = 0;
-      const draw = () => {
-        const col = frame % COLS, row = action + Math.floor(frame / COLS);
-        sp.style.backgroundPosition = (-col * CW) + 'px ' + (-row * CH) + 'px';
-        sp.style.transform = 'scaleX(' + facing + ')';
+    if (sp){
+      const CW = 72, CH = 78, COLS = 8, FRAMES = 24, R = 3, STAND = 10 * R;
+      const EMOTES = [8*R, 4*R, 5*R, 7*R, 9*R, 11*R, 1*R];   // cheer, loving, pawing, shy, cuddle, thinking, alert
+      let frame = 0, last = 0, playing = false;
+      const still = () => { sp.style.backgroundPosition = '0 ' + (-STAND * CH) + 'px'; };
+      const play = base => {
+        if (reduce || playing) return;
+        playing = true; frame = 0; last = 0;
+        const step = t => {
+          if (t - last > 75){ last = t;
+            const col = frame % COLS, row = base + Math.floor(frame / COLS);
+            sp.style.backgroundPosition = (-col * CW) + 'px ' + (-row * CH) + 'px';
+            frame++;
+            if (frame >= FRAMES){ playing = false; still(); return; }
+          }
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
       };
-      const walk = ms => { action = ROW_WALK; walkUntil = performance.now() + ms; };
-      const loop = t => {
-        if (hovering) action = ROW_WALK;
-        else if (t > walkUntil && action === ROW_WALK) action = ROW_STAND;
-        if (t - last > (action === ROW_WALK ? 70 : 110)){ last = t; frame = (frame + 1) % FRAMES; draw(); }
-        requestAnimationFrame(loop);
-      };
-      cf.addEventListener('mouseenter', () => { hovering = true; });
-      cf.addEventListener('mouseleave', () => { hovering = false; });
-      cf.addEventListener('click', () => walk(900));
-      (function idleBreak(){
-        setTimeout(() => {
-          if (!hovering){ if (Math.random() < 0.55) walk(1300); else { facing *= -1; draw(); } }
-          idleBreak();
-        }, 4000 + Math.random() * 5000);
-      })();
-      draw(); requestAnimationFrame(loop);
+      still();
+      cf.addEventListener('mouseenter', () => play(8 * R));   // cheer when noticed
+      cf.addEventListener('click', () => play(8 * R));
+      if (!reduce){
+        (function schedule(){
+          setTimeout(() => { if (!playing) play(EMOTES[Math.floor(Math.random() * EMOTES.length)]); schedule(); },
+                     16000 + Math.random() * 26000);          // rarely — every ~16-42s
+        })();
+      }
     }
   }
 })();
