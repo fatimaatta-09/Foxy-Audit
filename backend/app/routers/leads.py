@@ -51,7 +51,10 @@ def _verify_recaptcha(token: str | None) -> bool:
     try:
         r = requests.post("https://www.google.com/recaptcha/api/siteverify",
                           data={"secret": secret, "response": token}, timeout=8)
-        return bool(r.json().get("success"))
+        data = r.json()
+        # v3 returns a score (0.0–1.0); v2 has none. Require success, and for v3 a
+        # score above the bot threshold.
+        return bool(data.get("success")) and float(data.get("score", 1.0)) >= 0.5
     except Exception:                       # noqa: BLE001 — don't block real users on a Google outage
         return True
 
