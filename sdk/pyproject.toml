@@ -4,16 +4,37 @@ build-backend = "hatchling.build"
 
 [project]
 name = "foxy-audit"
-version = "0.1.0"
+version = "1.0.0"
 description = "Governance-as-Code SDK for AI compliance: local SHA-256 hashing + tamper-evident audit telemetry, with zero raw-text exfiltration."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Foxy Audit" }]
 keywords = ["compliance", "audit", "ai", "governance", "hipaa", "soc2", "eu-ai-act"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 # A library: bound the major (never exact-pin) so it stays co-installable in a
 # consumer's environment. (Phase 5 · 5F)
 dependencies = ["requests>=2.31,<3"]
+
+[project.urls]
+Homepage = "https://foxyaudit.tech"
+Documentation = "https://foxyaudit.tech/docs.html"
+Source = "https://github.com/fatimaatta-09/Foxy-Audit"
+Issues = "https://github.com/fatimaatta-09/Foxy-Audit/issues"
 
 [project.scripts]
 foxy = "foxy_audit.cli:main"

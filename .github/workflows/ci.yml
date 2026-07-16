@@ -85,6 +85,15 @@ jobs:
         run: pytest sdk/tests -q
       - name: Hash-chain regression test
         run: pytest backend/tests/test_chain.py -q
+      - name: Clean-venv install (non-editable) + console script
+        # Proves `pip install foxy-audit` works from a fresh environment with no
+        # project history — the exact thing an outside user does.
+        run: |
+          python -m venv /tmp/cleanenv
+          /tmp/cleanenv/bin/pip install --upgrade pip
+          /tmp/cleanenv/bin/pip install ./sdk
+          /tmp/cleanenv/bin/python -c "import foxy_audit; from foxy_audit import FoxyClient; print('clean import OK')"
+          /tmp/cleanenv/bin/foxy --help
 
   # Full backend integration suite against a real Postgres: auth/RBAC, tenant
   # isolation, HMAC keys + legacy fallback, ingest->chain->verify (incl. tamper),

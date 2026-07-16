@@ -55,7 +55,11 @@ We provide a lightweight Python SDK (`pip install foxy-audit`) that intercepts A
 ### 1. Install the SDK
 
 ```bash
+# Once published to PyPI:
 pip install foxy-audit
+
+# Until then, install straight from source:
+pip install "git+https://github.com/fatimaatta-09/Foxy-Audit.git#subdirectory=sdk"
 ```
 
 ### 2. Initialize and Decorate
@@ -69,7 +73,7 @@ from foxy_audit import FoxyClient
 # Initialize the client
 foxy = FoxyClient(api_key=os.getenv("FOXY_API_KEY"))
 
-@foxy.audit(policy_group="healthcare-standard")
+@foxy.audit(policy="hipaa_basic", agent="gpt-4o")
 def call_medical_llm(user_prompt: str):
     # Your standard AI invocation code here
     response = openai.ChatCompletion.create(

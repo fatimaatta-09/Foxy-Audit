@@ -1,0 +1,50 @@
+name: Release
+
+# Version-tagged releases. Push a tag like `v1.0.0` to build (and, when the token
+# is configured, publish) the SDK. The desktop installer build matrix is added to
+# this workflow in Phase 3.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write        # attach build artifacts to a GitHub Release
+  id-token: write        # allow switching to PyPI Trusted Publishing later
+
+jobs:
+  # Build the SDK sdist + wheel. Always runs (tag or manual) so a bad build is
+  # caught before any publish step.
+  build-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build ./sdk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dist
+          path: sdk/dist/*
+
+  # Publish to PyPI. HUMAN-GATED: only runs on a version tag, and needs
+  # PYPI_API_TOKEN set in repo secrets (or switch to Trusted Publishing and drop
+  # the `password:` line). The `pypi` environment lets you add required reviewers.
+  publish-pypi:
+    needs: build-sdk
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
