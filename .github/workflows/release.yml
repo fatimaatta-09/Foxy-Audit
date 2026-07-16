@@ -81,7 +81,8 @@ jobs:
           echo "VER=$VER" >> "$GITHUB_ENV"
           choco install innosetup -y --no-progress
           "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "//DAppVersion=$VER" desktop/installer.iss
-          ls -la Output
+          # Inno Setup's OutputDir is relative to the .iss file, so it lands in desktop/Output.
+          ls -la desktop/Output
       - name: Sign Windows installer if a cert is provided
         if: runner.os == 'Windows'
         shell: bash
@@ -95,13 +96,13 @@ jobs:
           fi
           echo "$WINDOWS_CERT_BASE64" | base64 -d > cert.pfx
           SIGNTOOL=$(find "/c/Program Files (x86)/Windows Kits/10/bin" -name signtool.exe 2>/dev/null | grep -i x64 | head -1)
-          "$SIGNTOOL" sign //f cert.pfx //p "$WINDOWS_CERT_PASSWORD" //tr http://timestamp.digicert.com //td sha256 //fd sha256 "Output/FoxyAudit-Setup-$VER.exe"
+          "$SIGNTOOL" sign //f cert.pfx //p "$WINDOWS_CERT_PASSWORD" //tr http://timestamp.digicert.com //td sha256 //fd sha256 "desktop/Output/FoxyAudit-Setup-$VER.exe"
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: FoxyAudit-Windows
-          path: Output/*.exe
+          path: desktop/Output/*.exe
 
       # ---- Linux: AppImage ----
       - name: Package Linux AppImage
