@@ -154,7 +154,7 @@
     cursor:pointer;border:none;padding:0;}
   .dot-i.active{background:var(--fox);width:22px;border-radius:4px;}
 
-  .cta{position:absolute;right:20px;bottom:26px;z-index:60;display:flex;align-items:center;gap:10px;text-decoration:none;
+  .cta{position:absolute;left:20px;bottom:26px;z-index:60;display:flex;align-items:center;gap:10px;text-decoration:none;
     font-family:var(--disp);font-weight:700;font-size:clamp(13px,1.6vw,18px);color:var(--ink);
     letter-spacing:-.01em;text-transform:uppercase;transition:opacity 200ms ease, transform 200ms ease;}
   .cta:hover{opacity:.85;transform:translateX(2px);}
@@ -520,7 +520,7 @@
     </button>
   </div>
 
-  <a href="/pricing.html" class="cta">
+  <a href="/pricing.html" class="cta" id="heroPricing">
     <span>See pricing</span>
     <span class="arrowbox"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
   </a>
@@ -965,6 +965,13 @@ function prev(){ goTo((active+SLIDES.length-1) % SLIDES.length); }
 
 document.getElementById('next').addEventListener('click', next);
 document.getElementById('prev').addEventListener('click', prev);
+/* hero "See pricing" fast-forwards the carousel to the Pricing card (falls back
+   to /pricing.html if the carousel JS isn't ready) */
+const heroPricing = document.getElementById('heroPricing');
+if (heroPricing) heroPricing.addEventListener('click', e => {
+  const idx = SLIDES.findIndex(s => s && s.isPricing);
+  if (idx >= 0) { e.preventDefault(); goTo(idx); }
+});
 document.addEventListener('keydown', (e) => {
   if (document.getElementById('modalBackdrop').classList.contains('open')) {
     if (e.key === 'Escape') closeModal();
