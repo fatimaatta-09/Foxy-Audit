@@ -365,6 +365,10 @@ class OmniAwareFox(QWidget):
         # ── System Tray ───────────────────────────────────────────────────
         self._setup_tray()
 
+        # ── First run: ask for the API key if none is stored yet ──────────
+        if not self.settings.org_api_key():
+            self._prompt_first_run_key()
+
         # ── Startup backend health check ──────────────────────────────────
         url = self.settings.backend_url()
         key = self.settings.org_api_key()
@@ -388,6 +392,21 @@ class OmniAwareFox(QWidget):
         self.roam_tick_timer = QTimer(self)
         self.roam_tick_timer.timeout.connect(self._roaming_tick)
         self.roam_tick_timer.start(150)
+
+    # ── First-run onboarding ───────────────────────────────────────────────
+    def _prompt_first_run_key(self):
+        """First launch with no API key stored: ask for it once (from the welcome
+        email / dashboard) instead of silently doing nothing. Dismissable — the
+        key can also be set later via the tray menu → Settings."""
+        from PyQt6.QtWidgets import QInputDialog, QLineEdit
+        key, ok = QInputDialog.getText(
+            self, "Welcome to Foxy Audit",
+            "Paste your Foxy Audit API key to connect the fox to your account.\n"
+            "It's in your welcome email or the dashboard. You can also set it\n"
+            "later from the tray menu → Settings.",
+            QLineEdit.EchoMode.Normal, "")
+        if ok and key.strip():
+            self.settings.set_org_api_key(key.strip())
 
     # ── Frame cache helper ─────────────────────────────────────────────────
     def _get_frame(self, row: int, frame_idx: int,

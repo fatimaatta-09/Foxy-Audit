@@ -48,3 +48,93 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # ── Desktop installers (Phase 3) ───────────────────────────────────────────
+  # Windows .exe + Linux AppImage now; macOS .app is built but STUBBED (no
+  # notarization until an Apple Developer ID is provided). Every build is
+  # UNSIGNED unless the matching cert secret is present — unsigned builds warn
+  # and must NOT be handed to real clients as-is.
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r desktop/requirements.txt pyinstaller
+      - name: Build with PyInstaller
+        run: pyinstaller desktop/omni_fox.spec
+
+      # ---- Windows: Inno Setup installer (+ optional signing) ----
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          case "$GITHUB_REF" in refs/tags/*) VER="${GITHUB_REF_NAME#v}";; *) VER="0.0.0-dev";; esac
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          choco install innosetup -y --no-progress
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "//DAppVersion=$VER" desktop/installer.iss
+          ls -la Output
+      - name: Sign Windows installer if a cert is provided
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$WINDOWS_CERT_BASE64" ]; then
+            echo "::warning::No WINDOWS_CERT_BASE64 secret — the installer is UNSIGNED (SmartScreen will warn). Do not distribute to real clients as-is."
+            exit 0
+          fi
+          echo "$WINDOWS_CERT_BASE64" | base64 -d > cert.pfx
+          SIGNTOOL=$(find "/c/Program Files (x86)/Windows Kits/10/bin" -name signtool.exe 2>/dev/null | grep -i x64 | head -1)
+          "$SIGNTOOL" sign //f cert.pfx //p "$WINDOWS_CERT_PASSWORD" //tr http://timestamp.digicert.com //td sha256 //fd sha256 "Output/FoxyAudit-Setup-$VER.exe"
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FoxyAudit-Windows
+          path: Output/*.exe
+
+      # ---- Linux: AppImage ----
+      - name: Package Linux AppImage
+        if: runner.os == 'Linux'
+        run: |
+          case "$GITHUB_REF" in refs/tags/*) VER="${GITHUB_REF_NAME#v}";; *) VER="0.0.0-dev";; esac
+          APPDIR=FoxyAudit.AppDir
+          mkdir -p "$APPDIR/usr/bin"
+          cp dist/FoxyAudit "$APPDIR/usr/bin/FoxyAudit"
+          convert -size 256x256 xc:'#ff7a2e' "$APPDIR/foxyaudit.png" || cp desktop/ultimate_fox_spritesheet.png "$APPDIR/foxyaudit.png"
+          printf '%s\n' '[Desktop Entry]' 'Name=Foxy Audit' 'Exec=FoxyAudit' 'Icon=foxyaudit' 'Type=Application' 'Categories=Utility;' > "$APPDIR/foxyaudit.desktop"
+          printf '%s\n' '#!/bin/sh' 'HERE="$(dirname "$(readlink -f "$0")")"' 'exec "$HERE/usr/bin/FoxyAudit" "$@"' > "$APPDIR/AppRun"
+          chmod +x "$APPDIR/AppRun"
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract-and-run "$APPDIR" "FoxyAudit-$VER-x86_64.AppImage"
+          ls -la *.AppImage
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FoxyAudit-Linux
+          path: "*.AppImage"
+
+      # ---- macOS: STUBBED (build only; unsigned, not notarized) ----
+      - name: Package macOS (stubbed)
+        if: runner.os == 'macOS'
+        run: |
+          echo "::warning::macOS build is UNSIGNED and NOT notarized — Gatekeeper will block it. Provide an Apple Developer ID to enable signing/notarization before shipping."
+          cd dist && zip -r -q FoxyAudit-macos.zip FoxyAudit.app && ls -la
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FoxyAudit-macOS
+          path: dist/FoxyAudit-macos.zip

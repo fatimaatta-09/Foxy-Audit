@@ -52,7 +52,7 @@ from PyQt6.QtGui import (
     QPainter, QPen, QBrush, QLinearGradient, QPolygonF,
 )
 
-from fox_settings import FoxSettings
+from fox_settings import FoxSettings, resource_path
 import ai_providers
 import window_tracker
 
@@ -75,7 +75,7 @@ def _register_bundled_fonts():
     if _FONTS_REGISTERED:
         return
     _FONTS_REGISTERED = True
-    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    d = resource_path("fonts")
     try:
         for fn in os.listdir(d):
             if fn.lower().endswith((".ttf", ".otf")):

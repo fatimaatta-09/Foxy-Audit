@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QColor, QFont, QFontDatabase
 
-from fox_settings import FoxSettings, AI_PROVIDERS
+from fox_settings import FoxSettings, AI_PROVIDERS, resource_path
 from clay_chat_popup import GradientText, _IconButton
 import window_tracker
 import ai_providers
@@ -51,7 +51,7 @@ def _register_bundled_fonts():
     if _FONTS_REGISTERED:
         return
     _FONTS_REGISTERED = True
-    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    d = resource_path("fonts")
     try:
         for fn in os.listdir(d):
             if fn.lower().endswith((".ttf", ".otf")):

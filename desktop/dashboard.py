@@ -60,7 +60,7 @@ from PyQt6.QtGui import (
     QLinearGradient,
 )
 
-from fox_settings import FoxSettings
+from fox_settings import FoxSettings, resource_path
 
 
 # ── Backend HTTP workers (run off-thread so the GUI never freezes) ───────────
@@ -273,7 +273,7 @@ def _register_bundled_fonts():
     if _FONTS_REGISTERED:
         return
     _FONTS_REGISTERED = True
-    font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    font_dir = resource_path("fonts")
     try:
         for fn in os.listdir(font_dir):
             if fn.lower().endswith((".ttf", ".otf")):
@@ -899,8 +899,7 @@ class DashboardWindow(QWidget):
         self.fox_widget = fox_widget
         self.settings = settings or FoxSettings()
         # sprite sheet for the little Foxy portrait on the verification card
-        self._sprite_path = sprite_sheet_path or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "ultimate_fox_spritesheet.png")
+        self._sprite_path = sprite_sheet_path or resource_path("ultimate_fox_spritesheet.png")
 
         # ── live state ──
         # Session-live counters give instant feedback on UDP events; the tiles are

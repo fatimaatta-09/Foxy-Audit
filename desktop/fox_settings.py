@@ -43,10 +43,22 @@ Palette
   header_text   top-bar text colour (if different from text)
 """
 
+import os
+import sys
+
 from PyQt6.QtCore import QSettings
 
 ORG = "OmniAwareFox"
 APP = "DesktopPet"
+
+
+def resource_path(relative_path: str) -> str:
+    """Resolve a bundled asset from source OR a PyInstaller onefile build (which
+    extracts data files under sys._MEIPASS). Shared by the desktop modules so
+    every asset load survives packaging — import this instead of building paths
+    from __file__."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative_path)
 
 # ──────────────────────────────────────────────────────────────────── THEMES ──
 THEMES: dict[str, dict] = {
@@ -156,7 +168,7 @@ class FoxSettings:
         self._s.setValue("foxy/org_key", key)
 
     def backend_url(self) -> str:
-        return self._s.value("foxy/backend_url", "https://api.foxyaudit.dev", type=str)
+        return self._s.value("foxy/backend_url", "https://app.foxyaudit.tech", type=str)
 
     def set_backend_url(self, url: str):
         self._s.setValue("foxy/backend_url", url)
