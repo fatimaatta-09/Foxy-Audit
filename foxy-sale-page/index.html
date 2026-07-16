@@ -116,7 +116,8 @@
   .card::after{content:'';position:absolute;inset:0;z-index:3;pointer-events:none;border-radius:inherit;
     background:radial-gradient(120% 46% at 50% -10%, rgba(255,255,255,.24), rgba(255,255,255,0) 62%);}
   .card-top{height:44%;display:flex;align-items:center;justify-content:center;position:relative;
-    background:radial-gradient(circle at 50% 44%, var(--soft), transparent 66%);}
+    background-image:radial-gradient(circle at 50% 44%, var(--soft), transparent 66%), radial-gradient(rgba(0,0,0,.18) 1.3px, transparent 1.5px);
+    background-size:100% 100%, 12px 12px;background-repeat:no-repeat, repeat;}
   .card-top svg{width:38%;height:38%;position:relative;z-index:2;stroke:var(--acc);
     filter:drop-shadow(0 0 6px var(--glow));}
   /* dim glow behind the icon */
