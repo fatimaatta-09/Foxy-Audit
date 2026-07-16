@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome — Foxy Audit</title>
+<meta name="description" content="Finish setting up Foxy Audit: save your API key, install the SDK, and get the desktop app.">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://foxyaudit.tech/welcome.html">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#ff7a2e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<style>
+  .steps{max-width:640px;margin:36px auto 0;display:flex;flex-direction:column;gap:18px;position:relative;z-index:2;}
+  .step-card{position:relative;overflow:hidden;border-radius:18px;padding:22px 24px;
+    background:rgba(255,255,255,.04);border:1.3px solid rgba(255,122,46,.30);
+    backdrop-filter:blur(4px) saturate(1.5) brightness(1.04);}
+  .step-card h3{font-family:var(--disp);font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:10px;}
+  .step-card .n{width:24px;height:24px;border-radius:50%;background:var(--fox);color:var(--bg);font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .step-card p{font-size:13.5px;margin:0 0 12px;}
+  .keybox{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .keybox code{flex:1;min-width:220px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+    background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--fox);word-break:break-all;}
+  .warn{font-size:12px;color:var(--warn-bg,#ffc83d);margin:10px 0 0;}
+  .terms{display:flex;align-items:flex-start;gap:11px;font-size:13.5px;color:var(--ink);cursor:pointer;line-height:1.5;}
+  .terms input{width:18px;height:18px;accent-color:var(--fox);margin-top:2px;flex-shrink:0;}
+  .terms a{color:var(--fox);}
+  .dlrow{display:flex;gap:10px;flex-wrap:wrap;}
+  .muted-note{font-size:12px;color:var(--muted);margin-top:10px;}
+  .btn[disabled]{opacity:.45;cursor:not-allowed;transform:none;}
+</style>
+</head>
+<body>
+
+<header class="topnav">
+  <a class="tn-brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <div class="tn-actions">
+    <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="phead">
+    <p class="sec-eb">Welcome aboard</p>
+    <h1 class="sec-h">You're in. Let's get you set up.</h1>
+    <p class="sub" id="sub">Three quick steps — save your key, wrap one function, and (optionally) grab the desktop fox.</p>
+  </div>
+
+  <div class="steps" id="steps">
+    <!-- Step 1 — accept terms -->
+    <div class="step-card">
+      <h3><span class="n">1</span> Accept the terms</h3>
+      <label class="terms">
+        <input type="checkbox" id="agree">
+        <span>I agree to the <a href="/terms.html" target="_blank">Terms of Service</a> and <a href="/privacy.html" target="_blank">Privacy Policy</a>.</span>
+      </label>
+    </div>
+
+    <!-- Step 2 — API key -->
+    <div class="step-card">
+      <h3><span class="n">2</span> Save your API key</h3>
+      <p>This is shown <b>once</b> and can't be recovered — copy it somewhere safe now.</p>
+      <div class="keybox">
+        <code id="apiKey">foxy_sk_…</code>
+        <button class="btn" id="copyKey" type="button" style="padding:11px 16px;">Copy</button>
+      </div>
+      <p class="warn" id="keyWarn"></p>
+    </div>
+
+    <!-- Step 3 — install the SDK -->
+    <div class="step-card">
+      <h3><span class="n">3</span> Wrap one function</h3>
+      <p>Install the SDK and add one decorator — every call gets hashed, graded, and chained.</p>
+      <div class="code-card">
+        <div class="code-bar"><i></i><i></i><i></i><span>your_app.py</span></div>
+<pre><code><span class="c-dim">$ pip install foxy-audit</span>
+
+<span class="c-key">from</span> <span class="c-id">foxy_audit</span> <span class="c-key">import</span> <span class="c-id">FoxyClient</span>
+<span class="c-id">foxy</span> = <span class="c-id">FoxyClient</span>(api_key=<span class="c-str">"YOUR_KEY"</span>)
+
+<span class="c-dec">@foxy.audit</span>(<span class="c-id">policy</span>=<span class="c-str">"hipaa_basic"</span>, <span class="c-id">agent</span>=<span class="c-str">"gpt-4o"</span>)
+<span class="c-key">def</span> <span class="c-fn">ask_model</span>(<span class="c-id">prompt</span>):
+    <span class="c-key">return</span> <span class="c-id">llm</span>.generate(prompt)</code></pre>
+      </div>
+      <p class="muted-note">Full guide: <a href="/how-it-works.html" style="color:var(--fox)">how it works →</a></p>
+    </div>
+
+    <!-- Step 4 — desktop app (optional) -->
+    <div class="step-card">
+      <h3><span class="n">4</span> Get the desktop fox <span style="font-size:11px;color:var(--muted);font-weight:500">— optional</span></h3>
+      <p>Watch your calls go green (clean) or red (breach) in real time. <b>Early access · unsigned.</b></p>
+      <div class="dlrow">
+        <a class="btn" href="https://foxyaudit.tech/download/FoxyAudit-Setup.exe" style="text-decoration:none;">Windows</a>
+        <a class="btn ghost" href="https://foxyaudit.tech/download/FoxyAudit-x86_64.AppImage" style="text-decoration:none;">Linux (AppImage)</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="band" style="border-top:none;margin-top:34px;padding-top:0;">
+    <button class="btn" id="toDash" type="button" disabled>Open my dashboard →</button>
+    <p class="muted-note" id="gateNote">Accept the terms above to continue.</p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="/favicon.svg" alt=""><span>Foxy Audit</span></div>
+        <p>Cryptographic AI compliance you can prove, not just promise. Tamper-evident audit trails for every model call.</p>
+      </div>
+      <div class="footer-col"><p class="footer-col-title">Product</p>
+        <a href="/how-it-works.html">How it works</a><a href="/pricing.html">Pricing</a><a href="/sdk.html">SDK</a><a href="/desktop.html">Desktop app</a></div>
+      <div class="footer-col"><p class="footer-col-title">Company</p>
+        <a href="/about.html">About us</a><a href="/contact.html">Contact</a><a href="/docs.html">Docs</a></div>
+      <div class="footer-col"><p class="footer-col-title">Legal &amp; Trust</p>
+        <a href="/legal.html">Legal &amp; Trust</a><a href="/terms.html">Terms of Service</a><a href="/privacy.html">Privacy Policy</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Foxy Audit. Cryptographic compliance, not a promise.</span>
+      <span><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/cookie-policy.html">Cookies</a></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  const API = window.FOXY_API || ((location.hostname==='localhost'||location.hostname==='127.0.0.1')
+    ? 'http://localhost:8000' : 'https://app.' + location.hostname.replace(/^www\./,''));
+  const DASH = 'https://app.foxyaudit.tech/dashboard';
+
+  // The signup modal stashes {email, api_key} here just before navigating in.
+  // Read it once, then clear it (the key is shown-once).
+  let data = null;
+  try { data = JSON.parse(sessionStorage.getItem('foxy_welcome') || 'null'); } catch(_) {}
+  try { sessionStorage.removeItem('foxy_welcome'); } catch(_) {}
+
+  const keyEl = document.getElementById('apiKey');
+  const warnEl = document.getElementById('keyWarn');
+  if (data && data.api_key) {
+    keyEl.textContent = data.api_key;
+  } else {
+    // No active signup context (e.g. page opened directly / refreshed).
+    keyEl.textContent = 'Your key was shown at signup';
+    warnEl.textContent = 'If you missed it, create a new key from the dashboard → Keys.';
+    document.getElementById('copyKey').style.display = 'none';
+    document.getElementById('sub').textContent = 'Finish setup, then head to your dashboard.';
+  }
+
+  document.getElementById('copyKey').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(keyEl.textContent); }
+    catch(_) { const r=document.createRange(); r.selectNode(keyEl); getSelection().removeAllRanges(); getSelection().addRange(r); }
+    const b = document.getElementById('copyKey'); const t = b.textContent; b.textContent = 'Copied ✓';
+    setTimeout(() => b.textContent = t, 1600);
+  });
+
+  const agree = document.getElementById('agree');
+  const toDash = document.getElementById('toDash');
+  const gateNote = document.getElementById('gateNote');
+  agree.addEventListener('change', () => {
+    toDash.disabled = !agree.checked;
+    gateNote.textContent = agree.checked ? 'Thanks — you can head to your dashboard.' : 'Accept the terms above to continue.';
+  });
+
+  toDash.addEventListener('click', () => {
+    if (!agree.checked) return;
+    // Best-effort server-side consent audit row (reuses /v1/consent); never blocks.
+    try {
+      fetch(API + '/v1/consent', { method:'POST', headers:{'Content-Type':'application/json'}, keepalive:true,
+        body: JSON.stringify({ functional:true, policy_version:'1.0' }) }).catch(()=>{});
+    } catch(_) {}
+    window.location.href = DASH;
+  });
+</script>
+</body>
+</html>
