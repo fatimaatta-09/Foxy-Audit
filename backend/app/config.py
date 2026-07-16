@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     stripe_price_pro: str = ""
     stripe_price_companion: str = ""
     stripe_price_guardian: str = ""    # one-time (lifetime) — Checkout mode=payment
+    # Google reCAPTCHA v2 — server-side verification of the demo form. Empty = skip
+    # (the frontend widget still gates UX; set RECAPTCHA_SECRET_KEY in the server env
+    # for real bot protection — the site key is public and lives in book-a-demo.html).
+    recaptcha_secret_key: str = ""
     # Google SSO — the OAuth 2.0 Web Client ID (public). Empty = "Sign in with
     # Google" disabled (POST /v1/auth/google returns 503). No client secret needed:
     # we only verify Google ID tokens, whose audience must equal this client id.

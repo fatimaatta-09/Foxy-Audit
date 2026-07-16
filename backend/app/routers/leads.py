@@ -14,13 +14,15 @@ from __future__ import annotations
 import html as _html
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+import requests
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import email as email_mod
+from ..config import get_settings
 from ..auth import hash_key
 from ..db import SessionLocal, get_db
 from ..models import MarketingLead, StaffUser, TrafficEvent
@@ -35,6 +37,23 @@ PRIORITY_SOURCES = {"enterprise", "demo"}
 
 def _esc(s: str | None) -> str:
     return _html.escape(s or "")
+
+
+def _verify_recaptcha(token: str | None) -> bool:
+    """Server-side Google reCAPTCHA v2 check for the public demo form. Skips (True)
+    when no secret is configured; fails closed on an explicit reject; fails OPEN on a
+    network error so a Google outage never blocks a real prospect."""
+    secret = get_settings().recaptcha_secret_key
+    if not secret:
+        return True
+    if not token:
+        return False
+    try:
+        r = requests.post("https://www.google.com/recaptcha/api/siteverify",
+                          data={"secret": secret, "response": token}, timeout=8)
+        return bool(r.json().get("success"))
+    except Exception:                       # noqa: BLE001 — don't block real users on a Google outage
+        return True
 
 
 def _notify_priority_contact(name: str | None, email_addr: str, message: str | None) -> None:
@@ -85,6 +104,7 @@ class LeadRequest(BaseModel):
     utm_campaign: str | None = Field(default=None, max_length=128)
     utm_source: str | None = Field(default=None, max_length=128)
     utm_medium: str | None = Field(default=None, max_length=128)
+    recaptcha_token: str | None = Field(default=None, max_length=4096)   # demo form (reCAPTCHA v2)
 
 
 class LeadResponse(BaseModel):
@@ -117,6 +137,10 @@ def create_lead(payload: LeadRequest, request: Request, background: BackgroundTa
     email = payload.email.strip().lower()
     is_priority = (payload.source or "").strip().lower() in PRIORITY_SOURCES
     has_msg = bool(payload.message and payload.message.strip())
+    # The public demo form is bot-protected with reCAPTCHA (verified only when the
+    # server secret is set; other lead sources don't carry a token).
+    if (payload.source or "").strip().lower() == "demo" and not _verify_recaptcha(payload.recaptcha_token):
+        raise HTTPException(status_code=400, detail="reCAPTCHA verification failed — please try again.")
     existing = db.execute(
         select(MarketingLead).where(
             func.lower(MarketingLead.email) == email,
