@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact &amp; Support — Foxy Audit</title>
+<meta name="description" content="Get help with Foxy Audit — email support, the Help Center, enterprise inquiries, and our per-plan response-time SLA.">
+<link rel="canonical" href="https://foxyaudit.tech/contact.html">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#ff7a2e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="topnav">
+  <a class="tn-brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <div class="tn-actions">
+    <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
+    <a class="tn-cta" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="phead">
+    <a class="back" href="/">← Back to all cards</a>
+    <p class="sec-eb">Contact &amp; Support</p>
+    <h1 class="sec-h">Help when you need it, not just docs.</h1>
+    <p class="sub">Real engineers, real response times. Reach us by email, browse the Help Center, or send a note below — we read every message.</p>
+  </div>
+
+  <div class="grid">
+    <div class="gcard">
+      <div class="em">✉️</div>
+      <h3>Email support</h3>
+      <p>Write to <a href="mailto:foxyaudit@gmail.com" style="color:var(--fox)">foxyaudit@gmail.com</a>. Every plan gets a response within its SLA below — no ticket queue, a real person replies.</p>
+      <a class="cta" href="mailto:foxyaudit@gmail.com">Email us →</a>
+    </div>
+    <div class="gcard">
+      <div class="em">📚</div>
+      <h3>Help Center</h3>
+      <p>Setup guides, SDK references, and troubleshooting for every step — from install to your first verified audit passport.</p>
+      <a class="cta" href="/how-it-works.html">See how it works →</a>
+    </div>
+    <div class="gcard">
+      <div class="em">🏢</div>
+      <h3>Enterprise inquiries</h3>
+      <p>SSO, on-prem deployment, a bespoke SLA, or zero-knowledge payloads for regulated teams — this goes straight to the founders.</p>
+      <a class="cta" href="#note">Send a note →</a>
+    </div>
+  </div>
+
+  <div class="sla">
+    <div class="sla-row sla-head"><span>Plan</span><span>Response time</span><span>Channel</span></div>
+    <div class="sla-row"><span>Starter</span><span>2 business days</span><span>Email</span></div>
+    <div class="sla-row"><span>Companion</span><span>1 business day</span><span>Email</span></div>
+    <div class="sla-row"><span>Guardian</span><span>Same business day</span><span>Priority email</span></div>
+  </div>
+
+  <form class="note" id="note" onsubmit="return sendNote(event)">
+    <p class="lead">Or send us a note — we read every message:</p>
+    <input id="nEmail" type="email" placeholder="you@company.com" autocomplete="email" required>
+    <textarea id="nMsg" rows="4" placeholder="How can we help?" required></textarea>
+    <button class="btn" type="submit">Send message
+      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+    <p class="status" id="nStatus"></p>
+  </form>
+
+  <div class="band">
+    <h2>Ready to prove it?</h2>
+    <p>Set up your first verified chain in under ten minutes. No credit card needed to start.</p>
+    <a class="tn-cta" style="padding:13px 22px;font-size:13px" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="/favicon.svg" alt=""><span>Foxy Audit</span></div>
+        <p>Cryptographic AI compliance you can prove, not just promise. Tamper-evident audit trails for every model call.</p>
+      </div>
+      <div class="footer-col"><p class="footer-col-title">Product</p>
+        <a href="/how-it-works.html">How it works</a><a href="/pricing.html">Pricing</a><a href="/sdk.html">SDK</a><a href="/passport.html">Compliance passport</a><a href="/desktop.html">Desktop app</a></div>
+      <div class="footer-col"><p class="footer-col-title">Company</p>
+        <a href="/about.html">About us</a><a href="/contact.html">Contact</a><a href="/docs.html">Docs</a></div>
+      <div class="footer-col"><p class="footer-col-title">Legal &amp; Trust</p>
+        <a href="/legal.html">Legal &amp; Trust</a><a href="/terms.html">Terms of Service</a><a href="/privacy.html">Privacy Policy</a><a href="/acceptable-use.html">Acceptable Use</a><a href="/report-abuse.html">Report Abuse</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Foxy Audit. Cryptographic compliance, not a promise.</span>
+      <span><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/cookie-policy.html">Cookies</a></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  async function sendNote(e){
+    e.preventDefault();
+    const email=document.getElementById('nEmail').value.trim();
+    const msg=document.getElementById('nMsg').value.trim();
+    const status=document.getElementById('nStatus');
+    if(!email||!msg){ status.style.color='#ffb020'; status.textContent='Please add your email and a message.'; return false; }
+    status.style.color='var(--muted)'; status.textContent='Sending…';
+    try{
+      const base=window.FOXY_API||((location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8000':'https://app.'+location.hostname.replace(/^www\./,''));
+      const r=await fetch(base+'/v1/leads',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email,message:msg,source:'support',subject:'Support note'})});
+      if(!r.ok) throw new Error();
+      status.style.color='#3ddc84'; status.textContent='Got it — we\'ll be in touch within your plan\'s SLA.';
+      e.target.reset();
+    }catch(_){ status.style.color='#ffb020'; status.textContent='Something went wrong. Please email foxyaudit@gmail.com directly.'; }
+    return false;
+  }
+</script>
+</body>
+</html>

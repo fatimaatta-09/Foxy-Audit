@@ -481,24 +481,20 @@
 <header class="topnav">
   <a class="tn-brand" href="#stage"><img src="/favicon.svg" alt="">Foxy Audit</a>
   <nav class="tn-links">
-    <a href="#how">How it works</a>
-    <a href="#pricing">Pricing</a>
-    <a href="#faq">FAQ</a>
-    <a href="#support">Contact</a>
+    <a href="/how-it-works.html">How it works</a>
+    <a href="/pricing.html">Pricing</a>
+    <a href="/about.html">About</a>
+    <a href="/contact.html">Contact</a>
   </nav>
   <div class="tn-actions">
     <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
     <a class="tn-cta" href="/book-a-demo.html">Book a demo</a>
   </div>
 </header>
-<nav class="dotrail" aria-label="Section navigation">
-  <a href="#stage" data-sec="stage" class="dot"><span>Top</span></a>
-  <a href="#how" data-sec="how" class="dot"><span>How it works</span></a>
-  <a href="#pricing" data-sec="pricing" class="dot"><span>Pricing</span></a>
-  <a href="#support" data-sec="support" class="dot"><span>Contact</span></a>
-</nav>
-<div class="corner-fox" id="cornerFox" title="Get started">
-  <div class="cf-bubble">Ready when you are — <b>Get started →</b></div>
+<!-- section dot-rail removed: the card-first homepage has no scroll sections -->
+
+<div class="corner-fox" id="cornerFox" title="How this site works">
+  <div class="cf-bubble">👋 New here? <b>Click any card</b> — each opens its own page.</div>
   <div class="cf-sprite"></div>
 </div>
 <a class="login-link" href="https://app.foxyaudit.tech/dashboard">Log in</a>
@@ -524,225 +520,11 @@
     </button>
   </div>
 
-  <a href="#pricing" class="cta">
+  <a href="/pricing.html" class="cta">
     <span>See pricing</span>
     <span class="arrowbox"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
   </a>
 </div>
-
-<section class="how-sec" id="how">
-  <div class="wrap">
-    <p class="sec-eb">How it works</p>
-    <h2 class="sec-h">Three lines of code. Zero trust required.</h2>
-    <p class="how-sub">Wrap one function with the SDK. Every AI call gets hashed, graded, and chained automatically — you watch it live in the desktop app, and hand your auditor a proof they verify without trusting you.</p>
-
-    <div class="code-wrap">
-      <div class="code-card">
-        <div class="code-bar"><i></i><i></i><i></i><span>your_app.py</span></div>
-<pre><code><span class="c-dim">$ pip install foxy-audit</span>
-
-<span class="c-key">from</span> <span class="c-id">foxy_audit</span> <span class="c-key">import</span> <span class="c-id">audit</span>
-
-<span class="c-dec">@audit</span>(<span class="c-id">policy</span>=<span class="c-str">"soc2"</span>)          <span class="c-cmt"># the only line you add</span>
-<span class="c-key">def</span> <span class="c-fn">ask_model</span>(<span class="c-id">prompt</span>):
-    <span class="c-key">return</span> <span class="c-id">llm</span>.generate(prompt)   <span class="c-cmt"># your code, unchanged</span></code></pre>
-      </div>
-    </div>
-    <p class="code-note">That decorator is the <b>only</b> change to your app. It never blocks your function and never throws its own errors — everything below runs on a background thread.</p>
-
-    <div class="flow">
-      <div class="step"><img class="card-fox-topper" data-fox="3" alt="">
-        <p class="step-n">01</p>
-        <div class="step-ic"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-        <h3>Hashed on your machine</h3>
-        <p>The moment your function returns, Foxy takes a <b>SHA-256</b> of the prompt and response and throws the raw text away. Only the digests, token count, and policy tag leave your servers — <b>your data never does</b>.</p>
-      </div>
-      <div class="step"><img class="card-fox-topper" data-fox="6" alt="">
-        <p class="step-n">02</p>
-        <div class="step-ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V7z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></div>
-        <h3>Graded against your policy</h3>
-        <p>Every call is scored in real time against the policy you tagged — <b>HIPAA, SOC 2, or your own rules</b>. Anything that crosses the line is flagged the instant it happens, not in a review weeks later.</p>
-      </div>
-      <div class="step"><img class="card-fox-topper" data-fox="7" alt="">
-        <p class="step-n">03</p>
-        <div class="step-ic"><svg viewBox="0 0 24 24"><path d="M9 12a3 3 0 0 0 4.24.17l2.5-2.34a3 3 0 1 0-4.07-4.4l-1.2 1.11"/><path d="M15 12a3 3 0 0 0-4.24-.17l-2.5 2.34a3 3 0 1 0 4.07 4.4l1.2-1.11"/></svg></div>
-        <h3>Sealed into a hash chain</h3>
-        <p>Each record's hash folds in the one before it — and which model produced it. Edit any past entry and <b>every hash after it stops matching</b>. Tampering isn't hidden; it's mathematically obvious.</p>
-      </div>
-      <div class="step">
-        <p class="step-n">04</p>
-        <div class="step-ic"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
-        <h3>Watch live, prove anywhere</h3>
-        <p>The <b>desktop app</b> reacts the instant a call lands — green when it's clean, red on a breach. The <b>dashboard</b> shows the whole trail and exports a <b>compliance passport</b> your auditor re-verifies themselves, mapped to NIST AI RMF &amp; the EU AI Act.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<section id="pricing">
-  <div class="wrap">
-    <p class="sec-eb">Pricing</p>
-    <h2 class="sec-h">Pay for what you verify.</h2>
-
-    <div class="price-grid">
-      <div class="price-card">
-        <p class="price-name">Starter</p>
-        <p class="price-amt">$0<span>/mo</span></p>
-        <p class="price-tag">For solo builders and prototypes.</p>
-        <ul class="price-list">
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>1,000 verified calls / mo</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Hash chain + public verify endpoint</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Community support</li>
-        </ul>
-        <a class="price-btn" href="/book-a-demo.html">Book a demo</a>
-      </div>
-      <div class="price-card is-best">
-        <span class="price-pill">Most popular</span>
-        <p class="price-name">Companion</p>
-        <p class="price-amt">$4.99<span>/mo</span></p>
-        <p class="price-tag">For teams shipping AI to real customers.</p>
-        <ul class="price-list">
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Higher verified-call volume</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Compliance passport export</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Active-defense AI judge</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Priority support</li>
-        </ul>
-        <a class="price-btn" href="#" data-lead="signup-companion" data-lead-title="Start with Companion">Get Companion</a>
-      </div>
-      <div class="price-card">
-        <p class="price-name">Guardian</p>
-        <p class="price-amt">$39<span> once</span></p>
-        <p class="price-tag">Pay once. Lifetime license.</p>
-        <ul class="price-list">
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Everything in Companion</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Lifetime license — no subscription</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Dedicated onboarding</li>
-        </ul>
-        <a class="price-btn" href="#" data-lead="signup-guardian" data-lead-title="Get Guardian">Get Guardian</a>
-      </div>
-    </div>
-
-    <div class="enterprise-card">
-      <div>
-        <h3>Need something custom?</h3>
-        <p>SSO, on-prem deployment, a bespoke SLA, or zero-knowledge payloads for regulated teams — let's talk.</p>
-      </div>
-      <a class="price-btn" href="#" id="openContact" onclick="openContactModal();return false;">Contact us</a>
-    </div>
-
-    <p class="sec-eb" style="margin-top:76px;">Frequently asked</p>
-    <h2 class="sec-h" id="faq" style="margin-bottom:26px;">FAQ</h2>
-    <div class="faq-wrap" id="faqWrap" style="margin-top:0;">
-      <div class="faq-item">
-        <button class="faq-q">Do you ever see our raw prompts?
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
-        <div class="faq-a"><p>No. We hash your inputs, outputs, and verdicts on the way past — the raw content never leaves your infrastructure unless you explicitly opt into a support request. What we store is the hash chain, not the payloads.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">Is this SOC 2 certified?
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
-        <div class="faq-a"><p>We're currently completing our SOC 2 Type I audit. Until it's issued, we won't claim certification — we'll tell you exactly where we are in the process if you ask.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">What happens if your servers go down?
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
-        <div class="faq-a"><p>Your hash chain is append-only and independently re-computable, so an outage doesn't corrupt or invalidate what's already been recorded. New calls queue locally in the SDK and sync once we're back.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">Can I cancel anytime?
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
-        <div class="faq-a"><p>Yes — no contracts on Starter or Companion. Cancel from your dashboard and you'll keep access through the end of the billing period. Custom plans follow the terms in your agreement.</p></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="team">
-  <div class="wrap">
-    <p class="sec-eb">Team</p>
-    <h2 class="sec-h">Built by people who've been audited.</h2>
-    <div class="how-grid founders-grid">
-      <div class="how-card founder-card">
-        <img class="card-fox-topper" data-fox="2" alt="">
-        <div class="founder-avatar">FR</div>
-        <h3>Fatima Rehman</h3>
-        <p class="founder-role">Co-founder &amp; CEO</p>
-      </div>
-      <div class="how-card founder-card">
-        <img class="card-fox-topper" data-fox="5" alt="">
-        <div class="founder-avatar">AK</div>
-        <h3>Ali Kamran</h3>
-        <p class="founder-role">Co-founder &amp; CTO</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="support">
-  <div class="wrap">
-    <p class="sec-eb">Support</p>
-    <h2 class="sec-h">Help when you need it, not just docs.</h2>
-    <div class="how-grid">
-      <div class="how-card">
-        <img class="card-fox-topper" data-fox="6" alt="">
-        <p class="how-num">💬</p>
-        <h3>Live chat</h3>
-        <p>Talk to a real engineer in-app — most chats get a first reply in under 10 minutes during business hours.</p>
-        <a class="sup-cta" href="https://app.foxyaudit.tech/dashboard">Open the app <span aria-hidden="true">→</span></a>
-      </div>
-      <div class="how-card">
-        <img class="card-fox-topper" data-fox="4" alt="">
-        <p class="how-num">✉️</p>
-        <h3>Email support</h3>
-        <p>Write to <a href="mailto:foxyaudit@gmail.com" style="color:var(--fox);">foxyaudit@gmail.com</a> — every plan gets a same-business-day response.</p>
-        <a class="sup-cta" href="mailto:foxyaudit@gmail.com">Email us <span aria-hidden="true">→</span></a>
-      </div>
-      <div class="how-card">
-        <img class="card-fox-topper" data-fox="7" alt="">
-        <p class="how-num">📚</p>
-        <h3>Help Center</h3>
-        <p>Setup guides, SDK references, and troubleshooting for every step from install to your first audit passport.</p>
-        <div style="display:flex;gap:18px;flex-wrap:wrap;">
-          <a class="sup-cta" href="#how">How it works <span aria-hidden="true">→</span></a>
-          <a class="sup-cta" href="#pricing">Get started <span aria-hidden="true">→</span></a>
-        </div>
-      </div>
-    </div>
-
-    <div class="sla-table">
-      <div class="sla-row sla-head">
-        <span>Plan</span><span>Response time</span><span>Channel</span>
-      </div>
-      <div class="sla-row"><span>Starter</span><span>2 business days</span><span>Email</span></div>
-      <div class="sla-row"><span>Companion</span><span>1 business day</span><span>Email</span></div>
-      <div class="sla-row"><span>Guardian</span><span>Same business day</span><span>Priority email</span></div>
-    </div>
-
-    <div style="max-width:520px;margin:30px auto 0;display:flex;flex-direction:column;gap:12px;">
-      <p style="text-align:center;color:var(--muted);margin:0 0 4px;">Or send us a note — we read every message:</p>
-      <input id="supEmail" type="email" placeholder="you@company.com" autocomplete="email"
-             style="padding:13px 14px;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,122,46,.32);border-radius:12px;color:var(--ink);font-family:var(--mono);font-size:13px;outline:none;backdrop-filter:blur(4px) saturate(1.4);-webkit-backdrop-filter:blur(4px) saturate(1.4);">
-      <textarea id="supMsg" rows="4" placeholder="How can we help?"
-             style="padding:13px 14px;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,122,46,.32);border-radius:12px;color:var(--ink);font-family:inherit;font-size:14px;line-height:1.5;outline:none;resize:vertical;backdrop-filter:blur(4px) saturate(1.4);-webkit-backdrop-filter:blur(4px) saturate(1.4);"></textarea>
-      <a class="modal-cta" id="supSend" href="#" style="align-self:center;">Send message
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
-      <p id="supStatus" style="text-align:center;font-family:var(--mono);font-size:11px;min-height:14px;letter-spacing:.04em;"></p>
-    </div>
-  </div>
-</section>
-
-<section class="cta-band">
-  <div class="wrap">
-    <h2>Ready to prove it?</h2>
-    <p>Set up your first verified chain in under ten minutes. No credit card needed to start.</p>
-    <a class="modal-cta" href="#" style="position:relative;" data-lead="cta-hero" data-lead-title="Get started free">Get started free</a>
-  </div>
-</section>
 
 <footer id="contact">
   <div class="wrap footer-grid">
@@ -758,29 +540,29 @@
 
     <div class="footer-col">
       <p class="footer-col-title">Product</p>
-      <a href="#how">Features</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#how">How it works</a>
-      <a href="#how">SDK</a>
+      <a href="/how-it-works.html">Features</a>
+      <a href="/pricing.html">Pricing</a>
+      <a href="/how-it-works.html">How it works</a>
+      <a href="/sdk.html">SDK</a>
       <a href="https://app.foxyaudit.tech/dashboard">Dashboard</a>
-      <a href="#">Compliance passport</a>
+      <a href="/passport.html">Compliance passport</a>
     </div>
 
     <div class="footer-col">
       <p class="footer-col-title">Company</p>
-      <a href="#team">About us</a>
-      <a href="#team">Team</a>
-      <a href="#">Careers</a>
-      <a href="#" id="footerContact" class="footer-contact-btn">Contact us</a>
+      <a href="/about.html">About us</a>
+      <a href="/about.html">Team</a>
+      <a href="/desktop.html">Desktop app</a>
+      <a href="/contact.html" class="footer-contact-btn">Contact us</a>
     </div>
 
     <div class="footer-col">
       <p class="footer-col-title">Resources</p>
-      <a href="#">Documentation</a>
-      <a href="#support">Support</a>
-      <a href="#faq">FAQ</a>
-      <a href="#">Blog</a>
-      <a href="#">Changelog</a>
+      <a href="/docs.html">Documentation</a>
+      <a href="/contact.html">Support</a>
+      <a href="/pricing.html">Pricing &amp; FAQ</a>
+      <a href="/book-a-demo.html">Book a demo</a>
+      <a href="/desktop.html">Desktop app</a>
     </div>
 
     <div class="footer-col">
@@ -789,7 +571,7 @@
       <a href="/privacy.html">Privacy Policy</a>
       <a href="/acceptable-use.html">Acceptable Use</a>
       <a href="/report-abuse.html">Report Abuse</a>
-      <a href="#">Security</a>
+      <a href="/legal.html">Legal &amp; Trust</a>
     </div>
   </div>
   <div class="wrap footer-bottom">
@@ -906,7 +688,7 @@ const SLIDES = [
     modalDesc: "Wrap any model call — OpenAI, Anthropic, your own fine-tune — with one Python decorator. Every input, output, and verdict is captured and hashed on the way past, with no changes to your architecture.",
     features: ["Works with any LLM provider or self-hosted model","Zero added latency in the request path","Drop-in — no SDK migration required"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L2 12l6 6"/><path d="M16 6l6 6-6 6"/></svg>`,
-    ctaLabel: "See how it works", ctaHref: "#how"
+    ctaLabel: "Open the SDK", ctaHref: "/sdk.html"
   },
   {
     ghost: "CHAIN.", accentHex: "#ffc83d", accentTx:"var(--warn-tx)",
@@ -914,7 +696,7 @@ const SLIDES = [
     modalDesc: "Each record's hash includes the one directly before it. Edit, delete, or backdate any past entry and the whole chain stops matching — instantly and mathematically, with no manual review needed.",
     features: ["Tamper-evident by construction, not by policy","Break one record, break every one after it","Independently re-computable by any auditor"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--warn-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
-    ctaLabel: "See how it works", ctaHref: "#how"
+    ctaLabel: "Open Hash Chain", ctaHref: "/hash-chain.html"
   },
   {
     ghost: "PROVE.", accentHex: "#3ddc84", accentTx:"var(--safe-tx)",
@@ -922,7 +704,7 @@ const SLIDES = [
     modalDesc: "Your buyer doesn't need to trust your word or read a single log line. They paste in the chain, hit verify, and get a pass or fail — checkable by anyone, in seconds.",
     features: ["Public verification endpoint, no login needed","Runs the same math your system used to build it","Shareable link for procurement and audit teams"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--safe-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>`,
-    ctaLabel: "Try verification", ctaHref: "#how"
+    ctaLabel: "Open Verify", ctaHref: "/verify-page.html"
   },
   {
     ghost: "PASSPORT.", accentHex: "#d9722e", accentTx:"var(--ink)",
@@ -930,7 +712,7 @@ const SLIDES = [
     modalDesc: "Turn months of AI activity into a single exportable document mapped to NIST AI RMF and EU AI Act clauses — the artifact your legal and procurement teams actually want to see.",
     features: ["One-click PDF export for audits and RFPs","Maps directly to NIST AI RMF & EU AI Act","Always reflects your live, current chain"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg>`,
-    ctaLabel: "See a sample passport", ctaHref: "#pricing"
+    ctaLabel: "Open the Passport", ctaHref: "/passport.html"
   },
   {
     ghost: "GUARD.", accentHex: "#c9b7ff", accentTx:"var(--guard-tx)",
@@ -938,7 +720,7 @@ const SLIDES = [
     modalDesc: "A second AI model watches every call in real time, scoring it against your policy before it's chained. Risky outputs get flagged and logged the moment they happen, not weeks later in a review.",
     features: ["Real-time policy scoring on every call","Configurable rules — no code changes to update policy","Flags feed straight into the audit ledger"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--guard-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
-    ctaLabel: "Enable the judge", ctaHref: "#pricing"
+    ctaLabel: "Open the Judge", ctaHref: "/judge.html"
   },
   {
     ghost: "PLANS.", accentHex: "#ffb020", accentTx:"var(--plan-tx)",
@@ -947,7 +729,63 @@ const SLIDES = [
     features: ["Starter: 1,000 verified calls / month, free","Companion: passport + AI judge, $4.99/mo","Guardian: lifetime license, $39 once"],
     isPricing:true,
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
-    ctaLabel: "Choose a plan", ctaHref: "#pricing"
+    ctaLabel: "See full pricing", ctaHref: "/pricing.html"
+  },
+  {
+    ghost: "LEARN.", accentHex: "#ffb020", accentTx:"var(--warn-tx)",
+    cardTitle: "How it works", cardEyebrow: "3 lines of code",
+    modalDesc: "Install the SDK, wrap one function, and watch every call get hashed, graded, chained, and verified — the whole pipeline, in minutes.",
+    features: ["Three lines of code to integrate","Runs on a background thread — never blocks you","Watch it live in the desktop app"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    ctaLabel: "See how it works", ctaHref: "/how-it-works.html"
+  },
+  {
+    ghost: "PET.", accentHex: "#3ddc84", accentTx:"var(--safe-tx)",
+    cardTitle: "Desktop app", cardEyebrow: "Your compliance buddy",
+    modalDesc: "A pixel-art fox that lives at the edge of your screen and reacts the instant a call lands — green when clean, red on a breach — with a built-in chat copilot.",
+    features: ["Live green / red reactions on every call","Chat copilot on your desktop","One click into the full dashboard"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--safe-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
+    ctaLabel: "Open Desktop app", ctaHref: "/desktop.html"
+  },
+  {
+    ghost: "TALK.", accentHex: "#ff7a2e", accentTx:"var(--ink)",
+    cardTitle: "Contact us", cardEyebrow: "Talk to a founder",
+    modalDesc: "Email support, the Help Center, or an enterprise inquiry straight to the founders — plus a per-plan response-time SLA. Real engineers, not a ticket queue.",
+    features: ["Same-business-day email on paid plans","Enterprise inquiries go to the founders","Send a note — we read every message"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>`,
+    ctaLabel: "Open Contact", ctaHref: "/contact.html"
+  },
+  {
+    ghost: "TEAM.", accentHex: "#d9722e", accentTx:"var(--ink)",
+    cardTitle: "About us", cardEyebrow: "Who's building this",
+    modalDesc: "Foxy Audit is built by people who've been audited. Our mission: make AI compliance something you can prove, not just promise.",
+    features: ["Founder-led, founder-answered inbox","Privacy-first by design","Built for teams shipping real AI"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    ctaLabel: "About us", ctaHref: "/about.html"
+  },
+  {
+    ghost: "DOCS.", accentHex: "#c9b7ff", accentTx:"var(--guard-tx)",
+    cardTitle: "Documentation", cardEyebrow: "For developers",
+    modalDesc: "SDK reference, setup guides, and policy configuration. The full developer documentation is being written — here's how to get going right now.",
+    features: ["Quickstart from the how-it-works guide","Ask us anything while docs are in progress"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--guard-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>`,
+    ctaLabel: "Open Docs", ctaHref: "/docs.html"
+  },
+  {
+    ghost: "LEGAL.", accentHex: "#ffc83d", accentTx:"var(--warn-tx)",
+    cardTitle: "Legal & Trust", cardEyebrow: "Terms · Privacy · Cookies",
+    modalDesc: "Terms of Service, Privacy Policy, Cookie Policy, Acceptable Use, and how to report abuse — all in one place. We hash your data; we don't hold your raw payloads.",
+    features: ["Privacy-first: hashes, not raw prompts","Geo-aware cookie consent (GDPR / CCPA)","Clear, plain-language policies"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--warn-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6a3 3 0 0 0 6 0z"/><path d="M17 7l-3 6a3 3 0 0 0 6 0z"/><path d="M8 21h8"/></svg>`,
+    ctaLabel: "Open Legal & Trust", ctaHref: "/legal.html"
+  },
+  {
+    ghost: "DEMO.", accentHex: "#ff7a2e", accentTx:"var(--ink)",
+    cardTitle: "Book a demo", cardEyebrow: "See it on your stack",
+    modalDesc: "See Foxy Audit on your own stack. We'll wire the SDK into a real call live, trigger a breach, and verify the chain in front of you.",
+    features: ["A live, hands-on walkthrough","See a real breach get flagged","No credit card, no commitment"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m10 14 4 2-4 2z"/></svg>`,
+    ctaLabel: "Book a demo", ctaHref: "/book-a-demo.html"
   }
 ];
 
@@ -1379,17 +1217,16 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
 
   const cf = document.getElementById('cornerFox');
   if (cf){
-    const pricing = document.getElementById('pricing');
-    cf.addEventListener('click', () => { if (pricing) pricing.scrollIntoView({ behavior:'smooth' }); });
-    const cfScroll = () => {
-      const vh = window.innerHeight;
-      cf.classList.toggle('visible', window.scrollY > vh * 0.5);       // hide on the hero
-      let nearPricing = false;
-      if (pricing){ const r = pricing.getBoundingClientRect(); nearPricing = r.top < vh * 0.85 && r.bottom > 0; }
-      cf.classList.toggle('show-bubble', window.scrollY > vh * 0.6 && !nearPricing);
-    };
-    window.addEventListener('scroll', cfScroll, { passive:true });
-    cfScroll();
+    // card-first onboarding: the fox greets on load, explains the site, and is
+    // dismissible — we remember the dismissal so returning visitors aren't nagged.
+    const OKEY = 'foxy_onboard_dismissed';
+    let dismissed = false; try { dismissed = localStorage.getItem(OKEY) === '1'; } catch (e){}
+    setTimeout(() => cf.classList.add('visible'), 1000);
+    if (!dismissed) setTimeout(() => cf.classList.add('show-bubble'), 1500);
+    cf.addEventListener('click', () => {
+      const open = cf.classList.toggle('show-bubble');
+      try { open ? localStorage.removeItem(OKEY) : localStorage.setItem(OKEY, '1'); } catch (e){}
+    });
     // full atlas: the fox stays STILL on its standing pose and only RARELY plays a
     // random emote (cheer/loving/pawing/shy/cuddle/thinking/alert), then settles again.
     // ultimate_fox_spritesheet: 8 cols, 24 frames/action, ROWS_PER_ACTION=3.

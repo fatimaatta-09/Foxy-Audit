@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The SDK — Foxy Audit</title>
+<meta name="description" content="One decorator is the whole integration. The Foxy Audit SDK hashes every AI call on your machine, never blocks your function, and queues locally if the network drops.">
+<link rel="canonical" href="https://foxyaudit.tech/sdk.html">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#ff7a2e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="topnav">
+  <a class="tn-brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <div class="tn-actions">
+    <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
+    <a class="tn-cta" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="phead">
+    <a class="back" href="/">← Back to all cards</a>
+    <p class="sec-eb">The SDK · @foxy.audit()</p>
+    <h1 class="sec-h">One decorator. That's the whole integration.</h1>
+    <p class="sub">No rearchitecting, no proxy, no rewriting your model calls. You add one line, and every call is recorded — hashed, graded, and chained — on a background thread that never gets in your way.</p>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-card">
+      <div class="code-bar"><i></i><i></i><i></i><span>your_app.py</span></div>
+<pre><code><span class="c-dim">$ pip install foxy-audit</span>
+
+<span class="c-key">from</span> <span class="c-id">foxy_audit</span> <span class="c-key">import</span> <span class="c-id">audit</span>
+
+<span class="c-dec">@audit</span>(<span class="c-id">policy</span>=<span class="c-str">"soc2"</span>)
+<span class="c-key">def</span> <span class="c-fn">ask_model</span>(<span class="c-id">prompt</span>):
+    <span class="c-key">return</span> <span class="c-id">llm</span>.generate(prompt)</code></pre>
+    </div>
+  </div>
+
+  <div class="prose">
+    <p class="lead">The decorator wraps your function transparently. Your code runs exactly as before — same return value, same latency — while Foxy records what happened in the background.</p>
+
+    <p class="subhead">What actually leaves your machine</p>
+    <ul class="points">
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>A <b>SHA-256 digest</b> of the prompt and the response — never the raw text.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>The <b>token count</b>, <b>model name</b>, timestamp, and the <b>policy tag</b> you set.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>The <b>policy verdict</b> from the judge — clean or flagged, and why.</span></li>
+    </ul>
+
+    <p class="subhead">Built to stay out of your way</p>
+    <ul class="points">
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Never blocks:</b> hashing and sending happen off the request path.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Never throws its own errors:</b> if Foxy has a problem, your function still returns normally.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Survives outages:</b> records queue locally and sync when the backend is reachable again.</span></li>
+    </ul>
+  </div>
+
+  <div class="band">
+    <h2>Wrap your first call today.</h2>
+    <p>Book a demo and we'll get the SDK recording a real call on your stack in minutes.</p>
+    <a class="tn-cta" style="padding:13px 22px;font-size:13px" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="/favicon.svg" alt=""><span>Foxy Audit</span></div>
+        <p>Cryptographic AI compliance you can prove, not just promise. Tamper-evident audit trails for every model call.</p>
+      </div>
+      <div class="footer-col"><p class="footer-col-title">Product</p>
+        <a href="/how-it-works.html">How it works</a><a href="/pricing.html">Pricing</a><a href="/sdk.html">SDK</a><a href="/passport.html">Compliance passport</a><a href="/desktop.html">Desktop app</a></div>
+      <div class="footer-col"><p class="footer-col-title">Company</p>
+        <a href="/about.html">About us</a><a href="/contact.html">Contact</a><a href="/docs.html">Docs</a></div>
+      <div class="footer-col"><p class="footer-col-title">Legal &amp; Trust</p>
+        <a href="/legal.html">Legal &amp; Trust</a><a href="/terms.html">Terms of Service</a><a href="/privacy.html">Privacy Policy</a><a href="/acceptable-use.html">Acceptable Use</a><a href="/report-abuse.html">Report Abuse</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Foxy Audit. Cryptographic compliance, not a promise.</span>
+      <span><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/cookie-policy.html">Cookies</a></span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

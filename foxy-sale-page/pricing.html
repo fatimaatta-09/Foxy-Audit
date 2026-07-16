@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pricing — Foxy Audit</title>
+<meta name="description" content="Pay for what you verify. Starter is free, Companion adds the compliance passport and AI judge, Guardian is a one-time lifetime license.">
+<link rel="canonical" href="https://foxyaudit.tech/pricing.html">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#ff7a2e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="topnav">
+  <a class="tn-brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <div class="tn-actions">
+    <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
+    <a class="tn-cta" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="phead">
+    <a class="back" href="/">← Back to all cards</a>
+    <p class="sec-eb">Pricing</p>
+    <h1 class="sec-h">Pay for what you verify.</h1>
+    <p class="sub">Start with a demo, then choose the plan that fits. No credit card needed to look around.</p>
+  </div>
+
+  <div class="price-grid">
+    <div class="price-card">
+      <p class="price-name">Starter</p>
+      <p class="price-amt">$0<span>/mo</span></p>
+      <p class="price-tag">For solo builders and prototypes.</p>
+      <ul class="price-list">
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>1,000 verified calls / mo</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Hash chain + public verify endpoint</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Community support</li>
+      </ul>
+      <a class="price-btn" href="/book-a-demo.html">Book a demo</a>
+    </div>
+    <div class="price-card">
+      <span class="price-pill">Most popular</span>
+      <p class="price-name">Companion</p>
+      <p class="price-amt">$4.99<span>/mo</span></p>
+      <p class="price-tag">For teams shipping AI to real customers.</p>
+      <ul class="price-list">
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Higher verified-call volume</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Compliance passport export</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Active-defense AI judge</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Priority support</li>
+      </ul>
+      <a class="price-btn" href="/book-a-demo.html">Book a demo</a>
+    </div>
+    <div class="price-card">
+      <p class="price-name">Guardian</p>
+      <p class="price-amt">$39<span> once</span></p>
+      <p class="price-tag">Pay once. Lifetime license.</p>
+      <ul class="price-list">
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Everything in Companion</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Lifetime license — no subscription</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Dedicated onboarding</li>
+      </ul>
+      <a class="price-btn" href="/book-a-demo.html">Book a demo</a>
+    </div>
+  </div>
+
+  <div class="enterprise-card">
+    <div>
+      <h3>Need something custom?</h3>
+      <p>SSO, on-prem deployment, a bespoke SLA, or zero-knowledge payloads for regulated teams — let's talk.</p>
+    </div>
+    <a class="price-btn" href="/contact.html">Contact us</a>
+  </div>
+
+  <p class="sec-eb" style="margin-top:76px;">Frequently asked</p>
+  <h2 class="sec-h" style="margin-bottom:0;">FAQ</h2>
+  <div class="faq-wrap">
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Do you ever see our raw prompts?
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="faq-a"><p>No. We hash your inputs, outputs, and verdicts on the way past — the raw content never leaves your infrastructure unless you explicitly opt into a support request. What we store is the hash chain, not the payloads.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Is this SOC 2 certified?
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="faq-a"><p>We're currently completing our SOC 2 Type I audit. Until it's issued, we won't claim certification — we'll tell you exactly where we are in the process if you ask.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">What happens if your servers go down?
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="faq-a"><p>Your hash chain is append-only and independently re-computable, so an outage doesn't corrupt or invalidate what's already been recorded. New calls queue locally in the SDK and sync once we're back.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Can I cancel anytime?
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="faq-a"><p>Yes — no contracts on Starter or Companion. Cancel from your dashboard and you'll keep access through the end of the billing period. Custom plans follow the terms in your agreement.</p></div>
+    </div>
+  </div>
+
+  <div class="band">
+    <h2>Ready to prove it?</h2>
+    <p>Set up your first verified chain in under ten minutes. No credit card needed to start.</p>
+    <a class="tn-cta" style="padding:13px 22px;font-size:13px" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="/favicon.svg" alt=""><span>Foxy Audit</span></div>
+        <p>Cryptographic AI compliance you can prove, not just promise. Tamper-evident audit trails for every model call.</p>
+      </div>
+      <div class="footer-col"><p class="footer-col-title">Product</p>
+        <a href="/how-it-works.html">How it works</a><a href="/pricing.html">Pricing</a><a href="/sdk.html">SDK</a><a href="/passport.html">Compliance passport</a><a href="/desktop.html">Desktop app</a></div>
+      <div class="footer-col"><p class="footer-col-title">Company</p>
+        <a href="/about.html">About us</a><a href="/contact.html">Contact</a><a href="/docs.html">Docs</a></div>
+      <div class="footer-col"><p class="footer-col-title">Legal &amp; Trust</p>
+        <a href="/legal.html">Legal &amp; Trust</a><a href="/terms.html">Terms of Service</a><a href="/privacy.html">Privacy Policy</a><a href="/acceptable-use.html">Acceptable Use</a><a href="/report-abuse.html">Report Abuse</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Foxy Audit. Cryptographic compliance, not a promise.</span>
+      <span><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/cookie-policy.html">Cookies</a></span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

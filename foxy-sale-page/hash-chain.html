@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hash Chain — Foxy Audit</title>
+<meta name="description" content="Every record's hash folds in the one before it. Edit any past entry and every hash after it stops matching — tampering isn't hidden, it's mathematically obvious.">
+<link rel="canonical" href="https://foxyaudit.tech/hash-chain.html">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#ff7a2e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="topnav">
+  <a class="tn-brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <div class="tn-actions">
+    <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
+    <a class="tn-cta" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="phead">
+    <a class="back" href="/">← Back to all cards</a>
+    <p class="sec-eb">Hash Chain</p>
+    <h1 class="sec-h">Tamper-evident by construction.</h1>
+    <p class="sub">Your audit trail isn't a log you have to trust — it's a cryptographic chain where any edit to the past breaks everything after it.</p>
+  </div>
+
+  <div class="prose">
+    <p class="lead">Each record stores the SHA-256 of the call it describes <b>plus the hash of the record before it</b>. The hashes link into a single chain, the way blocks link on a blockchain — no external ledger required.</p>
+    <p>That one design choice is what makes the trail tamper-<b>evident</b>. Change a prompt, a verdict, a timestamp, or delete an entry, and its hash no longer matches — which means the next record's stored "previous hash" no longer matches either, and so on all the way to the tip. The break is obvious and points straight at what was altered.</p>
+
+    <p class="subhead">What that gives you</p>
+    <ul class="points">
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Append-only in practice:</b> the only way to keep the chain valid is to never rewrite history.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Model provenance baked in:</b> each hash folds in which model produced the call, so you can't quietly swap what answered.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Independently re-computable:</b> anyone with the chain can recompute it and confirm it's intact — no access to us needed.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Outage-safe:</b> the chain is append-only, so a backend outage never corrupts what's already recorded.</span></li>
+    </ul>
+  </div>
+
+  <div class="band">
+    <h2>Prove your chain is intact.</h2>
+    <p>See the chain build in real time and re-verify it live in a walkthrough.</p>
+    <a class="tn-cta" style="padding:13px 22px;font-size:13px" href="/verify-page.html">See verification →</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="/favicon.svg" alt=""><span>Foxy Audit</span></div>
+        <p>Cryptographic AI compliance you can prove, not just promise. Tamper-evident audit trails for every model call.</p>
+      </div>
+      <div class="footer-col"><p class="footer-col-title">Product</p>
+        <a href="/how-it-works.html">How it works</a><a href="/pricing.html">Pricing</a><a href="/sdk.html">SDK</a><a href="/passport.html">Compliance passport</a><a href="/desktop.html">Desktop app</a></div>
+      <div class="footer-col"><p class="footer-col-title">Company</p>
+        <a href="/about.html">About us</a><a href="/contact.html">Contact</a><a href="/docs.html">Docs</a></div>
+      <div class="footer-col"><p class="footer-col-title">Legal &amp; Trust</p>
+        <a href="/legal.html">Legal &amp; Trust</a><a href="/terms.html">Terms of Service</a><a href="/privacy.html">Privacy Policy</a><a href="/acceptable-use.html">Acceptable Use</a><a href="/report-abuse.html">Report Abuse</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Foxy Audit. Cryptographic compliance, not a promise.</span>
+      <span><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/cookie-policy.html">Cookies</a></span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

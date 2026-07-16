@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How it works — Foxy Audit</title>
+<meta name="description" content="Wrap one function with the Foxy Audit SDK. Every AI call gets hashed on your machine, graded against your policy, and sealed into a tamper-evident hash chain.">
+<link rel="canonical" href="https://foxyaudit.tech/how-it-works.html">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#ff7a2e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="topnav">
+  <a class="tn-brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <div class="tn-actions">
+    <a class="tn-login" href="https://app.foxyaudit.tech/dashboard">Log in</a>
+    <a class="tn-cta" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="phead">
+    <a class="back" href="/">← Back to all cards</a>
+    <p class="sec-eb">How it works</p>
+    <h1 class="sec-h">Three lines of code. Zero trust required.</h1>
+    <p class="sub">Wrap one function with the SDK. Every AI call gets hashed, graded, and chained automatically — you watch it live in the desktop app, and hand your auditor a proof they verify without trusting you.</p>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-card">
+      <div class="code-bar"><i></i><i></i><i></i><span>your_app.py</span></div>
+<pre><code><span class="c-dim">$ pip install foxy-audit</span>
+
+<span class="c-key">from</span> <span class="c-id">foxy_audit</span> <span class="c-key">import</span> <span class="c-id">audit</span>
+
+<span class="c-dec">@audit</span>(<span class="c-id">policy</span>=<span class="c-str">"soc2"</span>)          <span class="c-cmt"># the only line you add</span>
+<span class="c-key">def</span> <span class="c-fn">ask_model</span>(<span class="c-id">prompt</span>):
+    <span class="c-key">return</span> <span class="c-id">llm</span>.generate(prompt)   <span class="c-cmt"># your code, unchanged</span></code></pre>
+    </div>
+  </div>
+  <p class="code-note">That decorator is the <b>only</b> change to your app. It never blocks your function and never throws its own errors — everything below runs on a background thread.</p>
+
+  <div class="flow">
+    <div class="step">
+      <p class="step-n">01</p>
+      <div class="step-ic"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+      <h3>Hashed on your machine</h3>
+      <p>The moment your function returns, Foxy takes a <b>SHA-256</b> of the prompt and response and throws the raw text away. Only the digests, token count, and policy tag leave your servers — <b>your data never does</b>.</p>
+    </div>
+    <div class="step">
+      <p class="step-n">02</p>
+      <div class="step-ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V7z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></div>
+      <h3>Graded against your policy</h3>
+      <p>Every call is scored in real time against the policy you tagged — <b>HIPAA, SOC 2, or your own rules</b>. Anything that crosses the line is flagged the instant it happens, not in a review weeks later.</p>
+    </div>
+    <div class="step">
+      <p class="step-n">03</p>
+      <div class="step-ic"><svg viewBox="0 0 24 24"><path d="M9 12a3 3 0 0 0 4.24.17l2.5-2.34a3 3 0 1 0-4.07-4.4l-1.2 1.11"/><path d="M15 12a3 3 0 0 0-4.24-.17l-2.5 2.34a3 3 0 1 0 4.07 4.4l1.2-1.11"/></svg></div>
+      <h3>Sealed into a hash chain</h3>
+      <p>Each record's hash folds in the one before it — and which model produced it. Edit any past entry and <b>every hash after it stops matching</b>. Tampering isn't hidden; it's mathematically obvious.</p>
+    </div>
+    <div class="step">
+      <p class="step-n">04</p>
+      <div class="step-ic"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <h3>Watch live, prove anywhere</h3>
+      <p>The <b>desktop app</b> reacts the instant a call lands — green when it's clean, red on a breach. The <b>dashboard</b> shows the whole trail and exports a <b>compliance passport</b> your auditor re-verifies themselves, mapped to NIST AI RMF &amp; the EU AI Act.</p>
+    </div>
+  </div>
+
+  <div class="band">
+    <h2>See it on your own stack.</h2>
+    <p>Book a walkthrough and we'll wire the SDK into a real call live, then verify the chain in front of you.</p>
+    <a class="tn-cta" style="padding:13px 22px;font-size:13px" href="/book-a-demo.html">Book a demo</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="/favicon.svg" alt=""><span>Foxy Audit</span></div>
+        <p>Cryptographic AI compliance you can prove, not just promise. Tamper-evident audit trails for every model call.</p>
+      </div>
+      <div class="footer-col"><p class="footer-col-title">Product</p>
+        <a href="/how-it-works.html">How it works</a><a href="/pricing.html">Pricing</a><a href="/sdk.html">SDK</a><a href="/passport.html">Compliance passport</a><a href="/desktop.html">Desktop app</a></div>
+      <div class="footer-col"><p class="footer-col-title">Company</p>
+        <a href="/about.html">About us</a><a href="/contact.html">Contact</a><a href="/docs.html">Docs</a></div>
+      <div class="footer-col"><p class="footer-col-title">Legal &amp; Trust</p>
+        <a href="/legal.html">Legal &amp; Trust</a><a href="/terms.html">Terms of Service</a><a href="/privacy.html">Privacy Policy</a><a href="/acceptable-use.html">Acceptable Use</a><a href="/report-abuse.html">Report Abuse</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Foxy Audit. Cryptographic compliance, not a promise.</span>
+      <span><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/cookie-policy.html">Cookies</a></span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
