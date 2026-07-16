@@ -1,0 +1,11 @@
+# Foxy Audit — gitleaks config. Keep the default rules; allowlist known-public tokens.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public, client-side-by-design tokens that are safe to commit"
+regexes = [
+  # reCAPTCHA v2 SITE key — rendered in the browser by design. The SECRET key is
+  # never committed (it lives in the server env as RECAPTCHA_SECRET_KEY).
+  '''6LfaFFctAAAAAMFaCIzraQ3PYWJGuXgtTNcBglsr''',
+]
