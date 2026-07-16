@@ -30,7 +30,7 @@ router = APIRouter()
 
 # Sources whose messages are high-priority: they page every superadmin on arrival
 # and sort to the top of the admin inbox (see admin_inbox._is_priority).
-PRIORITY_SOURCES = {"enterprise"}
+PRIORITY_SOURCES = {"enterprise", "demo"}
 
 
 def _esc(s: str | None) -> str:

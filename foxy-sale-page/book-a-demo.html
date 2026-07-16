@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book a demo — Foxy Audit</title>
+<meta name="description" content="See a tamper-proof AI audit trail on your own stack — a 20-minute walkthrough, no slides.">
+<link rel="canonical" href="https://foxyaudit.tech/book-a-demo.html">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0e0c0a; --surf:#1c1815; --surf2:#221d18; --line:#322b23;
+    --ink:#f7f1e8; --muted:#8c8174; --fox:#ff7a2e; --foxdeep:#8a3611;
+    --safe:#3ddc84; --warn:#ffc83d;
+    --disp:"Poppins", ui-rounded, "Segoe UI", system-ui, sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --clay-sm:5px 5px 0 rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box;}
+  html{scrollbar-width:none;} html::-webkit-scrollbar{display:none;}
+  body{margin:0;background:radial-gradient(1100px 520px at 78% -10%, rgba(255,122,46,.11), transparent 60%), var(--bg);
+    color:var(--ink);font-family:var(--disp);-webkit-font-smoothing:antialiased;line-height:1.6;min-height:100vh;}
+  a{color:var(--fox);text-decoration:none;}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px clamp(18px,5vw,44px);
+    border-bottom:1px solid var(--line);background:rgba(14,12,10,.55);backdrop-filter:blur(12px);position:sticky;top:0;z-index:5;}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;font-size:14px;color:var(--ink);}
+  .brand img{width:20px;height:22px;}
+  .topbar .back{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .topbar .back:hover{color:var(--fox);}
+
+  .wrap{max-width:1140px;margin:0 auto;padding:clamp(30px,5vw,58px) clamp(18px,5vw,44px);
+    display:grid;grid-template-columns:0.92fr 1.08fr;gap:clamp(26px,4.5vw,58px);align-items:start;}
+  @media(max-width:880px){ .wrap{grid-template-columns:1fr;} .chainside{order:2;} .formside{order:1;} }
+
+  .chainside{position:sticky;top:92px;}
+  @media(max-width:880px){ .chainside{position:static;} }
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--fox);margin:0 0 12px;}
+  .chainside h1{font-family:var(--disp);font-weight:800;font-size:clamp(26px,3.4vw,38px);line-height:1.08;letter-spacing:-.01em;margin:0 0 12px;text-wrap:balance;}
+  .chainside .lede{color:var(--muted);font-size:14px;max-width:400px;margin:0 0 26px;}
+  .chainside .lede b{color:#d7cebf;font-weight:600;}
+
+  .chain{display:flex;flex-direction:column;}
+  .cblock{position:relative;background:rgba(255,255,255,.025);border:1.4px dashed var(--line);border-radius:13px;padding:12px 15px;transition:border-color .3s,background .3s,box-shadow .3s;}
+  .cblock.on{border-style:solid;border-color:rgba(255,122,46,.5);background:rgba(255,122,46,.05);box-shadow:0 0 22px -12px rgba(255,122,46,.7);}
+  .cblock.sealed{border-color:rgba(61,220,132,.55);background:rgba(61,220,132,.05);box-shadow:0 0 22px -12px rgba(61,220,132,.7);}
+  .cb-top{display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+  .cblock.on .cb-top,.cblock.sealed .cb-top{color:var(--ink);}
+  .cb-idx{color:var(--fox);}
+  .cblock.sealed .cb-idx{color:var(--safe);}
+  .dot{width:8px;height:8px;border-radius:50%;background:#3a2e26;transition:.3s;}
+  .cblock.on .dot{background:var(--fox);box-shadow:0 0 8px var(--fox);}
+  .cblock.sealed .dot{background:var(--safe);box-shadow:0 0 8px var(--safe);}
+  .cb-hash{font-family:var(--mono);font-size:11px;color:#5f544a;margin-top:7px;word-break:break-all;line-height:1.5;transition:color .3s;}
+  .cblock.on .cb-hash{color:var(--fox);}
+  .cblock.sealed .cb-hash{color:var(--safe);}
+  .link{width:2px;height:16px;margin:0 0 0 24px;background:var(--line);transition:background .3s;}
+  .link.on{background:linear-gradient(var(--fox),rgba(255,122,46,.25));}
+  .link.sealed{background:linear-gradient(var(--safe),rgba(61,220,132,.25));}
+  .sealbar{margin-top:16px;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);opacity:.55;transition:opacity .4s,color .4s;}
+  .sealbar.on{opacity:1;color:var(--safe);}
+  .sealbar svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.4;}
+
+  .card{position:relative;overflow:hidden;border-radius:22px;padding:clamp(22px,3vw,32px);
+    background:rgba(255,255,255,.04);
+    backdrop-filter:blur(6px) saturate(1.5) brightness(1.05);-webkit-backdrop-filter:blur(6px) saturate(1.5) brightness(1.05);
+    border:1.3px solid rgba(255,122,46,.4);
+    box-shadow:0 0 30px -8px rgba(255,122,46,.5), inset 0 1.5px 1px rgba(255,255,255,.32), 0 34px 80px -36px rgba(0,0,0,.92);}
+  .card::after{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;
+    background:radial-gradient(120% 32% at 50% -8%, rgba(255,255,255,.15), rgba(255,255,255,0) 55%);}
+  .card > *{position:relative;z-index:1;}
+  .card h2{font-family:var(--disp);font-weight:800;font-size:20px;margin:0 0 4px;}
+  .card .csub{color:var(--muted);font-size:13px;margin:0 0 22px;}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:470px){ .row{grid-template-columns:1fr;} }
+  .field{margin-bottom:14px;}
+  label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 7px;font-weight:600;}
+  label .req{color:var(--fox);}
+  input,select{width:100%;padding:12px 14px;background:rgba(255,255,255,.03);border:1.5px solid var(--line);border-radius:11px;
+    color:var(--ink);font-family:var(--disp);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;}
+  input::placeholder{color:#6b6055;}
+  input:focus,select:focus{border-color:var(--fox);box-shadow:0 0 14px -6px rgba(255,122,46,.6);}
+  select{appearance:none;cursor:pointer;color:var(--muted);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238c8174' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 14px center;padding-right:36px;}
+  select.filled{color:var(--ink);}
+  .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;}
+  .privacy{font-size:11.5px;line-height:1.55;color:var(--muted);margin:6px 0 16px;}
+  .recap{display:flex;align-items:center;gap:12px;background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 18px;}
+  .recap .box{width:24px;height:24px;border:2px solid #4a4038;border-radius:5px;flex-shrink:0;cursor:pointer;position:relative;transition:border-color .15s;}
+  .recap .box.on{border-color:var(--safe);}
+  .recap .box.on::after{content:'';position:absolute;left:7px;top:2px;width:6px;height:12px;border:solid var(--safe);border-width:0 2.5px 2.5px 0;transform:rotate(45deg);}
+  .recap .lbl{font-size:12.5px;color:#d7cebf;}
+  .recap .rc{margin-left:auto;text-align:center;color:var(--muted);font-size:8px;line-height:1.2;font-family:var(--mono);}
+  .recap .rc svg{width:20px;height:20px;display:block;margin:0 auto 2px;}
+  .submit{width:100%;border:none;cursor:pointer;background:var(--fox);color:var(--bg);font-family:var(--disp);font-weight:800;
+    font-size:14px;text-transform:uppercase;letter-spacing:.03em;border-radius:12px;padding:14px;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:var(--clay-sm);transition:transform .15s,opacity .15s;}
+  .submit:hover{transform:translateY(-2px);}
+  .submit[disabled]{opacity:.6;cursor:default;transform:none;}
+  .submit svg{width:17px;height:17px;stroke:var(--bg);fill:none;stroke-width:2.6;}
+  .err{color:var(--warn);font-size:12px;font-family:var(--mono);min-height:16px;margin-top:10px;}
+
+  .okoverlay{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:24px;
+    background:rgba(8,6,5,.82);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);}
+  .okoverlay.show{display:flex;}
+  .okcard{text-align:center;max-width:440px;animation:okin .45s ease both;}
+  @keyframes okin{from{opacity:0;transform:translateY(14px) scale(.97);}to{opacity:1;transform:none;}}
+  .lockwrap{position:relative;width:104px;height:104px;margin:0 auto 22px;display:flex;align-items:center;justify-content:center;color:var(--fox);transition:color .45s ease;}
+  .lockwrap.done{color:var(--safe);}
+  .lock{width:66px;height:66px;position:relative;z-index:2;}
+  .shackle{transform-origin:32px 28px;}
+  .lockwrap.sealing .shackle{animation:lockShut .6s cubic-bezier(.5,1.7,.45,1) forwards;}
+  @keyframes lockShut{0%{transform:translateY(-11px) rotate(-7deg);}55%{transform:translateY(2px) rotate(3deg);}100%{transform:translateY(0) rotate(0);}}
+  .pulse{position:absolute;width:74px;height:74px;border-radius:50%;background:rgba(255,122,46,.2);z-index:1;opacity:0;}
+  .lockwrap.done .pulse{background:rgba(61,220,132,.34);animation:pulseRing .85s ease-out forwards;}
+  @keyframes pulseRing{0%{transform:scale(.55);opacity:.9;}100%{transform:scale(2.1);opacity:0;}}
+  .oktext{opacity:0;transform:translateY(10px);transition:opacity .45s ease,transform .45s ease;}
+  .oktext.show{opacity:1;transform:none;}
+  .oktext h2{font-family:var(--disp);font-weight:800;font-size:26px;margin:0 0 10px;}
+  .oktext p{color:var(--muted);font-size:14.5px;margin:0 auto;max-width:360px;}
+  .oktext a{color:var(--fox);}
+  @media (prefers-reduced-motion: reduce){ .lockwrap.sealing .shackle,.lockwrap.done .pulse,.okcard{animation:none;} .oktext{transition:none;} }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="/"><img src="/favicon.svg" alt="">Foxy Audit</a>
+  <a class="back" href="/">← Back to site</a>
+</div>
+
+<div class="wrap">
+  <div class="chainside">
+    <p class="eyebrow">Book a demo</p>
+    <h1>Your request, chained.</h1>
+    <p class="lede">Watch it happen: every answer becomes a <b>tamper-evident block</b>. Change any earlier field and every hash below it changes — that's exactly what Foxy does to your AI calls.</p>
+    <div class="chain" id="chain">
+      <div class="cblock" data-b="0"><div class="cb-top"><span class="cb-idx">BLOCK 01 · IDENTITY</span><span class="dot"></span></div><div class="cb-hash">awaiting input…</div></div>
+      <div class="link"></div>
+      <div class="cblock" data-b="1"><div class="cb-top"><span class="cb-idx">BLOCK 02 · WORK EMAIL</span><span class="dot"></span></div><div class="cb-hash">awaiting input…</div></div>
+      <div class="link"></div>
+      <div class="cblock" data-b="2"><div class="cb-top"><span class="cb-idx">BLOCK 03 · COMPANY</span><span class="dot"></span></div><div class="cb-hash">awaiting input…</div></div>
+      <div class="link"></div>
+      <div class="cblock" data-b="3"><div class="cb-top"><span class="cb-idx">BLOCK 04 · ROLE</span><span class="dot"></span></div><div class="cb-hash">awaiting input…</div></div>
+      <div class="link"></div>
+      <div class="cblock" data-b="4"><div class="cb-top"><span class="cb-idx">BLOCK 05 · GOVERNANCE STAGE</span><span class="dot"></span></div><div class="cb-hash">awaiting input…</div></div>
+    </div>
+    <div class="sealbar" id="sealbar"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg><span id="sealtext">chain open — 0 / 5 blocks</span></div>
+  </div>
+
+  <div class="formside">
+    <div class="card">
+      <div id="form">
+        <h2>Request your demo</h2>
+        <p class="csub">A 20-minute walkthrough, no slides. A founder will reach out to schedule.</p>
+        <div class="row">
+          <div class="field"><label>First name <span class="req">*</span></label><input id="fn" type="text" placeholder="Ada" autocomplete="given-name"></div>
+          <div class="field"><label>Last name <span class="req">*</span></label><input id="ln" type="text" placeholder="Lovelace" autocomplete="family-name"></div>
+        </div>
+        <div class="field"><label>Work email <span class="req">*</span></label><input id="em" type="email" placeholder="ada@yourcompany.com" autocomplete="email"></div>
+        <div class="row">
+          <div class="field"><label>Company <span class="req">*</span></label><input id="co" type="text" placeholder="Analytical Engines Inc." autocomplete="organization"></div>
+          <div class="field"><label>Job title <span class="req">*</span></label><input id="jt" type="text" placeholder="Head of AI" autocomplete="organization-title"></div>
+        </div>
+        <div class="field">
+          <label>Where are you with AI governance? <span class="req">*</span></label>
+          <select id="mt" onchange="this.classList.toggle('filled',!!this.value)">
+            <option value="" disabled selected>Please select…</option>
+            <option>Just getting started — no governance yet</option>
+            <option>Ad-hoc / manual reviews</option>
+            <option>Building a governance process</option>
+            <option>Have a process — need evidence &amp; automation</option>
+            <option>Mature — scaling across teams</option>
+          </select>
+        </div>
+        <input class="hp" id="hp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" placeholder="Leave this empty">
+        <p class="privacy">Foxy Audit needs your contact details to reach out about the demo and our product. You can unsubscribe anytime. See our <a href="/privacy.html">Privacy Policy</a>.</p>
+        <div class="recap">
+          <div class="box" id="rc" onclick="this.classList.toggle('on')"></div>
+          <div class="lbl">I'm not a robot</div>
+          <div class="rc"><svg viewBox="0 0 24 24" fill="none" stroke="#8c8174" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>reCAPTCHA</div>
+        </div>
+        <button class="submit" id="go">Seal &amp; book my demo
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+        <div class="err" id="err"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="okoverlay" id="ok">
+  <div class="okcard">
+    <div class="lockwrap" id="lockwrap">
+      <span class="pulse"></span>
+      <svg class="lock" viewBox="0 0 64 64" fill="none">
+        <path class="shackle" d="M20 30 V22 a12 12 0 0 1 24 0 V30" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+        <rect class="lbody" x="15" y="29" width="34" height="25" rx="7" fill="currentColor"/>
+        <circle cx="32" cy="39" r="3.4" fill="#0e0c0a"/>
+        <rect x="30.5" y="40.5" width="3" height="7.5" rx="1.5" fill="#0e0c0a"/>
+      </svg>
+    </div>
+    <div class="oktext" id="oktext">
+      <h2>Chain sealed — you're booked.</h2>
+      <p>Your request is locked in. A founder will email you shortly to schedule your demo.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  const FOXY_API = window.FOXY_API ||
+    ((location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:8000'
+      : 'https://app.' + location.hostname.replace(/^www\./, ''));
+  const $=id=>document.getElementById(id);
+  const isEmail=e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  function mockHash(s){ let h=0x811c9dc5>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
+    let out='',x=h; for(let i=0;i<5;i++){ x=Math.imul(x^(x>>>15),0x2c1b3c6d)>>>0; out+=('0000000'+x.toString(16)).slice(-8); } return out.slice(0,40); }
+  const vals=()=>[ ($('fn').value.trim()+' '+$('ln').value.trim()).trim(), $('em').value.trim(), $('co').value.trim(), $('jt').value.trim(), $('mt').value ];
+  const blocks=[...document.querySelectorAll('.cblock')], links=[...document.querySelectorAll('.link')];
+  function render(){
+    let prev='00000000000000000000000000000000', filled=0;
+    vals().forEach((v,i)=>{
+      const b=blocks[i], hash=b.querySelector('.cb-hash');
+      if(v){ const h=mockHash(v+prev); b.classList.add('on'); hash.textContent=h.slice(0,32)+'…'; prev=h; filled++; if(links[i-1])links[i-1].classList.add('on'); }
+      else { b.classList.remove('on'); hash.textContent='awaiting input…'; if(links[i-1])links[i-1].classList.remove('on'); }
+    });
+    const sb=$('sealbar');
+    if(filled===5){ sb.classList.add('on'); $('sealtext').textContent='ready to seal — 5 / 5 blocks'; }
+    else { sb.classList.remove('on'); $('sealtext').textContent='chain open — '+filled+' / 5 blocks'; }
+  }
+  ['fn','ln','em','co','jt','mt'].forEach(id=>{ $(id).addEventListener('input',render); $(id).addEventListener('change',render); });
+  render();
+
+  function seal(){
+    blocks.forEach((b,i)=>setTimeout(()=>{ b.classList.remove('on'); b.classList.add('sealed'); if(links[i-1]){links[i-1].classList.remove('on');links[i-1].classList.add('sealed');} },i*140));
+    $('sealbar').classList.add('on'); $('sealtext').textContent='✓ chain sealed & verified';
+    const lockwrap=$('lockwrap');
+    setTimeout(()=>{
+      $('ok').classList.add('show');
+      requestAnimationFrame(()=>lockwrap.classList.add('sealing'));
+      setTimeout(()=>{ lockwrap.classList.add('done'); $('oktext').classList.add('show'); }, 640);
+    }, 5*140+200);
+  }
+
+  $('go').addEventListener('click', async ()=>{
+    const fn=$('fn').value.trim(), ln=$('ln').value.trim(), em=$('em').value.trim(),
+          co=$('co').value.trim(), jt=$('jt').value.trim(), mt=$('mt').value;
+    const err=$('err');
+    if(!fn||!ln||!co||!jt||!mt){ err.textContent='Please complete all required fields.'; return; }
+    if(!isEmail(em)){ err.textContent='Enter a valid work email.'; return; }
+    if(!$('rc').classList.contains('on')){ err.textContent='Please confirm you\'re not a robot.'; return; }
+    if($('hp').value){ seal(); return; }                 // honeypot tripped — pretend success, drop silently
+    err.textContent=''; $('go').disabled=true;
+    try{
+      const r = await fetch(FOXY_API + '/v1/leads', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name:(fn+' '+ln).trim(), email:em, company:co, source:'demo',
+          subject:'Demo request', message:'Job title: '+jt+'\nAI governance stage: '+mt }) });
+      if(!r.ok) throw 0;
+      seal();
+    }catch(_){ $('go').disabled=false; err.textContent="Couldn't send — please try again or email foxyaudit@gmail.com"; }
+  });
+</script>
+</body>
+</html>
