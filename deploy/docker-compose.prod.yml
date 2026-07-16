@@ -166,6 +166,8 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../foxy-sale-page:/srv/sale:ro
+      # Installer binaries (out-of-git; the release workflow scp's them here).
+      - /home/devops/foxy-downloads:/srv/downloads:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

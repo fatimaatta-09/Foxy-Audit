@@ -138,3 +138,31 @@ jobs:
         with:
           name: FoxyAudit-macOS
           path: dist/FoxyAudit-macos.zip
+
+  # ── Publish installers to the VM download dir (Phase 4) ─────────────────────
+  # Copies the Windows + Linux builds to /home/devops/foxy-downloads on the prod
+  # VM under STABLE names, so the sales-page download buttons never change per
+  # release. Served by host nginx at https://foxyaudit.tech/download/.
+  publish-installers-to-vm:
+    needs: build-desktop
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Stage installers with stable names
+        run: |
+          mkdir -p out
+          cp artifacts/FoxyAudit-Windows/*.exe        "out/FoxyAudit-Setup.exe"       2>/dev/null || echo "no windows artifact"
+          cp artifacts/FoxyAudit-Linux/*.AppImage      "out/FoxyAudit-x86_64.AppImage" 2>/dev/null || echo "no linux artifact"
+          ls -la out
+      - name: Copy to the VM download dir
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VM_HOST1 }}
+          username: ${{ secrets.VM_USER1 }}
+          key: ${{ secrets.VM_SSH_KEY1 }}
+          source: "out/*"
+          target: "/home/devops/foxy-downloads/"
+          strip_components: 1

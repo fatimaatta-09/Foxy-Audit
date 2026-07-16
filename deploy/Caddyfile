@@ -3,11 +3,20 @@
 # Caddy ignores client-supplied X-Forwarded-For (no trusted_proxies configured),
 # so the backend always sees the real client IP.
 
-# Site 1 — marketing (static)
+# Site 1 — marketing (static) + installer downloads
 foxyaudit.tech, www.foxyaudit.tech {
 	encode gzip
-	root * /srv/sale
-	file_server
+	# Installer binaries live outside the repo; mount them at /srv/downloads
+	# (see the caddy service volume in docker-compose.prod.yml). The release
+	# workflow scp's builds to the host dir.
+	handle_path /download/* {
+		root * /srv/downloads
+		file_server
+	}
+	handle {
+		root * /srv/sale
+		file_server
+	}
 }
 
 # Site 2 — customer dashboard (backend, same-origin session cookie)
