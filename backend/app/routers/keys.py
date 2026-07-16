@@ -25,6 +25,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import email as email_mod
+from .. import mfa
 from ..auth import hash_key, require_org, require_role
 from ..db import get_db
 from ..models import ApiKey, Organization, User
@@ -136,6 +138,25 @@ class RotateResponse(BaseModel):
     message: str = "Key rotated. Copy the new key now — the old key is permanently invalid."
 
 
+def _rotate_org_key(db: Session, org: Organization) -> tuple[str, str]:
+    """Revoke the org's active keys, mint a fresh peppered one, and kill the legacy
+    plain-SHA256 hash. Returns (plaintext_key, rotated_at_iso). Caller commits."""
+    now = datetime.now(timezone.utc)
+    key, key_hash, prefix = _new_key()
+    for k in db.execute(
+        select(ApiKey).where(ApiKey.org_id == org.id, ApiKey.status == "active")
+    ).scalars().all():
+        k.status = "revoked"
+        k.revoked_at = now
+    db.add(ApiKey(org_id=org.id, name="primary (rotated)", key_prefix=prefix,
+                  key_hash=key_hash, status="active"))
+    # Point the legacy hash at the new key too, so the old key is dead but the
+    # NOT NULL column stays satisfied (the peppered path matches first anyway).
+    org.api_key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    org.key_rotated_at = now
+    return key, now.isoformat()
+
+
 @router.post("/v1/keys/rotate", response_model=RotateResponse)
 def rotate_key(
     org: Organization = Depends(require_org),
@@ -143,24 +164,56 @@ def rotate_key(
 ):
     """Rotate the calling org's key (Bearer auth). Issues a peppered key, revokes
     the org's other active keys, and kills the legacy plain-SHA256 org hash."""
-    now = datetime.now(timezone.utc)
-    key, key_hash, prefix = _new_key()
-
-    # Revoke every currently-active key first, then mint the replacement.
-    for k in db.execute(
-        select(ApiKey).where(ApiKey.org_id == org.id, ApiKey.status == "active")
-    ).scalars().all():
-        k.status = "revoked"
-        k.revoked_at = now
-
-    db.add(ApiKey(org_id=org.id, name="primary (rotated)", key_prefix=prefix,
-                  key_hash=key_hash, status="active"))
-
-    # Point the legacy hash at the new key too, so the old key is dead but the
-    # NOT NULL column stays satisfied (the peppered path matches first anyway).
-    org.api_key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
-    org.key_rotated_at = now
+    key, rotated_at = _rotate_org_key(db, org)
     db.commit()
-
     log.info("Rotated API key for org %s", org.id)
-    return RotateResponse(org_id=str(org.id), api_key=key, rotated_at=now.isoformat())
+    return RotateResponse(org_id=str(org.id), api_key=key, rotated_at=rotated_at)
+
+
+# ─────────────── dashboard: regenerate key behind an emailed 2FA code ─────────
+# Keys are stored hashed and shown once, so "reveal" isn't possible — instead we
+# mint a FRESH key (old one revoked), gated by a one-time code emailed to the
+# logged-in admin. Keeps hash-only security; the admin always has a usable key.
+
+class RegenConfirmRequest(BaseModel):
+    code: str
+
+
+@router.post("/v1/keys/regenerate/request")
+def regenerate_request(
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Step 1: email a one-time code to the admin's address (2FA even inside a
+    logged-in session)."""
+    code = mfa.new_otp()
+    admin.mfa_code_hash = mfa.hash_code(code)
+    admin.mfa_code_expires_at = datetime.now(timezone.utc) + mfa.TTL
+    db.commit()
+    email_mod.send_email(
+        to=admin.email, subject="Your Foxy Audit key-regeneration code",
+        html=(f"<p>Your code to regenerate your API key is <b>{code}</b>. It expires in "
+              "5 minutes.</p><p>If you didn't request this, ignore this email and change "
+              "your password.</p>"),
+        text=f"Your Foxy Audit key-regeneration code is {code} (expires in 5 minutes).")
+    return {"status": "code_sent", "email": admin.email}
+
+
+@router.post("/v1/keys/regenerate/confirm", response_model=RotateResponse)
+def regenerate_confirm(
+    body: RegenConfirmRequest,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Step 2: verify the code, then rotate the org's key and return the new
+    plaintext once. Wrong/expired code → 401."""
+    if not mfa.code_valid(admin, (body.code or "").strip()):
+        raise HTTPException(status_code=401, detail="Invalid or expired code")
+    mfa.clear_code(admin)
+    org = db.get(Organization, admin.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    key, rotated_at = _rotate_org_key(db, org)
+    db.commit()
+    log.info("Regenerated API key (2FA) for org %s by %s", org.id, admin.email)
+    return RotateResponse(org_id=str(org.id), api_key=key, rotated_at=rotated_at)

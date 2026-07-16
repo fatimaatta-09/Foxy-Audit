@@ -804,7 +804,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div class="page" id="page-keys">
       <div class="pg-head">
         <div><div class="eyebrow">Access control</div><div class="h1">API keys &amp; tenants<span class="fox-dot">.</span></div><div class="sub">connect, rotate, or revoke per developer or service</div></div>
-        <button class="btn pri sm" onclick="createKey()">+ new key</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn ghost sm" onclick="regenerateKey()" title="Mint a fresh key behind an emailed 2FA code — the old key is revoked">↻ regenerate (2FA)</button>
+          <button class="btn pri sm" onclick="createKey()">+ new key</button>
+        </div>
       </div>
       <div class="clay pad" style="max-width:780px;">
         <div style="font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.6;">each key maps to one developer or service · keys authenticate SDK writes via <span style="font-family:var(--mono);color:var(--fox2);">POST /v1/logs/batch</span></div>
@@ -1459,6 +1462,18 @@ function runExport(){
     try{ const r=await api('/v1/keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:name||'unnamed key'})});
       if(!r.ok){ toast('Create failed — '+await errText(r)); return; }
       const k=await r.json(); revealSecret('New API key · '+k.name, k.api_key); toast('API key created'); loadKeys();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.regenerateKey=async function(){
+    if(!confirm('Regenerate your API key?\n\nYour current key stops working immediately. We’ll email you a 6-digit code to confirm.'))return;
+    try{
+      const r=await api('/v1/keys/regenerate/request',{method:'POST'});
+      if(!r.ok){ toast('Could not send code — '+await errText(r)); return; }
+      const code=window.prompt('Enter the 6-digit code we just emailed you:');
+      if(code===null||!code.trim())return;
+      const r2=await api('/v1/keys/regenerate/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:code.trim()})});
+      if(!r2.ok){ toast('Regeneration failed — '+await errText(r2)); return; }
+      const k=await r2.json(); revealSecret('Regenerated API key', k.api_key); toast('API key regenerated'); loadKeys();
     }catch(e){ toast('Could not reach the server'); }
   };
   window.revokeKeyApi=async function(id){
