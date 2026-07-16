@@ -56,7 +56,7 @@ The whole "ambient guard flashes red the instant something's flagged" story — 
 - The 14 UI mascot themes are fully built but unreachable — nothing in the shipping code ever calls `set_theme()`.
 - Model-name drift: code defaults to `gemini-1.5-pro`, production actually runs `gemini-2.5-flash`, and the UI still labels it "Gemini 1.5 Pro" — a small but real case of the marketing surface lying about what's actually running.
 - A handful of hardcoded leftovers from development (a dashboard string reading "Yo Fatima", an absolute file path from a specific developer's machine, a stale test API key in the Makefile) — cosmetic, but the kind of thing a technical buyer's due diligence review would notice and lose confidence over.
-- Admin IP allow-listing silently allows everyone through when the list is empty — a "secure by default" trap; this should fail closed, not open.
+- Admin IP allow-listing allows everyone through when the list is empty (with a loud one-time prod startup warning). **Decided: keep fail-open** — the operator's admin WiFi has a dynamic IP that changes daily, so a fail-closed empty list would lock everyone out; staff login + MFA is always required regardless.
 
 ---
 
@@ -75,7 +75,7 @@ The whole "ambient guard flashes red the instant something's flagged" story — 
 
 **Housekeeping, whenever there's spare capacity:**
 - Clean up the hardcoded leftovers and the model-name drift — cheap, and exactly the kind of small inconsistency that erodes trust in a security product's polish.
-- Flip the admin IP allow-list to fail closed on empty.
+- ~~Flip the admin IP allow-list to fail closed on empty.~~ **Won't do** — kept fail-open by decision (dynamic operator IP; staff login + MFA always required). Docs corrected to match.
 - Kill the dead `transport.py` code, or finish wiring it if it was meant to do something.
 
 ---

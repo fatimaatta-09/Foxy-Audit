@@ -190,6 +190,11 @@ class Settings(BaseSettings):
                 missing.append("STAFF_SESSION_SECRET")
             if not self.api_key_pepper:
                 missing.append("API_KEY_PEPPER")
+            # Live EVM anchoring must not start prod without its funded signing key —
+            # fail fast here instead of lazily on the first anchor submit (anchor.py).
+            if (self.anchor_enabled and self.anchor_provider.lower() == "evm"
+                    and not self.anchor_evm_private_key):
+                missing.append("ANCHOR_EVM_PRIVATE_KEY")
             if missing:
                 raise ValueError(
                     "FOXY_ENV=prod requires strong values for: " + ", ".join(missing))

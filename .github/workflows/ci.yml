@@ -49,6 +49,24 @@ jobs:
           name: sbom
           path: sbom.json
 
+  # 🐍 Python dependency vulnerability audit (PyPI Advisory DB) for the backend +
+  # SDK actually shipped. Report-only like the Trivy scan above — flip
+  # continue-on-error to false to make advisories block the build.
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install deps + pip-audit
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip install -r backend/requirements.txt ./sdk
+      - name: Audit installed environment (backend + SDK + transitive)
+        continue-on-error: true
+        run: pip-audit --desc
+
   # Fast, dependency-light gate: the SDK unit tests plus the hash-chain
   # regression test (the product's core trust claim). Neither needs Postgres.
   sdk-and-chain:
