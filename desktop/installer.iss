@@ -27,6 +27,9 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
 PrivilegesRequired=lowest
+; Brand the installer + Add/Remove Programs entry with the fox logo.
+SetupIconFile=foxy.ico
+UninstallDisplayIcon={app}\FoxyAudit.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

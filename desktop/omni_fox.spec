@@ -11,15 +11,26 @@ Notes:
   bundled and resolved at runtime via fox_settings.resource_path() / sys._MEIPASS.
 """
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_all
 
 HERE = SPECPATH  # directory containing this .spec (injected by PyInstaller)
 
-datas = [(os.path.join(HERE, "ultimate_fox_spritesheet.png"), ".")]
+datas = [
+    (os.path.join(HERE, "ultimate_fox_spritesheet.png"), "."),
+    (os.path.join(HERE, "logo.png"), "."),          # window/dialog/taskbar icon at runtime
+]
 _fonts = os.path.join(HERE, "fonts")
 if os.path.isdir(_fonts):
     datas.append((_fonts, "fonts"))
+
+# Icon for the built executable / .app — foxy.ico (Windows) or foxy.icns (macOS).
+_ICON = None
+if sys.platform.startswith("win") and os.path.exists(os.path.join(HERE, "foxy.ico")):
+    _ICON = os.path.join(HERE, "foxy.ico")
+elif sys.platform == "darwin" and os.path.exists(os.path.join(HERE, "foxy.icns")):
+    _ICON = os.path.join(HERE, "foxy.icns")
 
 pyqt_datas, pyqt_binaries, pyqt_hidden = collect_all("PyQt6")
 datas += pyqt_datas
@@ -55,13 +66,13 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,   # set by CI on macOS when an Apple Developer ID is provided
     entitlements_file=None,
-    icon=None,                # TODO: add a real .ico/.icns once branding art exists
+    icon=_ICON,
 )
 
 # macOS: also wrap the onefile binary in a .app bundle.
 app = BUNDLE(
     exe,
     name="FoxyAudit.app",
-    icon=None,
+    icon=_ICON,
     bundle_identifier="tech.foxyaudit.desktop",
 )

@@ -395,18 +395,78 @@ class OmniAwareFox(QWidget):
 
     # ── First-run onboarding ───────────────────────────────────────────────
     def _prompt_first_run_key(self):
-        """First launch with no API key stored: ask for it once (from the welcome
-        email / dashboard) instead of silently doing nothing. Dismissable — the
-        key can also be set later via the tray menu → Settings."""
-        from PyQt6.QtWidgets import QInputDialog, QLineEdit
-        key, ok = QInputDialog.getText(
-            self, "Welcome to Foxy Audit",
-            "Paste your Foxy Audit API key to connect the fox to your account.\n"
-            "It's in your welcome email or the dashboard. You can also set it\n"
-            "later from the tray menu → Settings.",
-            QLineEdit.EchoMode.Normal, "")
-        if ok and key.strip():
-            self.settings.set_org_api_key(key.strip())
+        """First launch with no API key stored: a small BRANDED dialog (the app's
+        clay palette + the fox logo) asking for the key, instead of the plain OS
+        input box. Dismissable — the key can also be set later via tray → Settings."""
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                                     QLineEdit, QPushButton)
+        from PyQt6.QtGui import QPixmap, QIcon
+        from PyQt6.QtCore import Qt
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Welcome to Foxy Audit")
+        dlg.setWindowIcon(QIcon(resource_path("logo.png")))
+        dlg.setModal(True)
+        dlg.setFixedWidth(432)
+        dlg.setStyleSheet("""
+            QDialog { background:#FBF6EE; }
+            QLabel#title { color:#5A4A3C; font-size:17px; font-weight:800; }
+            QLabel#msg   { color:#8A7A6C; font-size:12px; }
+            QLineEdit { background:#FFFFFF; border:2px solid #F0E4D6; border-radius:12px;
+                        padding:11px 13px; color:#5A4A3C; font-size:13px; }
+            QLineEdit:focus { border:2px solid #FF9F66; }
+            QPushButton#primary { background:#FF9F66; color:#FFFFFF; border:none;
+                        border-radius:12px; padding:11px 22px; font-weight:700; }
+            QPushButton#primary:hover { background:#F08A4B; }
+            QPushButton#ghost { background:transparent; color:#8A7A6C; border:none;
+                        border-radius:12px; padding:11px 16px; }
+            QPushButton#ghost:hover { color:#5A4A3C; }
+        """)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(30, 26, 30, 24)
+        v.setSpacing(13)
+
+        logo = QLabel()
+        pm = QPixmap(resource_path("logo.png"))
+        if not pm.isNull():
+            logo.setPixmap(pm.scaledToHeight(72, Qt.TransformationMode.SmoothTransformation))
+            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            v.addWidget(logo)
+
+        title = QLabel("Welcome to Foxy Audit")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(title)
+
+        msg = QLabel("Paste your API key to connect the fox to your account. It's in "
+                     "your welcome email or the dashboard — you can also set it later "
+                     "from the tray menu → Settings.")
+        msg.setObjectName("msg")
+        msg.setWordWrap(True)
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(msg)
+
+        field = QLineEdit()
+        field.setPlaceholderText("foxy_sk_…")
+        v.addWidget(field)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        later = QPushButton("Later")
+        later.setObjectName("ghost")
+        connect = QPushButton("Connect")
+        connect.setObjectName("primary")
+        row.addWidget(later)
+        row.addWidget(connect)
+        v.addLayout(row)
+
+        later.clicked.connect(dlg.reject)
+        connect.clicked.connect(dlg.accept)
+        field.returnPressed.connect(dlg.accept)
+        field.setFocus()
+
+        if dlg.exec() == QDialog.DialogCode.Accepted and field.text().strip():
+            self.settings.set_org_api_key(field.text().strip())
 
     # ── Frame cache helper ─────────────────────────────────────────────────
     def _get_frame(self, row: int, frame_idx: int,
@@ -1034,6 +1094,8 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("Foxy Audit")
     app.setOrganizationName("FoxyAudit")
+    from PyQt6.QtGui import QIcon
+    app.setWindowIcon(QIcon(resource_path("logo.png")))
 
     pet = OmniAwareFox()
     pet.show()
