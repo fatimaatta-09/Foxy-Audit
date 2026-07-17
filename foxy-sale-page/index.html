@@ -690,12 +690,28 @@ const SLIDES = [
     ctaLabel: "Open the SDK", ctaHref: "/sdk.html"
   },
   {
+    ghost: "LEARN.", accentHex: "#ffb020", accentTx:"var(--warn-tx)",
+    cardTitle: "How it works", cardEyebrow: "3 lines of code",
+    modalDesc: "Install the SDK, wrap one function, and watch every call get hashed, graded, chained, and verified — the whole pipeline, in minutes.",
+    features: ["Three lines of code to integrate","Runs on a background thread — never blocks you","Watch it live in the desktop app"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    ctaLabel: "See how it works", ctaHref: "/how-it-works.html"
+  },
+  {
     ghost: "CHAIN.", accentHex: "#ffc83d", accentTx:"var(--warn-tx)",
     cardTitle: "Hash Chain", cardEyebrow: "Sequential integrity",
     modalDesc: "Each record's hash includes the one directly before it. Edit, delete, or backdate any past entry and the whole chain stops matching — instantly and mathematically, with no manual review needed.",
     features: ["Tamper-evident by construction, not by policy","Break one record, break every one after it","Independently re-computable by any auditor"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--warn-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
     ctaLabel: "Open Hash Chain", ctaHref: "/hash-chain.html"
+  },
+  {
+    ghost: "GUARD.", accentHex: "#c9b7ff", accentTx:"var(--guard-tx)",
+    cardTitle: "Active-Defense Judge", cardEyebrow: "Gemini 2.5 Flash",
+    modalDesc: "A second AI model watches every call in real time, scoring it against your policy before it's chained. Risky outputs get flagged and logged the moment they happen, not weeks later in a review.",
+    features: ["Real-time policy scoring on every call","Configurable rules — no code changes to update policy","Flags feed straight into the audit ledger"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--guard-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+    ctaLabel: "Open the Judge", ctaHref: "/judge.html"
   },
   {
     ghost: "PROVE.", accentHex: "#3ddc84", accentTx:"var(--safe-tx)",
@@ -714,12 +730,12 @@ const SLIDES = [
     ctaLabel: "Open the Passport", ctaHref: "/passport.html"
   },
   {
-    ghost: "GUARD.", accentHex: "#c9b7ff", accentTx:"var(--guard-tx)",
-    cardTitle: "Active-Defense Judge", cardEyebrow: "Gemini 2.5 Flash",
-    modalDesc: "A second AI model watches every call in real time, scoring it against your policy before it's chained. Risky outputs get flagged and logged the moment they happen, not weeks later in a review.",
-    features: ["Real-time policy scoring on every call","Configurable rules — no code changes to update policy","Flags feed straight into the audit ledger"],
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--guard-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
-    ctaLabel: "Open the Judge", ctaHref: "/judge.html"
+    ghost: "PET.", accentHex: "#3ddc84", accentTx:"var(--safe-tx)",
+    cardTitle: "Desktop app", cardEyebrow: "Your compliance buddy",
+    modalDesc: "A pixel-art fox that lives at the edge of your screen and reacts the instant a call lands — green when clean, red on a breach — with a built-in chat copilot.",
+    features: ["Live green / red reactions on every call","Chat copilot on your desktop","One click into the full dashboard"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--safe-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
+    ctaLabel: "Open Desktop app", ctaHref: "/desktop.html"
   },
   {
     ghost: "PLANS.", accentHex: "#ffb020", accentTx:"var(--plan-tx)",
@@ -731,36 +747,12 @@ const SLIDES = [
     ctaLabel: "See full pricing", ctaHref: "/pricing.html"
   },
   {
-    ghost: "LEARN.", accentHex: "#ffb020", accentTx:"var(--warn-tx)",
-    cardTitle: "How it works", cardEyebrow: "3 lines of code",
-    modalDesc: "Install the SDK, wrap one function, and watch every call get hashed, graded, chained, and verified — the whole pipeline, in minutes.",
-    features: ["Three lines of code to integrate","Runs on a background thread — never blocks you","Watch it live in the desktop app"],
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
-    ctaLabel: "See how it works", ctaHref: "/how-it-works.html"
-  },
-  {
-    ghost: "PET.", accentHex: "#3ddc84", accentTx:"var(--safe-tx)",
-    cardTitle: "Desktop app", cardEyebrow: "Your compliance buddy",
-    modalDesc: "A pixel-art fox that lives at the edge of your screen and reacts the instant a call lands — green when clean, red on a breach — with a built-in chat copilot.",
-    features: ["Live green / red reactions on every call","Chat copilot on your desktop","One click into the full dashboard"],
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--safe-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
-    ctaLabel: "Open Desktop app", ctaHref: "/desktop.html"
-  },
-  {
-    ghost: "TALK.", accentHex: "#ff7a2e", accentTx:"var(--ink)",
-    cardTitle: "Contact us", cardEyebrow: "Talk to a founder",
-    modalDesc: "Email support, the Help Center, or an enterprise inquiry straight to the founders — plus a per-plan response-time SLA. Real engineers, not a ticket queue.",
-    features: ["Same-business-day email on paid plans","Enterprise inquiries go to the founders","Send a note — we read every message"],
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>`,
-    ctaLabel: "Open Contact", ctaHref: "/contact.html"
-  },
-  {
-    ghost: "TEAM.", accentHex: "#d9722e", accentTx:"var(--ink)",
-    cardTitle: "About us", cardEyebrow: "Who's building this",
-    modalDesc: "Foxy Audit is built by people who've been audited. Our mission: make AI compliance something you can prove, not just promise.",
-    features: ["Founder-led, founder-answered inbox","Privacy-first by design","Built for teams shipping real AI"],
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
-    ctaLabel: "About us", ctaHref: "/about.html"
+    ghost: "DEMO.", accentHex: "#ff7a2e", accentTx:"var(--ink)",
+    cardTitle: "Book a demo", cardEyebrow: "See it on your stack",
+    modalDesc: "See Foxy Audit on your own stack. We'll wire the SDK into a real call live, trigger a breach, and verify the chain in front of you.",
+    features: ["A live, hands-on walkthrough","See a real breach get flagged","No credit card, no commitment"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m10 14 4 2-4 2z"/></svg>`,
+    ctaLabel: "Book a demo", ctaHref: "/book-a-demo.html"
   },
   {
     ghost: "DOCS.", accentHex: "#c9b7ff", accentTx:"var(--guard-tx)",
@@ -771,20 +763,28 @@ const SLIDES = [
     ctaLabel: "Open Docs", ctaHref: "/docs.html"
   },
   {
+    ghost: "TEAM.", accentHex: "#d9722e", accentTx:"var(--ink)",
+    cardTitle: "About us", cardEyebrow: "Who's building this",
+    modalDesc: "Foxy Audit is built by people who've been audited. Our mission: make AI compliance something you can prove, not just promise.",
+    features: ["Founder-led, founder-answered inbox","Privacy-first by design","Built for teams shipping real AI"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    ctaLabel: "About us", ctaHref: "/about.html"
+  },
+  {
+    ghost: "TALK.", accentHex: "#ff7a2e", accentTx:"var(--ink)",
+    cardTitle: "Contact us", cardEyebrow: "Talk to a founder",
+    modalDesc: "Email support, the Help Center, or an enterprise inquiry straight to the founders — plus a per-plan response-time SLA. Real engineers, not a ticket queue.",
+    features: ["Same-business-day email on paid plans","Enterprise inquiries go to the founders","Send a note — we read every message"],
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>`,
+    ctaLabel: "Open Contact", ctaHref: "/contact.html"
+  },
+  {
     ghost: "LEGAL.", accentHex: "#ffc83d", accentTx:"var(--warn-tx)",
     cardTitle: "Legal & Trust", cardEyebrow: "Terms · Privacy · Cookies",
     modalDesc: "Terms of Service, Privacy Policy, Cookie Policy, Acceptable Use, and how to report abuse — all in one place. We hash your data; we don't hold your raw payloads.",
     features: ["Privacy-first: hashes, not raw prompts","Geo-aware cookie consent (GDPR / CCPA)","Clear, plain-language policies"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--warn-tx)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6a3 3 0 0 0 6 0z"/><path d="M17 7l-3 6a3 3 0 0 0 6 0z"/><path d="M8 21h8"/></svg>`,
     ctaLabel: "Open Legal & Trust", ctaHref: "/legal.html"
-  },
-  {
-    ghost: "DEMO.", accentHex: "#ff7a2e", accentTx:"var(--ink)",
-    cardTitle: "Book a demo", cardEyebrow: "See it on your stack",
-    modalDesc: "See Foxy Audit on your own stack. We'll wire the SDK into a real call live, trigger a breach, and verify the chain in front of you.",
-    features: ["A live, hands-on walkthrough","See a real breach get flagged","No credit card, no commitment"],
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m10 14 4 2-4 2z"/></svg>`,
-    ctaLabel: "Book a demo", ctaHref: "/book-a-demo.html"
   }
 ];
 
