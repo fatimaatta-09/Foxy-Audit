@@ -731,6 +731,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div style="font-weight:700;font-size:11.5px;margin-bottom:6px;">Check the whole ledger</div>
             <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:11px;">One click re-checks every record on the server and flags any tampering.</div>
             <button class="btn pri" id="chainCheckBtn" style="margin-top:0;">verify live ledger chain</button>
+            <button class="btn ghost" id="anchorNowBtn" style="margin-top:8px;">⚓ anchor now (publish head to Sepolia)</button>
             <div class="vres" id="chainCheckResult"></div>
           </div>
         </div>
@@ -1257,6 +1258,20 @@ function runExport(){
       else{ el.className='vres tamper'; el.innerHTML='⚠ tampering detected — broken at seq '+v.first_broken_seq; }
     }catch(e){ el.className='vres tamper'; el.textContent='could not reach the server'; }
   }
+  async function anchorNow(){
+    const el=$('chainCheckResult'); const btn=$('anchorNowBtn'); if(!el)return;
+    el.className='vres match'; el.textContent='⚓ anchoring the current chain head to Sepolia…';
+    if(btn)btn.disabled=true;
+    try{
+      const r=await api('/v1/anchors',{method:'POST'});
+      if(r.status===409){ el.className='vres match'; el.textContent='nothing new to anchor — the current head is already anchored (or no logs yet).'; }
+      else if(!r.ok){ el.className='vres tamper'; el.textContent='anchor failed (HTTP '+r.status+')'; }
+      else{ const a=await r.json(); el.className='vres match';
+        el.innerHTML='⚓ anchored on '+(a.chain||'chain')+' — status <b>'+(a.status||'?')+'</b>'
+          +(a.tx_hash?'<br><a href="https://sepolia.etherscan.io/tx/'+a.tx_hash+'" target="_blank" rel="noopener" style="color:var(--fox2)">view tx on Etherscan ↗</a>':''); }
+    }catch(e){ el.className='vres tamper'; el.textContent='could not reach the server'; }
+    if(btn)btn.disabled=false;
+  }
   // real passport export: POST /v1/passport -> open the rendered HTML in a new tab
   window.runExport=async function(){
     const prog=$('exportProgress'), pbar=$('pbar'), plbl=$('plbl');
@@ -1375,6 +1390,7 @@ function runExport(){
   }
 
   const ccb=$('chainCheckBtn'); if(ccb)ccb.addEventListener('click',verifyChain);
+  const anb=$('anchorNowBtn'); if(anb)anb.addEventListener('click',anchorNow);
 
   check();
 })();

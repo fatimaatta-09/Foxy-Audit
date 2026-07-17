@@ -80,6 +80,16 @@ services:
       - ANCHOR_CADENCE_PRO=${ANCHOR_CADENCE_PRO:-21600}
       - ANCHOR_CADENCE_ENTERPRISE=${ANCHOR_CADENCE_ENTERPRISE:-3600}
       - ANCHOR_CADENCE_DEFAULT=${ANCHOR_CADENCE_DEFAULT:-86400}
+      # EVM anchoring for manual "anchor now" (POST /v1/anchors runs in THIS API
+      # process). The automatic sweep lives in foxy-worker, which also has these —
+      # both read the same values from deploy/.env.
+      - ANCHOR_ENABLED=${ANCHOR_ENABLED:-false}
+      - ANCHOR_PROVIDER=${ANCHOR_PROVIDER:-stub}
+      - ANCHOR_EVM_RPC_URL=${ANCHOR_EVM_RPC_URL:-}
+      - ANCHOR_EVM_CHAIN=${ANCHOR_EVM_CHAIN:-sepolia}
+      - ANCHOR_EVM_PRIVATE_KEY=${ANCHOR_EVM_PRIVATE_KEY:-}
+      - ANCHOR_EVM_CONTRACT=${ANCHOR_EVM_CONTRACT:-}
+      - ANCHOR_WALLET_MIN_BALANCE_WEI=${ANCHOR_WALLET_MIN_BALANCE_WEI:-0}
     volumes:
       # Dashboard + ops-console HTML live at the repo root, outside the build
       # context. Mount the DIRECTORIES (not single files): git reset on deploy
