@@ -32,7 +32,10 @@ router = APIRouter()
 
 # Sources whose messages are high-priority: they page every superadmin on arrival
 # and sort to the top of the admin inbox (see admin_inbox._is_priority).
-PRIORITY_SOURCES = {"enterprise", "demo"}
+PRIORITY_SOURCES = {"enterprise", "demo", "partnership"}
+# Founder alerts for priority contacts always also go to the team's shared inbox,
+# regardless of which superadmins happen to be registered.
+FOUNDER_ALERT_EMAIL = "foxyaudit@gmail.com"
 
 
 def _esc(s: str | None) -> str:
@@ -74,15 +77,17 @@ def _notify_priority_contact(name: str | None, email_addr: str, message: str | N
         recipients = []
     finally:
         db.close()
+    # Always include the team's shared inbox, deduped, even if no superadmin matches.
+    recipients = list(dict.fromkeys([r for r in recipients if r] + [FOUNDER_ALERT_EMAIL]))
 
     who = (name or email_addr or "Someone").strip()
     body = (message or "").strip()
     alert_html = (
-        f"<p><b>{_esc(who)}</b> &lt;{_esc(email_addr)}&gt; sent a <b>priority</b> enterprise inquiry:</p>"
+        f"<p><b>{_esc(who)}</b> &lt;{_esc(email_addr)}&gt; sent a <b>priority</b> inquiry:</p>"
         f"<blockquote style='border-left:3px solid #ff7a2e;padding-left:12px;color:#333'>"
         f"{_esc(body).replace(chr(10), '<br>')}</blockquote>"
         f"<p>Open it in the admin inbox to claim &amp; reply.</p>")
-    alert_text = (f"{who} <{email_addr}> sent a PRIORITY enterprise inquiry:\n\n{body}\n\n"
+    alert_text = (f"{who} <{email_addr}> sent a PRIORITY inquiry:\n\n{body}\n\n"
                   "Open the admin inbox to claim & reply.")
     for r in recipients:
         email_mod.send_email(to=r, subject=f"\U0001f534 Priority contact — {who}",
@@ -90,10 +95,10 @@ def _notify_priority_contact(name: str | None, email_addr: str, message: str | N
 
     email_mod.send_email(
         to=email_addr, subject="We got your message — Foxy Audit",
-        html=("<p>Thanks for reaching out to Foxy Audit about a custom plan.</p>"
+        html=("<p>Thanks for reaching out to Foxy Audit.</p>"
               "<p>Your message is with our team and we'll get back to you shortly.</p>"
               "<p style='color:#888;font-size:12px'>— Foxy Audit</p>"),
-        text=("Thanks for reaching out to Foxy Audit about a custom plan.\n"
+        text=("Thanks for reaching out to Foxy Audit.\n"
               "Your message is with our team and we'll get back to you shortly.\n\n— Foxy Audit"))
 
 
