@@ -62,7 +62,8 @@ def _verify_recaptcha(token: str | None) -> bool:
         return True
 
 
-def _notify_priority_contact(name: str | None, email_addr: str, message: str | None) -> None:
+def _notify_priority_contact(name: str | None, email_addr: str, message: str | None,
+                             source: str | None = None) -> None:
     """Best-effort alert for a new priority (enterprise) contact — runs as a
     BackgroundTask so it never blocks /v1/leads. Emails every ENABLED superadmin at
     their registered staff address, plus a confirmation to the sender. send_email
@@ -80,17 +81,19 @@ def _notify_priority_contact(name: str | None, email_addr: str, message: str | N
     # Always include the team's shared inbox, deduped, even if no superadmin matches.
     recipients = list(dict.fromkeys([r for r in recipients if r] + [FOUNDER_ALERT_EMAIL]))
 
+    label = {"partnership": "partnership", "enterprise": "enterprise",
+             "demo": "demo"}.get((source or "").strip().lower(), "contact")
     who = (name or email_addr or "Someone").strip()
     body = (message or "").strip()
     alert_html = (
-        f"<p><b>{_esc(who)}</b> &lt;{_esc(email_addr)}&gt; sent a <b>priority</b> inquiry:</p>"
+        f"<p><b>{_esc(who)}</b> &lt;{_esc(email_addr)}&gt; sent a <b>priority {label}</b> inquiry:</p>"
         f"<blockquote style='border-left:3px solid #ff7a2e;padding-left:12px;color:#333'>"
         f"{_esc(body).replace(chr(10), '<br>')}</blockquote>"
         f"<p>Open it in the admin inbox to claim &amp; reply.</p>")
-    alert_text = (f"{who} <{email_addr}> sent a PRIORITY inquiry:\n\n{body}\n\n"
+    alert_text = (f"{who} <{email_addr}> sent a PRIORITY {label.upper()} inquiry:\n\n{body}\n\n"
                   "Open the admin inbox to claim & reply.")
     for r in recipients:
-        email_mod.send_email(to=r, subject=f"\U0001f534 Priority contact — {who}",
+        email_mod.send_email(to=r, subject=f"\U0001f534 Priority {label.capitalize()} — {who}",
                              html=alert_html, text=alert_text)
 
     email_mod.send_email(
@@ -174,7 +177,7 @@ def create_lead(payload: LeadRequest, request: Request, background: BackgroundTa
         existing.utm_medium = payload.utm_medium or existing.utm_medium
         db.commit()
         if is_priority and has_msg:
-            background.add_task(_notify_priority_contact, payload.name, email, payload.message)
+            background.add_task(_notify_priority_contact, payload.name, email, payload.message, payload.source)
         return LeadResponse(status="updated", id=str(existing.id))
 
     lead = MarketingLead(
@@ -197,7 +200,7 @@ def create_lead(payload: LeadRequest, request: Request, background: BackgroundTa
         return LeadResponse(status="updated", id=str(existing.id) if existing else "")
     db.refresh(lead)
     if is_priority and has_msg:
-        background.add_task(_notify_priority_contact, payload.name, email, payload.message)
+        background.add_task(_notify_priority_contact, payload.name, email, payload.message, payload.source)
     return LeadResponse(status="created", id=str(lead.id))
 
 
