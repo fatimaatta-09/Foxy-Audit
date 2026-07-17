@@ -4,13 +4,95 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Partnerships — Foxy Audit</title>
-<meta name="description" content="Partner with Foxy Audit — integrate tamper-evident AI audit trails into your platform, offer compliance to your clients, or shape the roadmap as a design partner.">
+<meta name="description" content="Partner with Foxy Audit — integrate tamper-evident AI audit trails into your platform, offer verifiable compliance to your clients, or shape the roadmap as a design partner.">
 <link rel="canonical" href="https://foxyaudit.tech/partnerships.html">
 <link rel="icon" type="image/png" href="/logo.png">
 <meta name="theme-color" content="#ff7a2e">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/site.css">
+<style>
+  :root{ --green:#3ddc84; --gold:#ffc83d; }
+  .p-eyebrow{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--fox);font-weight:600;margin:0 0 14px;text-align:center;}
+  h2.psec{font-family:var(--disp);font-weight:800;font-size:clamp(24px,3.6vw,36px);text-align:center;letter-spacing:-.01em;margin:0 0 8px;text-wrap:balance;}
+  .psec-sub{text-align:center;color:var(--muted);max-width:520px;margin:0 auto 40px;font-size:15px;line-height:1.6;}
+  section.pt{padding:clamp(44px,7vw,80px) 0;}
+
+  /* hero */
+  .p-hero{text-align:center;padding:clamp(46px,8vw,88px) 0 20px;}
+  .pair{display:inline-flex;align-items:center;gap:16px;margin:0 0 28px;}
+  .pair .chip{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.04);border:1.4px solid rgba(255,122,46,.4);box-shadow:0 0 26px -8px rgba(255,122,46,.5);}
+  .pair .chip img{width:48px;height:48px;object-fit:contain;}
+  .pair .chip.you{border-style:dashed;border-color:var(--muted);font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);box-shadow:none;}
+  .pair .plus{font-size:24px;color:var(--muted);}
+  .p-hero h1{font-family:var(--disp);font-weight:900;font-size:clamp(34px,6vw,60px);line-height:1.03;letter-spacing:-.02em;margin:0 auto 18px;max-width:13ch;text-wrap:balance;}
+  .p-hero h1 .fx{color:var(--fox);}
+  .p-hero p.lead{color:var(--muted);font-size:16px;max-width:520px;margin:0 auto 30px;line-height:1.6;}
+  .p-hero .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
+  .pbtn{font-family:var(--disp);font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.02em;border-radius:13px;padding:14px 24px;cursor:pointer;border:none;display:inline-block;}
+  .pbtn.primary{background:var(--fox);color:var(--bg);box-shadow:var(--clay-sm);}
+  .pbtn.primary:hover{transform:translateY(-2px);}
+  .pbtn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line);}
+  .pbtn.ghost:hover{border-color:var(--fox);}
+
+  /* benefits */
+  .bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+  @media(max-width:820px){ .bgrid{grid-template-columns:1fr;} }
+  .btile{position:relative;overflow:hidden;border-radius:18px;padding:24px;
+    background:rgba(255,255,255,.035);backdrop-filter:blur(5px) saturate(1.5);
+    border:1.3px solid rgba(255,122,46,.26);box-shadow:0 22px 50px -34px rgba(0,0,0,.9);}
+  .btile::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 1.5px 1px rgba(255,255,255,.35);}
+  .btile .ic{width:40px;height:40px;border-radius:11px;background:var(--surf2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:14px;}
+  .btile .ic svg{width:20px;height:20px;stroke:var(--fox);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .btile h3{font-family:var(--disp);font-size:16px;margin:0 0 8px;font-weight:700;}
+  .btile p{color:var(--muted);font-size:13.5px;margin:0;line-height:1.6;}
+
+  /* tracks */
+  .tracks{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+  @media(max-width:820px){ .tracks{grid-template-columns:1fr;} }
+  .track{border-radius:20px;padding:28px 24px;background:rgba(255,255,255,.04);
+    border:1.4px solid var(--acc);box-shadow:0 0 24px -10px var(--glow);position:relative;overflow:hidden;}
+  .track .tic{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;}
+  .track .tic svg{width:23px;height:23px;fill:none;stroke:var(--solid);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .track h3{font-family:var(--disp);font-size:18px;margin:14px 0 8px;}
+  .track p{color:var(--muted);font-size:13.5px;line-height:1.6;margin:0 0 16px;}
+  .track a.go{color:var(--fox);font-weight:700;font-size:13px;display:inline-flex;gap:6px;align-items:center;}
+  .track a.go:hover{gap:10px;}
+
+  /* how it works */
+  .psteps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:840px;margin:0 auto;}
+  @media(max-width:760px){ .psteps{grid-template-columns:1fr;} }
+  .pstep{text-align:center;}
+  .pstep .n{width:46px;height:46px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--disp);font-weight:800;font-size:17px;color:var(--fox);background:rgba(255,122,46,.08);border:1.5px solid rgba(255,122,46,.5);}
+  .pstep h3{font-family:var(--disp);font-size:16px;margin:0 0 8px;}
+  .pstep p{color:var(--muted);font-size:13.5px;line-height:1.6;margin:0;}
+
+  /* apply form */
+  .reassure-row{list-style:none;display:flex;gap:26px;justify-content:center;flex-wrap:wrap;margin:0 auto 34px;padding:0;}
+  .reassure-row li{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);}
+  .reassure-row svg{width:15px;height:15px;stroke:var(--green);fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+  .applywrap{max-width:720px;margin:0 auto;border-radius:24px;padding:clamp(30px,5vw,48px);
+    background:rgba(255,255,255,.04);border:1.4px solid rgba(255,122,46,.3);
+    box-shadow:0 0 34px -14px rgba(255,122,46,.5), 0 30px 70px -34px rgba(0,0,0,.9);}
+  .ptype{margin-bottom:18px;}
+  .plabel{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:9px;}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;}
+  .pill{font-family:var(--disp);font-size:14px;font-weight:600;padding:11px 19px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
+  .pill:hover{color:var(--ink);}
+  .pill.active{border-color:var(--fox);color:var(--ink);background:rgba(255,122,46,.1);box-shadow:0 0 16px -6px rgba(255,122,46,.6);}
+  .frow{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px;}
+  @media(max-width:560px){ .frow{grid-template-columns:1fr;} }
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field.full{grid-column:1/-1;}
+  .field label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;}
+  .field input,.field select,.field textarea{background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:15px 16px;color:var(--ink);font-family:var(--disp);font-size:15px;outline:none;}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--fox);}
+  .field textarea{resize:vertical;min-height:128px;}
+  .applywrap .pbtn.primary{width:100%;margin-top:8px;}
+  .ok{text-align:center;color:var(--green);font-size:14px;margin-top:14px;min-height:18px;letter-spacing:.02em;}
+</style>
 </head>
 <body>
 
@@ -23,43 +105,112 @@
 </header>
 
 <main class="wrap">
-  <div class="phead">
-    <a class="back" href="/">← Back to all cards</a>
-    <p class="sec-eb">Partnerships</p>
-    <h1 class="sec-h">Let's build on trust together.</h1>
-    <p class="sub">Foxy Audit makes AI provably compliant. If your platform, agency, or team touches AI governance, there's a way to work with us.</p>
-  </div>
-
-  <div class="grid">
-    <div class="gcard">
-      <div class="em">🔌</div>
-      <h3>Technology partners</h3>
-      <p>Embed tamper-evident audit trails and one-click verification into your own platform via the SDK and API. Give your users cryptographic proof without building it yourself.</p>
-      <a class="cta" href="/contact.html">Talk integrations →</a>
+  <header class="p-hero">
+    <div class="pair">
+      <div class="chip"><img src="/logo.png" alt=""></div>
+      <span class="plus">+</span>
+      <div class="chip you">you</div>
     </div>
-    <div class="gcard">
-      <div class="em">🤝</div>
-      <h3>Agencies &amp; consultancies</h3>
-      <p>Offer verifiable AI compliance to the regulated clients you already serve — healthcare, finance, legal. We'll support you with onboarding and co-selling.</p>
-      <a class="cta" href="/contact.html">Become a partner →</a>
+    <p class="p-eyebrow">Partner program</p>
+    <h1>Let's build on <span class="fx">trust</span> — together.</h1>
+    <p class="lead">Foxy Audit makes AI provably compliant. If your platform, agency, or team touches AI governance, there's a way to partner — with a founder on the other end, not a ticket queue.</p>
+    <div class="btns">
+      <a href="#apply" class="pbtn primary">Apply now</a>
+      <a href="/contact.html" class="pbtn ghost">Talk to a founder</a>
     </div>
-    <div class="gcard">
-      <div class="em">🚀</div>
-      <h3>Design partners</h3>
-      <p>Early teams shipping AI into regulated buyers: work closely with the founders, get hands-on onboarding, and directly shape the roadmap.</p>
-      <a class="cta" href="/book-a-demo.html">Book a demo →</a>
+  </header>
+
+  <section class="pt">
+    <p class="p-eyebrow">Why partner</p>
+    <h2 class="psec">Good for your clients. Good for you.</h2>
+    <p class="psec-sub">A partner program built around the same thing the product is — provable trust, no fine print.</p>
+    <div class="bgrid">
+      <div class="btile"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h3>Revenue share</h3><p>Earn on every client you bring and keep on Foxy Audit — recurring, not a one-off bounty.</p></div>
+      <div class="btile"><div class="ic"><svg viewBox="0 0 24 24"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg></div><h3>Co-marketing</h3><p>Co-branded content, case studies, and launch pushes — we amplify the work, together.</p></div>
+      <div class="btile"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V7z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></div><h3>Priority enablement</h3><p>A partner sandbox, priority support, and a direct line for the deals that matter.</p></div>
+      <div class="btile"><div class="ic"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><h3>Roadmap influence</h3><p>You're close to the buyers we build for. Your feedback shapes what ships next.</p></div>
+      <div class="btile"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div><h3>Partner directory</h3><p>A listing prospects can find you through as the network grows — earn your spot.</p></div>
+      <div class="btile"><div class="ic"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></div><h3>Founder access</h3><p>No account-manager maze. You talk to the people building the product.</p></div>
     </div>
-  </div>
+  </section>
 
-  <div class="prose" style="text-align:center;">
-    <p class="lead">Not sure which fits? Tell us what you're building and we'll figure out the right shape together — this goes straight to the founders.</p>
-  </div>
+  <section class="pt">
+    <p class="p-eyebrow">Ways to partner</p>
+    <h2 class="psec">Pick the track that fits.</h2>
+    <p class="psec-sub">Three ways in — or tell us what you're building and we'll find the right shape.</p>
+    <div class="tracks">
+      <div class="track" style="--acc:rgba(255,122,46,.4);--glow:rgba(255,122,46,.5);--solid:#ff7a2e">
+        <div class="tic"><svg viewBox="0 0 24 24"><path d="M8 6L2 12l6 6"/><path d="M16 6l6 6-6 6"/></svg></div>
+        <h3>Technology partners</h3>
+        <p>Embed tamper-evident audit trails and one-click verification into your own platform via the SDK and API.</p>
+        <a class="go" href="#apply">Apply as a tech partner →</a>
+      </div>
+      <div class="track" style="--acc:rgba(255,200,61,.4);--glow:rgba(255,200,61,.45);--solid:#ffc83d">
+        <div class="tic"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <h3>Agencies &amp; consultancies</h3>
+        <p>Offer verifiable AI compliance to the regulated clients you already serve. We support onboarding and co-selling.</p>
+        <a class="go" href="#apply">Become a partner →</a>
+      </div>
+      <div class="track" style="--acc:rgba(61,220,132,.4);--glow:rgba(61,220,132,.4);--solid:#3ddc84">
+        <div class="tic"><svg viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/></svg></div>
+        <h3>Design partners</h3>
+        <p>Early teams shipping AI into regulated buyers: work directly with the founders and shape the roadmap.</p>
+        <a class="go" href="#apply">Join as a design partner →</a>
+      </div>
+    </div>
+  </section>
 
-  <div class="band">
-    <h2>Let's talk.</h2>
-    <p>Reach the founders directly about a partnership.</p>
-    <a class="tn-cta" style="padding:13px 22px;font-size:13px" href="/contact.html">Contact us</a>
-  </div>
+  <section class="pt">
+    <p class="p-eyebrow">How it works</p>
+    <h2 class="psec">Three steps to partner.</h2>
+    <p class="psec-sub">No lengthy vetting theatre — apply, a quick fit check, then we get you going.</p>
+    <div class="psteps">
+      <div class="pstep"><div class="n">1</div><h3>Apply</h3><p>Pick a track and tell us a bit about your company and what you're building.</p></div>
+      <div class="pstep"><div class="n">2</div><h3>Qualify</h3><p>A founder reviews it and follows up — usually within a couple of business days.</p></div>
+      <div class="pstep"><div class="n">3</div><h3>Onboard</h3><p>We set you up with access, enablement, and everything you need to start.</p></div>
+    </div>
+  </section>
+
+  <section class="pt" id="apply">
+    <p class="p-eyebrow">Apply now</p>
+    <h2 class="psec">Start a partnership.</h2>
+    <p class="psec-sub">Tell us who you are and what you're building — it goes straight to the founders, and you'll hear back within a couple of business days.</p>
+    <ul class="reassure-row">
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Free to apply</li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Recurring revenue share</li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>A founder replies, never a bot</li>
+    </ul>
+    <form class="applywrap" onsubmit="return submitPartner(event)">
+      <div class="ptype">
+        <span class="plabel">How would you like to partner?</span>
+        <div class="pills" id="pills">
+          <button type="button" class="pill active" data-v="tech">Technology partner</button>
+          <button type="button" class="pill" data-v="agency">Agency / reseller</button>
+          <button type="button" class="pill" data-v="design">Design partner</button>
+          <button type="button" class="pill" data-v="unsure">Not sure yet</button>
+        </div>
+        <div class="field full" id="notsureBox" style="display:none;margin-top:16px;">
+          <label>What do you have in mind?</label>
+          <textarea id="pMind" placeholder="Tell us what you're hoping to get out of a partnership — we'll point you to the right track…"></textarea>
+        </div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>First name</label><input id="pFirst" placeholder="Jane"></div>
+        <div class="field"><label>Last name</label><input id="pLast" placeholder="Doe"></div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>Work email</label><input id="pEmail" type="email" placeholder="jane@company.com" required></div>
+        <div class="field"><label>Company</label><input id="pCompany" placeholder="Acme"></div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>Website</label><input id="pWebsite" placeholder="https://…"></div>
+        <div class="field"><label>Job title</label><input id="pJob" placeholder="Head of Partnerships"></div>
+      </div>
+      <div class="frow"><div class="field full"><label>What are you building?</label><textarea id="pBuilding" placeholder="A sentence or two about your company and how you'd like to partner…"></textarea></div></div>
+      <button class="pbtn primary" type="submit">Submit application →</button>
+      <div class="ok"></div>
+    </form>
+  </section>
 </main>
 
 <footer>
@@ -82,5 +233,42 @@
     </div>
   </div>
 </footer>
+
+<script>
+  const API = window.FOXY_API || ((location.hostname==='localhost'||location.hostname==='127.0.0.1')
+    ? 'http://localhost:8000' : 'https://app.' + location.hostname.replace(/^www\./,''));
+  const TRACKS = {tech:'Technology partner', agency:'Agency / reseller', design:'Design partner', unsure:'Not sure yet'};
+  let track = 'tech';
+  const pills = document.getElementById('pills'), ns = document.getElementById('notsureBox');
+  pills.addEventListener('click', function(e){
+    const b = e.target.closest('.pill'); if(!b) return;
+    pills.querySelectorAll('.pill').forEach(function(p){ p.classList.remove('active'); });
+    b.classList.add('active'); track = b.dataset.v;
+    ns.style.display = (track === 'unsure') ? 'flex' : 'none';
+  });
+  function submitPartner(e){
+    e.preventDefault();
+    const f = e.target, v = id => (document.getElementById(id) ? document.getElementById(id).value : '').trim();
+    const email = v('pEmail'), ok = f.querySelector('.ok');
+    if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ ok.style.color='#ffb020'; ok.textContent='Please enter a valid work email.'; return false; }
+    ok.style.color='var(--muted)'; ok.textContent='Sending…';
+    const msg = ['Track: ' + (TRACKS[track]||track),
+                 v('pJob') && 'Job title: ' + v('pJob'),
+                 v('pWebsite') && 'Website: ' + v('pWebsite'),
+                 v('pBuilding') && '\n' + v('pBuilding'),
+                 (track==='unsure' && v('pMind')) && '\nWhat they have in mind: ' + v('pMind')
+                ].filter(Boolean).join('\n');
+    fetch(API + '/v1/leads', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name:((v('pFirst')+' '+v('pLast')).trim()||null), email:email, company:(v('pCompany')||null),
+        source:'partnership', subject:'Partnership — ' + (TRACKS[track]||track), message:msg }) })
+      .then(function(r){ if(!r.ok) throw 0;
+        ok.style.color='var(--green)'; ok.textContent='✓ Sent — a founder will be in touch shortly.';
+        f.reset(); ns.style.display='none';
+        pills.querySelectorAll('.pill').forEach(function(p,i){ p.classList.toggle('active', i===0); }); track='tech';
+      })
+      .catch(function(){ ok.style.color='#ffb020'; ok.textContent="Couldn't send — please email foxyaudit@gmail.com."; });
+    return false;
+  }
+</script>
 </body>
 </html>
