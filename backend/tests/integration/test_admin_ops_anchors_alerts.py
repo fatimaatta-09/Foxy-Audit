@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from app.chain import GENESIS_HASH, compute_chain_hash
 from app.db import SessionLocal
 from app.models import AdminAction, AuditLog, ChainAnchor
 
@@ -15,7 +16,12 @@ def _audit_row(org_id: str, seq: int = 1) -> str:
             org_id=uuid.UUID(org_id), seq=seq,
             prompt_hash="c" * 64, response_hash="d" * 64,
             token_count=8, policy_tag="default",
-            prev_hash="0" * 64, chain_hash=f"{seq + 100:064x}",
+            prev_hash=GENESIS_HASH,
+            chain_hash=compute_chain_hash(
+                org_id=org_id, prompt_hash="c" * 64, response_hash="d" * 64,
+                token_count=8, policy_tag="default", seq=seq,
+                prev_hash=GENESIS_HASH,
+            ),
             grading_status="pending", grading_attempts=0,
         )
         db.add(row)
