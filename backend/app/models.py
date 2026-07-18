@@ -157,6 +157,10 @@ class OrgPolicy(Base):
     enforcement_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default="block")
     confidence_threshold: Mapped[str] = mapped_column(String(16), nullable=False, server_default="balanced")
     notify_on_breach: Mapped[str] = mapped_column(String(16), nullable=False, server_default="immediate")
+    # Optional destinations for the breach notifier (P2 · §F). NULL email falls
+    # back to the org's contact_email; NULL webhook = no webhook.
+    notify_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    notify_webhook_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

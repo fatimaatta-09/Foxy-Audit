@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,9 @@ class PolicyConfig(BaseModel):
     enforcement_mode: Literal["block", "flag", "monitor"] = "block"
     confidence_threshold: Literal["high", "balanced", "low"] = "balanced"
     notify_on_breach: Literal["immediate", "digest", "none"] = "immediate"
+    # Optional destinations for the breach notifier (P2 · §F).
+    notify_email: str | None = Field(default=None, max_length=320)
+    notify_webhook_url: str | None = Field(default=None, max_length=1024)
 
 
 def _to_config(row: OrgPolicy) -> "PolicyConfig":
@@ -42,6 +45,8 @@ def _to_config(row: OrgPolicy) -> "PolicyConfig":
         enforcement_mode=row.enforcement_mode,
         confidence_threshold=row.confidence_threshold,
         notify_on_breach=row.notify_on_breach,
+        notify_email=row.notify_email,
+        notify_webhook_url=row.notify_webhook_url,
     )
 
 
@@ -91,6 +96,14 @@ def update_policies(
     row.enforcement_mode = body.enforcement_mode
     row.confidence_threshold = body.confidence_threshold
     row.notify_on_breach = body.notify_on_breach
+    email = (body.notify_email or "").strip() or None
+    if email is not None and ("@" not in email or "." not in email.split("@")[-1]):
+        raise HTTPException(status_code=422, detail="notify_email must be a valid email")
+    hook = (body.notify_webhook_url or "").strip() or None
+    if hook is not None and not hook.startswith(("https://", "http://")):
+        raise HTTPException(status_code=422, detail="notify_webhook_url must be an http(s) URL")
+    row.notify_email = email
+    row.notify_webhook_url = hook
     db.commit()
     db.refresh(row)
     return _to_config(row)
