@@ -133,9 +133,10 @@ def test_staff_session_rejected_on_account_routes(make_staff, staff_login):
 def test_quota_for_tiers():
     from app.config import get_settings
     s = get_settings()
-    assert s.quota_for("free") == 1000
-    assert s.quota_for("companion") == 50000
-    assert s.quota_for("pro") == 50000
+    assert s.quota_for("free") == 500
+    assert s.quota_for("companion") == 25000
+    assert s.quota_for("pro") == 25000
+    assert s.quota_for("max") == 250000
     assert s.quota_for("guardian") is None        # 0 = unlimited (lifetime tier)
     assert s.quota_for("nonsense") is None         # unknown = unlimited
     assert s.quota_for(None) is None
@@ -182,8 +183,8 @@ def test_usage_under_quota_not_over(make_org, login, client):
     assert q["usage_pct"] == 40
 
 
-def test_ingest_never_blocked_by_quota(make_org, client):
-    """Soft quota: ingestion still returns 202 even far over the limit."""
+def test_ingest_blocks_when_credits_are_exhausted(make_org, client):
+    """The ledger, not a delayed rollup, enforces the plan credit limit."""
     a = make_org()
     db = SessionLocal()
     try:
@@ -193,8 +194,10 @@ def test_ingest_never_blocked_by_quota(make_org, client):
     finally:
         db.close()
     rows = [{"prompt_hash": _h(f"p{i}"), "response_hash": _h(f"r{i}"),
-             "token_count": 10, "policy_tag": "test"} for i in range(5)]
-    assert client.post("/v1/logs/batch", json=rows, headers=a["auth"]).status_code == 202
+             "token_count": 10, "policy_tag": "test"} for i in range(2)]
+    r = client.post("/v1/logs/batch", json=rows, headers=a["auth"])
+    assert r.status_code == 402
+    assert r.json()["detail"]["code"] == "credits_exhausted"
 
 
 def test_signup_assigns_free_quota(client, monkeypatch):
@@ -206,4 +209,6 @@ def test_signup_assigns_free_quota(client, monkeypatch):
     key = r.json()["api_key"]
     q = client.get("/v1/usage", headers={"Authorization": f"Bearer {key}"}).json()["quota"]
     assert q["plan_tier"] == "free"
-    assert q["monthly_log_quota"] == 1000
+    assert q["monthly_log_quota"] == 500
+    assert q["trial_active"] is True
+    assert q["trial_ends_at"]

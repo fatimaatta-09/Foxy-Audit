@@ -22,12 +22,13 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import email as email_mod
 from .. import mfa
 from ..auth import hash_key, require_org, require_role
+from ..config import get_settings
 from ..db import get_db
 from ..models import ApiKey, Organization, User
 
@@ -94,7 +95,20 @@ def create_key(
     admin: User = Depends(require_role("admin")),
     db: Session = Depends(get_db),
 ):
-    """Create a named API key. Returns the plaintext once — admin only."""
+    """Create a named API key. Returns the plaintext once - admin only."""
+    org = db.get(Organization, admin.org_id)
+    key_limit = get_settings().api_key_limit_for(org.plan_tier if org else None)
+    if key_limit is not None:
+        active_keys = db.execute(
+            select(func.count()).select_from(ApiKey).where(
+                ApiKey.org_id == admin.org_id, ApiKey.status == "active")
+        ).scalar_one()
+        if int(active_keys) >= key_limit:
+            raise HTTPException(
+                status_code=402,
+                detail={"code": "api_key_limit_reached", "message": "Your plan has no available active API-key slots. Upgrade to add another environment or service.",
+                        "used": int(active_keys), "included": key_limit},
+            )
     key, key_hash, prefix = _new_key()
     name = ((body.name or "").strip() or "unnamed key")[:120]  # whitespace-only -> default
     row = ApiKey(org_id=admin.org_id, name=name,

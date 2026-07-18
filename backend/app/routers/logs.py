@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -109,6 +110,36 @@ def ingest_batch(
             })
         else:
             new_items.append(item)
+
+    now = datetime.now(timezone.utc)
+    if (org.plan_tier or "").lower() == "free" and org.trial_ends_at and now >= org.trial_ends_at:
+        raise HTTPException(
+            status_code=402,
+            detail={"code": "trial_expired", "message": "Your 7-day trial has ended. Upgrade to continue capturing events."},
+        )
+    if ((org.plan_tier or "").lower() not in {"", "free"}
+            and org.subscription_status in {"cancelled", "unpaid"}):
+        raise HTTPException(
+            status_code=402,
+            detail={"code": "subscription_inactive", "message": "Your subscription is not active. Update billing to continue capturing events."},
+        )
+
+    # Enforce credits against the ledger, not the eventually-consistent usage
+    # rollup. The sequence row is already locked, so concurrent writers cannot
+    # both spend the same remaining credits.
+    quota = org.monthly_log_quota
+    if quota is not None and new_items:
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        used = db.execute(
+            select(func.count()).select_from(AuditLog).where(
+                AuditLog.org_id == org.id, AuditLog.created_at >= month_start)
+        ).scalar_one()
+        if int(used) + len(new_items) > quota:
+            raise HTTPException(
+                status_code=402,
+                detail={"code": "credits_exhausted", "message": "Monthly audit-event credits are exhausted. Upgrade to continue capturing events.",
+                        "used": int(used), "included": quota, "requested": len(new_items)},
+            )
 
     # Lock the org's tail row after taking the allocator lock. Legacy rows can
     # still exist, so the allocator is initialized from the observed tail above.

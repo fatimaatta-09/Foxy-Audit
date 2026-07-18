@@ -19,8 +19,9 @@ from sqlalchemy.orm import Session
 
 from .. import ip_allow
 from ..auth import require_role, resolve_org
+from ..config import get_settings
 from ..db import get_db
-from ..models import Invoice, Organization, UsageDaily, User
+from ..models import ApiKey, AuditLog, Invoice, Organization, UsageDaily, User
 
 router = APIRouter()
 
@@ -52,7 +53,18 @@ class UsageQuota(BaseModel):
     used_this_month: int = 0
     remaining: int | None = None           # NULL when unlimited
     usage_pct: int | None = None           # 0..100+, NULL when unlimited
-    over_quota: bool = False               # soft flag — ingestion is NEVER blocked
+    over_quota: bool = False
+    credit_unit: str = "audit_event"
+    credits_included: int | None = None
+    credits_used: int = 0
+    credits_remaining: int | None = None
+    trial_ends_at: str | None = None
+    trial_active: bool = False
+    seat_limit: int | None = None
+    active_seats: int = 0
+    api_key_limit: int | None = None
+    active_api_keys: int = 0
+    ingestion_blocked: bool = False
 
 
 class UsageResponse(BaseModel):
@@ -103,13 +115,40 @@ def get_usage(
     ).scalars().all()
 
     month_start = today.replace(day=1)
+    month_start_dt = datetime.combine(month_start, datetime.min.time(), tzinfo=timezone.utc)
     used_this_month = db.execute(
-        select(func.coalesce(func.sum(UsageDaily.logs_count), 0))
-        .where(UsageDaily.org_id == org.id, UsageDaily.day >= month_start)
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, AuditLog.created_at >= month_start_dt)
     ).scalar_one()
 
     quota = org.monthly_log_quota
     used = int(used_this_month)
+    now = datetime.now(timezone.utc)
+    trial_active = bool(
+        (org.plan_tier or "").lower() == "free"
+        and org.trial_ends_at is not None
+        and now < org.trial_ends_at
+    )
+    inactive_subscription = (
+        (org.plan_tier or "").lower() not in {"", "free"}
+        and org.subscription_status in {"cancelled", "unpaid"}
+    )
+    seat_limit = get_settings().seat_limit_for(org.plan_tier)
+    api_key_limit = get_settings().api_key_limit_for(org.plan_tier)
+    active_seats = db.execute(
+        select(func.count()).select_from(User).where(
+            User.org_id == org.id, User.disabled.is_(False))
+    ).scalar_one()
+    active_keys = db.execute(
+        select(func.count()).select_from(ApiKey).where(
+            ApiKey.org_id == org.id, ApiKey.status == "active")
+    ).scalar_one()
+    ingestion_blocked = bool(
+        ((org.plan_tier or "").lower() == "free" and org.trial_ends_at is not None
+         and now >= org.trial_ends_at)
+        or inactive_subscription
+        or (quota is not None and used >= quota)
+    )
     return UsageResponse(
         quota=UsageQuota(
             plan_tier=org.plan_tier,
@@ -118,6 +157,16 @@ def get_usage(
             remaining=None if quota is None else max(0, quota - used),
             usage_pct=None if not quota else round(used / quota * 100),
             over_quota=bool(quota is not None and used >= quota),
+            credits_included=quota,
+            credits_used=used,
+            credits_remaining=None if quota is None else max(0, quota - used),
+            trial_ends_at=org.trial_ends_at.isoformat() if org.trial_ends_at else None,
+            trial_active=trial_active,
+            seat_limit=seat_limit,
+            active_seats=int(active_seats),
+            api_key_limit=api_key_limit,
+            active_api_keys=int(active_keys),
+            ingestion_blocked=ingestion_blocked,
         ),
         days=[
             UsageDay(

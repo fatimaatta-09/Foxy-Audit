@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -60,6 +61,7 @@ def _provision_google_org(db: Session, email: str, name: str | None, sub: str) -
         name=((name or email).strip() or email)[:255],
         api_key_hash=hashlib.sha256(plaintext_key.encode("utf-8")).hexdigest(),
         plan_tier="free", contact_email=email,
+        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=get_settings().trial_days),
         monthly_log_quota=get_settings().quota_for("free"))
     db.add(org)
     db.flush()
@@ -120,6 +122,8 @@ def google_auth(payload: GoogleAuthRequest, request: Request, db: Session = Depe
     org = db.get(Organization, user.org_id)
     if org is not None and org.deleted_at is not None:
         raise HTTPException(status_code=403, detail="This workspace has been deleted")
+    if org is not None and org.suspended:
+        raise HTTPException(status_code=403, detail="This workspace is suspended")
 
     db.commit()
     _establish_session(request, user)                # no email OTP for verified Google
