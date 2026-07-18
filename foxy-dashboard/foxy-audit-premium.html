@@ -855,6 +855,18 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div style="font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.6;">each key maps to one developer or service · keys authenticate SDK writes via <span style="font-family:var(--mono);color:var(--fox2);">POST /v1/logs/batch</span></div>
         <div id="keysList"></div>
       </div>
+      <div class="clay pad" style="max-width:780px;margin-top:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Connect the SDK</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Wrap any AI call with the decorator — only SHA-256 hashes + metadata leave your machine, never the prompt or response text.</div>
+        <div class="flabel" style="margin-top:0;">1 · install</div>
+        <div class="codebox">pip install foxy-audit</div>
+        <div class="flabel">2 · set your key (from “+ new key” above)</div>
+        <div class="codebox">export FOXY_API_KEY=foxy_sk_your_key_here</div>
+        <div class="flabel">3 · decorate your model call</div>
+        <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.observe(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
+        <button class="btn" onclick="checkSdkConnection(this)" style="margin-top:12px;">Test connection</button>
+        <span id="sdkCheckOut" style="margin-left:8px;font-size:11px;font-weight:700;"></span>
+      </div>
     </div>
 
     <!-- ═════════════ BILLING ═════════════ -->
@@ -1607,13 +1619,19 @@ function runExport(){
 
   // ── Keys (B2) ──
   function keyRow(k){
-    const active=k.status==='active';
-    const meta=active?(esc(k.key_prefix)+' · used '+rel(k.last_used_at)):('revoked '+fmtDate(k.revoked_at));
-    return '<div class="krow"'+(active?'':' style="opacity:.55;"')+'>'
-      +'<div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="'+(active?'var(--fox)':'var(--muted)')+'"/></svg></span></div>'
+    const revoked=k.status!=='active';
+    const expired=!revoked&&k.expired;
+    const live=!revoked&&!expired;
+    let meta;
+    if(revoked) meta='revoked '+fmtDate(k.revoked_at);
+    else meta=esc(k.key_prefix)+' · used '+rel(k.last_used_at)
+      +(k.expires_at?' · '+(expired?'expired '+fmtDate(k.expires_at):'expires '+fmtDate(k.expires_at)):'');
+    const label=revoked?'revoked':(expired?'expired':'active');
+    return '<div class="krow"'+(live?'':' style="opacity:.55;"')+'>'
+      +'<div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="'+(live?'var(--fox)':'var(--muted)')+'"/></svg></span></div>'
       +'<div class="kbody"><div class="kname">'+esc(k.name)+'</div><div class="kmeta">'+meta+'</div></div>'
-      +'<span class="kstatus '+(active?'active':'revoked')+'">'+esc(k.status)+'</span>'
-      +(active?'<div class="kactions"><button class="btn danger sm" type="button" onclick="revokeKeyApi(\''+k.id+'\')">revoke</button></div>':'')
+      +'<span class="kstatus '+(live?'active':'revoked')+'">'+label+'</span>'
+      +(!revoked?'<div class="kactions"><button class="btn danger sm" type="button" onclick="revokeKeyApi(\''+k.id+'\')">revoke</button></div>':'')
       +'</div>';
   }
   window.loadKeys=async function(){
@@ -1625,10 +1643,22 @@ function runExport(){
   };
   window.createKey=async function(){
     const name=window.prompt('Name this key (e.g. "Backend — prod"):','SDK key'); if(name===null)return;
-    try{ const r=await api('/v1/keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:name||'unnamed key'})});
+    const expRaw=window.prompt('Auto-expire after how many days? (leave blank = never)','');
+    const body={name:name||'unnamed key'};
+    const days=parseInt(expRaw,10);
+    if(!isNaN(days)&&days>0)body.expires_in_days=Math.min(3650,days);
+    try{ const r=await api('/v1/keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       if(!r.ok){ toast('Create failed — '+await errText(r)); return; }
       const k=await r.json(); revealSecret('New API key · '+k.name, k.api_key); toast('API key created'); loadKeys();
     }catch(e){ toast('Could not reach the server'); }
+  };
+  window.checkSdkConnection=async function(btn){
+    const out=$('sdkCheckOut'); if(btn)btn.disabled=true; if(out){ out.textContent='checking…'; out.style.color=''; }
+    try{ const r=await api('/v1/stats');
+      if(r.ok){ const s=await r.json(); if(out){ out.textContent='✓ connected — '+((s.total_logged)||0)+' events logged'; out.style.color='var(--safe-bg)'; } }
+      else if(out){ out.textContent='backend unreachable ('+r.status+')'; out.style.color='var(--breach-bg)'; }
+    }catch(e){ if(out){ out.textContent='could not reach the server'; out.style.color='var(--breach-bg)'; } }
+    if(btn)btn.disabled=false;
   };
   window.regenerateKey=async function(){
     if(!confirm('Regenerate your API key?\n\nYour current key stops working immediately. We’ll email you a 6-digit code to confirm.'))return;
