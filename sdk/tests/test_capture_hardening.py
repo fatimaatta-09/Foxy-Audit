@@ -23,6 +23,20 @@ def test_spool_allocates_sequences_and_retries_without_dropping(tmp_path):
     assert spool.has(first["event_id"]) and spool.has(second["event_id"])
 
 
+def test_client_identity_survives_process_restart(tmp_path):
+    path = str(tmp_path / "events.sqlite3")
+    first = FoxyClient(api_key="foxy_sk_test", desktop_ping=False, spool_path=path)
+    second = FoxyClient(api_key="foxy_sk_test", desktop_ping=False, spool_path=path)
+    assert first.cfg.client_id == second.cfg.client_id
+    assert first.cfg.client_id
+
+
+def test_explicit_client_identity_wins(tmp_path):
+    client = FoxyClient(api_key="foxy_sk_test", client_id="service-prod",
+                        desktop_ping=False, spool_path=str(tmp_path / "events.sqlite3"))
+    assert client.cfg.client_id == "service-prod"
+
+
 def test_keyed_commitment_is_not_public_sha256():
     assert hashing.commitment_hex("patient prompt", "customer-secret") != hashing.sha256_hex(
         hashing.canonical_json("patient prompt"))
@@ -55,6 +69,20 @@ def test_audit_required_fails_closed(monkeypatch):
 
     with pytest.raises(AuditRequiredError):
         ask("prompt")
+
+
+def test_audit_required_does_not_mask_host_exception(monkeypatch):
+    from foxy_audit import dispatch
+    monkeypatch.setattr(dispatch, "submit", lambda *args, **kwargs: (_ for _ in ()).throw(
+        OSError("backend unavailable")))
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False, audit_required=True)
+
+    @foxy.audit("demo")
+    def boom(prompt):
+        raise ValueError("host error")
+
+    with pytest.raises(ValueError, match="host error"):
+        boom("prompt")
 
 
 def test_structured_messages_and_provider_metadata_are_captured(monkeypatch):

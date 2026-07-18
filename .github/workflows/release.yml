@@ -26,6 +26,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip build
           python -m build ./sdk
+      - name: Verify hardened SDK modules are packaged
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          wheel = next(Path("sdk/dist").glob("*.whl"))
+          with ZipFile(wheel) as archive:
+              names = set(archive.namelist())
+          required = {"foxy_audit/spool.py", "foxy_audit/adapters.py"}
+          missing = sorted(name for name in required if not any(path.endswith(name) for path in names))
+          if missing:
+              raise SystemExit(f"release wheel is missing hardened modules: {missing}")
+          print(f"verified {wheel.name}: {', '.join(sorted(required))}")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: sdk-dist

@@ -57,7 +57,9 @@ class FoxyConfig:
             commitment_key=(commitment_key if commitment_key is not None
                             else os.getenv("FOXY_COMMITMENT_KEY", key)).strip(),
             spool_path=spool_path or os.getenv("FOXY_SPOOL_PATH", ""),
-            client_id=client_id or os.getenv("FOXY_CLIENT_ID", "") or __import__("uuid").uuid4().hex,
+            # FoxyClient persists a generated identity in the local spool when
+            # no explicit identity is supplied. Empty here is intentional.
+            client_id=client_id or os.getenv("FOXY_CLIENT_ID", ""),
             audit_required=(audit_required if audit_required is not None
                             else os.getenv("FOXY_AUDIT_REQUIRED", "false").lower() in {"1", "true", "yes"}),
         )

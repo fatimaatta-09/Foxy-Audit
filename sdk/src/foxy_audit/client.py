@@ -14,6 +14,7 @@ the SDK's own bookkeeping can never raise into the host application.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import logging
@@ -23,6 +24,7 @@ import uuid
 from . import dispatch, hashing, pii, udp
 from .adapters import response_metadata
 from .config import FoxyConfig
+from .spool import EventSpool
 
 log = logging.getLogger("foxy_audit")
 
@@ -73,6 +75,13 @@ class FoxyClient:
             client_id=client_id,
             audit_required=audit_required,
         )
+        if self.cfg.enabled and not self.cfg.client_id:
+            spool = EventSpool(self.cfg.spool_path or None)
+            self.cfg = self.cfg.__class__(
+                **{**self.cfg.__dict__,
+                   "client_id": spool.get_or_create_client_id(
+                       self.cfg.endpoint, self.cfg.api_key)}
+            )
         if self.cfg.enabled:
             # Resume any events left in the local spool after a prior process exit.
             dispatch.resume(self.cfg)
@@ -80,6 +89,18 @@ class FoxyClient:
     @property
     def enabled(self) -> bool:
         return self.cfg.enabled
+
+    def _record_host_exception(self, prompt, exc, policy, agent, metadata=None):
+        """Telemetry failure must never replace the application's exception."""
+        try:
+            self.log_interaction(prompt, exc, policy, agent,
+                                 event_type="exception", metadata=metadata)
+        except AuditRequiredError:
+            log.debug("foxy-audit could not capture host exception", exc_info=True)
+
+    async def _record_async(self, *args, **kwargs):
+        """Keep synchronous hashing and delivery waits off the event loop."""
+        return await asyncio.to_thread(self.log_interaction, *args, **kwargs)
 
     def audit(self, policy: str = "default", agent: str | None = None):
         """Return a decorator that audits the wrapped LLM-calling function.
@@ -98,11 +119,15 @@ class FoxyClient:
                     try:
                         response = await fn(*args, **kwargs)
                     except BaseException as exc:
-                        self.log_interaction(_extract_prompt(args, kwargs), exc, policy, agent,
-                                             event_type="exception")
+                        try:
+                            await self._record_async(_extract_prompt(args, kwargs), exc,
+                                                     policy, agent, event_type="exception")
+                        except AuditRequiredError:
+                            log.debug("foxy-audit could not capture async host exception",
+                                      exc_info=True)
                         raise
-                    self.log_interaction(_extract_prompt(args, kwargs), response, policy, agent,
-                                         metadata=_metadata(kwargs, response))
+                    await self._record_async(_extract_prompt(args, kwargs), response, policy,
+                                             agent, metadata=_metadata(kwargs, response))
                     return response
                 return awrapper
 
@@ -115,11 +140,16 @@ class FoxyClient:
                             chunks.append(chunk)
                             yield chunk
                     except BaseException as exc:
-                        self.log_interaction(_extract_prompt(args, kwargs), exc, policy, agent,
-                                             event_type="exception", metadata=_metadata(kwargs))
+                        try:
+                            await self._record_async(_extract_prompt(args, kwargs), exc,
+                                                     policy, agent, event_type="exception",
+                                                     metadata=_metadata(kwargs))
+                        except AuditRequiredError:
+                            log.debug("foxy-audit could not capture async stream exception",
+                                      exc_info=True)
                         raise
-                    self.log_interaction(_extract_prompt(args, kwargs), chunks, policy, agent,
-                                         metadata=_metadata(kwargs), event_type="stream")
+                    await self._record_async(_extract_prompt(args, kwargs), chunks, policy,
+                                             agent, metadata=_metadata(kwargs), event_type="stream")
                 return agen_wrapper
 
             @functools.wraps(fn)
@@ -127,8 +157,8 @@ class FoxyClient:
                 try:
                     response = fn(*args, **kwargs)
                 except BaseException as exc:
-                    self.log_interaction(_extract_prompt(args, kwargs), exc, policy, agent,
-                                         event_type="exception", metadata=_metadata(kwargs))
+                    self._record_host_exception(_extract_prompt(args, kwargs), exc,
+                                                policy, agent, _metadata(kwargs))
                     raise
                 if inspect.isgenerator(response):
                     def generator():
@@ -138,8 +168,8 @@ class FoxyClient:
                                 chunks.append(chunk)
                                 yield chunk
                         except BaseException as exc:
-                            self.log_interaction(_extract_prompt(args, kwargs), exc, policy, agent,
-                                                 event_type="exception", metadata=_metadata(kwargs))
+                            self._record_host_exception(_extract_prompt(args, kwargs), exc,
+                                                        policy, agent, _metadata(kwargs))
                             raise
                         self.log_interaction(_extract_prompt(args, kwargs), chunks, policy, agent,
                                              metadata=_metadata(kwargs), event_type="stream")
