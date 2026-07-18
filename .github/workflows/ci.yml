@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   # 🔑 Secret scanning — full history, so a leaked key can't hide in an old commit.
