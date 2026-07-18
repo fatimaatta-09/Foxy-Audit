@@ -1123,13 +1123,17 @@ async function mintBadge(){
     if(!r.ok){ showToast('could not generate badge ('+r.status+')'); return; }
     const d=await r.json();
     const url=location.origin+d.url;
-    const snippet='<a href="'+location.origin+'/dashboard"><img src="'+url+'" alt="Audited by Foxy Audit" height="58"></a>';
+    const verifyUrl=location.origin+'/verify/'+d.token;
+    // the embedded badge links to the PUBLIC verify page (no login wall), not /dashboard
+    const snippet='<a href="'+verifyUrl+'"><img src="'+url+'" alt="Audited by Foxy Audit" height="58"></a>';
     const out=document.getElementById('badgeOut');
     out.style.display='block';
     out.innerHTML='<div style="margin-bottom:8px;"><img src="'+esc(url)+'" alt="Foxy Audit trust badge" height="58"></div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Embed code (click to copy):</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Public verify link — share with clients &amp; auditors (no login, aggregate status only):</div>'
+      +'<textarea class="cin" readonly rows="1" style="width:100%;font-family:var(--mono);font-size:10px;" onclick="this.select();document.execCommand&&document.execCommand(\'copy\');">'+esc(verifyUrl)+'</textarea>'
+      +'<div style="font-size:11px;color:var(--muted);margin:8px 0 4px;">Embed code (click to copy):</div>'
       +'<textarea class="cin" readonly rows="2" style="width:100%;font-family:var(--mono);font-size:10px;" onclick="this.select();document.execCommand&&document.execCommand(\'copy\');">'+esc(snippet)+'</textarea>';
-    showToast('Badge ready — copy the embed code');
+    showToast('Badge ready — copy the verify link or embed code');
   }catch(e){ showToast('Could not reach the server'); }
 }
 async function revokeBadge(){
