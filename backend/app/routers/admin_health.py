@@ -1,0 +1,146 @@
+"""Cross-org operational health for the internal admin site."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import func, select, text
+from sqlalchemy.orm import Session
+
+from ..auth import require_platform_role
+from ..config import Settings, get_settings
+from ..db import get_db
+from ..models import AuditLog, ChainAnchor, StaffUser, WorkerHeartbeat
+
+router = APIRouter()
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _iso(value: datetime | None) -> str | None:
+    value = _utc(value)
+    return value.isoformat() if value else None
+
+
+def _age_seconds(value: datetime | None, now: datetime) -> float | None:
+    value = _utc(value)
+    return round(max(0.0, (now - value).total_seconds()), 3) if value else None
+
+
+def _empty_health(now: datetime, db_status: str = "unavailable") -> dict:
+    return {
+        "status": "unavailable" if db_status != "ok" else "degraded",
+        "generated_at": now.isoformat(),
+        "database": {"status": db_status},
+        "worker": {"status": "unavailable", "beat_at": None,
+                    "age_seconds": None, "stale_after_seconds": None},
+        "grading": {"status": "unavailable", "counts": {}},
+        "anchors": {"status": "unavailable", "latest_confirmed_at": None,
+                     "latest_confirmed_age_seconds": None, "failed_latest": 0,
+                     "stale_latest": 0, "stale_after_seconds": 0},
+        "circuit_breaker": {
+            "state": "unavailable",
+            "detail": "worker circuit-breaker state is process-local and not persisted",
+        },
+    }
+
+
+def build_health(db: Session, settings: Settings | None = None) -> dict:
+    """Build the admin health payload from durable state only."""
+    settings = settings or get_settings()
+    now = datetime.now(timezone.utc)
+    result = _empty_health(now)
+
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001 - health must report the failed dependency
+        db.rollback()
+        return result
+
+    result["database"] = {"status": "ok"}
+
+    stale_after = settings.grading_poll_interval * 5 + settings.gemini_timeout + 10
+    heartbeat = db.execute(
+        select(WorkerHeartbeat.beat_at).where(WorkerHeartbeat.id == 1)
+    ).scalar_one_or_none()
+    worker_age = _age_seconds(heartbeat, now)
+    worker_status = (
+        "missing" if heartbeat is None else
+        "stale" if worker_age is not None and worker_age > stale_after else "ok"
+    )
+    result["worker"] = {
+        "status": worker_status,
+        "beat_at": _iso(heartbeat),
+        "age_seconds": worker_age,
+        "stale_after_seconds": round(stale_after, 3),
+    }
+
+    grading_counts = {
+        str(status): int(count)
+        for status, count in db.execute(
+            select(AuditLog.grading_status, func.count())
+            .group_by(AuditLog.grading_status)
+        ).all()
+    }
+    result["grading"] = {
+        "status": "ok",
+        "counts": grading_counts,
+        "failed": grading_counts.get("failed", 0),
+        "pending": grading_counts.get("pending", 0),
+        "in_progress": grading_counts.get("in_progress", 0),
+    }
+
+    # One newest receipt per organization is enough to detect operator conditions.
+    latest_by_org = {}
+    for row in db.execute(
+        select(ChainAnchor.org_id, ChainAnchor.status,
+               ChainAnchor.confirmed_at, ChainAnchor.anchored_at)
+        .order_by(ChainAnchor.org_id, ChainAnchor.anchored_at.desc(),
+                  ChainAnchor.id.desc())
+    ).all():
+        latest_by_org.setdefault(row.org_id, row)
+
+    confirmed = [
+        _utc(row.confirmed_at) for row in latest_by_org.values()
+        if row.status == "confirmed" and row.confirmed_at is not None
+    ]
+    newest_confirmed = max(confirmed) if confirmed else None
+    stale_after_anchor = settings.anchor_stale_alert_seconds
+    stale_latest = sum(
+        1 for value in confirmed
+        if stale_after_anchor > 0
+        and (now - value).total_seconds() > stale_after_anchor
+    )
+    failed_latest = sum(1 for row in latest_by_org.values() if row.status == "failed")
+    result["anchors"] = {
+        "status": "ok" if failed_latest == 0 and stale_latest == 0 else "degraded",
+        "provider": settings.anchor_provider,
+        "enabled": bool(settings.anchor_enabled),
+        "latest_confirmed_at": _iso(newest_confirmed),
+        "latest_confirmed_age_seconds": _age_seconds(newest_confirmed, now),
+        "failed_latest": failed_latest,
+        "stale_latest": stale_latest,
+        "stale_after_seconds": stale_after_anchor,
+    }
+
+    degraded = (
+        worker_status != "ok"
+        or grading_counts.get("failed", 0) > 0
+        or failed_latest > 0
+        or stale_latest > 0
+    )
+    result["status"] = "degraded" if degraded else "ok"
+    return result
+
+
+@router.get("/v1/health")
+def system_health(
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    return build_health(db)

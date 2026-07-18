@@ -434,6 +434,11 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
       <span>OVERVIEW</span>
     </button>
+    <button class="dock-item" data-page="health" id="navOps" onclick="go('health',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 12h4l2.2-6 4.2 12 2.2-6H21"/><path d="M4 4h16v16H4z"/></svg>
+      <span>OPS</span>
+      <span class="dock-badge" id="alertBadge" style="display:none;">0</span>
+    </button>
     <button class="dock-item" data-page="orgs" onclick="go('orgs',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 21v-4h6v4"/><path d="M9 10h.01M15 10h.01M9 14h.01M15 14h.01"/></svg>
       <span>ORGS</span>
@@ -504,6 +509,32 @@ h1{font-family:var(--disp);font-size:clamp(21px,2.6vw,30px);font-weight:800;lett
     </section>
 
     <!-- ──────────────── ORGS ──────────────── -->
+    <section class="page" id="page-health">
+      <div class="pagehead"><div><div class="eyebrow">P0 · operations</div><h1>System health</h1><div class="sub">Durable signals only. The circuit breaker is process-local and intentionally not reported as healthy.</div></div><button class="btn" onclick="loadHealth()">↻ Refresh</button></div>
+      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
+      <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi"><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></div><div class="clay kpi"><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></div><div class="clay kpi"><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></div><div class="clay kpi"><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></div></div>
+      <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" class="sub mono">loading…</div></div></div>
+    </section>
+
+    <section class="page" id="page-deadletter">
+      <div class="pagehead"><div><div class="eyebrow">P0 · grading recovery</div><h1>Dead letters</h1><div class="sub">Failed rows parked after the worker exhausted its retries. Raw prompt and response text are never shown.</div></div><button class="btn" onclick="loadDeadletter()">↻ Refresh</button></div>
+      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm pri" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
+      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table></div>
+    </section>
+
+    <section class="page" id="page-anchors">
+      <div class="pagehead"><div><div class="eyebrow">P0 · public-chain receipts</div><h1>Anchor monitor</h1><div class="sub">Latest receipt per tenant, current chain head, freshness, and safe wallet status.</div></div><button class="btn" onclick="loadAnchors()">↻ Refresh</button></div>
+      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm pri" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
+      <div class="split" style="margin-bottom:18px;"><div class="clay pad" id="anchorSummary"><div class="sub mono">loading…</div></div><div class="clay pad" id="anchorWallet"><div class="sub mono">loading…</div></div></div>
+      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table></div>
+    </section>
+
+    <section class="page" id="page-alerts">
+      <div class="pagehead"><div><div class="eyebrow">P0 · operator attention</div><h1>Alerts center</h1><div class="sub">Derived from health, grading, and anchor conditions. Acknowledgements are staff-audited.</div></div><button class="btn" onclick="loadAlerts()">↻ Refresh</button></div>
+      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm pri" onclick="goOps('alerts')">Alerts</button></div>
+      <div class="clay pad"><div id="alertSummary" class="sub mono" style="margin-bottom:14px;">loading…</div><div id="alertRows"><div class="sub mono">loading…</div></div></div>
+    </section>
+
     <section class="page" id="page-orgs">
       <div class="pagehead">
         <div>
@@ -1025,12 +1056,68 @@ function go(page,el){
   $('page-'+page).classList.add('active');
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   if(el)el.classList.add('active');
-  ({overview:loadOverview,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox})[page]();
+  ({overview:loadOverview,health:loadHealth,deadletter:loadDeadletter,anchors:loadAnchors,alerts:loadAlerts,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox})[page]();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
 /* ──────────── support inbox ──────────── */
+function goOps(page){go(page,$('navOps'))}
+function opsChip(status){
+  const s=String(status||'unknown').toLowerCase();
+  const cls=s==='ok'||s==='confirmed'?'safe':s==='warning'||s==='stale'||s==='pending'?'warn':s==='never'||s==='not_applicable'?'dim':'bad';
+  return `<span class="chip ${cls}">${esc(s)}</span>`;
+}
+function opsCheck(label,value,detail){
+  return `<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:8px 0;"><span><b>${esc(label)}</b><span class="sub mono" style="display:block;font-size:10px;margin-top:3px;">${esc(detail||'')}</span></span>${opsChip(value)}</div>`;
+}
+async function loadHealth(){
+  let r;try{r=await api('/admin/v1/health')}catch(e){toast('health unavailable');return}
+  if(!r.ok){toast('health failed ('+r.status+')');return}
+  const d=await r.json(),w=d.worker||{},g=d.grading||{},a=d.anchors||{},cb=d.circuit_breaker||{};
+  $('hStatus').innerHTML=opsChip(d.status||'unknown');$('hWorker').innerHTML=opsChip(w.status||'unknown');
+  $('hWorkerFoot').textContent=w.beat_at?'last '+fmtTime(w.beat_at):'no heartbeat yet';$('hFailed').textContent=num(g.failed||0);
+  $('hAnchors').textContent=num((a.failed_latest||0)+(a.stale_latest||0));
+  $('healthChecks').innerHTML=opsCheck('database',d.database&&d.database.status,'readiness query')+opsCheck('worker heartbeat',w.status,w.beat_at?(w.age_seconds+'s old'):'no beat recorded')+opsCheck('anchor freshness',a.status,(a.failed_latest||0)+' failed · '+(a.stale_latest||0)+' stale')+opsCheck('circuit breaker',cb.state,cb.detail);
+  const counts=g.counts||{};$('healthQueue').innerHTML='<div style="display:grid;gap:8px;">'+['pending','in_progress','graded','failed'].map(k=>`<div style="display:flex;justify-content:space-between;"><span>${esc(k)}</span><b>${num(counts[k]||0)}</b></div>`).join('')+'</div>';
+}
+async function loadDeadletter(){
+  let r;try{r=await api('/admin/v1/grading/deadletter')}catch(e){toast('dead-letter queue unavailable');return}
+  if(!r.ok){toast('dead-letter queue failed ('+r.status+')');return}
+  const d=await r.json(),rows=d.items||[];
+  if(!rows.length){$('deadRows').innerHTML='<tr><td colspan="7" class="sub mono">no failed grading rows</td></tr>';return}
+  $('deadRows').innerHTML=rows.map(x=>`<tr><td><b>${esc(x.org_name||'unknown organization')}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td class="mono">${num(x.seq)}</td><td class="mono">${num(x.grading_attempts)}</td><td class="mono">${esc(x.policy_tag||'—')}</td><td class="mono" style="font-size:10px;">${fmtTime(x.created_at)}</td><td class="sub" style="max-width:230px;">${esc(x.failure_detail||'not recorded')}</td><td>${can('operator')?`<button class="btn sm pri" onclick="requeueDeadletter('${x.id}')">requeue</button>`:'<span class="sub mono">operator required</span>'}</td></tr>`).join('');
+}
+async function requeueDeadletter(id){
+  const r=await api('/admin/v1/grading/deadletter/'+id+'/requeue',{method:'POST'});
+  if(r.ok){toast('grading row requeued');loadDeadletter();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'requeue failed ('+r.status+')')}
+}
 let INBOX=[], INBOX_OPEN=null;
+async function loadAnchors(){
+  let r;try{r=await api('/admin/v1/anchors')}catch(e){toast('anchor monitor unavailable');return}
+  if(!r.ok){toast('anchors failed ('+r.status+')');return}
+  const d=await r.json(),s=d.summary||{},w=d.wallet||{};
+  $('anchorSummary').innerHTML='<div class="eyebrow">anchor summary</div><div style="font-weight:800;font-size:15px;">'+num(s.organizations||0)+' organizations</div><div class="sub mono" style="margin-top:10px;">'+Object.entries(s.by_status||{}).map(([k,v])=>esc(k)+': '+num(v)).join(' · ')+'</div><div class="sub mono" style="margin-top:8px;">provider: '+esc(d.provider||'unknown')+'</div>';
+  const walletDetail=w.detail||w.address||(w.balance_wei!=null?w.balance_wei+' wei':'not configured');$('anchorWallet').innerHTML='<div class="eyebrow">wallet</div>'+opsChip(w.state||'unavailable')+'<div class="sub mono" style="margin-top:9px;word-break:break-word;">'+esc(walletDetail)+'</div>';
+  const rows=d.organizations||[];
+  if(!rows.length){$('anchorRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  $('anchorRows').innerHTML=rows.map(x=>{const a=x.latest,status=a?a.status:'never',receipt=a?(a.tx_hash||a.chain||'receipt'):'—',act=can('operator')&&x.current_head_seq>0?`<button class="btn sm pri" onclick="reanchor('${x.org_id}')">re-anchor</button>`:'<span class="sub mono">'+(can('operator')?'no logs':'operator required')+'</span>';return `<tr><td><b>${esc(x.org_name)}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td class="mono">${num(x.current_head_seq)}</td><td class="mono" style="font-size:10px;">${fmtTime(x.last_confirmed_at)}</td><td>${opsChip(status)}${x.stale?'<span class="chip warn" style="margin-left:5px;">stale</span>':''}</td><td class="mono" style="font-size:10px;max-width:190px;overflow:hidden;text-overflow:ellipsis;">${esc(receipt)}</td><td>${act}</td></tr>`}).join('');
+}
+async function reanchor(id){
+  const r=await api('/admin/v1/anchors/'+id+'/anchor',{method:'POST'});
+  if(r.ok){toast('anchor receipt created');loadAnchors();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'re-anchor failed ('+r.status+')')}
+}
+async function loadAlerts(){
+  let r;try{r=await api('/admin/v1/alerts')}catch(e){return}
+  if(!r.ok)return;
+  const d=await r.json(),rows=d.items||[],open=d.unacknowledged||0;$('alertBadge').textContent=num(open);$('alertBadge').style.display=open?'':'none';
+  if(!rows.length){$('alertSummary').textContent='no active alerts';$('alertRows').innerHTML='<div class="sub mono" style="padding:18px 0;">No operational conditions need attention.</div>';return}
+  $('alertSummary').textContent=num(open)+' unacknowledged · '+num(rows.length)+' active';
+  $('alertRows').innerHTML=rows.map(x=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;"><div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${opsChip(x.level)}<b>${esc(x.title)}</b>${x.acknowledged?'<span class="chip safe">acknowledged</span>':''}</div><div class="sub" style="margin-top:6px;">${esc(x.detail)}</div>${x.org_name?'<div class="sub mono" style="font-size:10px;margin-top:4px;">'+esc(x.org_name)+'</div>':''}</div>${!x.acknowledged&&can('operator')?`<button class="btn sm" onclick="ackAlert('${x.id}')">acknowledge</button>`:''}</div>`).join('');
+}
+async function ackAlert(id){
+  const r=await api('/admin/v1/alerts/'+id+'/ack',{method:'POST'});
+  if(r.ok){toast('alert acknowledged');loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'acknowledge failed ('+r.status+')')}
+}
 async function loadInbox(){
   let r;try{r=await api('/admin/v1/inbox')}catch(e){r=null}
   if(!r||!r.ok){$('inboxList').innerHTML='<div class="sub" style="padding:16px;">Failed to load.</div>';return;}
@@ -1126,6 +1213,7 @@ function enter(me){
   $('avatar').title=me.email+' · '+me.platform_role;
   if(can('superadmin'))$('navStaff').style.display='';
   loadOverview();
+  loadHealth();loadAlerts();
   pollInbox(); if(!window.__inboxTimer) window.__inboxTimer=setInterval(pollInbox,20000);
 }
 $('gateForm').addEventListener('submit',async e=>{
