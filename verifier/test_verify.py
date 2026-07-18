@@ -122,3 +122,25 @@ def test_capture_v2_export_includes_all_chain_fields():
             "event_id", "client_id", "client_seq", "event_type", "commitment_alg",
             "event_metadata", "pii_signals", "occurred_at", "chain_version")})
     assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is True
+
+
+def test_customer_key_verifies_known_event_sidecar():
+    key = "customer-secret"
+    event_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    row = {
+        "seq": 1, "prev_hash": fv.GENESIS_HASH, "event_id": event_id,
+        "client_id": "sdk-a", "client_seq": 1, "event_type": "interaction",
+        "commitment_alg": "hmac-sha256", "event_metadata": None,
+        "pii_signals": None, "occurred_at": None, "chain_version": 2,
+        "prompt_hash": fv.commitment_hex("prompt", key),
+        "response_hash": fv.commitment_hex("response", key),
+        "token_count": 2, "policy_tag": "chat",
+    }
+    row["chain_hash"] = fv.compute_chain_hash(
+        org_id=ORG, prev_hash=fv.GENESIS_HASH, **{k: row[k] for k in (
+            "prompt_hash", "response_hash", "token_count", "policy_tag", "seq",
+            "event_id", "client_id", "client_seq", "event_type", "commitment_alg",
+            "event_metadata", "pii_signals", "occurred_at", "chain_version")})
+    data = {"org_id": ORG, "logs": [row]}
+    assert fv.verify_known_events(data, {event_id: {"prompt": "prompt", "response": "response"}}, key) == {
+        "ok": True, "checked": 1}

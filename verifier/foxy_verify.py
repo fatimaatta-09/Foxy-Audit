@@ -26,6 +26,7 @@ Exit code 0 = intact, 1 = tampering / anchor mismatch. `--json` for machine outp
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import sys
 
@@ -73,6 +74,29 @@ def _row_hash(org_id, row, prev_hash):
         client_seq=row.get("client_seq"), event_type=row.get("event_type"),
         commitment_alg=row.get("commitment_alg"), event_metadata=row.get("event_metadata"),
         pii_signals=row.get("pii_signals"), occurred_at=row.get("occurred_at"))
+
+
+def commitment_hex(value, key):
+    """Match the SDK's HMAC commitment for customer-held known content."""
+    canonical = json.dumps(value, ensure_ascii=True, sort_keys=True,
+                           separators=(",", ":"), default=str)
+    return hmac.new(str(key).encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def verify_known_events(data, known_events, key):
+    """Check commitments using a customer-owned sidecar without sending content to Foxy."""
+    checked = 0
+    for row in data.get("logs", []):
+        event_id = row.get("event_id")
+        known = known_events.get(str(event_id)) if event_id else None
+        if not known:
+            continue
+        if commitment_hex(known.get("prompt", ""), key) != row.get("prompt_hash"):
+            return {"ok": False, "event_id": str(event_id), "field": "prompt_hash"}
+        if commitment_hex(known.get("response", ""), key) != row.get("response_hash"):
+            return {"ok": False, "event_id": str(event_id), "field": "response_hash"}
+        checked += 1
+    return {"ok": True, "checked": checked}
 
 
 def verify_export(data):
@@ -216,6 +240,8 @@ def main(argv=None):
                     help="also confirm the anchor root live on the public chain (needs web3 + --rpc)")
     ap.add_argument("--rpc", help="EVM RPC URL for --anchor, e.g. https://rpc.sepolia.org")
     ap.add_argument("--contract", help="AnchorRegistry address to match (defaults to the export's)")
+    ap.add_argument("--commitment-key", help="customer-owned HMAC key for a known-event sidecar")
+    ap.add_argument("--events", help="JSON sidecar mapping event_id to prompt/response values")
     ap.add_argument("--json", action="store_true", help="machine-readable JSON output")
     args = ap.parse_args(argv)
 
@@ -227,6 +253,14 @@ def main(argv=None):
         return 2
 
     result = verify_export(data)
+    commitment_result = None
+    if args.commitment_key and args.events:
+        try:
+            with open(args.events, encoding="utf-8") as f:
+                commitment_result = verify_known_events(
+                    data, json.load(f), args.commitment_key)
+        except (OSError, json.JSONDecodeError) as exc:
+            commitment_result = {"ok": False, "detail": f"could not read known-event sidecar: {exc}"}
     anchor_off = check_anchor_offline(data, result)
     anchor_live = None
     if args.anchor:
@@ -237,11 +271,13 @@ def main(argv=None):
 
     if args.json:
         print(json.dumps({"chain": result, "anchor_offline": anchor_off,
-                          "anchor_onchain": anchor_live}, indent=2))
+                          "anchor_onchain": anchor_live,
+                          "commitments": commitment_result}, indent=2))
     else:
         _print_human(result, anchor_off, anchor_live)
 
     bad = ((not result["ok"])
+           or (commitment_result is not None and not commitment_result["ok"])
            or (anchor_off is not None and not anchor_off["matches"])
            or (anchor_live is not None and anchor_live.get("ok") is False))
     return 1 if bad else 0
