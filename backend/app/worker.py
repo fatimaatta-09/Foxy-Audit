@@ -36,6 +36,8 @@ import requests
 
 from . import email as email_mod
 from . import gemini
+from . import judge
+from . import openai_judge
 from . import policy_engine
 from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_due
 from .config import get_settings
@@ -138,6 +140,12 @@ def _grade_one(db: Session, row) -> None:
     policy_config = _policy_config(db, row["org_id"])
     history = _org_history(db, row["org_id"])
     verdict = gemini.evaluate(meta, policy_config, history=history)
+    settings = get_settings()
+    if settings.openai_api_key:
+        verdict = judge.combine(
+            verdict,
+            openai_judge.evaluate(meta, policy_config, history=history),
+        )
     if verdict.decision == "unknown" and verdict.reason.startswith("evaluator_unavailable"):
         verdict = policy_engine.evaluate(meta, policy_config)
     # Scope RLS to this row's org before the write-back (no-op under a
