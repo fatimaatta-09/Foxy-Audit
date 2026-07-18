@@ -810,11 +810,19 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 4 5-4"/></svg></span></div><div class="txt">Report configuration</div></div></div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.6;">only verdicts and hashes are included — raw prompts and responses are never exported</div>
-          <div class="flabel" style="margin-top:0;">from</div><input class="cin" type="date" value="2026-06-01">
-          <div class="flabel">to</div><input class="cin" type="date" value="2026-06-28">
-          <div class="flabel">tenant scope</div><select><option>all tenants</option></select>
-          <div class="flabel">format</div><select><option>PDF — signed &amp; tamper-evident</option><option>JSON hash bundle</option><option>CSV summary</option></select>
+          <div class="flabel" style="margin-top:0;">date range</div>
+          <div style="display:flex;gap:6px;margin-bottom:9px;flex-wrap:wrap;">
+            <button type="button" class="btn ghost sm" style="margin:0;" onclick="setExportRange(30)">30 days</button>
+            <button type="button" class="btn ghost sm" style="margin:0;" onclick="setExportRange(90)">90 days</button>
+            <button type="button" class="btn ghost sm" style="margin:0;" onclick="setExportRange(365)">1 year</button>
+            <button type="button" class="btn ghost sm" style="margin:0;" onclick="setExportRange(0)">all time</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><div class="flabel" style="margin-top:0;">from</div><input class="cin" id="expFrom" type="date"></div>
+            <div><div class="flabel" style="margin-top:0;">to</div><input class="cin" id="expTo" type="date"></div>
+          </div>
           <button class="btn pri" onclick="runExport()">generate passport</button>
+          <div style="font-size:10.5px;color:var(--muted);margin-top:10px;line-height:1.5;">The passport is a self-contained, signed PDF you can send to clients or auditors. For a live, no-login proof page, mint a <b onclick="go('settings',null)" style="color:var(--fox2);cursor:pointer;">public verify link</b> in Settings.</div>
           <div id="exportProgress" style="display:none;margin-top:10px;">
             <div class="pbar-wrap"><div class="pbar-fill" id="pbar"></div></div>
             <div class="plbl" id="plbl">aggregating hash chain…</div>
@@ -966,6 +974,13 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <button class="btn" onclick="mintBadge()">Generate badge</button>
             <button class="btn ghost" onclick="revokeBadge()" style="margin-left:8px;">Revoke</button>
             <div id="badgeOut" style="margin-top:12px;display:none;"></div>
+          </div>
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Desktop app</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Run the Foxy compliance-officer fox on your machine — it reacts to live audit events and hosts the chat copilot. Signs you in automatically from this workspace.</div>
+            <a class="btn" href="https://foxyaudit.tech/download/FoxyAudit-Setup.exe" style="text-decoration:none;display:inline-block;">Download for Windows</a>
+            <a class="btn ghost" href="https://foxyaudit.tech/download/FoxyAudit-x86_64.AppImage" style="text-decoration:none;display:inline-block;margin-left:8px;">Linux (AppImage)</a>
+            <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5;">Early build — Windows may show a SmartScreen notice (More info → Run anyway); on Linux <code>chmod +x</code> the AppImage.</div>
           </div>
           <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Help &amp; support</div>
@@ -1396,13 +1411,24 @@ function runExport(){
     }catch(e){ el.className='vres tamper'; el.textContent='could not reach the server'; }
     if(btn)btn.disabled=false;
   }
-  // real passport export: POST /v1/passport -> open the rendered HTML in a new tab
+  // set the export from/to pickers to a rolling window (0 = all time → open-ended)
+  window.setExportRange=function(days){
+    const from=$('expFrom'), to=$('expTo'); if(!from||!to)return;
+    const iso=d=>d.toISOString().slice(0,10);
+    to.value=iso(new Date());
+    if(days===0){ from.value=''; }
+    else { const f=new Date(); f.setDate(f.getDate()-days); from.value=iso(f); }
+  };
+  // real passport export: POST /v1/passport (honouring the date range) -> open the signed PDF
   window.runExport=async function(){
     const prog=$('exportProgress'), pbar=$('pbar'), plbl=$('plbl');
+    const from=(($('expFrom')||{}).value||'').trim(), to=(($('expTo')||{}).value||'').trim();
     const win=window.open('','_blank');   // opened within the click gesture (avoids popup block)
     if(prog){ prog.style.display='block'; plbl.style.color=''; plbl.textContent='generating passport…'; if(pbar)pbar.style.width='45%'; }
     try{
-      const res=await api('/v1/passport?days=365',{method:'POST'});
+      const qs=[]; if(from)qs.push('date_from='+encodeURIComponent(from)); if(to)qs.push('date_to='+encodeURIComponent(to));
+      if(!from&&!to)qs.push('days=365');
+      const res=await api('/v1/passport?'+qs.join('&'),{method:'POST'});
       if(!res.ok){ if(plbl){plbl.textContent='export failed (HTTP '+res.status+')'; plbl.style.color='var(--breach-bg)';} if(win)win.close(); return; }
       const blob=await res.blob();   // backend returns a signed PDF
       const url=URL.createObjectURL(blob);
