@@ -18,10 +18,10 @@ import hashlib
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -51,11 +51,14 @@ class KeyItem(BaseModel):
     status: str
     created_at: str
     last_used_at: str | None = None
+    expires_at: str | None = None
+    expired: bool = False
     revoked_at: str | None = None
 
 
 class CreateKeyRequest(BaseModel):
     name: str = "unnamed key"
+    expires_in_days: int | None = Field(default=None, ge=1, le=3650)  # None = never
 
 
 class CreateKeyResponse(BaseModel):
@@ -68,10 +71,13 @@ class CreateKeyResponse(BaseModel):
 
 
 def _serialize(k: ApiKey) -> KeyItem:
+    expired = bool(k.expires_at and k.expires_at < datetime.now(timezone.utc))
     return KeyItem(
         id=str(k.id), name=k.name, key_prefix=k.key_prefix, status=k.status,
         created_at=k.created_at.isoformat() if k.created_at else "",
         last_used_at=k.last_used_at.isoformat() if k.last_used_at else None,
+        expires_at=k.expires_at.isoformat() if k.expires_at else None,
+        expired=expired,
         revoked_at=k.revoked_at.isoformat() if k.revoked_at else None,
     )
 
@@ -111,8 +117,10 @@ def create_key(
             )
     key, key_hash, prefix = _new_key()
     name = ((body.name or "").strip() or "unnamed key")[:120]  # whitespace-only -> default
-    row = ApiKey(org_id=admin.org_id, name=name,
-                 key_prefix=prefix, key_hash=key_hash, status="active")
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=body.expires_in_days)
+                  if body.expires_in_days else None)
+    row = ApiKey(org_id=admin.org_id, name=name, key_prefix=prefix, key_hash=key_hash,
+                 status="active", expires_at=expires_at)
     db.add(row)
     db.commit()
     db.refresh(row)

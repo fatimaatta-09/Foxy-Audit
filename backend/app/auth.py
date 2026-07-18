@@ -89,6 +89,11 @@ def require_org(
             ApiKey.key_hash == hash_key(token), ApiKey.status == "active"
         )
     ).scalar_one_or_none()
+    # An expired key authenticates no one — fall through to a 401 (never silently
+    # succeed). Expiry is optional (NULL = never expires).
+    if key_row is not None and key_row.expires_at is not None \
+            and key_row.expires_at < datetime.now(timezone.utc):
+        key_row = None
     if key_row is not None:
         org = db.get(Organization, key_row.org_id)
         if org is not None:
