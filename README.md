@@ -1,105 +1,201 @@
-# 🦊 Foxy Audit
+# Foxy Audit
 
-> **Friendly on the surface. Tamper-evident under the hood.**
-> *Mathematically verifiable AI compliance, powered by a lightweight SDK and a tamper-evident cryptographic ledger.*
+> Content-blind evidence for AI systems that need to earn trust.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Static HTML](https://img.shields.io/badge/Frontend-Static_HTML-ff7a2e)](https://developer.mozilla.org/en-US/docs/Web/HTML)
-[![Gemini](https://img.shields.io/badge/AI-Gemini_2.5_Flash-4285f4?logo=google&logoColor=white)](https://ai.google.dev/gemini-api/docs)
+Foxy Audit helps teams operating AI in healthcare, finance, legal, and other
+regulated environments produce verifiable evidence without centralizing raw
+prompts and responses. The SDK creates customer-owned commitments on the
+developer's machine, sends only bounded metadata, and writes a sequential,
+tamper-evident audit chain. The customer can export and verify that evidence
+independently.
 
----
+This is an evidence and integrity layer, not a legal certification, a runtime
+firewall, or proof of complete capture when an AI call bypasses the SDK.
 
-## 💡 The Compliance Nightmare
+## Why It Exists
 
-Regulated buyers increasingly require defensible audit evidence for production AI systems. Standard writable databases do not by themselves show whether a historical record was changed, and a one-time audit does not provide continuous evidence.
+AI vendors are often asked to prove that an audit record was not changed and
+that sensitive conversations were not copied into a monitoring vendor's store.
+Ordinary application logs are mutable, while a full-content monitoring design
+increases privacy and data-retention risk. Foxy separates the two concerns:
 
-Existing enterprise governance tools can require substantial integration overhead. Developers need a low-friction capture path, and compliance officers need evidence they can independently verify.
+- the host keeps the raw conversation;
+- Foxy receives commitments, token counts, policy tags, bounded identifiers,
+  and locally detected signals;
+- the backend links records into an ordered chain;
+- the verifier detects a changed, removed, or reordered historical record.
 
-## ⚡ The Foxy Solution
+The result is a lower-data audit trail that a buyer, auditor, or security team
+can inspect without trusting a dashboard screenshot.
 
-**Foxy Audit** (powered by the CipherTrail engine) bridges cryptographic tamper evidence and user-friendly AI governance.
-
-We provide a lightweight Python SDK (`pip install foxy-audit`) that captures supported AI inputs/outputs locally, creates content-blind commitments, durably spools metadata, and streams it into an asynchronous, cryptographically chained backend. For the compliance officer, "Foxy" acts as an interactive desktop copilot that visualizes system health and generates independently verifiable evidence on demand.
-
-### 🏗️ High-Level System Architecture
+## Product Surfaces
 
 ```text
-[ Your Production App / AI Model ]
-               │
-               ▼  (Local keyed commitment via @foxy.audit)
-         [ FastAPI API ]
-               │
-               ▼  (Durable 202 Accepted metadata capture)
-        [ PostgreSQL Grading Outbox ]
-               │
-               ▼  (Background Worker Consumption)
-     [ Gemini 2.5 Flash ] ──► (Policy & Compliance Evaluation)
-               │
-               ▼  (Chained Hash Construction)
-  [ PostgreSQL Hash-Chain Ledger ] ──► [ Foxy Audit UI Dashboard ]
+Customer AI app
+    |  @foxy.audit decorator
+    v
+Python SDK -> local SQLite/WAL spool -> FastAPI -> PostgreSQL chain
+                                      |
+                                      +-> worker: Gemini and/or OpenAI metadata judge
+                                      +-> deterministic metadata policy fallback
+                                      +-> customer dashboard and desktop companion
+                                      +-> export and independent verifier
+
+Staff/admin console -> tenant-scoped operations, alerts, grading, anchors, billing
+Sales site           -> product explanation and onboarding
 ```
 
-## ✨ Key Features
+- **SDK:** one decorator, local keyed commitments, durable retry spool, sync,
+  async, and generator support.
+- **Backend:** tenant-isolated ingestion, ordered chain, usage, policies,
+  grading queue, exports, and optional public-chain anchoring.
+- **Customer dashboard:** ledger, verification, passport/export, team access,
+  API keys, billing, notifications, and breach review.
+- **Desktop companion:** local visual feedback and a dashboard shortcut.
+- **Verifier:** standard-library verification of exports and known events.
+- **Admin console:** staff operations and customer/account monitoring.
 
-- **Durable asynchronous capture** — The default SDK path writes metadata to a local SQLite/WAL spool and uploads in the background with retry. Critical services can opt into `audit_required=True` to fail closed when the backend receipt cannot be confirmed.
+## Fastest Judge Test: No LLM Required
 
-- **Cryptographically Chained Integrity** — Every database row is linked to the row before it via a versioned sequential hash chain. New SDK events use customer-keyed HMAC commitments; changing captured metadata or deleting/reordering a row is detectable by verification. (This is a hash chain, not a Merkle tree or a blockchain.)
+This path needs Python 3.9+ only. It uses synthetic sample events to exercise
+the real verifier and cryptographic chain logic. It does not pretend to be a
+live model call and does not contact Foxy servers.
 
-- **Evidence-bounded Policy Grading** — Deterministic local rules evaluate signals the system actually receives. An optional Gemini judge can add metadata-level analysis; unavailable evaluation is reported as unknown, not clean.
-
-- **The "Foxy" UI** — A sleek, claymorphism-styled enterprise portal designed for compliance officers to visually verify cryptographic proofs, interact with their audit logs, and download verification PDFs with a single click.
-
-## 🚀 Quickstart Guide
-
-### 1. Install the SDK
-
-```bash
-# Once published to PyPI:
-pip install foxy-audit
-
-# Until then, install straight from source:
-pip install "git+https://github.com/fatimaatta-09/Foxy-Audit.git#subdirectory=sdk"
+```powershell
+python demo/offline_demo.py
 ```
 
-### 2. Initialize and Decorate
+Expected checks are:
 
-Simply wrap your existing LLM invocation functions. The decorator automatically handles telemetry, local cryptographic hashing, and background ingestion streams.
+```text
+[PASS] chain verified: 3 rows
+[PASS] customer commitments verified: 3
+[PASS] offline receipt matches chain head
+[PASS] tamper detected at sequence 2
+```
+
+Use this first when no API key, database, or LLM is available.
+
+## Real Client-Style Test
+
+The real path uses the SDK, backend, database, queue worker, and customer API.
+The demo function is only a local stand-in for the customer's existing model
+call; the Foxy capture, chain, policy grading, and API behavior are real.
+
+1. Start PostgreSQL and the backend as described in [backend/README.md](backend/README.md).
+2. Seed an organization and keep the printed `FOXY_API_KEY` private.
+3. Install and run the SDK demo:
+
+```powershell
+pip install -e .\sdk
+$env:FOXY_API_KEY = "foxy_sk_your_key"
+$env:FOXY_BACKEND_URL = "http://127.0.0.1:8000"
+python demo/run_demo.py
+```
+
+4. Open the customer dashboard and check the ledger, grading state, and chain
+   verification. The anomalous synthetic event exceeds the configured metadata
+   threshold and can be flagged without any LLM.
+5. For a real customer integration, replace the body of the decorated function
+   with the customer's existing OpenAI, Anthropic, Gemini, or private-model
+   call. No Foxy-specific model wrapper is required.
+
+## OpenAI and Gemini Judges
+
+Both providers are optional. A blank key does not block capture or chain
+verification.
+
+```text
+GEMINI_API_KEY=...       # optional Gemini metadata judge
+OPENAI_API_KEY=...       # optional OpenAI Responses API judge
+OPENAI_MODEL=gpt-5.6     # or chat-latest when that alias is required
+```
+
+When both keys are configured, both real providers evaluate the same
+content-blind metadata and Foxy combines them conservatively: a known breach
+wins, and an unavailable provider never becomes a clean result. When providers
+are unavailable, the worker records an explicit unavailable result and applies
+the deterministic policy rules that the available metadata can actually
+support. It does not claim semantic inspection of text it never received.
+
+The OpenAI integration uses the official Responses API with strict structured
+output. See the [Responses API reference](https://developers.openai.com/api/reference/resources/responses/methods/create)
+and [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+## SDK Example
 
 ```python
 import os
 from foxy_audit import FoxyClient
 
-# Initialize the client
-foxy = FoxyClient(api_key=os.getenv("FOXY_API_KEY"))
+foxy = FoxyClient(api_key=os.environ["FOXY_API_KEY"])
 
-@foxy.audit(policy="hipaa_basic", agent="gpt-4o")
-def call_medical_llm(user_prompt: str):
-    # Your standard AI invocation code here
-    response = openai.ChatCompletion.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": user_prompt}]
-    )
-    return response
+@foxy.audit(policy="hipaa_basic", agent="customer-model")
+def call_customer_model(prompt: str) -> str:
+    return customer_llm.generate(prompt)
 ```
 
-## 🛠️ Tech Stack & Infrastructure
+Raw text is used locally to create commitments and is not included in the
+backend payload. In regulated workflows, use `audit_required=True` when the
+application must fail if a durable server receipt cannot be confirmed.
 
-| Layer | Technology |
-|---|---|
-| Developer SDK | Native Python Wrapper, SQLite/WAL spool, keyed commitments, `requests` |
-| Backend Core | Python FastAPI, SQLAlchemy (PostgreSQL Object Mapping) |
-| Asynchronous Queueing | SDK SQLite/WAL spool + PostgreSQL grading outbox |
-| AI Evaluation Layer | Google Gemini 2.5 Flash (Asynchronous Compliance Parsing) |
-| Auditor Interface | FastAPI-served admin/customer web surfaces + desktop companion |
-| Deployment | Production-ready for Railway (Backend) and Vercel (Frontend) |
+## Supported Platforms
 
-## 🔮 Future High-Performance Roadmap
+- SDK: Python 3.9 through 3.13 on Windows, macOS, and Linux.
+- Backend: Python 3.13-tested FastAPI service with PostgreSQL 16.
+- Dashboard, sales site, and admin console: modern desktop and mobile browsers.
+- Desktop companion: supported desktop environments and a local UDP bridge;
+  production distribution still requires signed installers and OS-specific QA.
 
-- [ ] **Hardware-Root-of-Trust (FPGA Support)** — Offloading client-side SHA-256 hashing directly to local FPGA hardware layers to achieve zero software-overhead execution.
-- [ ] **Optional zero-knowledge proofs** — Explore independently reviewed proof systems for narrowly defined statements; this is not part of the current evidence model.
-- [ ] **Automated Incident Response Circuit Breakers** — Allowing the SDK to catch compliance failure states pushed from the backend to instantly isolate malicious user sessions.
+## Verification and Limits
 
----
+The verifier can prove that exported rows match their chain hashes and that
+known prompt/response pairs match their customer-keyed commitments. It cannot
+prove that a customer integrated every model call, infer content that was
+discarded locally, or replace a formal regulatory audit. Customers should
+monitor SDK coverage and treat bypassed integrations as an evidence gap.
 
-Built to help teams collect and verify AI-governance evidence. It is not legal advice or a certification. Distributed under the MIT License.
+## Devpost / OpenAI Build Week Judge Checklist
+
+- Run `python demo/offline_demo.py` for a dependency-free first pass.
+- Use the real backend path above for the SDK-to-chain workflow.
+- Review the source in `sdk/`, `backend/app/`, and `verifier/` rather than a
+  prerecorded result.
+- Configure an OpenAI key only if live judge-provider testing is desired; the
+  opt-in real test is `backend/tests/integration/test_optional_integrations.py`.
+- Run `pytest backend/tests/integration -q` in the backend test environment.
+- The public submission must include a working repository, clear setup steps,
+  a public YouTube demo under three minutes, and the required Codex feedback
+  Session ID in the Devpost form. Do not invent that Session ID in this repo.
+- Select the **Developer Tools** category and ensure the repository is public,
+  or grant Devpost's testing accounts access before submission.
+
+## Demo Video Outline
+
+Keep the video under three minutes:
+
+1. State the regulated-AI evidence problem and the content-blind approach.
+2. Run the offline demo and show the tamper detection check.
+3. Show one decorated SDK call reaching the real backend and dashboard.
+4. Open the export/verifier result and show the broken sequence after a local
+   test mutation.
+5. Briefly show the optional OpenAI/Gemini configuration and explain that only
+   metadata is sent to those judges.
+6. Explain where Codex and GPT-5.6 were used: repository audit, security fixes,
+   admin operations, SDK durability, integration tests, CI, provider wiring,
+   and judge-facing documentation.
+
+## Development
+
+```powershell
+pip install -r backend/requirements.txt
+pip install -e .\sdk
+cd backend
+pytest tests/integration -q
+```
+
+The GitHub Actions workflow also runs SDK tests, chain tests, the offline demo,
+dependency checks, and backend integration tests against PostgreSQL.
+
+Foxy Audit is MIT licensed. It is designed to help teams collect and verify
+AI-governance evidence; it is not legal advice or a certification.
