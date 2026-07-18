@@ -794,6 +794,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <select id="polConfidence"><option value="high">high — fewer false positives</option><option value="balanced">balanced (default)</option><option value="low">low — catch every edge case</option></select>
           <div class="flabel">notification on breach</div>
           <select id="polNotify"><option value="immediate">immediate alert</option><option value="digest">batch — hourly digest</option><option value="none">no notification</option></select>
+          <div class="flabel">alert email <span style="color:var(--muted);font-weight:400;">(blank = workspace contact)</span></div>
+          <input class="cin" id="polNotifyEmail" type="email" placeholder="security@yourco.com">
+          <div class="flabel">webhook URL <span style="color:var(--muted);font-weight:400;">(optional — POSTed on each breach)</span></div>
+          <input class="cin" id="polNotifyWebhook" type="url" placeholder="https://yourco.com/foxy-hook">
         </div>
       </div>
       <div class="clay pad" style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.65;">
@@ -1604,14 +1608,19 @@ function runExport(){
       if($('polEnforcement')&&p.enforcement_mode)$('polEnforcement').value=p.enforcement_mode;
       if($('polConfidence')&&p.confidence_threshold)$('polConfidence').value=p.confidence_threshold;
       if($('polNotify')&&p.notify_on_breach)$('polNotify').value=p.notify_on_breach;
+      if($('polNotifyEmail'))$('polNotifyEmail').value=p.notify_email||'';
+      if($('polNotifyWebhook'))$('polNotifyWebhook').value=p.notify_webhook_url||'';
     }catch(e){}
   };
   window.savePolicy=async function(){
     const mt=parseInt(($('polMaxTokens')||{}).value,10);
+    const em=(($('polNotifyEmail')||{}).value||'').trim();
+    const wh=(($('polNotifyWebhook')||{}).value||'').trim();
     const body={ pii_detection:!!($('polPii')||{}).checked, prompt_injection:!!($('polInjection')||{}).checked,
       regulated_data_mode:!!($('polRegulated')||{}).checked, max_token_threshold:(mt>0?mt:50000),
       enforcement_mode:($('polEnforcement')||{}).value||'block', confidence_threshold:($('polConfidence')||{}).value||'balanced',
-      notify_on_breach:($('polNotify')||{}).value||'immediate' };
+      notify_on_breach:($('polNotify')||{}).value||'immediate',
+      notify_email:em||null, notify_webhook_url:wh||null };
     try{ const r=await api('/v1/policies',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       toast(r.ok?'Policy ruleset saved and propagated':('Save failed — '+await errText(r)));
     }catch(e){ toast('Could not reach the server'); }
@@ -2008,12 +2017,35 @@ function runExport(){
       }).join(''):'<div style="font-size:11px;color:var(--muted);">No flagged policies yet — nothing has breached policy.</div>';
     }
   };
+  // in-app breach feed: unread pip on the Threats nav, from /v1/logs/breaches vs a
+  // local "last seen highest seq" cursor. Visiting Threats marks them read.
+  const _SEEN_KEY='foxy_breach_seen';
+  window.loadBreachBadge=async function(){
+    const pip=document.getElementById('threatPip'); if(!pip)return;
+    try{
+      const rows=await api('/v1/logs/breaches?limit=500').then(r=>r.ok?r.json():[]).catch(()=>[]);
+      const maxSeq=Array.isArray(rows)&&rows.length?Math.max(...rows.map(b=>b.seq||0)):0;
+      let seen=0; try{ seen=parseInt(localStorage.getItem(_SEEN_KEY)||'0',10)||0; }catch(_){}
+      const unread=Array.isArray(rows)?rows.filter(b=>(b.seq||0)>seen).length:0;
+      window.__breachMaxSeq=maxSeq;
+      if(unread>0){ pip.textContent=unread>99?'99+':String(unread); pip.style.display=''; }
+      else pip.style.display='none';
+    }catch(e){}
+  };
+  window.markBreachesRead=function(){
+    try{ if(window.__breachMaxSeq!=null)localStorage.setItem(_SEEN_KEY,String(window.__breachMaxSeq)); }catch(_){}
+    const pip=document.getElementById('threatPip'); if(pip)pip.style.display='none';
+  };
   const _go=window.go;
   if(typeof _go==='function'){
-    window.go=function(page,el){ _go(page,el); if(page==='analytics'||page==='dashboard')window.loadThreats(); };
+    window.go=function(page,el){ _go(page,el);
+      if(page==='analytics'||page==='dashboard')window.loadThreats();
+      if(page==='analytics')window.markBreachesRead();
+    };
   }
   // initial paint (home is the default page on load)
-  if(document.readyState!=='loading')window.loadThreats(); else document.addEventListener('DOMContentLoaded',window.loadThreats);
+  if(document.readyState!=='loading'){ window.loadThreats(); window.loadBreachBadge(); }
+  else document.addEventListener('DOMContentLoaded',()=>{ window.loadThreats(); window.loadBreachBadge(); });
 })();
 </script>
 

@@ -30,12 +30,17 @@ import hashlib
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+import html as _html
+
+import requests
+
+from . import email as email_mod
 from . import gemini
 from . import policy_engine
 from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_due
 from .config import get_settings
 from .db import SessionLocal
-from .models import AuditEvent, OrgPolicy
+from .models import AuditEvent, Organization, OrgPolicy
 
 log = logging.getLogger("foxy.worker")
 
@@ -56,7 +61,7 @@ _CLAIM_SQL = text(
               FOR UPDATE SKIP LOCKED
             LIMIT :batch
      )
-    RETURNING id, org_id, prompt_hash, response_hash,
+    RETURNING id, org_id, seq, prompt_hash, response_hash,
               token_count, policy_tag, pii_signals, grading_attempts,
               chain_hash,
               event_id, client_id, client_seq, event_type, commitment_alg,
@@ -151,6 +156,44 @@ def _grade_one(db: Session, row) -> None:
         payload=payload, event_hash=hashlib.sha256(event_blob.encode()).hexdigest(),
     ))
     db.commit()
+    # Fire the breach notifier AFTER the verdict is durably committed, so a notify
+    # failure can never lose the grade. Best-effort — never raises into grading.
+    if verdict.policy_breach:
+        _notify_breach(db, row, verdict)
+
+
+def _notify_breach(db: Session, row, verdict) -> None:
+    """Email (and optionally webhook) the org when a breach is graded, if their
+    policy asks for immediate notice. Content-blind: seq + risk + reason only."""
+    try:
+        oid = row["org_id"] if isinstance(row["org_id"], uuid.UUID) else uuid.UUID(str(row["org_id"]))
+        policy = db.get(OrgPolicy, oid)
+        if policy is None or policy.notify_on_breach != "immediate":
+            return
+        seq = row.get("seq")
+        reason = (verdict.reason or "")[:200]
+        risk = verdict.risk_score
+        org = db.get(Organization, oid)
+        to = policy.notify_email or (org.contact_email if org else None)
+        if to:
+            email_mod.send_email(
+                to=to, subject="\U0001f534 Policy breach flagged — Foxy Audit",
+                html=(f"<p>A policy breach was flagged in your audit trail "
+                      f"(record #{seq}, risk {risk}).</p>"
+                      f"<blockquote style='border-left:3px solid #ff7a2e;padding-left:12px'>"
+                      f"{_html.escape(reason)}</blockquote>"
+                      f"<p>Open your dashboard ledger to review. Only hashes are stored — "
+                      f"never the prompt or response.</p>"),
+                text=f"Policy breach flagged (record #{seq}, risk {risk}): {reason}")
+        if policy.notify_webhook_url:
+            try:
+                requests.post(policy.notify_webhook_url, json={
+                    "type": "policy_breach", "seq": seq, "risk_score": risk,
+                    "reason": reason, "org_id": str(oid)}, timeout=5)
+            except Exception:                       # noqa: BLE001 — webhook is best-effort
+                log.warning("breach webhook POST failed for org %s", oid)
+    except Exception as exc:                        # noqa: BLE001 — notify never breaks grading
+        log.warning("breach notify failed: %s", exc)
 
 
 def _handle_failure(db: Session, row, max_attempts: int, exc: Exception) -> None:
