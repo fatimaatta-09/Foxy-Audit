@@ -882,6 +882,15 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           </div>
         </div>
         <div>
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Current plan</div></div></div>
+          <div class="clay pad" style="margin-bottom:16px;">
+            <div class="erow"><span class="elabel">plan</span><span class="eval" id="planTier">—</span></div>
+            <div class="erow"><span class="elabel">status</span><span class="eval" id="planStatus">—</span></div>
+            <div class="erow"><span class="elabel">included / month</span><span class="eval" id="planQuota">—</span></div>
+            <div class="erow" id="planTrialRow" style="display:none;"><span class="elabel">trial ends</span><span class="eval" id="planTrial">—</span></div>
+            <button class="btn pri" id="managePlanBtn" onclick="openBillingPortal(this)" style="margin-top:12px;display:none;">Manage billing ↗</button>
+            <a class="btn" id="upgradePlanBtn" href="https://foxyaudit.tech/pricing.html" target="_blank" rel="noopener" style="margin-top:12px;display:none;text-decoration:none;">Upgrade plan ↗</a>
+          </div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="2" fill="#000"/><path d="M8 8h8M8 12h8M8 16h5" stroke="var(--fox)" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="txt">Invoice history</div></div></div>
           <div class="clay pad" style="overflow-x:auto;">
             <table style="width:100%;border-collapse:collapse;min-width:380px;">
@@ -1802,6 +1811,33 @@ function runExport(){
           :'<tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">No invoices yet — they appear after the first Stripe billing cycle.</td></tr>';
       }
     }catch(e){}
+    window.loadPlan();
+  };
+
+  const _cap=s=>String(s||'').replace(/^\w/,c=>c.toUpperCase());
+  window.loadPlan=async function(){
+    try{ const r=await api('/v1/billing/plan'); if(!r.ok)return; const p=await r.json();
+      const tier=p.plan_tier||'free';
+      if($('planTier'))$('planTier').textContent=_cap(tier);
+      if($('planStatus'))$('planStatus').textContent=_cap(p.subscription_status||((tier==='free')?'free tier':'active'));
+      if($('planQuota'))$('planQuota').textContent=p.monthly_log_quota==null?'unlimited':num(p.monthly_log_quota);
+      const tr=$('planTrialRow');
+      if(p.trial_ends_at){ if($('planTrial'))$('planTrial').textContent=fmtD(p.trial_ends_at); if(tr)tr.style.display=''; }
+      else if(tr)tr.style.display='none';
+      const manage=$('managePlanBtn'), up=$('upgradePlanBtn');
+      if(p.has_billing_account){ if(manage)manage.style.display=''; if(up)up.style.display='none'; }
+      else { if(manage)manage.style.display='none'; if(up)up.style.display=''; }
+    }catch(e){}
+  };
+  window.openBillingPortal=async function(btn){
+    if(btn){ btn.disabled=true; btn.textContent='opening…'; }
+    try{ const r=await api('/v1/billing/portal',{method:'POST'});
+      if(r.ok){ const d=await r.json(); if(d.portal_url){ location.href=d.portal_url; return; } showToast('Could not open billing portal'); }
+      else if(r.status===400){ showToast('Start a paid plan first to manage billing'); }
+      else if(r.status===503){ showToast('Billing isn’t enabled on this workspace yet'); }
+      else { showToast('Could not open billing portal ('+r.status+')'); }
+    }catch(e){ showToast('Could not reach the server'); }
+    if(btn){ btn.disabled=false; btn.textContent='Manage billing ↗'; }
   };
 
   const _go=window.go;

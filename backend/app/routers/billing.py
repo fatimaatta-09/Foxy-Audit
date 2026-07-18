@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
 from .. import email, password_reset
-from ..auth import hash_key
+from ..auth import hash_key, require_role, resolve_org
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..models import ApiKey, Invoice, MarketingLead, Organization, StripeEvent, User
@@ -379,3 +379,54 @@ def _handle_invoice(db: Session, inv: dict) -> tuple[dict, str | None]:
         )
     )
     return {"status": "invoice_recorded", "invoice": values["stripe_invoice_id"]}, str(org.id)
+
+
+# ─────────────── plan view + billing portal (P1 · §E) ───────────────────────
+
+class PlanResponse(BaseModel):
+    plan_tier: str | None = None
+    subscription_status: str | None = None
+    trial_ends_at: str | None = None
+    monthly_log_quota: int | None = None     # NULL = unlimited
+    has_billing_account: bool = False        # a Stripe customer exists → portal available
+
+
+@router.get("/v1/billing/plan", response_model=PlanResponse)
+def billing_plan(org: Organization = Depends(resolve_org)):
+    """Current plan / subscription snapshot for the caller's org (session or key)."""
+    return PlanResponse(
+        plan_tier=org.plan_tier,
+        subscription_status=org.subscription_status,
+        trial_ends_at=org.trial_ends_at.isoformat() if org.trial_ends_at else None,
+        monthly_log_quota=org.monthly_log_quota,
+        has_billing_account=bool(org.stripe_customer_id),
+    )
+
+
+@router.post("/v1/billing/portal")
+@limiter.limit("10/minute")
+def billing_portal(request: Request, admin: User = Depends(require_role("admin")),
+                   db: Session = Depends(get_db)):
+    """Create a Stripe billing-portal session so an admin can manage the
+    subscription (update card, cancel, view invoices). Admin only. Returns 503
+    when billing isn't configured and 400 before the org has a Stripe customer."""
+    s = get_settings()
+    if not s.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="billing not configured")
+    org = db.get(Organization, admin.org_id)
+    if org is None or not org.stripe_customer_id:
+        raise HTTPException(status_code=400,
+                            detail="no billing account yet — start a paid plan first")
+    try:
+        import stripe
+        stripe.api_key = s.stripe_secret_key
+        session = stripe.billing_portal.Session.create(
+            customer=org.stripe_customer_id,
+            return_url=f"{s.dashboard_url}?billing=portal",
+        )
+        return {"portal_url": session.url}
+    except HTTPException:
+        raise
+    except Exception as exc:                 # noqa: BLE001
+        log.warning("billing portal failed: %s", exc)
+        raise HTTPException(status_code=502, detail="could not open billing portal")
