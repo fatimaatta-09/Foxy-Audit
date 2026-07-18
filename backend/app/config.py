@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     # Stripe Checkout price IDs per paid plan — self-serve onboarding (6A).
     stripe_price_pro: str = ""
+    stripe_price_max: str = ""
     stripe_price_companion: str = ""
     stripe_price_guardian: str = ""    # one-time (lifetime) — Checkout mode=payment
     # Google reCAPTCHA v2 — server-side verification of the demo form. Empty = skip
@@ -71,15 +72,30 @@ class Settings(BaseSettings):
     # needs a shorter sweep too.
     anchor_cadence_free: int = 86400          # 24h
     anchor_cadence_pro: int = 21600           # 6h
+    anchor_cadence_max: int = 3600            # 1h
     anchor_cadence_enterprise: int = 3600     # 1h
     anchor_cadence_default: int = 86400       # fallback for unknown/unset tiers
-    # Per-tier MONTHLY LOG QUOTA (Phase 3, SOFT): surfaced via /v1/usage + warned on in
-    # the dashboard, but NEVER blocks ingestion. 0 = unlimited. Assigned to
-    # organizations.monthly_log_quota at provisioning.
-    monthly_quota_free: int = 1000            # matches the sales page (1,000 calls / mo)
-    monthly_quota_companion: int = 50000
-    monthly_quota_pro: int = 50000
+    # Product entitlements. One credit is one captured model call, not a token.
+    # A zero quota means unlimited under a contract, not an unknown plan.
+    trial_days: int = 7
+    monthly_quota_free: int = 500
+    monthly_quota_companion: int = 25000       # legacy alias for pro
+    monthly_quota_pro: int = 25000
+    monthly_quota_max: int = 250000
     monthly_quota_guardian: int = 0           # 0 = unlimited (lifetime tier)
+    monthly_quota_premium: int = 0            # 0 = unlimited by contract
+    seat_limit_free: int = 2
+    seat_limit_companion: int = 5
+    seat_limit_pro: int = 5
+    seat_limit_max: int = 20
+    seat_limit_guardian: int = 20
+    seat_limit_premium: int = 0               # 0 = negotiated/unlimited
+    api_key_limit_free: int = 1
+    api_key_limit_companion: int = 5
+    api_key_limit_pro: int = 5
+    api_key_limit_max: int = 20
+    api_key_limit_guardian: int = 20
+    api_key_limit_premium: int = 0            # 0 = negotiated/unlimited
     anchor_evm_rpc_url: str = ""
     anchor_evm_chain: str = "sepolia"
     anchor_evm_private_key: str = ""           # funded testnet key; required for 'evm'
@@ -162,18 +178,63 @@ class Settings(BaseSettings):
         return {
             "free": self.anchor_cadence_free,
             "pro": self.anchor_cadence_pro,
+            "max": self.anchor_cadence_max,
+            "companion": self.anchor_cadence_pro,
+            "guardian": self.anchor_cadence_enterprise,
+            "premium": self.anchor_cadence_enterprise,
             "enterprise": self.anchor_cadence_enterprise,
         }.get((plan_tier or "").strip().lower(), self.anchor_cadence_default)
 
     def quota_for(self, plan_tier: str | None) -> int | None:
-        """Monthly log quota for a plan tier (Phase 3, soft). None = unlimited."""
+        """Monthly captured-event credits. None means unlimited by contract."""
         q = {
             "free": self.monthly_quota_free,
             "companion": self.monthly_quota_companion,
             "pro": self.monthly_quota_pro,
+            "max": self.monthly_quota_max,
             "guardian": self.monthly_quota_guardian,
+            "premium": self.monthly_quota_premium,
+            "enterprise": self.monthly_quota_premium,
         }.get((plan_tier or "").strip().lower(), 0)
         return None if q <= 0 else q
+
+    @staticmethod
+    def canonical_plan(plan_tier: str | None) -> str:
+        """Normalize public plan names while accepting names from old checkouts."""
+        return {
+            "companion": "pro",
+            "guardian": "premium",
+            "enterprise": "premium",
+        }.get((plan_tier or "free").strip().lower(),
+               (plan_tier or "free").strip().lower())
+
+    def seat_limit_for(self, plan_tier: str | None) -> int | None:
+        """Maximum active human dashboard users. None means contract-defined."""
+        key = (plan_tier or "").strip().lower()
+        limit = {
+            "free": self.seat_limit_free,
+            "companion": self.seat_limit_companion,
+            "pro": self.seat_limit_pro,
+            "max": self.seat_limit_max,
+            "guardian": self.seat_limit_guardian,
+            "premium": self.seat_limit_premium,
+            "enterprise": self.seat_limit_premium,
+        }.get(key, 0)
+        return None if limit <= 0 else limit
+
+    def api_key_limit_for(self, plan_tier: str | None) -> int | None:
+        """Maximum active machine keys. None means contract-defined."""
+        key = (plan_tier or "").strip().lower()
+        limit = {
+            "free": self.api_key_limit_free,
+            "companion": self.api_key_limit_companion,
+            "pro": self.api_key_limit_pro,
+            "max": self.api_key_limit_max,
+            "guardian": self.api_key_limit_guardian,
+            "premium": self.api_key_limit_premium,
+            "enterprise": self.api_key_limit_premium,
+        }.get(key, 0)
+        return None if limit <= 0 else limit
 
     @property
     def is_prod(self) -> bool:

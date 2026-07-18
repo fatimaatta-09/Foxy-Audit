@@ -1359,6 +1359,7 @@ async function toggleOrg(id,tr){
   if(!r.ok){toast('detail failed ('+r.status+')');return}
   const d=await r.json();
   const row=document.createElement('tr');row.className='drawer';
+  const planAction=can('superadmin')?`<button class="btn sm" onclick="orgPlan('${d.id}','${esc(d.plan_tier||'premium')}');event.stopPropagation()">Set plan</button>`:'';
   const actions=!can('operator')?'<span class="sub mono" style="font-size:10px;">operator role required for actions</span>'
     :d.suspended
       ?`<button class="btn safe sm" onclick="orgEnable('${d.id}');event.stopPropagation()">Lift suspension</button>
@@ -1372,7 +1373,7 @@ async function toggleOrg(id,tr){
       <div class="dcell"><div class="dl">breaches</div><div class="dv">${num(d.breaches)}</div></div>
       <div class="dcell"><div class="dl">monthly quota</div><div class="dv">${d.monthly_log_quota==null?'∞':num(d.monthly_log_quota)}</div></div>
     </div>
-    <div style="padding:2px 2px 8px;">${actions}</div>
+    <div style="padding:2px 2px 8px;display:flex;gap:8px;align-items:center;">${actions}${planAction}</div>
   </td>`;
   tr.after(row);
 }
@@ -1386,6 +1387,16 @@ async function orgSuspend(id){
 async function orgEnable(id){
   const r=await api(`/admin/v1/organizations/${id}/enable`,{method:'POST'});
   if(r.ok){toast('suspension lifted');loadOrgs()}else toast('enable failed ('+r.status+')');
+}
+async function orgPlan(id,current){
+  const plan=(prompt('Plan: free, pro, max, or premium',current)||'').trim().toLowerCase();
+  if(!plan)return;
+  const quota=prompt('Monthly credits override (blank uses the plan default; 0 is not unlimited):','');
+  const body={plan};
+  if(quota.trim())body.monthly_log_quota=Number(quota);
+  if(Object.prototype.hasOwnProperty.call(body,'monthly_log_quota') && (!Number.isInteger(body.monthly_log_quota)||body.monthly_log_quota<0)){toast('enter a non-negative whole-number quota');return}
+  const r=await api(`/admin/v1/organizations/${id}/plan`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){toast('plan updated');loadOrgs()}else toast('plan update failed ('+r.status+')');
 }
 
 /* ──────────── traffic ──────────── */

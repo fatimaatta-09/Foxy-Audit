@@ -4,7 +4,7 @@
 
 The SDK creates customer-keyed HMAC commitments for supported LLM inputs and outputs locally,
 throws raw text away before upload, and durably spools only metadata to the Foxy Audit backend. It also fires a best-effort local UDP ping so the
-desktop "fox" companion reacts in real time (green on every logged call, red on a policy breach).
+desktop "fox" companion shows local capture activity and backend grading alerts.
 
 ## Install
 
@@ -61,13 +61,13 @@ verifying.
 | Desktop ping   | `desktop_ping` | —                   | `True` (127.0.0.1:9999)  |
 | Commitment key | `commitment_key` | `FOXY_COMMITMENT_KEY` | API key when omitted |
 | Durable spool | `spool_path` | `FOXY_SPOOL_PATH` | `~/.foxy-audit/spool.sqlite3` |
-| Stable client id | `client_id` | `FOXY_CLIENT_ID` | random per client instance |
+| Stable client id | `client_id` | `FOXY_CLIENT_ID` | persisted in the local spool when omitted |
 | Required capture | `audit_required` | `FOXY_AUDIT_REQUIRED` | `False` |
 
 With no API key the SDK is a **graceful no-op for the cloud path**: it still runs your function and
-still pings the desktop fox, but skips the HTTP upload. For regulated workflows, set
-`audit_required=True`; the decorator then waits for a server receipt and raises if durable delivery
-cannot be confirmed.
+still pings the desktop fox, but skips the HTTP upload. In the default mode, delivery is best-effort;
+for regulated workflows, set `audit_required=True` so the decorator waits for a server receipt and
+raises when durable delivery cannot be confirmed.
 
 ## Guarantees
 

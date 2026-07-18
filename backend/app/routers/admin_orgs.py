@@ -9,6 +9,7 @@ Every state-changing action writes an admin_actions row in the same transaction.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_platform_role, set_org_scope_for_staff
+from ..config import get_settings
 from ..db import get_db
 from ..models import ApiKey, AuditLog, Organization, StaffUser, User
 
@@ -45,6 +47,11 @@ class OrgDetail(OrgListItem):
 
 class SuspendRequest(BaseModel):
     reason: str | None = None
+
+
+class PlanRequest(BaseModel):
+    plan: str
+    monthly_log_quota: int | None = None
 
 
 def _list_item(o: Organization) -> OrgListItem:
@@ -155,3 +162,40 @@ def enable_organization(
                         ip=client_ip(request))
     db.commit()
     return {"status": "enabled", "org_id": str(org.id)}
+
+
+@router.post("/v1/organizations/{org_id}/plan")
+def set_organization_plan(
+    org_id: str,
+    body: PlanRequest,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("superadmin")),
+    db: Session = Depends(get_db),
+):
+    """Apply a paid or custom contract after sales closes it."""
+    org = _load_active_org(db, org_id)
+    plan = get_settings().canonical_plan(body.plan)
+    if plan not in {"free", "pro", "max", "premium"}:
+        raise HTTPException(status_code=422, detail="plan must be free, pro, max, or premium")
+    if body.monthly_log_quota is not None and body.monthly_log_quota < 0:
+        raise HTTPException(status_code=422, detail="monthly_log_quota cannot be negative")
+    org.plan_tier = plan
+    org.monthly_log_quota = (
+        body.monthly_log_quota
+        if body.monthly_log_quota is not None
+        else get_settings().quota_for(plan)
+    )
+    org.trial_ends_at = (
+        datetime.now(timezone.utc) + timedelta(days=get_settings().trial_days)
+        if plan == "free" else None
+    )
+    org.subscription_status = "active"
+    record_admin_action(
+        db, staff, "org.plan.set", target_org_id=org.id,
+        target_type="organization", target_id=str(org.id),
+        detail={"plan": plan, "monthly_log_quota": org.monthly_log_quota},
+        ip=client_ip(request),
+    )
+    db.commit()
+    return {"status": "updated", "org_id": str(org.id), "plan_tier": plan,
+            "monthly_log_quota": org.monthly_log_quota}

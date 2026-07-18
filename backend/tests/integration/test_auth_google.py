@@ -21,7 +21,8 @@ def _configure(monkeypatch, claims: dict):
     from app.routers import auth_google
     monkeypatch.setattr(auth_google, "get_settings",
                         lambda: types.SimpleNamespace(google_oauth_client_id="test-client-id",
-                                                      quota_for=lambda tier: 1000))
+                                                      trial_days=7,
+                                                      quota_for=lambda tier: 500))
     monkeypatch.setattr(auth_google, "_verify_google_token",
                         lambda credential, client_id: claims)
 
@@ -56,6 +57,7 @@ def test_new_user_provisions_org_and_logs_in(client, monkeypatch):
         assert u.google_sub == "g-new-1"
         org = db.get(Organization, u.org_id)
         assert org is not None and org.plan_tier == "free"
+        assert org.monthly_log_quota == 500 and org.trial_ends_at is not None
     finally:
         db.close()
 

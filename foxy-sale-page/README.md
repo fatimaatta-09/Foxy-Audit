@@ -51,7 +51,7 @@ button fast-forwards the carousel to whichever card has `isPricing: true` (order
 | `index.html` | Homepage — carousel, corner fox, cookie banner, lead/signup/contact modals. Self-contained (inline CSS/JS). |
 | `sdk.html`, `hash-chain.html`, `verify-page.html`, `passport.html`, `judge.html` | The 5 feature pages (one per feature card). |
 | `how-it-works.html` | The SDK → hash → grade → chain → verify pipeline. |
-| `pricing.html` | Tiers (Starter $0 / Companion $4.99 / Guardian $39) + FAQ. All CTAs → Book a demo. |
+| `pricing.html` | Free 7-day trial, Pro, Max, custom enterprise + FAQ. Paid CTAs open the existing checkout flow. |
 | `contact.html` | Support: email + Help Center + enterprise inquiries + per-plan SLA + note form. |
 | `desktop.html` | The desktop pet + **real download buttons** (Windows `.exe`, Linux AppImage). |
 | `about.html` | Mission + founders (Fatima Rehman, CEO; Ali Kamran, CTO). Names/roles only — no invented bios. |

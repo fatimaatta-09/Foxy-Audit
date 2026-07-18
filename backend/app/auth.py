@@ -38,6 +38,14 @@ def hash_key(token: str) -> str:
     return hmac.new(pepper, token.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _ensure_org_access(org: Organization) -> None:
+    """Apply workspace-level holds to every customer auth channel."""
+    if org.deleted_at is not None:
+        raise HTTPException(status_code=403, detail="This workspace has been deleted")
+    if org.suspended:
+        raise HTTPException(status_code=403, detail="This workspace is suspended")
+
+
 def _scope_org(db: Session, org_id) -> None:
     """Scope this transaction to `org_id` for RLS. Shared by both auth paths
     (machine key + human session) and the staff drill-down.
@@ -84,8 +92,7 @@ def require_org(
     if key_row is not None:
         org = db.get(Organization, key_row.org_id)
         if org is not None:
-            if org.deleted_at is not None:
-                raise HTTPException(status_code=403, detail="This workspace has been deleted")
+            _ensure_org_access(org)
             # Best-effort usage stamp. NOT committed here: committing would end
             # the transaction and clear the transaction-local RLS GUC set below.
             # It persists on write endpoints (which commit); reads may drop it.
@@ -100,8 +107,7 @@ def require_org(
     ).scalar_one_or_none()
     if org is None:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    if org.deleted_at is not None:
-        raise HTTPException(status_code=403, detail="This workspace has been deleted")
+    _ensure_org_access(org)
     _scope_org(db, org.id)
     return org
 
@@ -118,8 +124,9 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     if user.disabled:
         raise HTTPException(status_code=401, detail="Account disabled")
     org = db.get(Organization, user.org_id)
-    if org is None or org.deleted_at is not None:
-        raise HTTPException(status_code=403, detail="This workspace has been deleted")
+    if org is None:
+        raise HTTPException(status_code=403, detail="This workspace is unavailable")
+    _ensure_org_access(org)
     if org.ip_allowlist and not ip_allow.ip_allowed(
             ip_allow.client_ip(request), ip_allow.parse_allowlist(org.ip_allowlist)):
         raise HTTPException(status_code=403, detail="Access from this IP is not allowed")
@@ -152,7 +159,7 @@ def resolve_org(
         user = db.get(User, uuid.UUID(str(user_id)))
         if user is not None and not user.disabled:
             org = db.get(Organization, user.org_id)
-            if org is not None and org.deleted_at is None:
+            if org is not None and org.deleted_at is None and not org.suspended:
                 if org.ip_allowlist and not ip_allow.ip_allowed(
                         ip_allow.client_ip(request), ip_allow.parse_allowlist(org.ip_allowlist)):
                     raise HTTPException(status_code=403, detail="Access from this IP is not allowed")

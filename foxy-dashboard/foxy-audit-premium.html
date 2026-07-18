@@ -844,12 +844,13 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <button class="btn ghost sm" onclick="loadBilling()">↻ refresh</button>
       </div>
       <div class="stats" style="margin-bottom:22px;">
-        <div class="stat"><div class="v fox" id="bilUsed">—</div><div class="l">Logs this month</div></div>
-        <div class="stat"><div class="v" id="bilQuota">—</div><div class="l">Monthly quota</div></div>
+        <div class="stat"><div class="v fox" id="bilUsed">—</div><div class="l">Credits used</div></div>
+        <div class="stat"><div class="v" id="bilQuota">—</div><div class="l">Credits included</div></div>
         <div class="stat"><div class="v" id="bilRemaining">—</div><div class="l">Remaining</div></div>
         <div class="stat"><div class="v" id="bilTokens">—</div><div class="l">Tokens · 30d</div></div>
       </div>
-      <div id="bilWarn" style="display:none;margin-bottom:18px;padding:12px 16px;border:2.5px solid #000;border-radius:12px;background:#ffb020;color:#000;font-weight:800;font-size:12.5px;box-shadow:var(--clay-sm);">⚠ Over your monthly log quota — logging keeps working (nothing is dropped). Consider upgrading your plan.</div>
+      <div id="bilEntitlements" style="margin:-8px 0 18px;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surf2);color:var(--muted);font-size:11px;line-height:1.6;"></div>
+      <div id="bilWarn" style="display:none;margin-bottom:18px;padding:12px 16px;border:2.5px solid #000;border-radius:12px;background:#ffb020;color:#000;font-weight:800;font-size:12.5px;box-shadow:var(--clay-sm);">Over your included credits. New captures are paused until the plan is upgraded or the next billing period begins.</div>
       <div class="g2">
         <div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17l5-6 4 3 6-9" stroke="#000" stroke-width="2.5" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Daily usage — last 30 days</div></div></div>
@@ -1630,6 +1631,13 @@ function runExport(){
         $('bilGaugeLbl').textContent=q.monthly_log_quota==null?'unlimited plan':(pct+'% of '+num(q.monthly_log_quota));
         $('bilGaugeFill').style.width=(q.monthly_log_quota==null?100:pct)+'%';
         const plan=$('bilPlan'); if(plan)plan.textContent=(q.plan_tier||'free').replace(/^\w/,c=>c.toUpperCase());
+        const entitlement=$('bilEntitlements');
+        if(entitlement){
+          const trial=q.trial_active&&q.trial_ends_at?('trial ends '+fmtD(q.trial_ends_at)):(q.ingestion_blocked?'capture paused':'active');
+          const seats=q.seat_limit==null?'custom seats':(q.active_seats+' / '+q.seat_limit+' seats');
+          const keys=q.api_key_limit==null?'custom keys':(q.active_api_keys+' / '+q.api_key_limit+' active keys');
+          entitlement.textContent='Credits: '+num(q.credits_used)+' used of '+(q.credits_included==null?'unlimited':num(q.credits_included))+' · '+seats+' · '+keys+' · '+trial;
+        }
         const warn=$('bilWarn'); if(warn)warn.style.display=q.over_quota?'block':'none';
         const gf=$('bilGaugeFill'); if(gf)gf.style.background=q.over_quota?'#ff6b6b':'';
         $('usageBody').innerHTML=days.length

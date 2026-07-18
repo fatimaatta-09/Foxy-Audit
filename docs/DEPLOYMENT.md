@@ -90,7 +90,9 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env \
   from its own hostname; `CORS_ORIGINS` in `deploy/.env` must list the marketing
   origins (it does by default).
 - **Stripe:** point the webhook at `https://app.foxyaudit.tech/v1/webhooks/stripe`
-  and set both `STRIPE_*` vars in `deploy/.env`.
+  and set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, and
+  `STRIPE_PRICE_MAX` in `deploy/.env`. The public free tier is a seven-day trial;
+  configure a real Stripe price for each self-serve paid tier before enabling its CTA.
 
 ## Post-deploy smoke checklist
 

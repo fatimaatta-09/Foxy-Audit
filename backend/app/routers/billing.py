@@ -19,7 +19,7 @@ import json
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -66,9 +66,18 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
     if "@" not in email_addr or "." not in email_addr.split("@")[-1]:
         raise HTTPException(status_code=422, detail="a valid email is required")
 
+    existing = db.execute(select(Organization).where(
+        func.lower(Organization.contact_email) == email_addr,
+        Organization.deleted_at.is_(None),
+    )).scalars().first()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="an account already exists for this email")
+
     plaintext_key, key_hash = _generate_api_key()
     org = Organization(name=(payload.name or email_addr).strip()[:255],
                        api_key_hash=key_hash, plan_tier="free", contact_email=email_addr,
+                       trial_ends_at=datetime.now(timezone.utc) + timedelta(
+                           days=get_settings().trial_days),
                        monthly_log_quota=get_settings().quota_for("free"))
     db.add(org)
     db.flush()
@@ -100,6 +109,7 @@ class CheckoutRequest(BaseModel):
 # the lifetime "guardian" tier is a one-time charge (mode=payment).
 _PLANS = {
     "pro":       ("stripe_price_pro", "subscription"),
+    "max":       ("stripe_price_max", "subscription"),
     "companion": ("stripe_price_companion", "subscription"),
     "guardian":  ("stripe_price_guardian", "payment"),
 }
@@ -113,17 +123,23 @@ def checkout_session(payload: CheckoutRequest, request: Request):
     s = get_settings()
     if not s.stripe_secret_key:
         raise HTTPException(status_code=503, detail="billing not configured")
-    plan = _PLANS.get(payload.plan.strip().lower())
+    email_addr = payload.email.strip().lower()
+    if "@" not in email_addr or "." not in email_addr.split("@")[-1]:
+        raise HTTPException(status_code=422, detail="a valid email is required")
+    requested_plan = payload.plan.strip().lower()
+    plan = _PLANS.get(requested_plan)
     price_id = getattr(s, plan[0], "") if plan else ""
     if not plan or not price_id:
         raise HTTPException(status_code=422, detail="unknown or unconfigured plan")
     try:
         import stripe
         stripe.api_key = s.stripe_secret_key
+        canonical_plan = get_settings().canonical_plan(requested_plan)
         session = stripe.checkout.Session.create(
             mode=plan[1],
             line_items=[{"price": price_id, "quantity": 1}],
-            customer_email=payload.email.strip().lower(),
+            customer_email=email_addr,
+            metadata={"foxy_plan": canonical_plan},
             success_url=f"{s.dashboard_url}?checkout=success",
             cancel_url=f"{s.dashboard_url}?checkout=cancel",
         )
@@ -233,6 +249,10 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     customer_id = session.get("customer", "")
     customer_email = (session.get("customer_email") or "unknown").strip().lower()
     subscription_id = session.get("subscription", "")
+    metadata = session.get("metadata") or {}
+    plan_tier = get_settings().canonical_plan(metadata.get("foxy_plan") or "pro")
+    if plan_tier not in {"pro", "max", "premium"}:
+        plan_tier = "pro"
 
     existing = db.execute(
         select(Organization).where(Organization.stripe_customer_id == customer_id)
@@ -243,8 +263,9 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     plaintext_key, key_hash = _generate_api_key()
     org = Organization(
         name=customer_email, api_key_hash=key_hash, stripe_customer_id=customer_id,
-        stripe_subscription_id=subscription_id, plan_tier="pro",
+        stripe_subscription_id=subscription_id, plan_tier=plan_tier,
         subscription_status="active", contact_email=customer_email,
+        monthly_log_quota=get_settings().quota_for(plan_tier),
     )
     db.add(org)
     db.flush()   # assign org.id without committing

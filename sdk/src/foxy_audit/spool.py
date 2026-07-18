@@ -8,9 +8,12 @@ process continues; delivery can therefore resume after a crash or outage.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sqlite3
 import time
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -40,8 +43,18 @@ class EventSpool:
             pass
         return conn
 
+    @contextmanager
+    def _connection(self):
+        """Commit and close every SQLite handle, including on Windows."""
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _init_db(self) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS spool_events (
@@ -61,6 +74,10 @@ class EventSpool:
                     client_id TEXT PRIMARY KEY,
                     next_seq INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS spool_identity (
+                    identity_key TEXT PRIMARY KEY,
+                    client_id TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS spool_receipts (
                     event_id TEXT PRIMARY KEY,
                     receipt TEXT NOT NULL,
@@ -69,10 +86,30 @@ class EventSpool:
                 """
             )
 
+    def get_or_create_client_id(self, endpoint: str, api_key: str) -> str:
+        """Return a stable local identity without storing the key in identity state."""
+        identity_key = hashlib.sha256(
+            f"{endpoint}\0{api_key}".encode("utf-8")
+        ).hexdigest()
+        with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT client_id FROM spool_identity WHERE identity_key = ?",
+                (identity_key,),
+            ).fetchone()
+            if row:
+                return str(row["client_id"])
+            client_id = uuid.uuid4().hex
+            conn.execute(
+                "INSERT INTO spool_identity(identity_key, client_id) VALUES (?, ?)",
+                (identity_key, client_id),
+            )
+            return client_id
+
     def enqueue(self, endpoint: str, api_key: str, payload: dict[str, Any]) -> dict[str, Any]:
         event_id = str(payload["event_id"])
         client_id = str(payload["client_id"])
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 "SELECT payload FROM spool_events WHERE event_id = ?", (event_id,)
@@ -99,7 +136,7 @@ class EventSpool:
             return enriched
 
     def due(self, limit: int = 50) -> list[sqlite3.Row]:
-        with self._connect() as conn:
+        with self._connection() as conn:
             return conn.execute(
                 "SELECT * FROM spool_events WHERE next_attempt_at <= ? "
                 "ORDER BY rowid LIMIT ?",
@@ -109,7 +146,7 @@ class EventSpool:
     def ack(self, rows: list[sqlite3.Row], response: dict[str, Any]) -> None:
         if not rows:
             return
-        with self._connect() as conn:
+        with self._connection() as conn:
             for row in rows:
                 conn.execute(
                     "INSERT OR REPLACE INTO spool_receipts(event_id, receipt, received_at) "
@@ -121,7 +158,7 @@ class EventSpool:
     def retry(self, rows: list[sqlite3.Row], error: str) -> None:
         if not rows:
             return
-        with self._connect() as conn:
+        with self._connection() as conn:
             for row in rows:
                 attempts = int(row["attempts"]) + 1
                 delay = min(300.0, 2.0 ** min(attempts, 8))
@@ -132,13 +169,13 @@ class EventSpool:
                 )
 
     def has(self, event_id: str) -> bool:
-        with self._connect() as conn:
+        with self._connection() as conn:
             return conn.execute(
                 "SELECT 1 FROM spool_events WHERE event_id = ?", (event_id,)
             ).fetchone() is not None
 
     def receipt(self, event_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 "SELECT receipt FROM spool_receipts WHERE event_id = ?", (event_id,)
             ).fetchone()

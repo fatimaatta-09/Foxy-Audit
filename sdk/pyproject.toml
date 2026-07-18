@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "foxy-audit"
-version = "1.0.0"
-description = "Governance-as-Code SDK for AI compliance: local SHA-256 hashing + tamper-evident audit telemetry, with zero raw-text exfiltration."
+version = "1.0.1"
+description = "Governance-as-Code SDK for AI compliance: local customer-keyed commitments, durable capture, and tamper-evident audit telemetry without raw-text exfiltration."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -106,6 +106,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             org = db.get(Organization, user.org_id)
             if org is not None and org.deleted_at is not None:
                 raise HTTPException(status_code=403, detail="This workspace has been deleted")
+            if org is not None and org.suspended:
+                raise HTTPException(status_code=403, detail="This workspace is suspended")
             # Opt-in email-OTP MFA: email a code and stop — no session until it's
             # verified at /v1/auth/mfa. (Phase 5 · 5B.5)
             if user.mfa_enabled:
@@ -136,6 +138,9 @@ def mfa_verify(payload: MfaRequest, request: Request, db: Session = Depends(get_
     candidates = db.execute(select(User).where(User.email == email)).scalars().all()
     for user in candidates:
         if user.mfa_enabled and not user.disabled and mfa.code_valid(user, payload.code):
+            org = db.get(Organization, user.org_id)
+            if org is not None and org.suspended:
+                raise HTTPException(status_code=403, detail="This workspace is suspended")
             mfa.clear_code(user)
             db.commit()
             _establish_session(request, user)
@@ -303,6 +308,19 @@ def create_user(
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="a valid email is required")
+    org = db.get(Organization, admin.org_id)
+    seat_limit = get_settings().seat_limit_for(org.plan_tier if org else None)
+    if seat_limit is not None:
+        active_seats = db.execute(
+            select(func.count()).select_from(User).where(
+                User.org_id == admin.org_id, User.disabled.is_(False))
+        ).scalar_one()
+        if int(active_seats) >= seat_limit:
+            raise HTTPException(
+                status_code=402,
+                detail={"code": "seat_limit_reached", "message": "Your plan has no available dashboard seats. Upgrade to invite another employee.",
+                        "used": int(active_seats), "included": seat_limit},
+            )
     invited = not payload.password
     # An invited account gets an unguessable, unusable password until the invitee
     # sets their own via the emailed link; a supplied password is used directly.

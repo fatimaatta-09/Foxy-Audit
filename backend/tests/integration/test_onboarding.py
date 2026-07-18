@@ -11,6 +11,8 @@ import hashlib
 import hmac
 import json
 import time
+import uuid
+from datetime import datetime, timezone
 
 
 def _signed_header(payload: str, secret: str) -> str:
@@ -40,6 +42,16 @@ def test_free_signup_creates_usable_org(client, monkeypatch):
     # a set-password invite email went to the founder (no shared password in the response)
     assert "founder@newco.test" in str(sent)
     assert not body.get("temp_password")
+    from app.db import SessionLocal
+    from app.models import Organization
+    db = SessionLocal()
+    try:
+        org = db.get(Organization, uuid.UUID(body["org_id"]))
+        assert org.plan_tier == "free"
+        assert org.trial_ends_at is not None
+        assert 6.9 <= (org.trial_ends_at - datetime.now(timezone.utc)).total_seconds() / 86400 <= 7.1
+    finally:
+        db.close()
 
 
 def test_free_signup_rejects_bad_email(client):
@@ -63,6 +75,7 @@ def test_checkout_session_returns_url(client, monkeypatch):
     from app.config import get_settings
     monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_x")
     monkeypatch.setattr(get_settings(), "stripe_price_companion", "price_comp_x")
+    monkeypatch.setattr(get_settings(), "stripe_price_max", "price_max_x")
     monkeypatch.setattr(get_settings(), "stripe_price_guardian", "price_guard_x")
 
     # subscription plan
@@ -72,6 +85,14 @@ def test_checkout_session_returns_url(client, monkeypatch):
     assert r.json()["checkout_url"].startswith("https://checkout.stripe.test/")
     assert captured["mode"] == "subscription"
     assert captured["line_items"][0]["price"] == "price_comp_x"
+    assert captured["metadata"]["foxy_plan"] == "pro"
+
+    r = client.post("/v1/billing/checkout-session",
+                    json={"email": "buyer@co.test", "plan": "max"})
+    assert r.status_code == 200
+    assert captured["mode"] == "subscription"
+    assert captured["line_items"][0]["price"] == "price_max_x"
+    assert captured["metadata"]["foxy_plan"] == "max"
 
     # one-time (lifetime) plan → mode=payment
     r = client.post("/v1/billing/checkout-session",
@@ -95,7 +116,8 @@ def test_checkout_webhook_delivers_credentials(client, monkeypatch):
         "id": "evt_checkout_6a", "object": "event",
         "type": "checkout.session.completed",
         "data": {"object": {"customer": "cus_6A", "customer_email": "paid@co.test",
-                            "subscription": "sub_6A"}}})
+                            "subscription": "sub_6A",
+                            "metadata": {"foxy_plan": "max"}}}})
     r = client.post("/v1/webhooks/stripe", content=payload,
                     headers={"stripe-signature": _signed_header(payload, secret),
                              "content-type": "application/json"})
@@ -105,3 +127,12 @@ def test_checkout_webhook_delivers_credentials(client, monkeypatch):
     assert "reset_token=" in blob          # a set-password invite link was emailed
     assert "paid@co.test" in blob          # to the new admin
     assert "foxy_sk_" in blob              # and their SDK key, shown once
+    from app.db import SessionLocal
+    from app.models import Organization
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.contact_email == "paid@co.test").one()
+        assert org.plan_tier == "max"
+        assert org.monthly_log_quota == get_settings().quota_for("max")
+    finally:
+        db.close()
