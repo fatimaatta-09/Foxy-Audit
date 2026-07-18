@@ -28,7 +28,7 @@ def test_stats_exposes_real_judge_model(make_org, client):
     org = make_org()
     _ingest(client, org, 1)
     s = client.get("/v1/stats", headers=org["auth"]).json()
-    assert s["judge_model"] == "gemini-2.5-flash"       # the real configured model
+    assert s["judge_model"] == "local-policy"           # no provider key in CI
 
 
 def test_stats_time_to_verdict_is_measured(make_org, client):
