@@ -83,9 +83,23 @@ def ingest_batch(
                 select(AuditLog).where(AuditLog.org_id == org.id,
                                        AuditLog.event_id == item.event_id)
             ).scalar_one_or_none()
-            if existing and (existing.prompt_hash != item.prompt_hash
-                             or existing.response_hash != item.response_hash
-                             or existing.policy_tag != item.policy_tag):
+            stored_metadata = dict(existing.event_metadata or {}) if existing else {}
+            stored_metadata.pop("client_seq_gap", None)
+            requested_metadata = dict(item.event_metadata or {})
+            if existing and any((
+                existing.prompt_hash != item.prompt_hash,
+                existing.response_hash != item.response_hash,
+                existing.token_count != item.token_count,
+                existing.policy_tag != item.policy_tag,
+                existing.agent != item.agent,
+                existing.client_id != item.client_id,
+                existing.client_seq != item.client_seq,
+                existing.event_type != item.event_type,
+                existing.commitment_alg != item.commitment_alg,
+                existing.pii_signals != item.pii_signals,
+                stored_metadata != requested_metadata,
+                existing.occurred_at != item.occurred_at,
+            )):
                 raise HTTPException(status_code=409,
                                     detail=f"event_id {item.event_id} was already used with different content")
         if existing:
