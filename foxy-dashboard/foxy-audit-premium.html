@@ -670,10 +670,14 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div class="page" id="page-ledger">
       <div class="pg-head">
         <div><div class="eyebrow">No prompts stored</div><div class="h1">Audit ledger<span class="fox-dot">.</span></div><div class="sub">Only the verdict + a tamper-proof fingerprint of each interaction — never the raw prompt or response.</div></div>
-        <button class="btn ghost sm" onclick="showToast('Ledger refreshed')">↻ refresh</button>
+        <button class="btn ghost sm" onclick="applyLedgerFilters()">↻ refresh</button>
       </div>
-      <div class="clay" style="margin-bottom:12px;padding:11px 16px;">
-        <input class="cin" placeholder="Filter by tenant or hash…" style="margin:0;">
+      <div class="clay" style="margin-bottom:12px;padding:11px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <input class="cin" id="ledgerQ" placeholder="Search hash or agent…" style="margin:0;flex:1;min-width:150px;" onkeydown="if(event.key==='Enter')applyLedgerFilters()">
+        <input class="cin" id="ledgerPolicy" placeholder="policy tag" style="margin:0;width:120px;" onkeydown="if(event.key==='Enter')applyLedgerFilters()">
+        <select id="ledgerVerdict" style="margin:0;width:140px;"><option value="">any verdict</option><option value="breach">breach</option><option value="clean">clean</option><option value="unknown">unknown</option><option value="pending">pending</option></select>
+        <button class="btn pri sm" style="margin:0;" onclick="applyLedgerFilters()">Filter</button>
+        <button class="btn ghost sm" style="margin:0;" onclick="clearLedgerFilters()">Clear</button>
       </div>
       <div class="clay pad" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;min-width:480px;">
@@ -687,6 +691,14 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">loading…</td></tr>
           </tbody>
         </table>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:11px;color:var(--muted);">
+          <span id="ledgerCount">—</span>
+          <span style="display:flex;gap:6px;align-items:center;">
+            <button class="btn ghost sm" id="ledgerPrev" style="margin:0;" onclick="ledgerPage(-1)">← prev</button>
+            <span id="ledgerPageLbl" style="font-family:var(--mono);"></span>
+            <button class="btn ghost sm" id="ledgerNext" style="margin:0;" onclick="ledgerPage(1)">next →</button>
+          </span>
+        </div>
       </div>
     </div>
 
@@ -1206,6 +1218,9 @@ function runExport(){
   const gate=$('authGate');
   const api=(path,opts)=>fetch(path,Object.assign({credentials:'same-origin'},opts||{}));
   const money=n=>Number(n||0).toLocaleString();
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // ── ledger filter + pagination state (P1 · §C) ──
+  let _ledgerPage=1; const _ledgerLimit=50; let _ledgerTotal=0;
 
   function verdictOf(it){
     if(it.gemini_verdict&&it.gemini_verdict.policy_breach) return {v:'breach',cls:'breach'};
@@ -1258,13 +1273,46 @@ function runExport(){
     const {v,cls}=verdictOf(it);
     const t=new Date(it.created_at).toLocaleTimeString();
     const td='padding:11px 10px;border-bottom:2px dashed var(--line);';
-    return '<tr>'
-      +'<td style="'+td+'"><span class="ltag '+cls+'" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">#'+it.seq+'</span>'+(it.policy_tag||'')+(it.agent?' <span style="color:var(--muted);font-family:var(--mono);font-size:9px;">· '+it.agent+'</span>':'')+'</td>'
+    const gv=it.gemini_verdict||{};
+    const risk=(gv.risk_score!=null?gv.risk_score:'');
+    const reason=esc(gv.reason||(it.grading_status==='graded'?'no issues found':'awaiting grading'));
+    const pii=(it.pii_signals&&it.pii_signals.length)?it.pii_signals.map(esc).join(', '):'none detected';
+    const detail='<tr id="det-'+it.seq+'" style="display:none;"><td colspan="4" style="padding:0 10px 12px;">'
+      +'<div style="font-size:11px;line-height:1.7;padding:11px 13px;border:2px dashed var(--line);border-radius:10px;">'
+      +'<div><b>verdict:</b> '+v+(gv.decision?' ('+esc(gv.decision)+')':'')+(risk!==''?' · risk '+risk:'')+'</div>'
+      +'<div><b>reason:</b> '+reason+'</div>'
+      +'<div><b>PII signals:</b> '+pii+'</div>'
+      +'<div><b>grading:</b> '+esc(it.grading_status)+(it.agent?' · agent '+esc(it.agent):'')+' · policy '+esc(it.policy_tag||'—')+'</div>'
+      +'<div style="font-family:var(--mono);font-size:9.5px;word-break:break-all;margin-top:4px;"><b>chain hash:</b> '+esc(it.chain_hash)+'</div>'
+      +'<button class="btn ghost sm" style="margin-top:9px;" onclick="verifyRecord(\''+esc(it.chain_hash)+'\',this)">verify this record</button>'
+      +'</div></td></tr>';
+    return '<tr style="cursor:pointer;" onclick="toggleLedgerDetail('+it.seq+')">'
+      +'<td style="'+td+'"><span class="ltag '+cls+'" style="display:inline-flex;width:24px;height:24px;font-size:9px;margin-right:8px;vertical-align:middle;">#'+it.seq+'</span>'+esc(it.policy_tag||'')+(it.agent?' <span style="color:var(--muted);font-family:var(--mono);font-size:9px;">· '+esc(it.agent)+'</span>':'')+'</td>'
       +'<td style="'+td+'font-family:var(--mono);font-size:10px;color:var(--muted);">'+shortHash(it.chain_hash)+'</td>'
       +'<td style="'+td+'"><span class="pill '+cls+'"><i></i>'+v+'</span></td>'
       +'<td style="'+td+'font-family:var(--mono);font-size:10px;color:var(--muted);">'+t+'</td>'
-      +'</tr>';
+      +'</tr>'+detail;
   }
+  window.toggleLedgerDetail=function(seq){ const d=$('det-'+seq); if(d)d.style.display=(d.style.display==='none'?'':'none'); };
+  window.verifyRecord=async function(hash,btn){
+    if(btn){ btn.disabled=true; btn.textContent='verifying…'; }
+    try{ const r=await api('/v1/verify/hash/'+encodeURIComponent(hash)); const d=await r.json();
+      if(btn){ btn.disabled=false; btn.textContent=(d.verified?'✓ verified — untampered':'⚠ mismatch — altered'); btn.className='btn '+(d.verified?'':'danger')+' sm'; }
+    }catch(e){ if(btn){ btn.disabled=false; btn.textContent='could not verify'; } }
+  };
+  function _ledgerQuery(){
+    const q=(($('ledgerQ')||{}).value||'').trim();
+    const p=(($('ledgerPolicy')||{}).value||'').trim();
+    const v=(($('ledgerVerdict')||{}).value||'').trim();
+    let s='?page='+_ledgerPage+'&limit='+_ledgerLimit;
+    if(q)s+='&q='+encodeURIComponent(q);
+    if(p)s+='&policy_tag='+encodeURIComponent(p);
+    if(v)s+='&verdict='+encodeURIComponent(v);
+    return s;
+  }
+  window.applyLedgerFilters=function(){ _ledgerPage=1; loadLogs(); };
+  window.clearLedgerFilters=function(){ ['ledgerQ','ledgerPolicy'].forEach(id=>{ const e=$(id); if(e)e.value=''; }); const v=$('ledgerVerdict'); if(v)v.value=''; _ledgerPage=1; loadLogs(); };
+  window.ledgerPage=function(delta){ const max=Math.max(1,Math.ceil(_ledgerTotal/_ledgerLimit)); _ledgerPage=Math.min(max,Math.max(1,_ledgerPage+delta)); loadLogs(); };
   function recentRow(it){
     const {v,cls}=verdictOf(it);
     const t=new Date(it.created_at).toLocaleTimeString();
@@ -1274,13 +1322,23 @@ function runExport(){
   }
 
   async function loadLogs(){
-    let d; try{ d=await (await api('/v1/logs?limit=50')).json(); }catch(e){ return; }
+    let d; try{ d=await (await api('/v1/logs'+_ledgerQuery())).json(); }catch(e){ return; }
     const rows=d.items||[];
-    const body=$('ledgerBody'); if(body)body.innerHTML=rows.length?rows.map(ledgerRow).join(''):'<tr><td colspan="4" style="padding:16px;color:var(--muted);">No audit rows yet.</td></tr>';
-    // dashboard "Recent ledger" card = the second .clay.pad's parent list; find its container
+    _ledgerTotal=d.total||0;
+    const body=$('ledgerBody');
+    if(body)body.innerHTML=rows.length?rows.map(ledgerRow).join('')
+      :'<tr><td colspan="4" style="padding:16px;color:var(--muted);">'+(_ledgerTotal===0&&_ledgerPage===1?'No audit rows match.':'No rows on this page.')+'</td></tr>';
+    // pagination footer
+    const maxPage=Math.max(1,Math.ceil(_ledgerTotal/_ledgerLimit));
+    const cnt=$('ledgerCount'); if(cnt)cnt.textContent=money(_ledgerTotal)+' record'+(_ledgerTotal===1?'':'s');
+    const lbl=$('ledgerPageLbl'); if(lbl)lbl.textContent='page '+_ledgerPage+' / '+maxPage;
+    const pv=$('ledgerPrev'); if(pv)pv.disabled=(_ledgerPage<=1);
+    const nx=$('ledgerNext'); if(nx)nx.disabled=(_ledgerPage>=maxPage);
+    // dashboard "Recent ledger" card mirrors the newest few — only from an
+    // unfiltered page 1, so filtering the ledger never rewrites the home preview.
+    const filtered=!!((($('ledgerQ')||{}).value||'').trim()||(($('ledgerPolicy')||{}).value||'').trim()||(($('ledgerVerdict')||{}).value||'').trim());
     const recent=document.getElementById('recentLedger');
-    if(recent)recent.innerHTML=rows.slice(0,4).map(recentRow).join('');
-    const tc=document.querySelector('#page-ledger .tableCount, #page-ledger [id="tableCount"]');
+    if(recent&&_ledgerPage===1&&!filtered)recent.innerHTML=rows.slice(0,4).map(recentRow).join('');
   }
 
   async function loadChainMeta(){
