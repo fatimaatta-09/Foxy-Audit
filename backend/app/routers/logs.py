@@ -245,7 +245,7 @@ def list_breaches(
 
 
 _EXPORT_COLS = ["seq", "event_id", "client_id", "client_seq", "event_type",
-                "commitment_alg", "event_metadata", "chain_version", "created_at",
+                "commitment_alg", "event_metadata", "chain_version", "occurred_at", "created_at",
                 "policy_tag", "agent", "token_count", "prompt_hash",
                 "response_hash", "pii_signals", "prev_hash", "chain_hash",
                 "gemini_verdict", "grading_status", "graded_at"]
@@ -261,6 +261,7 @@ def _export_row(r: AuditLog) -> dict:
         "commitment_alg": r.commitment_alg,
         "event_metadata": r.event_metadata,
         "chain_version": r.chain_version or 1,
+        "occurred_at": r.occurred_at.isoformat() if r.occurred_at else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "policy_tag": r.policy_tag,
         "agent": r.agent,

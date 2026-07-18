@@ -105,6 +105,7 @@ class LogListItem(BaseModel):
     event_type: str | None = None
     commitment_alg: str | None = None
     event_metadata: dict[str, Any] | None = None
+    occurred_at: datetime | None = None
     chain_version: int = 1
     prompt_hash: str
     response_hash: str

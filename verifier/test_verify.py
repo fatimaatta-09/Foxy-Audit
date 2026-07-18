@@ -102,3 +102,23 @@ def test_matches_backend_recipe():
     assert (fv.compute_chain_hash(**common, agent="gpt-4o")
             == bc.compute_chain_hash(**common, agent="gpt-4o"))
     assert fv.GENESIS_HASH == bc.GENESIS_HASH
+
+
+def test_capture_v2_export_includes_all_chain_fields():
+    fields = {
+        "event_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "client_id": "sdk-a", "client_seq": 1,
+        "event_type": "interaction", "commitment_alg": "hmac-sha256",
+        "event_metadata": {"request_id": "req-1"},
+        "pii_signals": ["email"], "occurred_at": "2026-07-18T18:00:00+00:00",
+        "chain_version": 2,
+    }
+    row = {"seq": 1, "prev_hash": fv.GENESIS_HASH,
+           "prompt_hash": "a" * 64, "response_hash": "b" * 64,
+           "token_count": 10, "policy_tag": "chat", **fields}
+    row["chain_hash"] = fv.compute_chain_hash(
+        org_id=ORG, prev_hash=fv.GENESIS_HASH, **{k: row[k] for k in (
+            "prompt_hash", "response_hash", "token_count", "policy_tag", "seq",
+            "event_id", "client_id", "client_seq", "event_type", "commitment_alg",
+            "event_metadata", "pii_signals", "occurred_at", "chain_version")})
+    assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is True
