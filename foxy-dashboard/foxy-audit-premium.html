@@ -1006,7 +1006,8 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           </div>
           <div class="clay pad">
             <div style="font-weight:700;font-size:13px;margin-bottom:11px;color:var(--breach-bg);">Danger zone</div>
-            <button class="btn ghost" onclick="exportWorkspaceData()" style="margin-top:0;">export workspace data</button>
+            <button class="btn ghost" onclick="exportWorkspaceData()" style="margin-top:0;">export ledger (CSV)</button>
+            <button class="btn ghost" onclick="downloadAccountExport(this)" style="margin-top:0;margin-left:8px;">full account export (JSON)</button>
             <button class="btn danger" onclick="deleteWorkspace()">delete workspace</button>
           </div>
         </div>
@@ -1014,6 +1015,11 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <div class="clay pad" id="teamCard" style="margin-top:14px;display:none;">
         <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" fill="#000"/></svg></span></div><div class="txt">Team — dashboard users</div></div><span class="stitle-act" onclick="addUser()">+ add auditor</span></div>
         <div id="teamList"></div>
+      </div>
+      <div class="clay pad" id="auditCard" style="margin-top:14px;display:none;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4z" fill="none" stroke="#000" stroke-width="2"/><path d="M8 9h8M8 13h8M8 17h5" stroke="#000" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="txt">Account activity</div></div><span class="stitle-act" onclick="loadAccountAudit()">↻ refresh</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">A record of changes to keys, policy, team, and 2FA in this workspace.</div>
+        <div id="auditList"><div style="font-size:11px;color:var(--muted);">loading…</div></div>
       </div>
     </div>
 
@@ -1699,7 +1705,36 @@ function runExport(){
       if(window.loadMfa)window.loadMfa(me);
     }}catch(e){}
     const card=$('teamCard'); if(card)card.style.display=_isAdmin?'':'none';
-    if(_isAdmin)loadTeam();
+    const ac=$('auditCard'); if(ac)ac.style.display=_isAdmin?'':'none';
+    if(_isAdmin){ loadTeam(); loadAccountAudit(); }
+  };
+  const _AUDIT_LABEL={'key.create':'Created API key','key.revoke':'Revoked API key',
+    'policy.update':'Updated policy','member.role_change':'Changed member role',
+    'member.enable':'Re-enabled member','member.disable':'Disabled member',
+    'mfa.enable':'Enabled 2FA','mfa.disable':'Disabled 2FA'};
+  window.loadAccountAudit=async function(){
+    const box=$('auditList'); if(!box)return;
+    try{ const r=await api('/v1/account/audit?limit=50'); if(!r.ok){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">Could not load activity.</div>'; return; }
+      const rows=await r.json();
+      box.innerHTML=(Array.isArray(rows)&&rows.length)?rows.map(a=>{
+        const when=a.created_at?new Date(a.created_at).toLocaleString():'';
+        const label=_AUDIT_LABEL[a.action]||esc(a.action);
+        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:2px dashed var(--line);font-size:11.5px;">'
+          +'<div><b>'+label+'</b>'+(a.target?' <span style="color:var(--muted);">· '+esc(a.target)+'</span>':'')
+          +'<div style="font-size:9.5px;color:var(--muted);font-family:var(--mono);">'+esc(a.actor_email||'')+'</div></div>'
+          +'<span style="font-size:9.5px;color:var(--muted);font-family:var(--mono);white-space:nowrap;">'+esc(when)+'</span></div>';
+      }).join(''):'<div style="font-size:11px;color:var(--muted);">No account changes recorded yet.</div>';
+    }catch(e){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">Could not reach the server.</div>'; }
+  };
+  window.downloadAccountExport=async function(btn){
+    if(btn){ btn.disabled=true; btn.textContent='exporting…'; }
+    try{ const r=await api('/v1/account/export');
+      if(!r.ok){ toast('Export failed ('+r.status+')'); }
+      else { const blob=await r.blob(); const url=URL.createObjectURL(blob);
+        const a=document.createElement('a'); a.href=url; a.download='foxy-account-export.json'; a.click();
+        URL.revokeObjectURL(url); toast('Account export downloaded'); }
+    }catch(e){ toast('Could not reach the server'); }
+    if(btn){ btn.disabled=false; btn.textContent='full account export (JSON)'; }
   };
   function userRow(u){
     const on=!u.disabled;
@@ -1871,12 +1906,22 @@ function runExport(){
             +'<td style="'+tdMono+'">'+fmtD(i.created_at)+'</td>'
             +'<td style="'+td+'text-align:right;font-weight:700;">'+esc(money(i.amount_cents,i.currency))+'</td>'
             +'<td style="'+td+'"><span class="pill '+invPill(i.status)+'"><i></i>'+esc(i.status)+'</span></td>'
-            +'<td style="'+tdMono+'">'+(i.period_start?fmtD(i.period_start)+' – '+fmtD(i.period_end):'—')+'</td>'
+            +'<td style="'+tdMono+'">'+(i.period_start?fmtD(i.period_start)+' – '+fmtD(i.period_end):'—')
+              +' <a href="#" onclick="openInvoice(event,\''+i.id+'\')" style="color:var(--fox2);margin-left:6px;white-space:nowrap;">PDF ↗</a></td>'
             +'</tr>').join('')
           :'<tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">No invoices yet — they appear after the first Stripe billing cycle.</td></tr>';
       }
     }catch(e){}
     window.loadPlan();
+  };
+  window.openInvoice=async function(ev,id){
+    if(ev)ev.preventDefault();
+    try{ const r=await api('/v1/invoices/'+id+'/link');
+      if(r.ok){ const d=await r.json(); if(d.url){ window.open(d.url,'_blank','noopener'); return; } showToast('No invoice document available'); }
+      else if(r.status===503){ showToast('Billing isn’t enabled on this workspace yet'); }
+      else if(r.status===404){ showToast('Invoice not found'); }
+      else { showToast('Could not open invoice ('+r.status+')'); }
+    }catch(e){ showToast('Could not reach the server'); }
   };
 
   const _cap=s=>String(s||'').replace(/^\w/,c=>c.toUpperCase());

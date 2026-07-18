@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import account_audit
 from .. import email as email_mod
 from .. import mfa
 from ..auth import hash_key, require_org, require_role
@@ -122,6 +123,10 @@ def create_key(
     row = ApiKey(org_id=admin.org_id, name=name, key_prefix=prefix, key_hash=key_hash,
                  status="active", expires_at=expires_at)
     db.add(row)
+    db.flush()
+    account_audit.record_account_action(
+        db, org_id=admin.org_id, actor_email=admin.email, action="key.create",
+        target=name, detail={"expires_in_days": body.expires_in_days})
     db.commit()
     db.refresh(row)
     log.info("Created API key %s for org %s", row.id, admin.org_id)
@@ -146,6 +151,9 @@ def revoke_key(
     if row.status != "revoked":
         row.status = "revoked"
         row.revoked_at = datetime.now(timezone.utc)
+        account_audit.record_account_action(
+            db, org_id=admin.org_id, actor_email=admin.email, action="key.revoke",
+            target=row.name)
         db.commit()
     log.info("Revoked API key %s for org %s", row.id, admin.org_id)
     return {"status": "revoked", "id": str(row.id)}

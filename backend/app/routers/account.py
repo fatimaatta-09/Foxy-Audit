@@ -9,10 +9,13 @@ isolation (the docker superuser role bypasses RLS).
 
 from __future__ import annotations
 
+import json
+import logging
 import secrets
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -21,8 +24,12 @@ from .. import ip_allow
 from ..auth import require_role, resolve_org
 from ..config import get_settings
 from ..db import get_db
-from ..models import ApiKey, AuditLog, Invoice, Organization, UsageDaily, User
+from ..models import (
+    AccountAction, ApiKey, AuditLog, ChainAnchor, Invoice, Organization,
+    OrgPolicy, UsageDaily, User,
+)
 
+log = logging.getLogger("foxy.account")
 router = APIRouter()
 
 
@@ -259,3 +266,131 @@ def revoke_badge(
         org.public_badge_token = None
         db.commit()
     return {"status": "revoked"}
+
+
+# ─────────────── account audit log (P2 · §D) ───────────────────────────────
+
+class AccountActionItem(BaseModel):
+    id: str
+    actor_email: str | None = None
+    action: str
+    target: str | None = None
+    detail: dict | None = None
+    created_at: str | None = None
+
+
+@router.get("/v1/account/audit", response_model=list[AccountActionItem])
+def account_audit_log(
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """The org's own account-action trail (key/policy/member/MFA changes),
+    newest first — admin only, org-scoped by RLS."""
+    rows = db.execute(
+        select(AccountAction).where(AccountAction.org_id == admin.org_id)
+        .order_by(AccountAction.created_at.desc()).limit(limit)
+    ).scalars().all()
+    return [AccountActionItem(
+        id=str(a.id), actor_email=a.actor_email, action=a.action, target=a.target,
+        detail=a.detail, created_at=a.created_at.isoformat() if a.created_at else None,
+    ) for a in rows]
+
+
+# ─────────────── full account / GDPR export (P2 · §H) ──────────────────────
+
+@router.get("/v1/account/export")
+def account_export(
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Self-serve, machine-readable export of everything this workspace holds —
+    org profile, users, policy, keys (metadata only, never the secret), invoices,
+    anchors, and the full hash-chain ledger. Admin only. Content-blind: the ledger
+    carries only hashes + verdicts, never prompt/response text."""
+    org = db.get(Organization, admin.org_id)
+    users = db.execute(select(User).where(User.org_id == admin.org_id)).scalars().all()
+    policy = db.get(OrgPolicy, admin.org_id)
+    keys = db.execute(select(ApiKey).where(ApiKey.org_id == admin.org_id)).scalars().all()
+    invoices = db.execute(select(Invoice).where(Invoice.org_id == admin.org_id)).scalars().all()
+    anchors = db.execute(select(ChainAnchor).where(ChainAnchor.org_id == admin.org_id)).scalars().all()
+    logs = db.execute(
+        select(AuditLog).where(AuditLog.org_id == admin.org_id)
+        .order_by(AuditLog.seq.asc())
+    ).scalars().all()
+
+    def _iso(v):
+        return v.isoformat() if v else None
+
+    bundle = {
+        "organization": {
+            "id": str(org.id), "name": org.name, "plan_tier": org.plan_tier,
+            "subscription_status": org.subscription_status,
+            "contact_email": org.contact_email,
+            "monthly_log_quota": org.monthly_log_quota,
+            "created_at": _iso(org.created_at),
+        } if org else None,
+        "users": [{"email": u.email, "role": u.role, "disabled": u.disabled,
+                   "mfa_enabled": u.mfa_enabled} for u in users],
+        "policy": {
+            "pii_detection": policy.pii_detection, "prompt_injection": policy.prompt_injection,
+            "regulated_data_mode": policy.regulated_data_mode,
+            "max_token_threshold": policy.max_token_threshold,
+            "enforcement_mode": policy.enforcement_mode,
+            "notify_on_breach": policy.notify_on_breach,
+        } if policy else None,
+        "api_keys": [{"name": k.name, "key_prefix": k.key_prefix, "status": k.status,
+                      "created_at": _iso(k.created_at), "last_used_at": _iso(k.last_used_at),
+                      "expires_at": _iso(k.expires_at)} for k in keys],
+        "invoices": [{"stripe_invoice_id": i.stripe_invoice_id, "amount_cents": i.amount_cents,
+                      "currency": i.currency, "status": i.status,
+                      "created_at": _iso(i.created_at)} for i in invoices],
+        "anchors": [{"root_hash": a.root_hash, "last_seq": a.last_seq, "chain": a.chain,
+                     "tx_hash": a.tx_hash, "status": a.status,
+                     "anchored_at": _iso(a.anchored_at)} for a in anchors],
+        "ledger": [{"seq": r.seq, "prompt_hash": r.prompt_hash, "response_hash": r.response_hash,
+                    "policy_tag": r.policy_tag, "agent": r.agent, "chain_hash": r.chain_hash,
+                    "grading_status": r.grading_status, "gemini_verdict": r.gemini_verdict,
+                    "created_at": _iso(r.created_at)} for r in logs],
+    }
+    fname = f"foxy-account-export-{admin.org_id}.json"
+    return Response(content=json.dumps(bundle, indent=2, default=str),
+                    media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+# ─────────────── invoice PDF link (P2 · §E) ────────────────────────────────
+
+@router.get("/v1/invoices/{invoice_id}/link")
+def invoice_link(
+    invoice_id: str,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Resolve a Stripe hosted-invoice / PDF URL for one of the org's invoices.
+    503 when billing isn't configured; 404 for an unknown invoice."""
+    s = get_settings()
+    if not s.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="billing not configured")
+    try:
+        iid = uuid.UUID(str(invoice_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid invoice id")
+    inv = db.execute(
+        select(Invoice).where(Invoice.id == iid, Invoice.org_id == admin.org_id)
+    ).scalar_one_or_none()
+    if inv is None:
+        raise HTTPException(status_code=404, detail="invoice not found")
+    try:
+        import stripe
+        stripe.api_key = s.stripe_secret_key
+        obj = stripe.Invoice.retrieve(inv.stripe_invoice_id)
+        url = obj.get("hosted_invoice_url") or obj.get("invoice_pdf")
+        if not url:
+            raise HTTPException(status_code=404, detail="no hosted invoice available")
+        return {"url": url}
+    except HTTPException:
+        raise
+    except Exception as exc:                 # noqa: BLE001
+        log.warning("invoice link failed: %s", exc)
+        raise HTTPException(status_code=502, detail="could not fetch invoice link")

@@ -138,6 +138,26 @@ class AuditEvent(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class AccountAction(Base):
+    """Customer-visible audit trail of an org's OWN account actions — key/policy/
+    member/MFA/settings changes (P2 · §D). Org-scoped by RLS, mirrors the staff
+    admin_actions table but read by the customer, never exposing other tenants."""
+
+    __tablename__ = "account_actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    actor_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
 class OrgPolicy(Base):
     """Per-org compliance policy configuration — Core Requirement #1.
 
