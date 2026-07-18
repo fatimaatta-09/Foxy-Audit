@@ -528,6 +528,15 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         </button>
       </div>
 
+      <div class="clay pad" id="firstRun" style="display:none;margin-bottom:18px;border:2px solid var(--fox);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="font-weight:800;font-size:14px;">Get set up<span class="fox-dot">.</span></div>
+          <span id="firstRunPct" style="font-size:11px;color:var(--muted);font-family:var(--mono);"></span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-bottom:12px;">A few steps to a live, tamper-evident audit trail. This disappears once you're rolling.</div>
+        <div id="firstRunSteps"></div>
+      </div>
+
       <div class="hero-grid">
         <div class="hero-balance">
           <div class="hb-top">
@@ -651,6 +660,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div class="spark-lbls"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
         </div>
       </div>
+      <div class="clay pad" style="margin-top:16px;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M12 20V4M20 20v-7" stroke="#000" stroke-width="2.6" stroke-linecap="round"/></svg></span></div><div class="txt">Top flagged policies</div></div><div class="stitle-act" id="avgRiskLbl" style="cursor:default;"></div></div>
+        <div id="topPolicies"><div style="font-size:11px;color:var(--muted);">loading…</div></div>
+      </div>
     </div>
 
     <!-- ═════════════ LEDGER ═════════════ -->
@@ -733,6 +746,14 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <button class="btn pri" id="chainCheckBtn" style="margin-top:0;">verify live ledger chain</button>
             <button class="btn ghost" id="anchorNowBtn" style="margin-top:8px;">⚓ anchor now (publish head to Sepolia)</button>
             <div class="vres" id="chainCheckResult"></div>
+          </div>
+          <div class="clay pad" style="margin-top:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <div style="font-weight:700;font-size:11.5px;">Public-chain anchors</div>
+              <span id="anchorFresh" style="font-size:10px;color:var(--muted);font-family:var(--mono);"></span>
+            </div>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:11px;">Each receipt records your ledger head on a public blockchain — independent, third-party proof no one (not even us) can alter. <span id="anchorSLA"></span></div>
+            <div id="anchorReceipts"><div style="font-size:11px;color:var(--muted);">loading receipts…</div></div>
           </div>
         </div>
       </div>
@@ -1111,13 +1132,17 @@ async function mintBadge(){
     if(!r.ok){ showToast('could not generate badge ('+r.status+')'); return; }
     const d=await r.json();
     const url=location.origin+d.url;
-    const snippet='<a href="'+location.origin+'/dashboard"><img src="'+url+'" alt="Audited by Foxy Audit" height="58"></a>';
+    const verifyUrl=location.origin+'/verify/'+d.token;
+    // the embedded badge links to the PUBLIC verify page (no login wall), not /dashboard
+    const snippet='<a href="'+verifyUrl+'"><img src="'+url+'" alt="Audited by Foxy Audit" height="58"></a>';
     const out=document.getElementById('badgeOut');
     out.style.display='block';
     out.innerHTML='<div style="margin-bottom:8px;"><img src="'+esc(url)+'" alt="Foxy Audit trust badge" height="58"></div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Embed code (click to copy):</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Public verify link — share with clients &amp; auditors (no login, aggregate status only):</div>'
+      +'<textarea class="cin" readonly rows="1" style="width:100%;font-family:var(--mono);font-size:10px;" onclick="this.select();document.execCommand&&document.execCommand(\'copy\');">'+esc(verifyUrl)+'</textarea>'
+      +'<div style="font-size:11px;color:var(--muted);margin:8px 0 4px;">Embed code (click to copy):</div>'
       +'<textarea class="cin" readonly rows="2" style="width:100%;font-family:var(--mono);font-size:10px;" onclick="this.select();document.execCommand&&document.execCommand(\'copy\');">'+esc(snippet)+'</textarea>';
-    showToast('Badge ready — copy the embed code');
+    showToast('Badge ready — copy the verify link or embed code');
   }catch(e){ showToast('Could not reach the server'); }
 }
 async function revokeBadge(){
@@ -1172,6 +1197,9 @@ function runExport(){
   const shortHash=h=>(h||'').slice(0,8)+'…'+(h||'').slice(-4);
   // 7A-3 helpers: real time-to-verdict + real model name (no hardcoded fibs)
   const fmtVerdict=sec=>sec==null?'—':(sec<1?Math.round(sec*1000)+'ms':sec.toFixed(1)+'s');
+  // clean_rate is null until there are determinate grades (unknown verdicts are never
+  // counted clean) — render "—" honestly, never "null%".
+  const fmtPct=v=>v==null?'—':v+'%';
   const prettyModel=id=>String(id||'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 
   async function loadStats(){
@@ -1180,8 +1208,8 @@ function runExport(){
     const dv=document.querySelectorAll('#page-dashboard .stats .stat .v');
     if(dv[0])dv[0].textContent=money(s.breaches);
     // dv[1] "Open alerts" is set from the real threat feed in loadThreats (not grading failures)
-    if(dv[2])dv[2].textContent=s.clean_rate+'%';
-    const gc=$('gClean'); if(gc)gc.textContent=s.clean_rate+'%';
+    if(dv[2])dv[2].textContent=fmtPct(s.clean_rate);
+    const gc=$('gClean'); if(gc)gc.textContent=fmtPct(s.clean_rate);
     const gcb=$('gCleanBar'); if(gcb)gcb.style.width=Math.max(0,Math.min(100,Number(s.clean_rate)||0))+'%';
     // real time-to-verdict (replaces the old fabricated "42ms judge latency")
     const ttv=fmtVerdict(s.avg_seconds_to_verdict);
@@ -1199,7 +1227,7 @@ function runExport(){
     if(av[0])av[0].textContent=money(s.total_logged);
     if(av[1])av[1].textContent=money(s.breaches);
     // av[2] "Active alerts" is set from the real threat feed in loadThreats
-    if(av[3])av[3].textContent=s.clean_rate+'%';
+    if(av[3])av[3].textContent=fmtPct(s.clean_rate);
     // 7-day activity sparkline
     const bars=document.querySelectorAll('#page-analytics .spark .sbar');
     const days=(s.activity_7d||[]).slice(-7);
@@ -1255,7 +1283,16 @@ function runExport(){
     try{
       const v=await (await api('/v1/verify')).json();
       if(v.ok){ el.className='vres match'; el.innerHTML='✓ chain intact — '+v.count+' blocks verified'; }
-      else{ el.className='vres tamper'; el.innerHTML='⚠ tampering detected — broken at seq '+v.first_broken_seq; }
+      else{
+        // distinguish a deleted/missing row (sequence gap or broken linkage) from a
+        // mutated record (content/hash mismatch) — the backend now reports which.
+        const d=String(v.detail||'');
+        const kind=/sequence gap|previous hash mismatch/i.test(d)
+          ? '⚠ record missing — the ledger has a gap'
+          : '⚠ tampering detected — a record was altered';
+        el.className='vres tamper';
+        el.innerHTML=kind+' at seq '+v.first_broken_seq+(d?'<br><span style="font-size:10px;opacity:.8;">'+d.replace(/[<>]/g,'')+'</span>':'');
+      }
     }catch(e){ el.className='vres tamper'; el.textContent='could not reach the server'; }
   }
   async function anchorNow(){
@@ -1268,7 +1305,8 @@ function runExport(){
       else if(!r.ok){ el.className='vres tamper'; el.textContent='anchor failed (HTTP '+r.status+')'; }
       else{ const a=await r.json(); el.className='vres match';
         el.innerHTML='⚓ anchored on '+(a.chain||'chain')+' — status <b>'+(a.status||'?')+'</b>'
-          +(a.tx_hash?'<br><a href="https://sepolia.etherscan.io/tx/'+a.tx_hash+'" target="_blank" rel="noopener" style="color:var(--fox2)">view tx on Etherscan ↗</a>':''); }
+          +(a.tx_hash?'<br><a href="https://sepolia.etherscan.io/tx/'+a.tx_hash+'" target="_blank" rel="noopener" style="color:var(--fox2)">view tx on Etherscan ↗</a>':'');
+        if(window.loadAnchors)window.loadAnchors(); }
     }catch(e){ el.className='vres tamper'; el.textContent='could not reach the server'; }
     if(btn)btn.disabled=false;
   }
@@ -1624,6 +1662,165 @@ function runExport(){
   if(typeof _go==='function'){
     window.go=function(page,el){ _go(page,el); if(page==='billing')loadBilling(); };
   }
+})();
+</script>
+
+<!-- ═══ P0 · §A Anchor transparency: receipts + Etherscan links + SLA freshness ═══ -->
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const api=(path,opts)=>fetch(path,Object.assign({credentials:'same-origin'},opts||{}));
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const shortHash=h=>(h||'').slice(0,10)+'…'+(h||'').slice(-6);
+  // Map an anchor's chain label to a public block-explorer tx URL. Sepolia today;
+  // returns '' for the stub/local provider so no dead link is shown.
+  function explorerTx(chain,tx){
+    if(!tx)return '';
+    const c=String(chain||'').toLowerCase();
+    if(c.includes('sepolia'))return 'https://sepolia.etherscan.io/tx/'+tx;
+    if(c.includes('mainnet')||c==='ethereum'||c==='evm')return 'https://etherscan.io/tx/'+tx;
+    return '';
+  }
+  function timeAgo(iso){
+    if(!iso)return '';
+    const t=new Date(iso).getTime(); if(isNaN(t))return '';
+    const s=Math.max(0,Math.round((Date.now()-t)/1000));
+    if(s<60)return s+'s ago'; const m=Math.round(s/60); if(m<60)return m+'m ago';
+    const h=Math.round(m/60); if(h<48)return h+'h ago'; return Math.round(h/24)+'d ago';
+  }
+  const statusPill=st=>({confirmed:'safe',pending:'warn',submitted:'warn',failed:'breach'}[st]||'warn');
+  function receiptRow(a){
+    const link=explorerTx(a.chain,a.tx_hash);
+    const when=a.confirmed_at||a.anchored_at;
+    return '<div style="border-bottom:2px dashed var(--line);padding:9px 0;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+        +'<span class="pill '+statusPill(a.status)+'"><i></i>'+esc(a.status)+'</span>'
+        +'<span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);">seq #'+a.last_seq+(a.block_number?' · blk '+a.block_number:'')+'</span>'
+      +'</div>'
+      +'<div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:4px;word-break:break-all;">root '+esc(shortHash(a.root_hash))+'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">'
+        +'<span style="font-size:9.5px;color:var(--muted);">'+esc(a.chain||'chain')+' · '+esc(timeAgo(when))+'</span>'
+        +(link?'<a href="'+link+'" target="_blank" rel="noopener" style="color:var(--fox2);font-size:10px;">Etherscan ↗</a>'
+              :(a.detail?'<span style="font-size:9.5px;color:var(--muted);">'+esc(a.detail).slice(0,48)+'</span>':''))
+      +'</div></div>';
+  }
+  window.loadAnchors=async function(){
+    const box=$('anchorReceipts'); if(!box)return;
+    try{
+      const sla=await api('/v1/anchors/sla').then(r=>r.ok?r.json():null).catch(()=>null);
+      const s=$('anchorSLA'); if(s&&sla&&sla.cadence_human)s.textContent='Auto-anchored every '+sla.cadence_human+(sla.plan_tier?' on '+sla.plan_tier:'')+'.';
+      const r=await api('/v1/anchors'); if(!r.ok){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">could not load receipts.</div>'; return; }
+      const rows=await r.json();
+      const fresh=$('anchorFresh');
+      const conf=Array.isArray(rows)?rows.filter(a=>a.status==='confirmed'):[];
+      const last=(conf[0]||(rows&&rows[0]));
+      if(fresh)fresh.textContent=last?('last anchor '+timeAgo(last.confirmed_at||last.anchored_at)):'no anchors yet';
+      box.innerHTML=(Array.isArray(rows)&&rows.length)
+        ? rows.slice(0,8).map(receiptRow).join('')
+        : '<div style="font-size:11px;color:var(--muted);line-height:1.5;">No anchors yet. Your chain head is anchored automatically on your plan’s cadence, or hit “anchor now” above to publish it immediately.</div>';
+    }catch(e){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">could not reach the server.</div>'; }
+  };
+  const _go=window.go;
+  if(typeof _go==='function'){
+    window.go=function(page,el){ _go(page,el); if(page==='verify')window.loadAnchors(); };
+  }
+})();
+</script>
+
+<!-- ═══ P0 · §B Threat analytics: wire the real /v1/analytics/threats feed + charts ═══ -->
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const api=(path,opts)=>fetch(path,Object.assign({credentials:'same-origin'},opts||{}));
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const riskCls=r=>r>=70?'r':(r>=40?'a':'a');
+  function alertRow(a){
+    const t=a.timestamp?new Date(a.timestamp).toLocaleString():'';
+    return '<div class="arow"><div class="adot '+riskCls(a.risk_score||0)+'"></div><div style="flex:1;min-width:0;">'
+      +'<div class="atxt"><b>'+esc(a.policy_tag||'policy')+'</b>'+(a.agent?' <span style="color:var(--muted);font-family:var(--mono);font-size:9px;">· '+esc(a.agent)+'</span>':'')
+      +' <span style="color:var(--breach-bg);font-weight:700;">risk '+(a.risk_score||0)+'</span></div>'
+      +(a.reason?'<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:2px;">'+esc(a.reason).slice(0,120)+'</div>':'')
+      +'<div style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-top:3px;">#'+a.seq+' · '+esc(t)+'</div>'
+      +'</div></div>';
+  }
+  const emptyAlerts='<div class="arow"><div class="adot" style="background:var(--safe-bg);"></div><div><div class="atxt">No active alerts</div><div style="font-size:10.5px;color:var(--muted);">every graded interaction is within policy.</div></div></div>';
+  window.loadThreats=async function(){
+    let d; try{ d=await (await api('/v1/analytics/threats')).json(); }catch(e){ return; }
+    const alerts=Array.isArray(d.recent_high_risk)?d.recent_high_risk:[];
+    const html=alerts.length?alerts.map(alertRow).join(''):emptyAlerts;
+    const ha=$('homeAlerts'); if(ha)ha.innerHTML=html;
+    const aa=$('anaAlerts'); if(aa)aa.innerHTML=html;
+    const count=(d.total_threats!=null?d.total_threats:alerts.length);
+    const sa=$('statActiveAlerts'); if(sa)sa.textContent=count;
+    // home KPI tile dv[1] "Open alerts" (loadStats deliberately leaves it for us)
+    const dv=document.querySelectorAll('#page-dashboard .stats .stat .v'); if(dv[1])dv[1].textContent=count;
+    const av=document.querySelectorAll('#page-analytics .stats .stat .v'); if(av[2])av[2].textContent=count;
+    // avg risk label
+    const ar=$('avgRiskLbl'); if(ar)ar.textContent=(d.avg_risk_score!=null?'avg risk '+d.avg_risk_score:'');
+    // top-policies horizontal bars (inline, CSP-safe)
+    const tp=$('topPolicies');
+    if(tp){
+      const pols=Array.isArray(d.top_policies)?d.top_policies:[];
+      const max=Math.max(1,...pols.map(p=>p.count||0));
+      tp.innerHTML=pols.length?pols.map(p=>{
+        const w=Math.max(4,Math.round((p.count||0)/max*100));
+        return '<div style="margin:9px 0;">'
+          +'<div style="display:flex;justify-content:space-between;font-size:10.5px;margin-bottom:4px;"><span style="font-weight:700;">'+esc(p.tag||'—')+'</span><span style="color:var(--muted);font-family:var(--mono);">'+(p.count||0)+'</span></div>'
+          +'<div class="gtrack"><div class="gfill" style="width:'+w+'%"></div></div></div>';
+      }).join(''):'<div style="font-size:11px;color:var(--muted);">No flagged policies yet — nothing has breached policy.</div>';
+    }
+  };
+  const _go=window.go;
+  if(typeof _go==='function'){
+    window.go=function(page,el){ _go(page,el); if(page==='analytics'||page==='dashboard')window.loadThreats(); };
+  }
+  // initial paint (home is the default page on load)
+  if(document.readyState!=='loading')window.loadThreats(); else document.addEventListener('DOMContentLoaded',window.loadThreats);
+})();
+</script>
+
+<!-- ═══ P0 · §I First-run checklist: real, data-driven activation steps ═══ -->
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const api=(path)=>fetch(path,{credentials:'same-origin'});
+  const jget=async p=>{ try{ const r=await api(p); return r.ok?await r.json():null; }catch(e){ return null; } };
+  function stepRow(done,title,desc,actLabel,act){
+    const mark=done
+      ? '<span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--safe-bg);color:#0a3d20;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;border:2px solid #000;">✓</span>'
+      : '<span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:transparent;border:2px dashed var(--line);display:inline-block;"></span>';
+    return '<div style="display:flex;align-items:flex-start;gap:11px;padding:9px 0;border-bottom:2px dashed var(--line);">'
+      +mark+'<div style="flex:1;min-width:0;">'
+      +'<div style="font-weight:700;font-size:12.5px;'+(done?'color:var(--muted);text-decoration:line-through;':'')+'">'+title+'</div>'
+      +(done?'':'<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:2px;">'+desc+'</div>')
+      +'</div>'
+      +(done?'':'<button class="btn ghost" style="flex-shrink:0;padding:5px 10px;font-size:10.5px;margin:0;" onclick="'+act+'">'+actLabel+' →</button>')
+      +'</div>';
+  }
+  window.loadFirstRun=async function(){
+    const card=$('firstRun'); if(!card)return;
+    const [keys,stats,users]=await Promise.all([jget('/v1/keys'),jget('/v1/stats'),jget('/v1/auth/users')]);
+    const hasKey=Array.isArray(keys)&&keys.length>0;
+    const logged=stats&&(stats.total_logged||0)>0;
+    const team=Array.isArray(users)&&users.length>1;
+    // once the essentials (a key + a first logged call) are done, the workspace is
+    // live — retire the checklist so it never nags an active customer.
+    if(hasKey&&logged){ card.style.display='none'; return; }
+    const steps=[
+      stepRow(hasKey,'Create an API key','Mint a key for your app or SDK — shown once.',"go('keys',null)"),
+      stepRow(logged,'Log your first AI interaction','Wrap a call with the @foxy.audit SDK; only hashes leave your machine.',"go('keys',null)"),
+      stepRow(team,'Invite your team','Add a teammate so they can review the audit trail.',"go('settings',null)"),
+    ];
+    const done=[hasKey,logged,team].filter(Boolean).length;
+    const pct=$('firstRunPct'); if(pct)pct.textContent=done+' / 3 done';
+    const box=$('firstRunSteps'); if(box)box.innerHTML=steps.join('');
+    card.style.display='block';
+  };
+  const _go=window.go;
+  if(typeof _go==='function'){
+    window.go=function(page,el){ _go(page,el); if(page==='dashboard')window.loadFirstRun(); };
+  }
+  if(document.readyState!=='loading')window.loadFirstRun(); else document.addEventListener('DOMContentLoaded',window.loadFirstRun);
 })();
 </script>
 </body>
