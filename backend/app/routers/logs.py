@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
 
@@ -232,18 +232,53 @@ def list_logs(
     db: Session = Depends(get_db),
     page: int = Query(default=1, ge=1, description="1-indexed page number"),
     limit: int = Query(default=50, ge=1, le=200, description="rows per page"),
+    q: str | None = Query(default=None, max_length=128,
+                          description="match a hash prefix or agent (substring)"),
+    policy_tag: str | None = Query(default=None, max_length=64),
+    agent: str | None = Query(default=None, max_length=128),
+    verdict: str | None = Query(default=None,
+                                description="clean | breach | unknown | pending"),
+    since: datetime | None = Query(default=None, description="created_at >= (ISO)"),
+    until: datetime | None = Query(default=None, description="created_at <= (ISO)"),
 ):
-    """Return paginated audit log rows for the caller's org (newest first)."""
+    """Paginated audit rows for the caller's org (newest first), with optional
+    server-side filters. All filters compose (AND) and are applied to BOTH the
+    count and the page so totals stay honest."""
+    conds = [AuditLog.org_id == org.id]
+    if q:
+        like = f"%{q.strip()}%"
+        conds.append(or_(
+            AuditLog.chain_hash.ilike(like), AuditLog.prompt_hash.ilike(like),
+            AuditLog.response_hash.ilike(like), AuditLog.agent.ilike(like)))
+    if policy_tag:
+        conds.append(AuditLog.policy_tag == policy_tag.strip())
+    if agent:
+        conds.append(AuditLog.agent == agent.strip())
+    v = (verdict or "").strip().lower()
+    if v == "pending":
+        conds.append(AuditLog.grading_status != "graded")
+    elif v == "breach":
+        conds.append(AuditLog.grading_status == "graded")
+        conds.append(AuditLog.gemini_verdict["policy_breach"].astext == "true")
+    elif v == "clean":
+        conds.append(AuditLog.grading_status == "graded")
+        conds.append(AuditLog.gemini_verdict["decision"].astext == "clean")
+    elif v == "unknown":
+        conds.append(AuditLog.grading_status == "graded")
+        conds.append(AuditLog.gemini_verdict["decision"].astext == "unknown")
+    if since:
+        conds.append(AuditLog.created_at >= since)
+    if until:
+        conds.append(AuditLog.created_at <= until)
+
     offset = (page - 1) * limit
     total: int = db.execute(
-        select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org.id)
+        select(func.count()).select_from(AuditLog).where(*conds)
     ).scalar_one()
     rows = db.execute(
-        select(AuditLog)
-        .where(AuditLog.org_id == org.id)
+        select(AuditLog).where(*conds)
         .order_by(AuditLog.seq.desc())
-        .offset(offset)
-        .limit(limit)
+        .offset(offset).limit(limit)
     ).scalars().all()
     return LogListResponse(
         items=[LogListItem.model_validate(r) for r in rows],
