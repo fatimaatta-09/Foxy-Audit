@@ -24,6 +24,8 @@ def canonical_json(value: Any) -> str:
         value = value.model_dump()
     elif hasattr(value, "dict") and callable(value.dict):
         value = value.dict()
+    elif hasattr(value, "to_dict") and callable(value.to_dict):
+        value = value.to_dict()
     elif not isinstance(value, (str, int, float, bool, list, dict, tuple)) and value is not None:
         value = str(value)
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), default=str)

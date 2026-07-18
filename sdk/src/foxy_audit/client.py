@@ -21,23 +21,25 @@ import re
 import uuid
 
 from . import dispatch, hashing, pii, udp
+from .adapters import response_metadata
 from .config import FoxyConfig
 
 log = logging.getLogger("foxy_audit")
 
 _POLICY_RE = re.compile(r"^[a-z0-9_]{1,32}$")
-_PROMPT_KWARGS = ("prompt", "user_prompt", "message", "text", "input", "query")
+_PROMPT_KWARGS = ("prompt", "user_prompt", "message", "messages", "contents",
+                  "text", "input", "query")
 
 
 class AuditRequiredError(RuntimeError):
     """Raised only when audit_required is enabled and durable delivery fails."""
 
 
-def _extract_prompt(args: tuple, kwargs: dict) -> str:
-    """Best-effort: the first known prompt kwarg, else the first string arg."""
+def _extract_prompt(args: tuple, kwargs: dict):
+    """Best-effort extraction that preserves structured provider messages locally."""
     for key in _PROMPT_KWARGS:
         val = kwargs.get(key)
-        if isinstance(val, str):
+        if val is not None:
             return val
     for arg in args:
         if isinstance(arg, str):
@@ -71,6 +73,9 @@ class FoxyClient:
             client_id=client_id,
             audit_required=audit_required,
         )
+        if self.cfg.enabled:
+            # Resume any events left in the local spool after a prior process exit.
+            dispatch.resume(self.cfg)
 
     @property
     def enabled(self) -> bool:
@@ -97,7 +102,7 @@ class FoxyClient:
                                              event_type="exception")
                         raise
                     self.log_interaction(_extract_prompt(args, kwargs), response, policy, agent,
-                                         metadata=_metadata(kwargs))
+                                         metadata=_metadata(kwargs, response))
                     return response
                 return awrapper
 
@@ -140,7 +145,7 @@ class FoxyClient:
                                              metadata=_metadata(kwargs), event_type="stream")
                     return generator()
                 self.log_interaction(_extract_prompt(args, kwargs), response, policy, agent,
-                                     metadata=_metadata(kwargs))
+                                     metadata=_metadata(kwargs, response))
                 return response
             return wrapper
 
@@ -199,7 +204,7 @@ class FoxyClient:
                 raise AuditRequiredError("Foxy Audit could not durably deliver the event") from exc
 
 
-def _metadata(kwargs: dict) -> dict:
+def _metadata(kwargs: dict, response=None) -> dict:
     """Keep only non-content identifiers useful to an auditor."""
     allowed = ("request_id", "trace_id", "session_id", "provider", "model",
                "tool_names", "retrieval_refs")
@@ -212,4 +217,5 @@ def _metadata(kwargs: dict) -> dict:
             result[key] = [str(v)[:128] for v in value] if isinstance(value, (list, tuple)) else [str(value)[:128]]
         else:
             result[key] = str(value)[:256]
+    result.update(response_metadata(response) if response is not None else {})
     return result

@@ -66,6 +66,11 @@ class AsyncDispatcher:
         return {"status": "queued", "event_id": enriched["event_id"],
                 "client_seq": enriched["client_seq"]}
 
+    def resume(self, cfg: FoxyConfig) -> None:
+        """Wake delivery for a client even when no new event has arrived yet."""
+        self._paths.add(cfg.spool_path or None)
+        self._ensure_worker()
+
     def _run(self) -> None:
         while not self._shutdown or not self._q.empty():
             try:
@@ -115,3 +120,7 @@ _DISPATCHER = AsyncDispatcher()
 def submit(cfg: FoxyConfig, payload: dict, wait: bool = False):
     """Persist an event before returning; optionally wait for a server receipt."""
     return _DISPATCHER.submit(cfg, payload, wait=wait)
+
+
+def resume(cfg: FoxyConfig) -> None:
+    _DISPATCHER.resume(cfg)

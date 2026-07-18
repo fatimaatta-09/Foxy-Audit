@@ -38,7 +38,8 @@ class LogIngest(BaseModel):
         if value is None:
             return value
         allowed = {"request_id", "trace_id", "session_id", "provider", "model",
-                   "tool_names", "retrieval_refs", "client_seq_gap"}
+                   "id", "usage", "choice_count", "tool_names", "retrieval_refs",
+                   "client_seq_gap"}
         unknown = set(value) - allowed
         if unknown:
             raise ValueError("event_metadata contains unsupported fields")

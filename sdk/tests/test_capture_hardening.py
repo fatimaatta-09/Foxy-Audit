@@ -55,3 +55,31 @@ def test_audit_required_fails_closed(monkeypatch):
 
     with pytest.raises(AuditRequiredError):
         ask("prompt")
+
+
+def test_structured_messages_and_provider_metadata_are_captured(monkeypatch):
+    from foxy_audit import dispatch
+    captured = {}
+    monkeypatch.setattr(dispatch, "submit", lambda cfg, payload: captured.update(payload))
+
+    class Usage:
+        prompt_tokens = 4
+        completion_tokens = 6
+        total_tokens = 10
+
+    class Response:
+        id = "resp_123"
+        model = "gpt-test"
+        usage = Usage()
+        choices = []
+
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)
+
+    @foxy.audit("demo")
+    def ask(messages):
+        return Response()
+
+    ask([{"role": "user", "content": "secret patient message"}])
+    assert captured["commitment_alg"] == "hmac-sha256"
+    assert captured["event_metadata"]["id"] == "resp_123"
+    assert captured["event_metadata"]["usage"]["total_tokens"] == 10
