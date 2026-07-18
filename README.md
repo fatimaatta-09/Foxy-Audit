@@ -5,8 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Next.js](https://img.shields.io/badge/Frontend-Next.js-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
-[![Gemini](https://img.shields.io/badge/AI-Gemini_1.5_Pro-8E75B2?logo=google&logoColor=white)](https://deepmind.google/technologies/gemini/)
+[![Static HTML](https://img.shields.io/badge/Frontend-Static_HTML-ff7a2e)](https://developer.mozilla.org/en-US/docs/Web/HTML)
+[![Gemini](https://img.shields.io/badge/AI-Gemini_2.5_Flash-4285f4?logo=google&logoColor=white)](https://ai.google.dev/gemini-api/docs)
 
 ---
 
@@ -30,8 +30,8 @@ We provide a lightweight Python SDK (`pip install foxy-audit`) that captures sup
                ▼  (Local keyed commitment via @foxy.audit)
          [ FastAPI API ]
                │
-               ▼  (Immediate 202 Accepted Task Offloading: <1ms Latency)
-            [ Redis ]
+               ▼  (Durable 202 Accepted metadata capture)
+        [ PostgreSQL Grading Outbox ]
                │
                ▼  (Background Worker Consumption)
      [ Gemini 2.5 Flash ] ──► (Policy & Compliance Evaluation)
@@ -42,7 +42,7 @@ We provide a lightweight Python SDK (`pip install foxy-audit`) that captures sup
 
 ## ✨ Key Features
 
-- **Durable asynchronous capture** — The default SDK path writes metadata to a local SQLite/WAL spool and uploads in the background with retry. Measure application overhead in your own workload; no fixed latency or zero-lag guarantee is made.
+- **Durable asynchronous capture** — The default SDK path writes metadata to a local SQLite/WAL spool and uploads in the background with retry. Critical services can opt into `audit_required=True` to fail closed when the backend receipt cannot be confirmed.
 
 - **Cryptographically Chained Integrity** — Every database row is linked to the row before it via a versioned sequential hash chain. New SDK events use customer-keyed HMAC commitments; changing captured metadata or deleting/reordering a row is detectable by verification. (This is a hash chain, not a Merkle tree or a blockchain.)
 

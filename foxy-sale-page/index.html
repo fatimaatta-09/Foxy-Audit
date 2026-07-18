@@ -693,7 +693,7 @@ const SLIDES = [
     ghost: "LEARN.", accentHex: "#ffb020", accentTx:"var(--warn-tx)",
     cardTitle: "How it works", cardEyebrow: "3 lines of code",
     modalDesc: "Install the SDK, wrap one function, and watch every call get hashed, graded, chained, and verified — the whole pipeline, in minutes.",
-    features: ["Three lines of code to integrate","Runs on a background thread — never blocks you","Watch it live in the desktop app"],
+    features: ["Three lines of code to integrate","Queues locally by default; fail-closed mode available","Watch capture and grading alerts in the desktop app"],
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
     ctaLabel: "See how it works", ctaHref: "/how-it-works.html"
   },
@@ -740,8 +740,8 @@ const SLIDES = [
   {
     ghost: "PLANS.", accentHex: "#ffb020", accentTx:"var(--plan-tx)",
     cardTitle: "See Pricing", cardEyebrow: "Simple, usage-based",
-    modalDesc: "Start free, pay for what you verify. Every plan includes the full hash chain and public verify endpoint — higher tiers add the compliance passport, active-defense judge, and dedicated support.",
-    features: ["Starter: 1,000 verified calls / month, free","Companion: passport + AI judge, $4.99/mo","Guardian: lifetime license, $39 once"],
+    modalDesc: "Start with a 7-day trial, then pay for the audit events you capture. Every plan includes content-blind commitments, the hash chain, and independent verification.",
+    features: ["Free trial: 500 audit-event credits for 7 days","Pro: 25,000 credits, 5 seats, $49/mo","Max: 250,000 credits, 20 seats, $199/mo"],
     isPricing:true,
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#3a2400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
     ctaLabel: "See full pricing", ctaHref: "/pricing.html"
@@ -1032,9 +1032,9 @@ function openModal(i){
   if (s && s.isPricing){
     extra = `
       <div class="plan-grid">
-        <div class="plan"><span class="plan-name">Starter<small>1,000 calls / mo</small></span><span class="plan-price">$0</span></div>
-        <div class="plan is-best"><span class="plan-name">Companion<small>Full platform</small></span><span class="plan-price">$4.99</span></div>
-        <div class="plan"><span class="plan-name">Guardian<small>Lifetime license</small></span><span class="plan-price">$39</span></div>
+        <div class="plan"><span class="plan-name">Free trial<small>500 credits · 7 days</small></span><span class="plan-price">$0</span></div>
+        <div class="plan is-best"><span class="plan-name">Pro<small>25,000 credits / mo</small></span><span class="plan-price">$49</span></div>
+        <div class="plan"><span class="plan-name">Max<small>250,000 credits / mo</small></span><span class="plan-price">$199</span></div>
       </div>`;
   }
 
@@ -1386,8 +1386,8 @@ document.getElementById('leadSubmit').addEventListener('click', async e => {
   leadMsg.style.color = 'var(--muted)'; leadMsg.textContent = 'Working…';
   const src = leadSource || 'cta';
   try {
-    if (src === 'signup-companion' || src === 'signup-guardian') {
-      const plan = src === 'signup-guardian' ? 'guardian' : 'companion';
+    if (src === 'signup-pro' || src === 'signup-max' || src === 'signup-companion' || src === 'signup-guardian') {
+      const plan = (src === 'signup-max') ? 'max' : (src === 'signup-guardian' ? 'guardian' : (src === 'signup-companion' ? 'companion' : 'pro'));
       const r = await fetch(FOXY_API + '/v1/billing/checkout-session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, plan }) });
       if (r.ok) { const d = await r.json(); if (d.checkout_url) { window.location.href = d.checkout_url; return; } }
       await postLead({ email, source: src, subject: plan, message: 'Interested in the ' + plan + ' plan (checkout not yet enabled).' });
@@ -1416,6 +1416,10 @@ document.querySelectorAll('[data-lead]').forEach(el => el.addEventListener('clic
   openLeadModal(el.dataset.lead, el.getAttribute('data-lead-title') || 'Get started');
 }));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && leadBackdrop.classList.contains('open')) closeLeadModal(); });
+const requestedPlan = new URLSearchParams(location.search).get('plan');
+if (requestedPlan === 'free' || requestedPlan === 'pro' || requestedPlan === 'max') {
+  setTimeout(() => openLeadModal('signup-' + requestedPlan, 'Start ' + requestedPlan + ' plan'), 150);
+}
 
 /* enterprise contact modal → /v1/leads (source=enterprise → priority inbox + superadmin alert) */
 const contactBackdrop = document.getElementById('contactBackdrop');

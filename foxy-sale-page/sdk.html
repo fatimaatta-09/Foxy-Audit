@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The SDK — Foxy Audit</title>
-<meta name="description" content="One decorator is the whole integration. The Foxy Audit SDK hashes every AI call on your machine, never blocks your function, and queues locally if the network drops.">
+<meta name="description" content="One decorator adds customer-keyed, content-blind commitments and durable local capture to your AI calls.">
 <link rel="canonical" href="https://foxyaudit.tech/sdk.html">
 <link rel="icon" type="image/png" href="/logo.png">
 <meta name="theme-color" content="#ff7a2e">
@@ -27,7 +27,7 @@
     <a class="back" href="/">← Back to all cards</a>
     <p class="sec-eb">The SDK · @foxy.audit()</p>
     <h1 class="sec-h">One decorator. That's the whole integration.</h1>
-    <p class="sub">No rearchitecting, no proxy, no rewriting your model calls. You add one line, and every call is recorded — hashed, graded, and chained — on a background thread that never gets in your way.</p>
+    <p class="sub">No rearchitecting, no proxy, no rewriting your model calls. Add one line and each call becomes a content-blind commitment, graded and chained through a durable local queue.</p>
   </div>
 
   <div class="code-wrap">
@@ -44,19 +44,19 @@
   </div>
 
   <div class="prose">
-    <p class="lead">The decorator wraps your function transparently. Your code runs exactly as before — same return value, same latency — while Foxy records what happened in the background.</p>
+    <p class="lead">The decorator wraps your function transparently. In the default best-effort mode, your code returns immediately while Foxy records what happened in the background. Critical services can enable <code>audit_required=True</code> to fail closed when evidence cannot be delivered.</p>
 
     <p class="subhead">What actually leaves your machine</p>
     <ul class="points">
-      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>A <b>SHA-256 digest</b> of the prompt and the response — never the raw text.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>A customer-keyed <b>HMAC commitment</b> of the prompt and response — never the raw text.</span></li>
       <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>The <b>token count</b>, <b>model name</b>, timestamp, and the <b>policy tag</b> you set.</span></li>
-      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>The <b>policy verdict</b> from the judge — clean or flagged, and why.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>The <b>policy verdict</b> from the configured judge — clean, flagged, or unknown.</span></li>
     </ul>
 
     <p class="subhead">Built to stay out of your way</p>
     <ul class="points">
-      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Never blocks:</b> hashing and sending happen off the request path.</span></li>
-      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Never throws its own errors:</b> if Foxy has a problem, your function still returns normally.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Two delivery modes:</b> best-effort background capture or <code>audit_required</code> fail-closed capture.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Default mode is best-effort:</b> telemetry errors stay out of your app; <code>audit_required</code> intentionally fails closed.</span></li>
       <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Survives outages:</b> records queue locally and sync when the backend is reachable again.</span></li>
     </ul>
   </div>

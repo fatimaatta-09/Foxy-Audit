@@ -42,7 +42,7 @@
     <span class="c-key">return</span> <span class="c-id">llm</span>.generate(prompt)   <span class="c-cmt"># your code, unchanged</span></code></pre>
     </div>
   </div>
-  <p class="code-note">That decorator is the <b>only</b> change to your app. It never blocks your function and never throws its own errors — everything below runs on a background thread.</p>
+  <p class="code-note">That decorator is the <b>only</b> change to your app. In default mode, capture is queued locally in the background; regulated services can enable <code>audit_required=True</code> to wait for a durable receipt and fail closed.</p>
 
   <div class="flow">
     <div class="step">
