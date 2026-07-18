@@ -53,11 +53,12 @@ python scripts/verify_chain.py        # per-row PASS/FAIL table
 - **Sequential hash chain, not blockchain/Merkle:** `chain.py` is the single
   source of truth for `Hn = SHA256(data_blob || H_{n-1})`, imported by both the
   ingest route and the verifier so writer and reader can never diverge.
-- **Async Gemini:** `/v1/logs` returns `202 Accepted` immediately after writing
-  the chain row. A background `GeminiWorker` thread (`worker.py`) grades the
-  metadata and patches the verdict back into the row asynchronously.
-- **Fail-open judge:** if Gemini is unreachable the chain row is still written
-  (the chain is the legal artifact); flip `GEMINI_FAIL_CLOSED=true` to flag instead.
+- **Async grading:** `/v1/logs/batch` returns `202 Accepted` after the chain row
+  is committed. A background worker grades the metadata and writes an immutable
+  verdict event; the legacy verdict column remains as a compatibility projection.
+- **Unknown on evaluator outage:** if Gemini is unreachable, deterministic local
+  metadata rules still run and semantic evaluation is reported as `unknown` when
+  it cannot be supported by the available evidence. Unknown is not counted as clean.
 - **RLS:** `auth.require_org` sets `app.current_org` via `set_config(..., true)`
   per transaction; the `org_isolation` policy (with `FORCE`) scopes every
   `audit_logs` query to the calling tenant.

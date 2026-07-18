@@ -22,13 +22,13 @@ audit or a verbal promise.
 ## 3. What it actually does
 
 1. A one-line SDK decorator (`@foxy.audit(policy="hipaa_basic")`) wraps an existing LLM call.
-2. The SDK computes a SHA-256 hash of the prompt and response **locally, on the developer's own
+2. The SDK creates a customer-keyed HMAC commitment of supported prompt and response values **locally, on the developer's own
    machine** — the raw text is discarded immediately and never transmitted anywhere.
-3. Only the hash, a token estimate, and a policy tag are sent onward.
-4. An AI Judge (Gemini in the backend worker; Claude Opus 4.8 in the standalone demo script) grades
+3. Only commitments, a token estimate, a policy tag, event identity, and bounded operational metadata are sent onward. The local SQLite/WAL spool retries failed uploads.
+4. Deterministic local rules grade evidence-supported metadata anomalies. An optional Gemini judge can add metadata-level analysis; unavailable evaluation is returned as unknown, not clean.
    the metadata for anomalies — unusually high token counts, prompt-injection patterns — and returns
    a verdict.
-5. Each event is chained sequentially: `chain_hash = SHA256(this event's data + previous chain_hash)`.
+5. Each event is chained sequentially using a versioned canonical representation of its identity, commitments, metadata, and previous chain hash.
    Altering any historical row breaks every hash after it — an "avalanche effect" that makes
    tampering mathematically detectable, not just policy-forbidden.
 6. The chain head can be anchored to a public blockchain (Sepolia), so tampering becomes checkable
@@ -45,7 +45,9 @@ and responses into their own cloud to scan them — which means the compliance t
 new place sensitive data can leak.** Foxy Audit inverts that architecture completely: it
 **cannot** see the raw data, not merely promises not to look at it. That's the difference between
 "trust our access controls" (every competitor) and "there's nothing here to trust — verify it
-yourself" (Foxy Audit). This is zero-knowledge *by architecture*, not by policy.
+yourself" (Foxy Audit). This is content-blind capture by architecture, not a formal zero-knowledge
+proof. The current system proves integrity of submitted commitments and metadata; it does not prove
+semantic safety of content that the evaluator never receives.
 
 ## 5. How to use it (developer's actual workflow)
 
@@ -66,6 +68,14 @@ application.
 For the desktop pet: it runs alongside the developer's work, listening on a local UDP bridge, and
 reacts visually (green/red) in real time as interactions are graded — giving instant ambient
 feedback without needing to check a dashboard.
+
+### Current evidence boundaries
+
+The system is content-blind, not a formal zero-knowledge proof. It proves the integrity and
+continuity of submitted commitments and metadata; it cannot prove semantic safety of content that
+the evaluator never receives. The default upload path is asynchronous and durable, while
+`audit_required=True` waits for a server receipt. Foxy Audit supports compliance evidence work but
+is not legal advice, a certification, or an absolute compliance guarantee.
 
 ## 6. How to verify it's actually working as intended (not just running)
 
