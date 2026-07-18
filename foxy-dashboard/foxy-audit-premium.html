@@ -917,6 +917,24 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <button class="btn" onclick="saveIpAllowlist()">Save IP allow-list</button>
           </div>
           <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Two-factor authentication</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Require an emailed one-time code at sign-in for your own account. <span id="mfaState" style="font-weight:700;"></span></div>
+            <div id="mfaOff" style="display:none;">
+              <button class="btn pri" onclick="mfaEnroll()" style="margin-top:0;">Enable 2FA</button>
+              <div id="mfaConfirm" style="display:none;margin-top:10px;">
+                <div class="flabel" style="margin-top:0;">enter the 6-digit code we emailed you</div>
+                <input class="cin" id="mfaEnrollCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:4px;text-align:center;font-weight:700;">
+                <button class="btn pri" onclick="mfaConfirmEnable()">Confirm &amp; turn on</button>
+              </div>
+            </div>
+            <div id="mfaOn" style="display:none;">
+              <span class="kstatus active">2FA is on</span>
+              <div class="flabel">confirm your password to turn it off</div>
+              <input class="cin" id="mfaOffPw" type="password" autocomplete="current-password">
+              <button class="btn danger" onclick="mfaDisable()" style="margin-top:0;">Turn off 2FA</button>
+            </div>
+          </div>
+          <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Recent logins</div>
             <button class="btn" onclick="loadLoginHistory()">Load login history</button>
             <div id="loginHistOut" style="margin-top:10px;font-size:11px;"></div>
@@ -1545,17 +1563,27 @@ function runExport(){
       if($('setRole'))$('setRole').value=me.role||'';
       if($('setOrg'))$('setOrg').value=me.org_id||'';
       _isAdmin=(me.role==='admin');
+      window.__meEmail=me.email||'';
+      if(window.loadMfa)window.loadMfa(me);
     }}catch(e){}
     const card=$('teamCard'); if(card)card.style.display=_isAdmin?'':'none';
     if(_isAdmin)loadTeam();
   };
   function userRow(u){
     const on=!u.disabled;
+    const isMe=(u.email===(window.__meEmail||''));
+    const roleBtn=(!isMe&&on)
+      ? '<button class="btn ghost sm" type="button" onclick="changeUserRole(\''+u.id+'\',\''+(u.role==='admin'?'member':'admin')+'\')">'+(u.role==='admin'?'make member':'make admin')+'</button>' : '';
+    let actions;
+    if(isMe) actions='<span class="kstatus active">you</span>';
+    else if(on) actions='<span class="kstatus active">active</span><div class="kactions">'+roleBtn
+      +'<button class="btn ghost sm" type="button" onclick="resendInvite(\''+u.id+'\')">re-invite</button>'
+      +'<button class="btn danger sm" type="button" onclick="disableUser(\''+u.id+'\')">disable</button></div>';
+    else actions='<span class="kstatus revoked">disabled</span><div class="kactions"><button class="btn sm" type="button" onclick="enableUser(\''+u.id+'\')">enable</button></div>';
     return '<div class="krow"'+(on?'':' style="opacity:.55;"')+'>'
       +'<div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" fill="'+(on?'var(--fox)':'var(--muted)')+'"/></svg></span></div>'
       +'<div class="kbody"><div class="kname">'+esc(u.email)+'</div><div class="kmeta">'+esc(u.role)+(on?'':' · disabled')+'</div></div>'
-      +(on?'<span class="kstatus active">active</span><div class="kactions"><button class="btn danger sm" type="button" onclick="disableUser(\''+u.id+'\')">disable</button></div>'
-          :'<span class="kstatus revoked">disabled</span>')
+      +actions
       +'</div>';
   }
   async function loadTeam(){
@@ -1580,6 +1608,58 @@ function runExport(){
     try{ const r=await api('/v1/auth/users/'+id+'/disable',{method:'POST'});
       if(!r.ok){ toast('Disable failed — '+await errText(r)); return; }
       toast('User disabled'); loadTeam();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.changeUserRole=async function(id,role){
+    if(!confirm('Change this user’s role to '+role+'?'))return;
+    try{ const r=await api('/v1/auth/users/'+id+'/role',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({role:role})});
+      if(!r.ok){ toast('Role change failed — '+await errText(r)); return; }
+      toast('Role updated to '+role); loadTeam();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.enableUser=async function(id){
+    try{ const r=await api('/v1/auth/users/'+id+'/enable',{method:'POST'});
+      if(!r.ok){ toast('Enable failed — '+await errText(r)); return; }
+      toast('User re-enabled'); loadTeam();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.resendInvite=async function(id){
+    try{ const r=await api('/v1/auth/users/'+id+'/resend-invite',{method:'POST'});
+      if(!r.ok){ toast('Re-invite failed — '+await errText(r)); return; }
+      toast('Invite email re-sent');
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  // ── two-factor self-enrollment (P1 · §D) ──
+  window.loadMfa=function(me){
+    const on=!!(me&&me.mfa_enabled);
+    const off=$('mfaOff'), onEl=$('mfaOn'), st=$('mfaState'), conf=$('mfaConfirm');
+    if(off)off.style.display=on?'none':'';
+    if(onEl)onEl.style.display=on?'':'none';
+    if(st)st.textContent=on?'Currently on.':'Currently off.';
+    if(conf)conf.style.display='none';
+  };
+  window.mfaEnroll=async function(){
+    try{ const r=await api('/v1/auth/mfa/enroll',{method:'POST'});
+      if(!r.ok){ toast('Could not send code — '+await errText(r)); return; }
+      const c=$('mfaConfirm'); if(c)c.style.display='block';
+      const inp=$('mfaEnrollCode'); if(inp)inp.focus();
+      toast('We emailed you a 6-digit code');
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.mfaConfirmEnable=async function(){
+    const inp=$('mfaEnrollCode'); const code=inp?inp.value.trim():'';
+    if(!code){ toast('Enter the code'); return; }
+    try{ const r=await api('/v1/auth/mfa/enable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:code})});
+      if(!r.ok){ toast('Enable failed — '+await errText(r)); return; }
+      toast('Two-factor is now on'); loadSettings();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.mfaDisable=async function(){
+    const inp=$('mfaOffPw'); const pw=inp?inp.value:'';
+    if(!pw){ toast('Enter your password to turn off 2FA'); return; }
+    try{ const r=await api('/v1/auth/mfa/disable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})});
+      if(!r.ok){ toast('Disable failed — '+await errText(r)); return; }
+      if(inp)inp.value=''; toast('Two-factor turned off'); loadSettings();
     }catch(e){ toast('Could not reach the server'); }
   };
   window.changePassword=async function(){

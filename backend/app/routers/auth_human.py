@@ -45,6 +45,7 @@ class MeResponse(BaseModel):
     email: str
     role: str
     org_id: str
+    mfa_enabled: bool = False
 
 
 class UserListItem(BaseModel):
@@ -256,7 +257,8 @@ def redeem_handoff(payload: HandoffRedeemRequest, request: Request,
 
 @router.get("/v1/auth/me", response_model=MeResponse)
 def me(user: User = Depends(require_user)):
-    return MeResponse(email=user.email, role=user.role, org_id=str(user.org_id))
+    return MeResponse(email=user.email, role=user.role, org_id=str(user.org_id),
+                      mfa_enabled=bool(user.mfa_enabled))
 
 
 class LoginHistoryItem(BaseModel):
@@ -382,3 +384,123 @@ def disable_user(
     target.disabled = True
     db.commit()
     return {"status": "disabled", "id": str(target.id)}
+
+
+# ─────────────────────── member management (P1 · §D) ────────────────────────
+
+def _target_user(user_id: str, admin: User, db: Session) -> User:
+    try:
+        uid = uuid.UUID(str(user_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid user id")
+    target = db.execute(
+        select(User).where(User.id == uid, User.org_id == admin.org_id)
+    ).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return target
+
+
+def _active_admin_count(org_id, db: Session, exclude=None) -> int:
+    q = select(func.count()).select_from(User).where(
+        User.org_id == org_id, User.role == "admin", User.disabled.is_(False))
+    if exclude is not None:
+        q = q.where(User.id != exclude)
+    return db.execute(q).scalar_one()
+
+
+class RoleChangeRequest(BaseModel):
+    role: str
+
+
+@router.post("/v1/auth/users/{user_id}/role")
+def change_role(
+    user_id: str,
+    payload: RoleChangeRequest,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Change a member's role (admin ↔ member). Refuses to demote the last active
+    admin, so an org can never lock itself out of admin access."""
+    role = payload.role.strip().lower()
+    if role not in _VALID_ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of {sorted(_VALID_ROLES)}")
+    target = _target_user(user_id, admin, db)
+    if target.role == "admin" and role != "admin" and _active_admin_count(
+            admin.org_id, db, exclude=target.id) == 0:
+        raise HTTPException(status_code=400,
+                            detail="this is the last admin — promote another member first")
+    target.role = role
+    db.commit()
+    return {"status": "role_changed", "id": str(target.id), "role": target.role}
+
+
+@router.post("/v1/auth/users/{user_id}/enable")
+def enable_user(
+    user_id: str,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Re-enable a previously disabled user in this org."""
+    target = _target_user(user_id, admin, db)
+    target.disabled = False
+    db.commit()
+    return {"status": "enabled", "id": str(target.id)}
+
+
+@router.post("/v1/auth/users/{user_id}/resend-invite")
+def resend_invite(
+    user_id: str,
+    admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Re-send the set-password / invite link to a user who hasn't finished setup."""
+    target = _target_user(user_id, admin, db)
+    if target.disabled:
+        raise HTTPException(status_code=400, detail="enable the user before re-inviting")
+    password_reset.issue_reset(db, target, target.email,
+                               get_settings().dashboard_url, invite=True)
+    return {"status": "invite_sent", "id": str(target.id)}
+
+
+# ─────────────────── MFA self-enrollment (P1 · §D) ──────────────────────────
+
+class MfaCodeRequest(BaseModel):
+    code: str
+
+
+class MfaDisableRequest(BaseModel):
+    password: str
+
+
+@router.post("/v1/auth/mfa/enroll")
+def mfa_enroll(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Start self-enrollment: email the logged-in user a one-time code they confirm
+    at /v1/auth/mfa/enable to switch two-factor on. Reuses the login OTP machinery."""
+    mfa.issue_code(db, user, user.email)
+    return {"status": "code_sent"}
+
+
+@router.post("/v1/auth/mfa/enable")
+def mfa_enable(payload: MfaCodeRequest, user: User = Depends(require_user),
+               db: Session = Depends(get_db)):
+    """Confirm the emailed code and turn two-factor ON for this account."""
+    if not mfa.code_valid(user, payload.code.strip()):
+        raise HTTPException(status_code=403, detail="that code is invalid or expired")
+    mfa.clear_code(user)
+    user.mfa_enabled = True
+    db.commit()
+    return {"status": "mfa_enabled"}
+
+
+@router.post("/v1/auth/mfa/disable")
+def mfa_disable(payload: MfaDisableRequest, user: User = Depends(require_user),
+                db: Session = Depends(get_db)):
+    """Turn two-factor OFF — re-checks the account password as a step-up guard."""
+    if not bcrypt.checkpw(payload.password.encode("utf-8"),
+                          user.password_hash.encode("utf-8")):
+        raise HTTPException(status_code=403, detail="password is incorrect")
+    mfa.clear_code(user)
+    user.mfa_enabled = False
+    db.commit()
+    return {"status": "mfa_disabled"}
