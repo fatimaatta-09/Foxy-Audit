@@ -734,6 +734,14 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <button class="btn ghost" id="anchorNowBtn" style="margin-top:8px;">⚓ anchor now (publish head to Sepolia)</button>
             <div class="vres" id="chainCheckResult"></div>
           </div>
+          <div class="clay pad" style="margin-top:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <div style="font-weight:700;font-size:11.5px;">Public-chain anchors</div>
+              <span id="anchorFresh" style="font-size:10px;color:var(--muted);font-family:var(--mono);"></span>
+            </div>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:11px;">Each receipt records your ledger head on a public blockchain — independent, third-party proof no one (not even us) can alter. <span id="anchorSLA"></span></div>
+            <div id="anchorReceipts"><div style="font-size:11px;color:var(--muted);">loading receipts…</div></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1172,6 +1180,9 @@ function runExport(){
   const shortHash=h=>(h||'').slice(0,8)+'…'+(h||'').slice(-4);
   // 7A-3 helpers: real time-to-verdict + real model name (no hardcoded fibs)
   const fmtVerdict=sec=>sec==null?'—':(sec<1?Math.round(sec*1000)+'ms':sec.toFixed(1)+'s');
+  // clean_rate is null until there are determinate grades (unknown verdicts are never
+  // counted clean) — render "—" honestly, never "null%".
+  const fmtPct=v=>v==null?'—':v+'%';
   const prettyModel=id=>String(id||'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 
   async function loadStats(){
@@ -1180,8 +1191,8 @@ function runExport(){
     const dv=document.querySelectorAll('#page-dashboard .stats .stat .v');
     if(dv[0])dv[0].textContent=money(s.breaches);
     // dv[1] "Open alerts" is set from the real threat feed in loadThreats (not grading failures)
-    if(dv[2])dv[2].textContent=s.clean_rate+'%';
-    const gc=$('gClean'); if(gc)gc.textContent=s.clean_rate+'%';
+    if(dv[2])dv[2].textContent=fmtPct(s.clean_rate);
+    const gc=$('gClean'); if(gc)gc.textContent=fmtPct(s.clean_rate);
     const gcb=$('gCleanBar'); if(gcb)gcb.style.width=Math.max(0,Math.min(100,Number(s.clean_rate)||0))+'%';
     // real time-to-verdict (replaces the old fabricated "42ms judge latency")
     const ttv=fmtVerdict(s.avg_seconds_to_verdict);
@@ -1199,7 +1210,7 @@ function runExport(){
     if(av[0])av[0].textContent=money(s.total_logged);
     if(av[1])av[1].textContent=money(s.breaches);
     // av[2] "Active alerts" is set from the real threat feed in loadThreats
-    if(av[3])av[3].textContent=s.clean_rate+'%';
+    if(av[3])av[3].textContent=fmtPct(s.clean_rate);
     // 7-day activity sparkline
     const bars=document.querySelectorAll('#page-analytics .spark .sbar');
     const days=(s.activity_7d||[]).slice(-7);
@@ -1268,7 +1279,8 @@ function runExport(){
       else if(!r.ok){ el.className='vres tamper'; el.textContent='anchor failed (HTTP '+r.status+')'; }
       else{ const a=await r.json(); el.className='vres match';
         el.innerHTML='⚓ anchored on '+(a.chain||'chain')+' — status <b>'+(a.status||'?')+'</b>'
-          +(a.tx_hash?'<br><a href="https://sepolia.etherscan.io/tx/'+a.tx_hash+'" target="_blank" rel="noopener" style="color:var(--fox2)">view tx on Etherscan ↗</a>':''); }
+          +(a.tx_hash?'<br><a href="https://sepolia.etherscan.io/tx/'+a.tx_hash+'" target="_blank" rel="noopener" style="color:var(--fox2)">view tx on Etherscan ↗</a>':'');
+        if(window.loadAnchors)window.loadAnchors(); }
     }catch(e){ el.className='vres tamper'; el.textContent='could not reach the server'; }
     if(btn)btn.disabled=false;
   }
@@ -1623,6 +1635,68 @@ function runExport(){
   const _go=window.go;
   if(typeof _go==='function'){
     window.go=function(page,el){ _go(page,el); if(page==='billing')loadBilling(); };
+  }
+})();
+</script>
+
+<!-- ═══ P0 · §A Anchor transparency: receipts + Etherscan links + SLA freshness ═══ -->
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const api=(path,opts)=>fetch(path,Object.assign({credentials:'same-origin'},opts||{}));
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const shortHash=h=>(h||'').slice(0,10)+'…'+(h||'').slice(-6);
+  // Map an anchor's chain label to a public block-explorer tx URL. Sepolia today;
+  // returns '' for the stub/local provider so no dead link is shown.
+  function explorerTx(chain,tx){
+    if(!tx)return '';
+    const c=String(chain||'').toLowerCase();
+    if(c.includes('sepolia'))return 'https://sepolia.etherscan.io/tx/'+tx;
+    if(c.includes('mainnet')||c==='ethereum'||c==='evm')return 'https://etherscan.io/tx/'+tx;
+    return '';
+  }
+  function timeAgo(iso){
+    if(!iso)return '';
+    const t=new Date(iso).getTime(); if(isNaN(t))return '';
+    const s=Math.max(0,Math.round((Date.now()-t)/1000));
+    if(s<60)return s+'s ago'; const m=Math.round(s/60); if(m<60)return m+'m ago';
+    const h=Math.round(m/60); if(h<48)return h+'h ago'; return Math.round(h/24)+'d ago';
+  }
+  const statusPill=st=>({confirmed:'safe',pending:'warn',submitted:'warn',failed:'breach'}[st]||'warn');
+  function receiptRow(a){
+    const link=explorerTx(a.chain,a.tx_hash);
+    const when=a.confirmed_at||a.anchored_at;
+    return '<div style="border-bottom:2px dashed var(--line);padding:9px 0;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+        +'<span class="pill '+statusPill(a.status)+'"><i></i>'+esc(a.status)+'</span>'
+        +'<span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);">seq #'+a.last_seq+(a.block_number?' · blk '+a.block_number:'')+'</span>'
+      +'</div>'
+      +'<div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:4px;word-break:break-all;">root '+esc(shortHash(a.root_hash))+'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">'
+        +'<span style="font-size:9.5px;color:var(--muted);">'+esc(a.chain||'chain')+' · '+esc(timeAgo(when))+'</span>'
+        +(link?'<a href="'+link+'" target="_blank" rel="noopener" style="color:var(--fox2);font-size:10px;">Etherscan ↗</a>'
+              :(a.detail?'<span style="font-size:9.5px;color:var(--muted);">'+esc(a.detail).slice(0,48)+'</span>':''))
+      +'</div></div>';
+  }
+  window.loadAnchors=async function(){
+    const box=$('anchorReceipts'); if(!box)return;
+    try{
+      const sla=await api('/v1/anchors/sla').then(r=>r.ok?r.json():null).catch(()=>null);
+      const s=$('anchorSLA'); if(s&&sla&&sla.cadence_human)s.textContent='Auto-anchored every '+sla.cadence_human+(sla.plan_tier?' on '+sla.plan_tier:'')+'.';
+      const r=await api('/v1/anchors'); if(!r.ok){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">could not load receipts.</div>'; return; }
+      const rows=await r.json();
+      const fresh=$('anchorFresh');
+      const conf=Array.isArray(rows)?rows.filter(a=>a.status==='confirmed'):[];
+      const last=(conf[0]||(rows&&rows[0]));
+      if(fresh)fresh.textContent=last?('last anchor '+timeAgo(last.confirmed_at||last.anchored_at)):'no anchors yet';
+      box.innerHTML=(Array.isArray(rows)&&rows.length)
+        ? rows.slice(0,8).map(receiptRow).join('')
+        : '<div style="font-size:11px;color:var(--muted);line-height:1.5;">No anchors yet. Your chain head is anchored automatically on your plan’s cadence, or hit “anchor now” above to publish it immediately.</div>';
+    }catch(e){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">could not reach the server.</div>'; }
+  };
+  const _go=window.go;
+  if(typeof _go==='function'){
+    window.go=function(page,el){ _go(page,el); if(page==='verify')window.loadAnchors(); };
   }
 })();
 </script>
