@@ -70,6 +70,17 @@ class AuditLog(Base):
     org_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
     seq: Mapped[int] = mapped_column(BigInteger, nullable=False)          # per-org monotonic
+    # Client identity makes retries idempotent and lets the verifier detect
+    # missing events before they disappear into a batch boundary.
+    event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    client_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    commitment_alg: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    event_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    occurred_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    chain_version: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="1")
     prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -90,6 +101,39 @@ class AuditLog(Base):
         DateTime(timezone=True), nullable=True)
     graded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class OrganizationSequence(Base):
+    """Locked per-org allocator used when the ledger is empty or concurrent."""
+
+    __tablename__ = "org_sequences"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    next_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="1")
+
+
+class AuditEvent(Base):
+    """Append-only facts associated with a ledger interaction.
+
+    The original audit_logs.gemini_verdict column is retained as a compatibility
+    projection for old clients. New verdicts are also written here so grading
+    does not rewrite the evidence event itself.
+    """
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    audit_log_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("audit_logs.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 

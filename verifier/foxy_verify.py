@@ -39,7 +39,23 @@ GENESIS_HASH = "0" * 64
 
 
 def compute_chain_hash(*, org_id, prompt_hash, response_hash, token_count,
-                       policy_tag, seq, prev_hash, agent=None):
+                       policy_tag, seq, prev_hash, agent=None, chain_version=1,
+                       event_id=None, client_id=None, client_seq=None,
+                       event_type=None, commitment_alg=None, event_metadata=None,
+                       pii_signals=None, occurred_at=None):
+    if chain_version >= 2:
+        event = {
+            "org_id": str(org_id), "event_id": str(event_id) if event_id else None,
+            "client_id": client_id, "client_seq": client_seq,
+            "event_type": event_type or "interaction",
+            "commitment_alg": commitment_alg or "sha256-legacy",
+            "prompt_hash": prompt_hash, "response_hash": response_hash,
+            "token_count": token_count, "policy_tag": policy_tag, "agent": agent,
+            "pii_signals": pii_signals, "event_metadata": event_metadata,
+            "occurred_at": occurred_at, "seq": seq,
+        }
+        blob = json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256((blob + prev_hash).encode("utf-8")).hexdigest()
     data_blob = f"{org_id}|{prompt_hash}|{response_hash}|{token_count}|{policy_tag}|{seq}"
     if agent:
         data_blob += f"|agent={agent}"
@@ -52,7 +68,11 @@ def _row_hash(org_id, row, prev_hash):
     return compute_chain_hash(
         org_id=org_id, prompt_hash=row["prompt_hash"], response_hash=row["response_hash"],
         token_count=row["token_count"], policy_tag=row["policy_tag"], seq=row["seq"],
-        prev_hash=prev_hash, agent=row.get("agent"))
+        prev_hash=prev_hash, agent=row.get("agent"), chain_version=row.get("chain_version", 1),
+        event_id=row.get("event_id"), client_id=row.get("client_id"),
+        client_seq=row.get("client_seq"), event_type=row.get("event_type"),
+        commitment_alg=row.get("commitment_alg"), event_metadata=row.get("event_metadata"),
+        pii_signals=row.get("pii_signals"), occurred_at=row.get("occurred_at"))
 
 
 def verify_export(data):
@@ -61,13 +81,28 @@ def verify_export(data):
     org_id = data.get("org_id")
     rows = sorted(data.get("logs", []), key=lambda r: r["seq"])
     prev = GENESIS_HASH
+    expected_seq = 1
     for row in rows:
+        if row["seq"] != expected_seq:
+            return {"ok": False, "count": len(rows), "first_broken_seq": row["seq"],
+                    "detail": f"sequence gap before seq {row['seq']}",
+                    "head": None, "head_seq": None}
+        if row.get("prev_hash", GENESIS_HASH) != prev:
+            return {"ok": False, "count": len(rows), "first_broken_seq": row["seq"],
+                    "detail": f"previous hash mismatch at seq {row['seq']}",
+                    "head": None, "head_seq": None}
         expected = _row_hash(org_id, row, prev)
         if expected != row.get("chain_hash"):
             return {"ok": False, "count": len(rows), "first_broken_seq": row["seq"],
                     "detail": f"chain hash mismatch at seq {row['seq']}",
                     "head": None, "head_seq": None}
         prev = row["chain_hash"]
+        expected_seq += 1
+    anchor = data.get("anchor") or {}
+    if rows and anchor.get("last_seq", 0) > rows[-1]["seq"]:
+        return {"ok": False, "count": len(rows), "first_broken_seq": None,
+                "detail": "export stops before the anchored checkpoint",
+                "head": None, "head_seq": None}
     return {"ok": True, "count": len(rows), "first_broken_seq": None,
             "detail": "chain intact",
             "head": prev if rows else GENESIS_HASH,

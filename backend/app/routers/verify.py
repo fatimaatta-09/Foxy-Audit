@@ -68,7 +68,16 @@ def verify(
     ).scalars().yield_per(1000)
 
     prev_hash = GENESIS_HASH
+    expected_seq = 1
     for row in rows:
+        if row.seq != expected_seq:
+            return VerifyResponse(
+                ok=False, count=total, first_broken_seq=row.seq,
+                detail=f"sequence gap before seq {row.seq}", last_anchor=anchor)
+        if row.prev_hash != prev_hash:
+            return VerifyResponse(
+                ok=False, count=total, first_broken_seq=row.seq,
+                detail=f"previous hash mismatch at seq {row.seq}", last_anchor=anchor)
         expected = compute_chain_hash(
             org_id=org.id,
             prompt_hash=row.prompt_hash,
@@ -78,6 +87,15 @@ def verify(
             seq=row.seq,
             prev_hash=prev_hash,
             agent=row.agent,
+            chain_version=row.chain_version or 1,
+            event_id=row.event_id,
+            client_id=row.client_id,
+            client_seq=row.client_seq,
+            event_type=row.event_type,
+            commitment_alg=row.commitment_alg,
+            event_metadata=row.event_metadata,
+            pii_signals=row.pii_signals,
+            occurred_at=row.occurred_at,
         )
         if expected != row.chain_hash:
             return VerifyResponse(
@@ -88,6 +106,7 @@ def verify(
                 last_anchor=anchor,
             )
         prev_hash = row.chain_hash
+        expected_seq += 1
 
     return VerifyResponse(ok=True, count=total, first_broken_seq=None,
                           detail="chain intact", last_anchor=anchor)
@@ -122,6 +141,11 @@ def verify_hash(
         org_id=org.id, prompt_hash=row.prompt_hash, response_hash=row.response_hash,
         token_count=row.token_count, policy_tag=row.policy_tag, seq=row.seq,
         prev_hash=prev_hash, agent=row.agent,
+        chain_version=row.chain_version or 1,
+        event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
+        event_type=row.event_type, commitment_alg=row.commitment_alg,
+        event_metadata=row.event_metadata, pii_signals=row.pii_signals,
+        occurred_at=row.occurred_at,
     )
     verified = (expected == row.chain_hash)
 

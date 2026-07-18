@@ -97,7 +97,11 @@ def recompute_head(db: Session, org_id, upto_seq: int) -> str | None:
         prev = compute_chain_hash(
             org_id=org_id, prompt_hash=row.prompt_hash, response_hash=row.response_hash,
             token_count=row.token_count, policy_tag=row.policy_tag, seq=row.seq, prev_hash=prev,
-            agent=row.agent,
+            agent=row.agent, chain_version=row.chain_version or 1,
+            event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
+            event_type=row.event_type, commitment_alg=row.commitment_alg,
+            event_metadata=row.event_metadata, pii_signals=row.pii_signals,
+            occurred_at=row.occurred_at,
         )
         last = prev
     return last

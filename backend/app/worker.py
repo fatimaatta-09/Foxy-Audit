@@ -25,15 +25,17 @@ import signal
 import threading
 import time
 import uuid
+import hashlib
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import gemini
+from . import policy_engine
 from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_due
 from .config import get_settings
 from .db import SessionLocal
-from .models import OrgPolicy
+from .models import AuditEvent, OrgPolicy
 
 log = logging.getLogger("foxy.worker")
 
@@ -55,7 +57,10 @@ _CLAIM_SQL = text(
             LIMIT :batch
      )
     RETURNING id, org_id, prompt_hash, response_hash,
-              token_count, policy_tag, pii_signals, grading_attempts
+              token_count, policy_tag, pii_signals, grading_attempts,
+              chain_hash,
+              event_id, client_id, client_seq, event_type, commitment_alg,
+              event_metadata
     """
 )
 
@@ -120,16 +125,31 @@ def _grade_one(db: Session, row) -> None:
         "token_count": row["token_count"],
         "policy_tag": row["policy_tag"],
         "pii_signals": row["pii_signals"],
+        "event_id": str(row["event_id"]) if row.get("event_id") else None,
+        "event_type": row.get("event_type"),
+        "commitment_alg": row.get("commitment_alg"),
+        "event_metadata": row.get("event_metadata"),
     }
     policy_config = _policy_config(db, row["org_id"])
     history = _org_history(db, row["org_id"])
     verdict = gemini.evaluate(meta, policy_config, history=history)
+    if verdict.decision == "unknown" and verdict.reason.startswith("evaluator_unavailable"):
+        verdict = policy_engine.evaluate(meta, policy_config)
     # Scope RLS to this row's org before the write-back (no-op under a
     # BYPASSRLS/superuser role, required under a hardened one).
     db.execute(text("SELECT set_config('app.current_org', :oid, true)"),
                {"oid": str(row["org_id"])})
     db.execute(_MARK_GRADED_SQL,
                {"id": row["id"], "verdict": json.dumps(verdict.model_dump())})
+    payload = verdict.model_dump()
+    event_blob = json.dumps({"audit_log_id": str(row["id"]),
+                             "event_type": "verdict", "payload": payload,
+                             "parent_chain_hash": row.get("chain_hash", "")},
+                            sort_keys=True, separators=(",", ":"))
+    db.add(AuditEvent(
+        org_id=row["org_id"], audit_log_id=row["id"], event_type="verdict",
+        payload=payload, event_hash=hashlib.sha256(event_blob.encode()).hexdigest(),
+    ))
     db.commit()
 
 

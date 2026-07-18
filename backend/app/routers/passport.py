@@ -96,7 +96,11 @@ def generate_passport(
             policy_tag=row.policy_tag,
             seq=row.seq,
             prev_hash=prev_hash,
-            agent=row.agent,
+            agent=row.agent, chain_version=row.chain_version or 1,
+            event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
+            event_type=row.event_type, commitment_alg=row.commitment_alg,
+            event_metadata=row.event_metadata, pii_signals=row.pii_signals,
+            occurred_at=row.occurred_at,
         )
         if expected != row.chain_hash:
             chain_intact = False

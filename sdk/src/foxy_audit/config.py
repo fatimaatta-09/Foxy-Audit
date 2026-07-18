@@ -26,6 +26,10 @@ class FoxyConfig:
     udp_port: int = DEFAULT_UDP_PORT
     desktop_ping: bool = True
     timeout: float = DEFAULT_TIMEOUT
+    commitment_key: str = ""
+    spool_path: str = ""
+    client_id: str = ""
+    audit_required: bool = False
 
     @classmethod
     def resolve(
@@ -36,6 +40,10 @@ class FoxyConfig:
         udp_port: int | None = None,
         desktop_ping: bool = True,
         timeout: float = DEFAULT_TIMEOUT,
+        commitment_key: str | None = None,
+        spool_path: str | None = None,
+        client_id: str | None = None,
+        audit_required: bool | None = None,
     ) -> "FoxyConfig":
         key = api_key if api_key is not None else os.getenv("FOXY_API_KEY", "")
         ep = endpoint if endpoint is not None else os.getenv("FOXY_BACKEND_URL", DEFAULT_ENDPOINT)
@@ -46,6 +54,12 @@ class FoxyConfig:
             udp_port=int(udp_port or DEFAULT_UDP_PORT),
             desktop_ping=desktop_ping,
             timeout=timeout,
+            commitment_key=(commitment_key if commitment_key is not None
+                            else os.getenv("FOXY_COMMITMENT_KEY", key)).strip(),
+            spool_path=spool_path or os.getenv("FOXY_SPOOL_PATH", ""),
+            client_id=client_id or os.getenv("FOXY_CLIENT_ID", "") or __import__("uuid").uuid4().hex,
+            audit_required=(audit_required if audit_required is not None
+                            else os.getenv("FOXY_AUDIT_REQUIRED", "false").lower() in {"1", "true", "yes"}),
         )
 
     @property

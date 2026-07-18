@@ -8,9 +8,8 @@ Policy-aware: accepts optional policy_config dict so the evaluator enforces the
 rules the org actually configured (PII detection, prompt injection, regulated-data
 mode, max token threshold). This implements Core Requirement #1's enforcement layer.
 
-Failure policy: if the judge is unreachable or returns unusable output, fall back to
-a safe default so the tamper-evident chain row is still written (the chain is the
-legal artifact; the AI grade is advisory). Flip GEMINI_FAIL_CLOSED to flag instead.
+Failure policy: if the judge is unreachable or returns unusable output, return an
+explicit ``unknown`` verdict. Unknown is never counted as a clean result.
 """
 
 from __future__ import annotations
@@ -80,8 +79,10 @@ def _build_system_prompt(policy_config: dict[str, Any] | None = None,
 
 def _fallback(reason: str) -> Verdict:
     if get_settings().gemini_fail_closed:
-        return Verdict(policy_breach=True, reason=f"evaluator_unavailable:{reason}", risk_score=50)
-    return Verdict(policy_breach=False, reason="evaluator_unavailable", risk_score=0)
+        return Verdict(policy_breach=True, reason=f"evaluator_unavailable:{reason}",
+                       risk_score=50, decision="unknown", rules=[])
+    return Verdict(policy_breach=False, reason=f"evaluator_unavailable:{reason}",
+                   risk_score=0, decision="unknown", rules=[])
 
 
 def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
@@ -117,6 +118,8 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
             policy_breach=bool(data.get("policy_breach", False)),
             reason=str(data.get("reason", ""))[:300],
             risk_score=int(data.get("risk_score", 0)),
+            decision=str(data.get("decision", "breach" if data.get("policy_breach") else "clean")),
+            rules=[str(v)[:80] for v in data.get("rules", []) if isinstance(v, str)],
         )
     except Exception as exc:  # network / quota / bad-JSON / version drift
         log.warning("gemini evaluate failed (%s): %s", type(exc).__name__, exc)

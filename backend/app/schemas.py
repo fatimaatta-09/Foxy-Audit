@@ -23,6 +23,30 @@ class LogIngest(BaseModel):
     # to render raw and can't smuggle HTML/delimiters into the chain blob.
     agent: str | None = Field(default=None, max_length=128,
                               pattern=r"^[A-Za-z0-9_.\-: /]{1,128}$")
+    event_id: uuid.UUID | None = None
+    client_id: str | None = Field(default=None, max_length=128,
+                                  pattern=r"^[A-Za-z0-9_.:-]{1,128}$")
+    client_seq: int | None = Field(default=None, ge=1)
+    event_type: str = Field(default="interaction", pattern=r"^[a-z0-9_]{1,32}$")
+    commitment_alg: str = Field(default="sha256-legacy", pattern=r"^[a-z0-9-]{1,32}$")
+    event_metadata: dict[str, Any] | None = None
+    occurred_at: datetime | None = None
+
+    @field_validator("event_metadata")
+    @classmethod
+    def _metadata_is_content_blind(cls, value):
+        if value is None:
+            return value
+        allowed = {"request_id", "trace_id", "session_id", "provider", "model",
+                   "tool_names", "retrieval_refs", "client_seq_gap"}
+        unknown = set(value) - allowed
+        if unknown:
+            raise ValueError("event_metadata contains unsupported fields")
+        for key, item in value.items():
+            values = item if isinstance(item, list) else [item]
+            if len(values) > 64 or any(len(str(v)) > 256 for v in values):
+                raise ValueError(f"event_metadata.{key} is too large")
+        return value
 
     @field_validator("prompt_hash", "response_hash")
     @classmethod
@@ -36,6 +60,8 @@ class Verdict(BaseModel):
     policy_breach: bool = False
     reason: str = ""
     risk_score: int = Field(default=0, ge=0, le=100)
+    decision: str = Field(default="unknown", pattern=r"^(clean|breach|unknown)$")
+    rules: list[str] = Field(default_factory=list)
 
 
 class LogResponse(BaseModel):
@@ -72,6 +98,13 @@ class LogListItem(BaseModel):
     """One row returned by GET /v1/logs."""
     id: uuid.UUID
     seq: int
+    event_id: uuid.UUID | None = None
+    client_id: str | None = None
+    client_seq: int | None = None
+    event_type: str | None = None
+    commitment_alg: str | None = None
+    event_metadata: dict[str, Any] | None = None
+    chain_version: int = 1
     prompt_hash: str
     response_hash: str
     token_count: int
@@ -111,7 +144,7 @@ class ActivityDay(BaseModel):
 class StatsResponse(BaseModel):
     total_logged: int
     breaches: int
-    clean_rate: float            # percent, 0-100
+    clean_rate: float | None     # percent, 0-100; None when no determinate grades exist
     avg_token_count: float
     judge_model: str             # the real configured Gemini judge model
     avg_seconds_to_verdict: float | None   # avg graded_at - created_at; None if none graded
