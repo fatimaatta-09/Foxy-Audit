@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import login_history, mfa, password_reset
+from .. import account_audit, login_history, mfa, password_reset
 from ..auth import require_role, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
@@ -382,6 +382,9 @@ def disable_user(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
     target.disabled = True
+    account_audit.record_account_action(
+        db, org_id=admin.org_id, actor_email=admin.email, action="member.disable",
+        target=target.email)
     db.commit()
     return {"status": "disabled", "id": str(target.id)}
 
@@ -431,6 +434,9 @@ def change_role(
         raise HTTPException(status_code=400,
                             detail="this is the last admin — promote another member first")
     target.role = role
+    account_audit.record_account_action(
+        db, org_id=admin.org_id, actor_email=admin.email, action="member.role_change",
+        target=target.email, detail={"role": role})
     db.commit()
     return {"status": "role_changed", "id": str(target.id), "role": target.role}
 
@@ -444,6 +450,9 @@ def enable_user(
     """Re-enable a previously disabled user in this org."""
     target = _target_user(user_id, admin, db)
     target.disabled = False
+    account_audit.record_account_action(
+        db, org_id=admin.org_id, actor_email=admin.email, action="member.enable",
+        target=target.email)
     db.commit()
     return {"status": "enabled", "id": str(target.id)}
 
@@ -489,6 +498,8 @@ def mfa_enable(payload: MfaCodeRequest, user: User = Depends(require_user),
         raise HTTPException(status_code=403, detail="that code is invalid or expired")
     mfa.clear_code(user)
     user.mfa_enabled = True
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email, action="mfa.enable")
     db.commit()
     return {"status": "mfa_enabled"}
 
@@ -502,5 +513,7 @@ def mfa_disable(payload: MfaDisableRequest, user: User = Depends(require_user),
         raise HTTPException(status_code=403, detail="password is incorrect")
     mfa.clear_code(user)
     user.mfa_enabled = False
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email, action="mfa.disable")
     db.commit()
     return {"status": "mfa_disabled"}

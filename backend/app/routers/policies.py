@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from .. import account_audit
 from ..auth import require_role, resolve_org
 from ..db import get_db
 from ..models import OrgPolicy, Organization, User
@@ -104,6 +105,10 @@ def update_policies(
         raise HTTPException(status_code=422, detail="notify_webhook_url must be an http(s) URL")
     row.notify_email = email
     row.notify_webhook_url = hook
+    account_audit.record_account_action(
+        db, org_id=admin.org_id, actor_email=admin.email, action="policy.update",
+        detail={"enforcement_mode": body.enforcement_mode,
+                "notify_on_breach": body.notify_on_breach})
     db.commit()
     db.refresh(row)
     return _to_config(row)
