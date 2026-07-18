@@ -1,9 +1,9 @@
 # foxy-audit (SDK)
 
-> Governance-as-Code for AI. One decorator → a tamper-evident, privacy-preserving audit trail.
+> Governance-as-Code for AI. One decorator -> a tamper-evident, content-blind audit trail.
 
-The SDK hashes your LLM prompt + response **locally** (SHA-256), throws the raw text away, and
-streams only metadata to the Foxy Audit backend. It also fires a best-effort local UDP ping so the
+The SDK creates customer-keyed HMAC commitments for supported LLM inputs and outputs locally,
+throws raw text away before upload, and durably spools only metadata to the Foxy Audit backend. It also fires a best-effort local UDP ping so the
 desktop "fox" companion reacts in real time (green on every logged call, red on a policy breach).
 
 ## Install
@@ -59,24 +59,29 @@ verifying.
 | API key        | `api_key`      | `FOXY_API_KEY`      | _(none → HTTP disabled)_ |
 | Backend URL    | `endpoint`     | `FOXY_BACKEND_URL`  | `http://127.0.0.1:8000`  |
 | Desktop ping   | `desktop_ping` | —                   | `True` (127.0.0.1:9999)  |
+| Commitment key | `commitment_key` | `FOXY_COMMITMENT_KEY` | API key when omitted |
+| Durable spool | `spool_path` | `FOXY_SPOOL_PATH` | `~/.foxy-audit/spool.sqlite3` |
+| Stable client id | `client_id` | `FOXY_CLIENT_ID` | random per client instance |
+| Required capture | `audit_required` | `FOXY_AUDIT_REQUIRED` | `False` |
 
 With no API key the SDK is a **graceful no-op for the cloud path**: it still runs your function and
-still pings the desktop fox, but skips the HTTP upload — so you can see the fox react before any
-backend exists.
+still pings the desktop fox, but skips the HTTP upload. For regulated workflows, set
+`audit_required=True`; the decorator then waits for a server receipt and raises if durable delivery
+cannot be confirmed.
 
 ## Guarantees
 
-- **Never blocks** your function — the HTTP upload runs on a background daemon thread.
-- **Never raises** its own errors into your app — all telemetry failures are swallowed.
-- **Never sees raw text** server-side — only SHA-256 digests + token count + policy tag leave the host.
-- Works with both **sync and async** functions; the return value is always passed through unchanged.
+- **Default path is asynchronous** — the HTTP upload runs on a background daemon thread after a local durable enqueue.
+- **Retries do not discard events** — failed uploads remain in the SQLite/WAL spool.
+- **Content-blind by design** — commitments, token counts, policy tags, and bounded identifiers leave the host; raw text is not sent by the SDK.
+- Works with **sync, async, and generator** functions; host return values are passed through unchanged.
 
 ## What gets sent
 
 To the backend (`POST /v1/logs`, `Authorization: Bearer <key>`):
 
 ```json
-{"prompt_hash": "<64 hex>", "response_hash": "<64 hex>", "token_count": 123, "policy_tag": "hipaa_basic"}
+{"event_id": "<uuid>", "client_id": "...", "client_seq": 1, "commitment_alg": "hmac-sha256", "prompt_hash": "<64 hex>", "response_hash": "<64 hex>", "token_count": 123, "policy_tag": "hipaa_basic"}
 ```
 
 To the desktop fox (UDP `127.0.0.1:9999`):

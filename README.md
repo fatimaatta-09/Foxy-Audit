@@ -1,6 +1,6 @@
 # 🦊 Foxy Audit
 
-> **Friendly on the surface. Unbreakable under the hood.**
+> **Friendly on the surface. Tamper-evident under the hood.**
 > *Mathematically verifiable AI compliance, powered by a lightweight SDK and a tamper-evident cryptographic ledger.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -12,22 +12,22 @@
 
 ## 💡 The Compliance Nightmare
 
-The **EU AI Act**, **HIPAA**, and **PCI DSS v4.0** mandate strictly *tamper-evident logging* for production AI systems. Standard writable databases are no longer legally sufficient. If an insider or hacker gains root access, audit trails can be altered or deleted without leaving a trace.
+Regulated buyers increasingly require defensible audit evidence for production AI systems. Standard writable databases do not by themselves show whether a historical record was changed, and a one-time audit does not provide continuous evidence.
 
-Existing enterprise governance tools are heavy, boring, and require massive integration overhead. Developers need a drop-in utility that guarantees data integrity, and compliance officers need an interface they actually want to use.
+Existing enterprise governance tools can require substantial integration overhead. Developers need a low-friction capture path, and compliance officers need evidence they can independently verify.
 
 ## ⚡ The Foxy Solution
 
-**Foxy Audit** (powered by the CipherTrail engine) bridges the gap between hardcore cryptographic immutability and user-friendly AI governance.
+**Foxy Audit** (powered by the CipherTrail engine) bridges cryptographic tamper evidence and user-friendly AI governance.
 
-We provide a lightweight Python SDK (`pip install foxy-audit`) that intercepts AI inputs/outputs, performs ultra-low latency local hashing, and streams data into an asynchronous, cryptographically chained backend. For the compliance officer, "Foxy" acts as an interactive desktop copilot that visualizes system health and generates verifiable audit proofs on demand.
+We provide a lightweight Python SDK (`pip install foxy-audit`) that captures supported AI inputs/outputs locally, creates content-blind commitments, durably spools metadata, and streams it into an asynchronous, cryptographically chained backend. For the compliance officer, "Foxy" acts as an interactive desktop copilot that visualizes system health and generates independently verifiable evidence on demand.
 
 ### 🏗️ High-Level System Architecture
 
 ```text
 [ Your Production App / AI Model ]
                │
-               ▼  (Local SHA-256 Hash via @foxy.audit)
+               ▼  (Local keyed commitment via @foxy.audit)
          [ FastAPI API ]
                │
                ▼  (Immediate 202 Accepted Task Offloading: <1ms Latency)
@@ -42,11 +42,11 @@ We provide a lightweight Python SDK (`pip install foxy-audit`) that intercepts A
 
 ## ✨ Key Features
 
-- **<1ms Integration Latency** — The SDK computes SHA-256 hashes locally on the host machine and fires an asynchronous telemetry payload. Your core application experiences absolutely zero lag.
+- **Durable asynchronous capture** — The default SDK path writes metadata to a local SQLite/WAL spool and uploads in the background with retry. Measure application overhead in your own workload; no fixed latency or zero-lag guarantee is made.
 
-- **Cryptographically Chained Integrity** — Every database row is anchored to the row before it via a sequential SHA-256 hash chain (each row's hash includes the previous row's hash). If a historical row is edited, its hash — and every hash after it — no longer recomputes, exposing exactly where the tampering began. (This is a hash chain, not a Merkle tree or a blockchain.)
+- **Cryptographically Chained Integrity** — Every database row is linked to the row before it via a versioned sequential hash chain. New SDK events use customer-keyed HMAC commitments; changing captured metadata or deleting/reordering a row is detectable by verification. (This is a hash chain, not a Merkle tree or a blockchain.)
 
-- **Intelligent Policy Grading** — A background worker powered by Google Gemini 2.5 Flash evaluates telemetry data against strict regulatory frameworks in real-time.
+- **Evidence-bounded Policy Grading** — Deterministic local rules evaluate signals the system actually receives. An optional Gemini judge can add metadata-level analysis; unavailable evaluation is reported as unknown, not clean.
 
 - **The "Foxy" UI** — A sleek, claymorphism-styled enterprise portal designed for compliance officers to visually verify cryptographic proofs, interact with their audit logs, and download verification PDFs with a single click.
 
@@ -87,19 +87,19 @@ def call_medical_llm(user_prompt: str):
 
 | Layer | Technology |
 |---|---|
-| Developer SDK | Native Python Wrapper, `hashlib`, `requests-async` |
+| Developer SDK | Native Python Wrapper, SQLite/WAL spool, keyed commitments, `requests` |
 | Backend Core | Python FastAPI, SQLAlchemy (PostgreSQL Object Mapping) |
-| Asynchronous Queueing | Redis / BullMQ Task Management |
+| Asynchronous Queueing | SDK SQLite/WAL spool + PostgreSQL grading outbox |
 | AI Evaluation Layer | Google Gemini 2.5 Flash (Asynchronous Compliance Parsing) |
-| Auditor Interface | Next.js, Tailwind CSS, Anime.js (Cryptographic UI animations) |
+| Auditor Interface | FastAPI-served admin/customer web surfaces + desktop companion |
 | Deployment | Production-ready for Railway (Backend) and Vercel (Frontend) |
 
 ## 🔮 Future High-Performance Roadmap
 
 - [ ] **Hardware-Root-of-Trust (FPGA Support)** — Offloading client-side SHA-256 hashing directly to local FPGA hardware layers to achieve zero software-overhead execution.
-- [ ] **Tier-1 ZKPs (snarkjs Integration)** — Generating pre-compiled Groth16 Zero-Knowledge Proof circuits to provide absolute compliance verifiability while keeping underlying prompt data completely private.
+- [ ] **Optional zero-knowledge proofs** — Explore independently reviewed proof systems for narrowly defined statements; this is not part of the current evidence model.
 - [ ] **Automated Incident Response Circuit Breakers** — Allowing the SDK to catch compliance failure states pushed from the backend to instantly isolate malicious user sessions.
 
 ---
 
-Built for the future of legally safe, autonomous AI. Distributed under the MIT License.
+Built to help teams collect and verify AI-governance evidence. It is not legal advice or a certification. Distributed under the MIT License.

@@ -97,10 +97,48 @@ def recompute_head(db: Session, org_id, upto_seq: int) -> str | None:
         prev = compute_chain_hash(
             org_id=org_id, prompt_hash=row.prompt_hash, response_hash=row.response_hash,
             token_count=row.token_count, policy_tag=row.policy_tag, seq=row.seq, prev_hash=prev,
-            agent=row.agent,
+            agent=row.agent, chain_version=row.chain_version or 1,
+            event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
+            event_type=row.event_type, commitment_alg=row.commitment_alg,
+            event_metadata=row.event_metadata, pii_signals=row.pii_signals,
+            occurred_at=row.occurred_at,
         )
         last = prev
     return last
+
+
+def validate_chain(db: Session, org_id, upto_seq: int) -> tuple[bool, str, str | None]:
+    """Validate all stored rows before publishing a root externally."""
+    rows = db.execute(
+        select(AuditLog)
+        .where(AuditLog.org_id == org_id, AuditLog.seq <= upto_seq)
+        .order_by(AuditLog.seq.asc())
+    ).scalars().yield_per(1000)
+    prev = GENESIS_HASH
+    expected_seq = 1
+    last = None
+    for row in rows:
+        if row.seq != expected_seq:
+            return False, f"sequence gap before seq {row.seq}", last
+        if row.prev_hash != prev:
+            return False, f"previous hash mismatch at seq {row.seq}", last
+        expected = compute_chain_hash(
+            org_id=org_id, prompt_hash=row.prompt_hash, response_hash=row.response_hash,
+            token_count=row.token_count, policy_tag=row.policy_tag, seq=row.seq,
+            prev_hash=prev, agent=row.agent, chain_version=row.chain_version or 1,
+            event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
+            event_type=row.event_type, commitment_alg=row.commitment_alg,
+            event_metadata=row.event_metadata, pii_signals=row.pii_signals,
+            occurred_at=row.occurred_at,
+        )
+        if expected != row.chain_hash:
+            return False, f"chain hash mismatch at seq {row.seq}", last
+        prev = row.chain_hash
+        last = prev
+        expected_seq += 1
+    if expected_seq - 1 != upto_seq:
+        return False, f"chain ends before seq {upto_seq}", last
+    return True, "chain intact", last
 
 
 # ─────────────────────────────── providers ───────────────────────────────────
@@ -193,6 +231,21 @@ def run_provider(root_hash: str, settings: Settings) -> AnchorReceipt:
     return provider(root_hash, settings)
 
 
+def run_validated_provider(db: Session, org_id, root_hash: str, last_seq: int,
+                           settings: Settings) -> AnchorReceipt:
+    """Refuse external publication unless the stored chain recomputes cleanly."""
+    valid, detail, recomputed_head = validate_chain(db, org_id, last_seq)
+    if not valid or recomputed_head != root_hash:
+        detail = detail if not valid else "stored head differs from recomputed head"
+        log.warning("anchor for org %s refused: %s", org_id, detail)
+        return AnchorReceipt(
+            chain=settings.anchor_evm_chain if settings.anchor_provider == "evm"
+            else settings.anchor_provider,
+            status="failed", detail=f"chain integrity check failed: {detail}"[:500],
+        )
+    return run_provider(root_hash, settings)
+
+
 # ─────────────────────────────── orchestration ───────────────────────────────
 
 def latest_anchor(db: Session, org_id) -> ChainAnchor | None:
@@ -242,7 +295,7 @@ def anchor_org(db: Session, org_id, settings: Settings | None = None,
                     return None   # within the tier's cadence window — wait
 
     try:
-        receipt = run_provider(head_hash, settings)
+        receipt = run_validated_provider(db, org_id, head_hash, last_seq, settings)
     except Exception as exc:                        # noqa: BLE001 — record the failure
         safe = _redact(str(exc), settings)          # never persist/log RPC URL or key
         log.warning("anchor for org %s failed: %s", org_id, safe)

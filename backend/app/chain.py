@@ -11,8 +11,11 @@ so there is exactly one implementation.
 from __future__ import annotations
 
 import hashlib
+import json
 
 GENESIS_HASH = "0" * 64
+CHAIN_VERSION_LEGACY = 1
+CHAIN_VERSION_CAPTURE_V2 = 2
 
 
 def compute_chain_hash(
@@ -25,7 +28,30 @@ def compute_chain_hash(
     seq: int,
     prev_hash: str,
     agent: str | None = None,
+    chain_version: int = CHAIN_VERSION_LEGACY,
+    event_id=None,
+    client_id: str | None = None,
+    client_seq: int | None = None,
+    event_type: str | None = None,
+    commitment_alg: str | None = None,
+    event_metadata: dict | None = None,
+    pii_signals: list[str] | None = None,
+    occurred_at=None,
 ) -> str:
+    if chain_version >= CHAIN_VERSION_CAPTURE_V2:
+        event = {
+            "org_id": str(org_id), "event_id": str(event_id) if event_id else None,
+            "client_id": client_id, "client_seq": client_seq,
+            "event_type": event_type or "interaction",
+            "commitment_alg": commitment_alg or "sha256-legacy",
+            "prompt_hash": prompt_hash, "response_hash": response_hash,
+            "token_count": token_count, "policy_tag": policy_tag, "agent": agent,
+            "pii_signals": pii_signals, "event_metadata": event_metadata,
+            "occurred_at": occurred_at.isoformat() if hasattr(occurred_at, "isoformat") else occurred_at,
+            "seq": seq,
+        }
+        data_blob = json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256((data_blob + prev_hash).encode("utf-8")).hexdigest()
     data_blob = f"{org_id}|{prompt_hash}|{response_hash}|{token_count}|{policy_tag}|{seq}"
     # `agent` (which model produced the interaction) is appended ONLY when present,
     # so rows written before 6B hash byte-for-byte identically — the whole pre-6B

@@ -25,7 +25,7 @@ from ..auth import require_org, resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuditLog, Organization
+from ..models import AuditLog, Organization, OrganizationSequence
 from ..schemas import (
     ActivityDay, GradingCounts, LogIngest, LogListItem, LogListResponse,
     StatsResponse,
@@ -61,7 +61,57 @@ def ingest_batch(
 ):
     """Write the batch to the hash chain synchronously (durable). Each row lands
     grading_status='pending' (column default); the poller grades them async."""
-    # Lock the org's tail row so concurrent batches can't fork the chain.
+    # The sequence row exists even for an empty ledger. Locking it avoids the
+    # classic first-ingest race where two writers both choose seq=1.
+    db.execute(text(
+        "INSERT INTO org_sequences(org_id, next_seq) "
+        "SELECT :org_id, COALESCE(MAX(seq) + 1, 1) FROM audit_logs WHERE org_id = :org_id "
+        "ON CONFLICT (org_id) DO NOTHING"), {"org_id": org.id})
+    sequence = db.execute(
+        select(OrganizationSequence).where(OrganizationSequence.org_id == org.id)
+        .with_for_update()
+    ).scalar_one()
+
+    # A retry with the same event_id returns the original receipt. A conflicting
+    # payload is rejected rather than silently treating two events as one.
+    existing_receipts = []
+    new_items = []
+    for item in payload:
+        existing = None
+        if item.event_id:
+            existing = db.execute(
+                select(AuditLog).where(AuditLog.org_id == org.id,
+                                       AuditLog.event_id == item.event_id)
+            ).scalar_one_or_none()
+            stored_metadata = dict(existing.event_metadata or {}) if existing else {}
+            stored_metadata.pop("client_seq_gap", None)
+            requested_metadata = dict(item.event_metadata or {})
+            if existing and any((
+                existing.prompt_hash != item.prompt_hash,
+                existing.response_hash != item.response_hash,
+                existing.token_count != item.token_count,
+                existing.policy_tag != item.policy_tag,
+                existing.agent != item.agent,
+                existing.client_id != item.client_id,
+                existing.client_seq != item.client_seq,
+                existing.event_type != item.event_type,
+                existing.commitment_alg != item.commitment_alg,
+                existing.pii_signals != item.pii_signals,
+                stored_metadata != requested_metadata,
+                existing.occurred_at != item.occurred_at,
+            )):
+                raise HTTPException(status_code=409,
+                                    detail=f"event_id {item.event_id} was already used with different content")
+        if existing:
+            existing_receipts.append({
+                "event_id": str(item.event_id), "seq": existing.seq,
+                "chain_hash": existing.chain_hash, "status": "duplicate",
+            })
+        else:
+            new_items.append(item)
+
+    # Lock the org's tail row after taking the allocator lock. Legacy rows can
+    # still exist, so the allocator is initialized from the observed tail above.
     prev = db.execute(
         select(AuditLog.seq, AuditLog.chain_hash)
         .where(AuditLog.org_id == org.id)
@@ -73,8 +123,30 @@ def ingest_batch(
     prev_hash = prev.chain_hash if prev else GENESIS_HASH
 
     rows = []
-    for item in payload:
-        seq = prev_seq + 1
+    receipts = list(existing_receipts)
+    warnings = []
+    client_last: dict[str, int] = {}
+    for item in new_items:
+        seq = int(sequence.next_seq)
+        sequence.next_seq = seq + 1
+        metadata = dict(item.event_metadata or {})
+        if item.client_id and item.client_seq is not None:
+            if item.client_id not in client_last:
+                client_last[item.client_id] = db.execute(
+                    select(func.max(AuditLog.client_seq)).where(
+                        AuditLog.org_id == org.id,
+                        AuditLog.client_id == item.client_id,
+                    )
+                ).scalar() or 0
+            expected = client_last[item.client_id] + 1
+            if item.client_seq != expected:
+                metadata["client_seq_gap"] = {
+                    "expected": expected, "received": item.client_seq,
+                }
+                warnings.append({"client_id": item.client_id,
+                                 "expected": expected, "received": item.client_seq})
+            client_last[item.client_id] = item.client_seq
+        chain_version = 2 if item.event_id else 1
         chain_hash = compute_chain_hash(
             org_id=org.id,
             prompt_hash=item.prompt_hash,
@@ -84,22 +156,43 @@ def ingest_batch(
             seq=seq,
             prev_hash=prev_hash,
             agent=item.agent,
+            chain_version=chain_version,
+            event_id=item.event_id,
+            client_id=item.client_id,
+            client_seq=item.client_seq,
+            event_type=item.event_type,
+            commitment_alg=item.commitment_alg,
+            event_metadata=metadata or None,
+            pii_signals=item.pii_signals,
+            occurred_at=item.occurred_at,
         )
-        rows.append(AuditLog(
+        row = AuditLog(
             org_id=org.id, seq=seq,
+            event_id=item.event_id, client_id=item.client_id,
+            client_seq=item.client_seq, event_type=item.event_type,
+            commitment_alg=item.commitment_alg,
+            event_metadata=metadata or None, occurred_at=item.occurred_at,
+            chain_version=chain_version,
             prompt_hash=item.prompt_hash, response_hash=item.response_hash,
             token_count=item.token_count, policy_tag=item.policy_tag,
             agent=item.agent,
             pii_signals=item.pii_signals,
             prev_hash=prev_hash, chain_hash=chain_hash,
             gemini_verdict=None,          # grading_status defaults to 'pending'
-        ))
+        )
+        rows.append(row)
+        receipts.append({
+            "event_id": str(item.event_id) if item.event_id else None,
+            "client_id": item.client_id, "client_seq": item.client_seq,
+            "seq": seq, "chain_hash": chain_hash, "status": "accepted",
+        })
         prev_seq = seq
         prev_hash = chain_hash
 
     db.add_all(rows)
     db.commit()
-    return {"status": "pending", "count": len(rows)}
+    return {"status": "pending", "count": len(payload), "receipts": receipts,
+            "warnings": warnings}
 
 
 @router.get("/v1/logs", response_model=LogListResponse)
@@ -165,7 +258,9 @@ def list_breaches(
     ]
 
 
-_EXPORT_COLS = ["seq", "created_at", "policy_tag", "agent", "token_count", "prompt_hash",
+_EXPORT_COLS = ["seq", "event_id", "client_id", "client_seq", "event_type",
+                "commitment_alg", "event_metadata", "chain_version", "occurred_at", "created_at",
+                "policy_tag", "agent", "token_count", "prompt_hash",
                 "response_hash", "pii_signals", "prev_hash", "chain_hash",
                 "gemini_verdict", "grading_status", "graded_at"]
 
@@ -173,6 +268,14 @@ _EXPORT_COLS = ["seq", "created_at", "policy_tag", "agent", "token_count", "prom
 def _export_row(r: AuditLog) -> dict:
     return {
         "seq": r.seq,
+        "event_id": str(r.event_id) if r.event_id else None,
+        "client_id": r.client_id,
+        "client_seq": r.client_seq,
+        "event_type": r.event_type,
+        "commitment_alg": r.commitment_alg,
+        "event_metadata": r.event_metadata,
+        "chain_version": r.chain_version or 1,
+        "occurred_at": r.occurred_at.isoformat() if r.occurred_at else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "policy_tag": r.policy_tag,
         "agent": r.agent,
@@ -224,6 +327,7 @@ def export_logs(
         for r in rows:
             d = _export_row(r)
             d["pii_signals"] = "" if d["pii_signals"] is None else json.dumps(d["pii_signals"])
+            d["event_metadata"] = "" if d["event_metadata"] is None else json.dumps(d["event_metadata"])
             d["gemini_verdict"] = "" if d["gemini_verdict"] is None else json.dumps(d["gemini_verdict"])
             w.writerow(d)
         return Response(
@@ -266,7 +370,7 @@ def stats(
     ).scalar_one()
     breaches = db.execute(
         select(func.count()).select_from(AuditLog)
-        .where(AuditLog.org_id == org.id, _BREACH)
+        .where(AuditLog.org_id == org.id, AuditLog.grading_status == "graded", _BREACH)
     ).scalar_one()
     avg_tokens = db.execute(
         select(func.coalesce(func.avg(AuditLog.token_count), 0))
@@ -294,13 +398,20 @@ def stats(
         for d, c, b in db.execute(
             select(day, func.count(), func.count().filter(_BREACH))
             .where(AuditLog.org_id == org.id,
-                   AuditLog.created_at >= text("now() - interval '7 days'"))
+                   AuditLog.created_at >= text("now() - interval '7 days'"),
+                   AuditLog.grading_status == "graded")
             .group_by(day)
             .order_by(day)
         ).all()
     ]
 
-    clean_rate = round(100.0 * (total - breaches) / total, 1) if total else 100.0
+    clean = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, AuditLog.grading_status == "graded",
+               AuditLog.gemini_verdict["decision"].astext == "clean")
+    ).scalar_one()
+    determinate = clean + breaches
+    clean_rate = round(100.0 * clean / determinate, 1) if determinate else None
     return StatsResponse(
         total_logged=total, breaches=breaches, clean_rate=clean_rate,
         avg_token_count=round(float(avg_tokens), 1),

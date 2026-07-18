@@ -134,6 +134,36 @@ def test_tamper_after_anchor_point_keeps_anchor_match_true(make_org, login, clie
     assert v["last_anchor"]["matches_current_chain"] is True
 
 
+def test_anchor_refuses_tampered_chain(make_org, login, client):
+    org = make_org()
+    _ingest(client, org, 2)
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE audit_logs SET token_count = 999 WHERE org_id = :o AND seq = 1"),
+            {"o": org["org_id"]},
+        )
+
+    result = login(org["admin_email"], org["admin_password"]).post("/v1/anchors")
+    assert result.status_code == 200
+    assert result.json()["status"] == "failed"
+    assert "chain integrity check failed" in result.json()["detail"]
+
+
+def test_anchor_refuses_sequence_gap(make_org, login, client):
+    org = make_org()
+    _ingest(client, org, 2)
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM audit_logs WHERE org_id = :o AND seq = 1"),
+            {"o": org["org_id"]},
+        )
+
+    result = login(org["admin_email"], org["admin_password"]).post("/v1/anchors")
+    assert result.status_code == 200
+    assert result.json()["status"] == "failed"
+    assert "sequence gap" in result.json()["detail"]
+
+
 def test_member_cannot_anchor(make_org, add_user, login, client):
     org = make_org()
     _ingest(client, org, 1)

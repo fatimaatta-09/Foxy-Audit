@@ -18,7 +18,8 @@ from ..models import AuditLog, Organization
 
 router = APIRouter()
 
-_BREACH = AuditLog.gemini_verdict["policy_breach"].astext == "true"
+_BREACH = (AuditLog.grading_status == "graded") & (
+    AuditLog.gemini_verdict["policy_breach"].astext == "true")
 _RISK = cast(AuditLog.gemini_verdict["risk_score"].astext, Integer)
 
 

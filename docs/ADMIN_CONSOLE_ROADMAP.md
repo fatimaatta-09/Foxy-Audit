@@ -9,8 +9,10 @@ independent. Local setup is below; the merge workflow is at the end.
 ## System primer (what Foxy Audit is)
 A three-tier product: a **PyQt6 desktop pet** (`desktop/`), a Python **SDK** (`@foxy.audit` decorator,
 `sdk/`), and a **FastAPI + PostgreSQL backend** (`backend/`). The SDK hashes each AI prompt/response locally
-(SHA-256) and sends only hashes + metadata; the backend chains them (`chain_hash = SHA256(row + prev_hash)`)
-so tampering is mathematically detectable; an AI "judge" (Gemini) grades each call; chain heads are optionally
+(customer-keyed commitments) and sends only commitments + bounded metadata; the backend chains a versioned
+canonical event (`chain_hash = SHA256(event + prev_hash)`)
+so tampering is mathematically detectable; deterministic rules and an optional AI judge grade supported metadata;
+chain heads are optionally
 anchored to a public chain (Sepolia). Three web surfaces share one backend:
 - **Marketing** — `foxyaudit.tech` (static `foxy-sale-page/`).
 - **Customer dashboard** — `app.foxyaudit.tech` (backend serves `foxy-dashboard/*.html`; customer API `/v1/*`).
