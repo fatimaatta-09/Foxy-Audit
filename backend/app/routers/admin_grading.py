@@ -60,7 +60,7 @@ def list_dead_letters(
     org_id: str | None = None,
     limit: int = 100,
     offset: int = 0,
-    staff=Depends(require_platform_role("viewer")),
+    staff: StaffUser = Depends(require_platform_role("viewer")),
     db: Session = Depends(get_db),
 ):
     limit = min(max(limit, 1), 500)
@@ -99,7 +99,7 @@ def list_dead_letters(
 def requeue_dead_letter(
     row_id: str,
     request: Request,
-    staff=Depends(require_platform_role("operator")),
+    staff: StaffUser = Depends(require_platform_role("operator")),
     db: Session = Depends(get_db),
 ):
     row = db.get(AuditLog, _uuid(row_id, "grading row id"))
