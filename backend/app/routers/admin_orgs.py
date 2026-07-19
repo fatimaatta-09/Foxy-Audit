@@ -8,6 +8,7 @@ Every state-changing action writes an admin_actions row in the same transaction.
 
 from __future__ import annotations
 
+import ipaddress
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -533,3 +534,143 @@ def org_breaches(
         for r in rows
     ]
     return BreachPage(total=total, limit=limit, offset=offset, items=items)
+
+
+# ======================= Org lifecycle actions (Phase 2, audited) =======================
+# Writes replacing the old prompt()/confirm() flows. Gated operator (revoke/ip/trial)
+# or superadmin (offboard). Every mutation records an admin_actions row in the same txn.
+
+
+def _norm_allowlist(raw: str) -> list[str]:
+    out: list[str] = []
+    for part in (raw or "").replace("\n", ",").split(","):
+        p = part.strip()
+        if not p:
+            continue
+        try:
+            ipaddress.ip_network(p, strict=False)   # accepts a bare IP or a CIDR
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"invalid IP or CIDR: {p}")
+        out.append(p)
+    return out
+
+
+class IpAllowlistBody(BaseModel):
+    entries: list[str] | None = None
+    raw: str | None = None
+
+
+@router.get("/v1/organizations/{org_id}/ip-allowlist")
+def get_ip_allowlist(
+    org_id: str,
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    org = _load_active_org(db, org_id)
+    entries = [ip.strip() for ip in (org.ip_allowlist or "").split(",") if ip.strip()]
+    return {"org_id": str(org.id), "entries": entries}
+
+
+@router.put("/v1/organizations/{org_id}/ip-allowlist")
+def put_ip_allowlist(
+    org_id: str,
+    body: IpAllowlistBody,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("operator")),
+    db: Session = Depends(get_db),
+):
+    """Replace the org's dashboard IP allow-list (empty clears it → no restriction)."""
+    org = _load_active_org(db, org_id)
+    raw = body.raw if body.raw is not None else ",".join(body.entries or [])
+    entries = _norm_allowlist(raw)
+    org.ip_allowlist = ",".join(entries) if entries else None
+    record_admin_action(db, staff, "org.ip_allowlist.set", target_org_id=org.id,
+                        target_type="organization", target_id=str(org.id),
+                        detail={"count": len(entries)}, ip=client_ip(request))
+    db.commit()
+    return {"status": "updated", "entries": entries}
+
+
+@router.post("/v1/organizations/{org_id}/keys/{key_id}/revoke")
+def revoke_key(
+    org_id: str,
+    key_id: str,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("operator")),
+    db: Session = Depends(get_db),
+):
+    """Revoke one of an org's SDK API keys (idempotent)."""
+    org = _load_active_org(db, org_id)
+    try:
+        kid = uuid.UUID(str(key_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid key id")
+    key = db.get(ApiKey, kid)
+    if key is None or key.org_id != org.id:
+        raise HTTPException(status_code=404, detail="api key not found for this organization")
+    if key.status == "revoked":
+        return {"status": "already_revoked", "key_id": str(key.id)}
+    key.status = "revoked"
+    key.revoked_at = datetime.now(timezone.utc)
+    record_admin_action(db, staff, "org.key.revoke", target_org_id=org.id,
+                        target_type="api_key", target_id=str(key.id),
+                        detail={"name": key.name}, ip=client_ip(request))
+    db.commit()
+    return {"status": "revoked", "key_id": str(key.id)}
+
+
+class TrialBody(BaseModel):
+    days: int
+
+
+@router.post("/v1/organizations/{org_id}/trial")
+def extend_trial(
+    org_id: str,
+    body: TrialBody,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("operator")),
+    db: Session = Depends(get_db),
+):
+    """Extend (or shorten, with a negative value) a tenant's comp/trial window."""
+    if body.days == 0 or abs(body.days) > 3650:
+        raise HTTPException(status_code=422, detail="days must be a non-zero value within +/-3650")
+    org = _load_active_org(db, org_id)
+    now = datetime.now(timezone.utc)
+    base = org.trial_ends_at if (org.trial_ends_at and org.trial_ends_at > now) else now
+    new_end = base + timedelta(days=body.days)
+    org.trial_ends_at = new_end
+    record_admin_action(db, staff, "org.trial.extend", target_org_id=org.id,
+                        target_type="organization", target_id=str(org.id),
+                        detail={"days": body.days, "trial_ends_at": new_end.isoformat()},
+                        ip=client_ip(request))
+    db.commit()
+    return {"status": "updated", "trial_ends_at": new_end.isoformat()}
+
+
+@router.post("/v1/organizations/{org_id}/offboard")
+def offboard_organization(
+    org_id: str,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("superadmin")),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete a tenant: mark deleted, hold access, and revoke every live key.
+    Never hard-deletes — the org stays auditable via ?include_deleted."""
+    org = _load_active_org(db, org_id)
+    if org.deleted_at is not None:
+        return {"status": "already_offboarded", "org_id": str(org.id)}
+    now = datetime.now(timezone.utc)
+    org.deleted_at = now
+    org.suspended = True
+    org.suspended_reason = org.suspended_reason or "offboarded"
+    keys = db.execute(
+        select(ApiKey).where(ApiKey.org_id == org.id, ApiKey.status == "active")
+    ).scalars().all()
+    for k in keys:
+        k.status = "revoked"
+        k.revoked_at = now
+    record_admin_action(db, staff, "org.offboard", target_org_id=org.id,
+                        target_type="organization", target_id=str(org.id),
+                        detail={"keys_revoked": len(keys)}, ip=client_ip(request))
+    db.commit()
+    return {"status": "offboarded", "org_id": str(org.id), "keys_revoked": len(keys)}

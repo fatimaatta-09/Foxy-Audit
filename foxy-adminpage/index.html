@@ -577,6 +577,14 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
 .chart-dpt{cursor:pointer;transition:opacity var(--dur) ease}
 .chart-dpt:hover{opacity:.82}
 .chart-dpt:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* ════════ MODAL (reusable — replaces prompt()/confirm()) ════════ */
+.modal-overlay{position:fixed;inset:0;z-index:9600;display:none;align-items:center;justify-content:center;padding:20px;background:var(--gate-overlay);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.modal-overlay.on{display:flex}
+.modal-card{width:460px;max-width:100%;max-height:86vh;overflow-y:auto;animation:modalIn .18s ease}
+@keyframes modalIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+.modal-x{background:var(--surf2);border:1px solid var(--line);border-radius:9px;width:32px;height:32px;min-width:32px;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+.modal-x:hover{color:var(--fox2);border-color:var(--line2)}
+@media(prefers-reduced-motion:reduce){.modal-card{animation:none}}
 
 /* ════════ INBOX LIST ROWS ════════ */
 .inbox-row{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:10px 11px;cursor:pointer;color:var(--ink);font-family:var(--disp);border-radius:8px;transition:background var(--dur) ease}
@@ -1055,7 +1063,7 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
       <div class="split">
         <div class="clay pad twrap">
           <table class="tbl">
-            <thead><tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>Last login</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
             <tbody id="staffRows"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody>
           </table>
         </div>
@@ -1198,6 +1206,16 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
 </div>
 
 <div id="toast"><span id="toastMsg"></span></div>
+<div id="fxmodal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-card clay pad" role="dialog" aria-modal="true" aria-labelledby="fxmodalTitle">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;">
+      <div style="min-width:0;"><div class="eyebrow" id="fxmodalEyebrow" style="margin-bottom:4px;"></div><h2 id="fxmodalTitle" style="font-size:17px;margin:0;word-break:break-word;"></h2></div>
+      <button type="button" class="modal-x" onclick="closeModal()" aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="fxmodalBody"></div>
+    <div id="fxmodalFoot" style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap;"></div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -1466,10 +1484,14 @@ async function saveDataEdit(){
   if(r.ok){toast('saved');closeDataEdit();refreshData()}
   else toast(d.detail||('save failed ('+r.status+')'));
 }
-async function deleteDataRow(pk){
-  if(!confirm('Delete this row? A snapshot is kept in the audit trail, but this cannot be undone from the UI.'))return;
+function deleteDataRow(pk){
+  openModal({eyebrow:'danger · '+DATA_TABLE, title:'Delete row',
+    bodyHTML:'<div class="sub">Delete this row? A snapshot is kept in the append-only audit trail, but this cannot be undone from the UI.</div>',
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doDeleteRow('${pk}')">Delete row</button>`});
+}
+async function _doDeleteRow(pk){
   const r=await api(`/admin/v1/data/${DATA_TABLE}/${pk}`,{method:'DELETE'});
-  const d=await r.json().catch(()=>({}));
+  const d=await r.json().catch(()=>({})); closeModal();
   if(r.ok){toast('deleted');refreshData()}
   else toast(d.detail||('delete failed ('+r.status+')'));
 }
@@ -2105,25 +2127,20 @@ async function toggleOrg(id,tr){
   tr.after(row);
 }
 async function orgSuspend(id){
-  const reason=prompt('Suspension reason (recorded in the audit trail):','');
-  if(reason===null)return;
-  const r=await api(`/admin/v1/organizations/${id}/suspend`,{method:'POST',
-    headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
-  if(r.ok){toast('org suspended');_orgActionDone()}else toast('suspend failed ('+r.status+')');
+  openModal({eyebrow:'org action', title:'Suspend organization',
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">A staff access-hold, independent of Stripe. The reason is recorded in the audit trail.</div><div class="flabel" style="margin-top:0;">reason (optional)</div><textarea id="mReason" class="cin" style="min-height:72px;" placeholder="e.g. fraud review"></textarea>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doSuspend('${id}')">Suspend</button>`});
 }
+
 async function orgEnable(id){
   const r=await api(`/admin/v1/organizations/${id}/enable`,{method:'POST'});
   if(r.ok){toast('suspension lifted');_orgActionDone()}else toast('enable failed ('+r.status+')');
 }
 async function orgPlan(id,current){
-  const plan=(prompt('Plan: free, pro, max, or premium',current)||'').trim().toLowerCase();
-  if(!plan)return;
-  const quota=prompt('Monthly credits override (blank uses the plan default; 0 is not unlimited):','');
-  const body={plan};
-  if(quota.trim())body.monthly_log_quota=Number(quota);
-  if(Object.prototype.hasOwnProperty.call(body,'monthly_log_quota') && (!Number.isInteger(body.monthly_log_quota)||body.monthly_log_quota<0)){toast('enter a non-negative whole-number quota');return}
-  const r=await api(`/admin/v1/organizations/${id}/plan`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  if(r.ok){toast('plan updated');_orgActionDone()}else toast('plan update failed ('+r.status+')');
+  const opts=['free','pro','max','premium'].map(p=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" data-plan="${p}" aria-pressed="${p===current?'true':'false'}" onclick="_segPick(this)">${p}</button>`).join('');
+  openModal({eyebrow:'org action', title:'Set plan',
+    bodyHTML:`<div class="flabel" style="margin-top:0;">plan tier</div><div class="segmented" id="mPlan" role="group" aria-label="plan" style="flex-wrap:wrap;">${opts}</div><div class="flabel">monthly credits override</div><input class="cin" id="mQuota" inputmode="numeric" placeholder="blank = plan default"><div class="sub" style="font-size:10.5px;margin-top:4px;">Leave blank to use the plan's default quota (0 is a real limit, not unlimited).</div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doPlan('${id}')">Apply plan</button>`});
 }
 
 /* ──────────── org 360 (tenant drill-down) ──────────── */
@@ -2157,10 +2174,15 @@ function renderO3Header(d){
   let acts='';
   if(can('operator')){
     acts += d.suspended
-      ? '<button class="btn safe sm" onclick="orgEnable(\''+d.id+'\')">Lift suspension</button>'
-      : '<button class="btn danger sm" onclick="orgSuspend(\''+d.id+'\')">Suspend</button>';
+      ? `<button class="btn safe sm" onclick="orgEnable('${d.id}')">Lift suspension</button>`
+      : `<button class="btn danger sm" onclick="orgSuspend('${d.id}')">Suspend</button>`;
+    acts += `<button class="btn sm" onclick="orgTrial('${d.id}')">Extend trial</button>`;
+    acts += `<button class="btn sm" onclick="orgIp('${d.id}')">IP allow-list</button>`;
   }
-  if(can('superadmin')) acts += '<button class="btn sm" onclick="orgPlan(\''+d.id+'\',\''+esc(d.plan_tier||'premium')+'\')">Set plan</button>';
+  if(can('superadmin')){
+    acts += `<button class="btn sm" onclick="orgPlan('${d.id}','${esc(d.plan_tier||'premium')}')">Set plan</button>`;
+    if(!d.deleted) acts += `<button class="btn danger sm" onclick="orgOffboard('${d.id}','${esc(d.name)}')">Offboard</button>`;
+  }
   $('o3Actions').innerHTML=acts;
 
   const usage=d.usage||[];
@@ -2243,10 +2265,12 @@ function renderO3Users(rows){
 }
 function renderO3Keys(rows){
   if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No API keys.</div></div>'; return; }
-  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl"><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last used</th><th>Created</th><th>Expires</th></tr></thead><tbody>'+rows.map(k=>
-    '<tr><td><b>'+esc(k.name)+'</b></td><td class="mono" style="font-size:11px;">'+esc(k.key_prefix)+'</td><td>'+(k.status==='active'?'<span class="chip safe">active</span>':'<span class="chip bad">'+esc(k.status)+'</span>')+'</td><td class="mono" style="font-size:11px;">'+(k.last_used_at?fmtTime(k.last_used_at):'never')+'</td><td class="mono" style="font-size:11px;">'+fmtDay(k.created_at)+'</td><td class="mono" style="font-size:11px;">'+(k.expires_at?fmtDay(k.expires_at):'—')+'</td></tr>'
+  const act=can('operator');
+  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl"><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last used</th><th>Created</th><th>Expires</th>'+(act?'<th style="text-align:right;">Action</th>':'')+'</tr></thead><tbody>'+rows.map(k=>
+    `<tr><td><b>${esc(k.name)}</b></td><td class="mono" style="font-size:11px;">${esc(k.key_prefix)}</td><td>${k.status==='active'?'<span class="chip safe">active</span>':'<span class="chip bad">'+esc(k.status)+'</span>'}</td><td class="mono" style="font-size:11px;">${k.last_used_at?fmtTime(k.last_used_at):'never'}</td><td class="mono" style="font-size:11px;">${fmtDay(k.created_at)}</td><td class="mono" style="font-size:11px;">${k.expires_at?fmtDay(k.expires_at):'—'}</td>${act?('<td style="text-align:right;">'+(k.status==='active'?`<button class="btn danger sm" onclick="keyRevoke('${O3_ID}','${k.id}','${esc(k.name)}')">Revoke</button>`:'')+'</td>'):''}</tr>`
   ).join('')+'</tbody></table></div>';
 }
+
 function _pager(off,limit,total,fn){
   return '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn sm" '+(off<=0?'disabled':'')+' onclick="'+fn+'(-1)">← prev</button><button class="btn sm" '+(off+limit>=total?'disabled':'')+' onclick="'+fn+'(1)">next →</button></div>';
 }
@@ -2332,18 +2356,21 @@ function renderTraffic(){
 let STAFF_CACHE=[];
 async function loadStaff(){
   const r=await api('/admin/v1/staff');
-  if(!r.ok){$('staffRows').innerHTML=`<tr><td colspan="4" class="sub mono">requires superadmin (${r.status})</td></tr>`;return}
+  if(!r.ok){$('staffRows').innerHTML=`<tr><td colspan="6" class="sub mono">requires superadmin (${r.status})</td></tr>`;return}
   const rows=await r.json();STAFF_CACHE=rows;
   $('staffRows').innerHTML=rows.map(s=>{
     const self=ME&&s.id===ME.id;
-    return `<tr>
+    return `<tr class="rowbtn" onclick="staffManage('${s.id}')">
       <td class="mono" style="font-size:11.5px;">${esc(s.email)}${self?' <span class="chip dim">you</span>':''}</td>
       <td><span class="chip ${s.platform_role==='superadmin'?'warn':s.platform_role==='operator'?'info':'dim'}">${esc(s.platform_role)}</span></td>
+      <td>${s.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>'}</td>
+      <td class="mono" style="font-size:10.5px;white-space:nowrap;">${s.last_login?fmtTime(s.last_login):'never'}</td>
       <td>${s.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>'}</td>
-      <td style="text-align:right;">${(!self&&!s.disabled)?`<button class="btn danger sm" onclick="disableStaff('${s.id}')">Disable</button>`:''}</td>
+      <td style="text-align:right;"><button class="btn sm" onclick="event.stopPropagation();staffManage('${s.id}')">Manage</button></td>
     </tr>`;
   }).join('');
 }
+
 async function createStaff(){
   const email=$('nsEmail').value.trim(),role=fauxVal('nsRole');
   if(!email){toast('email required');return}
@@ -2359,13 +2386,128 @@ async function createStaff(){
        <span style="color:var(--muted2);">share securely — it is never shown again.</span>`;
   $('nsEmail').value='';loadStaff();
 }
-async function disableStaff(id){
-  const s=STAFF_CACHE.find(x=>x.id===id)||{};
-  if(!confirm('Disable staff account '+(s.email||id)+'?'))return;
-  const r=await api(`/admin/v1/staff/${id}/disable`,{method:'POST'});
-  if(r.ok){toast('account disabled');loadStaff()}else toast('disable failed ('+r.status+')');
+async function disableStaff(id){ staffManage(id); }
+
+
+/* ──────────── modal system + Phase 2 lifecycle / staff actions ──────────── */
+let _modalOnOpen=null;
+function openModal(opts){
+  opts=opts||{};
+  const eb=$('fxmodalEyebrow'); eb.textContent=opts.eyebrow||''; eb.style.display=opts.eyebrow?'':'none';
+  $('fxmodalTitle').textContent=opts.title||'';
+  $('fxmodalBody').innerHTML=opts.bodyHTML||'';
+  $('fxmodalFoot').innerHTML=opts.footHTML||'';
+  $('fxmodal').classList.add('on');
+  _modalOnOpen=opts.onOpen||null;
+  setTimeout(()=>{ if(_modalOnOpen)_modalOnOpen(); const f=$('fxmodalBody').querySelector('input,textarea,button'); if(f)f.focus(); },30);
+}
+function closeModal(){ $('fxmodal').classList.remove('on'); $('fxmodalBody').innerHTML=''; $('fxmodalFoot').innerHTML=''; _modalOnOpen=null; }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('fxmodal').classList.contains('on'))closeModal(); });
+function _segPick(el){ const p=el.closest('.segmented'); if(p)p.querySelectorAll('.segbtn').forEach(b=>b.setAttribute('aria-pressed',b===el?'true':'false')); }
+
+/* org lifecycle */
+async function _doSuspend(id){
+  const reason=($('mReason')?$('mReason').value:'').trim();
+  const r=await api('/admin/v1/organizations/'+id+'/suspend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
+  closeModal(); if(r.ok){toast('org suspended');_orgActionDone()}else toast('suspend failed ('+r.status+')');
+}
+async function _doPlan(id){
+  const sel=document.querySelector('#mPlan .segbtn[aria-pressed="true"]');
+  const plan=sel?sel.dataset.plan:'';
+  if(!plan){toast('choose a plan');return}
+  const q=($('mQuota')?$('mQuota').value:'').trim(); const body={plan};
+  if(q){ const n=Number(q); if(!Number.isInteger(n)||n<0){toast('enter a non-negative whole-number quota');return} body.monthly_log_quota=n; }
+  const r=await api('/admin/v1/organizations/'+id+'/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({})); closeModal();
+  if(r.ok){toast('plan updated');_orgActionDone()}else toast(d.detail||('plan update failed ('+r.status+')'));
+}
+function orgTrial(id){
+  const quick=[7,14,30,90].map(n=>`<button type="button" class="btn sm" onclick="$('mDays').value=${n}">+${n}</button>`).join('');
+  openModal({eyebrow:'org action', title:'Extend trial / comp',
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">Add days to this tenant's trial window (a negative number shortens it).</div><div class="flabel" style="margin-top:0;">days</div><input class="cin" id="mDays" inputmode="numeric" value="14"><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">${quick}</div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doTrial('${id}')">Apply</button>`});
+}
+async function _doTrial(id){
+  const n=Number(($('mDays')?$('mDays').value:'').trim());
+  if(!Number.isInteger(n)||n===0){toast('enter a non-zero whole number of days');return}
+  const r=await api('/admin/v1/organizations/'+id+'/trial',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({days:n})});
+  const d=await r.json().catch(()=>({})); closeModal();
+  if(r.ok){toast('trial updated');_orgActionDone()}else toast(d.detail||('trial update failed ('+r.status+')'));
+}
+function orgIp(id){
+  openModal({eyebrow:'org action', title:'Dashboard IP allow-list',
+    bodyHTML:`<div class="sub" style="margin-bottom:10px;">One IP or CIDR per line. Empty = no restriction. Applies to dashboard sessions only, never the SDK key.</div><textarea id="mIp" class="cin" style="min-height:120px;font-family:var(--mono);" placeholder="203.0.113.0/24">loading…</textarea>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doIp('${id}')">Save allow-list</button>`,
+    onOpen:async()=>{ let r; try{ r=await api('/admin/v1/organizations/'+id+'/ip-allowlist'); }catch(e){ r=null; } const t=$('mIp'); if(t)t.value=(r&&r.ok)?(((await r.json()).entries)||[]).join('\n'):''; }});
+}
+async function _doIp(id){
+  const raw=($('mIp')?$('mIp').value:'');
+  const r=await api('/admin/v1/organizations/'+id+'/ip-allowlist',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({raw})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){closeModal();toast('allow-list saved');_orgActionDone()}else toast(d.detail||('save failed ('+r.status+')'));
+}
+function orgOffboard(id,name){
+  openModal({eyebrow:'danger · superadmin', title:'Offboard '+name,
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">This soft-deletes the tenant (recoverable via “show offboarded”), places an access hold, and <b>revokes every live API key</b>. Type the org name to confirm.</div><input class="cin" id="mConfirm" placeholder="${esc(name)}" oninput="var b=$('mOffBtn'); if(b)b.disabled=(this.value.trim()!==${JSON.stringify(name)});">`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" id="mOffBtn" disabled onclick="_doOffboard('${id}')">Offboard tenant</button>`});
+}
+async function _doOffboard(id){
+  const r=await api('/admin/v1/organizations/'+id+'/offboard',{method:'POST'});
+  const d=await r.json().catch(()=>({})); closeModal();
+  if(r.ok){toast('tenant offboarded ('+(d.keys_revoked||0)+' keys revoked)');_orgActionDone()}else toast(d.detail||('offboard failed ('+r.status+')'));
+}
+function keyRevoke(orgId,keyId,name){
+  openModal({eyebrow:'danger · org key', title:'Revoke API key',
+    bodyHTML:`<div class="sub">Revoke <b>${esc(name)}</b>? Any SDK using this key stops working immediately. This cannot be undone.</div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doRevoke('${orgId}','${keyId}')">Revoke key</button>`});
+}
+async function _doRevoke(orgId,keyId){
+  const r=await api('/admin/v1/organizations/'+orgId+'/keys/'+keyId+'/revoke',{method:'POST'});
+  const d=await r.json().catch(()=>({})); closeModal();
+  if(r.ok){toast('key revoked');_orgActionDone()}else toast(d.detail||('revoke failed ('+r.status+')'));
 }
 
+/* staff management */
+function staffManage(id){
+  const s=(STAFF_CACHE||[]).find(x=>x.id===id); if(!s)return;
+  const self=ME&&s.id===ME.id;
+  const roleBtns=['viewer','operator','superadmin'].map(rr=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" aria-pressed="${s.platform_role===rr?'true':'false'}" ${self?'disabled title="you cannot change your own role"':''} onclick="staffRole('${id}','${rr}')">${rr}</button>`).join('');
+  const acct = s.disabled
+    ? `<button class="btn safe sm" onclick="staffEnable('${id}')">Enable account</button>`
+    : (self?'<span class="sub mono" style="font-size:10px;">you cannot disable yourself</span>':`<button class="btn danger sm" onclick="staffDisable('${id}')">Disable account</button>`);
+  const body=`<div class="flabel" style="margin-top:0;">platform role</div>
+    <div class="segmented" role="group" aria-label="role" style="flex-wrap:wrap;">${roleBtns}</div>
+    <div class="flabel">account</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${acct}<button class="btn sm" onclick="staffMfaReset('${id}')">Reset MFA</button></div>
+    <div class="flabel">recent activity</div><div id="mActivity" class="twrap" style="max-height:210px;overflow:auto;"><div class="sub mono">loading…</div></div>`;
+  openModal({eyebrow:s.platform_role+(s.disabled?' · disabled':'')+(s.mfa_enabled?' · mfa on':''), title:'Manage '+s.email,
+    bodyHTML:body, footHTML:`<button class="btn" onclick="closeModal()">Close</button>`, onOpen:()=>loadStaffActivity(id)});
+}
+async function loadStaffActivity(id){
+  const el=$('mActivity'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/staff/'+id+'/activity?limit=40'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">activity unavailable</div>'; return; }
+  const items=(await r.json()).items||[];
+  if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No recorded activity.</div>'; return; }
+  el.innerHTML='<table class="tbl"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}${a.by_self?'':' <span class="chip dim">to them</span>'}</td></tr>`).join('')+'</tbody></table>';
+}
+async function staffRole(id,role){
+  const r=await api('/admin/v1/staff/'+id+'/role',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({platform_role:role})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ toast('role updated to '+role); await loadStaff(); staffManage(id); } else toast(d.detail||('role change failed ('+r.status+')'));
+}
+async function staffEnable(id){
+  const r=await api('/admin/v1/staff/'+id+'/enable',{method:'POST'});
+  if(r.ok){ toast('account enabled'); await loadStaff(); staffManage(id); } else toast('enable failed ('+r.status+')');
+}
+async function staffDisable(id){
+  const r=await api('/admin/v1/staff/'+id+'/disable',{method:'POST'});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ toast('account disabled'); await loadStaff(); staffManage(id); } else toast(d.detail||('disable failed ('+r.status+')'));
+}
+async function staffMfaReset(id){
+  const r=await api('/admin/v1/staff/'+id+'/mfa/reset',{method:'POST'});
+  if(r.ok){ toast('MFA enrolment reset'); await loadStaff(); staffManage(id); } else toast('MFA reset failed ('+r.status+')');
+}
 boot();
 </script>
 </body>

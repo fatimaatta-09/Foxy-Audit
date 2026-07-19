@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -23,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import email, password_reset
+from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_staff
 from ..config import get_settings
 from ..db import get_db
@@ -113,6 +115,9 @@ def staff_login(payload: StaffLoginRequest, request: Request, db: Session = Depe
         return {"mfa_required": True, "email": staff.email}
 
     _establish_staff_session(request, staff)
+    record_admin_action(db, staff, "staff.login", target_type="staff_user",
+                        target_id=str(staff.id), detail={"mfa": False}, ip=client_ip(request))
+    db.commit()
     return {"id": str(staff.id), "email": staff.email, "platform_role": staff.platform_role}
 
 
@@ -134,6 +139,8 @@ def staff_mfa(payload: StaffMfaRequest, request: Request, db: Session = Depends(
 
     staff.mfa_code_hash = None            # single-use
     staff.mfa_code_expires_at = None
+    record_admin_action(db, staff, "staff.login", target_type="staff_user",
+                        target_id=str(staff.id), detail={"mfa": True}, ip=client_ip(request))
     db.commit()
     _establish_staff_session(request, staff)
     return {"id": str(staff.id), "email": staff.email, "platform_role": staff.platform_role}
@@ -182,7 +189,17 @@ def staff_reset_password(payload: StaffResetPasswordRequest, request: Request,
 
 
 @router.post("/v1/auth/logout")
-def staff_logout(request: Request):
+def staff_logout(request: Request, db: Session = Depends(get_db)):
+    sid = request.session.get("staff_user_id")
+    if sid:
+        try:
+            st = db.get(StaffUser, uuid.UUID(sid))
+        except (ValueError, TypeError):
+            st = None
+        if st is not None:
+            record_admin_action(db, st, "staff.logout", target_type="staff_user",
+                                target_id=str(st.id), ip=client_ip(request))
+            db.commit()
     request.session.clear()
     return {"status": "logged_out"}
 

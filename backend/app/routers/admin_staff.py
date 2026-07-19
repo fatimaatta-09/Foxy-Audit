@@ -10,9 +10,9 @@ import secrets
 import uuid
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,7 @@ from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_platform_role
 from ..config import get_settings
 from ..db import get_db
-from ..models import StaffUser
+from ..models import AdminAction, StaffUser
 
 router = APIRouter()
 
@@ -33,6 +33,9 @@ class StaffListItem(BaseModel):
     email: str
     platform_role: str
     disabled: bool
+    mfa_enabled: bool = False
+    created_at: str | None = None
+    last_login: str | None = None
 
 
 class CreateStaffRequest(BaseModel):
@@ -56,8 +59,20 @@ def list_staff(
     db: Session = Depends(get_db),
 ):
     rows = db.execute(select(StaffUser).order_by(StaffUser.email)).scalars().all()
-    return [StaffListItem(id=str(s.id), email=s.email, platform_role=s.platform_role,
-                          disabled=s.disabled) for s in rows]
+    last_login = {
+        sid: ts for sid, ts in db.execute(
+            select(AdminAction.staff_user_id, func.max(AdminAction.created_at))
+            .where(AdminAction.action == "staff.login")
+            .group_by(AdminAction.staff_user_id)
+        ).all()
+    }
+    return [
+        StaffListItem(
+            id=str(s.id), email=s.email, platform_role=s.platform_role, disabled=s.disabled,
+            mfa_enabled=s.mfa_enabled, created_at=s.created_at.isoformat() if s.created_at else None,
+            last_login=last_login[s.id].isoformat() if last_login.get(s.id) else None)
+        for s in rows
+    ]
 
 
 @router.post("/v1/staff", response_model=CreateStaffResponse)
@@ -124,3 +139,120 @@ def disable_staff(
                         ip=client_ip(request))
     db.commit()
     return {"status": "disabled", "id": str(target.id)}
+
+
+# ======================= Staff management actions (Phase 2, audited) =======================
+
+
+def _get_target(db: Session, staff_id: str) -> StaffUser:
+    try:
+        sid = uuid.UUID(str(staff_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="invalid staff id")
+    target = db.get(StaffUser, sid)
+    if target is None:
+        raise HTTPException(status_code=404, detail="staff user not found")
+    return target
+
+
+class RoleBody(BaseModel):
+    platform_role: str
+
+
+@router.post("/v1/staff/{staff_id}/role")
+def set_staff_role(
+    staff_id: str,
+    body: RoleBody,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("superadmin")),
+    db: Session = Depends(get_db),
+):
+    """Change a staff member's platform role. Guards self-demotion and the removal
+    of the last active superadmin so the console can never be locked out."""
+    role = body.platform_role.strip().lower()
+    if role not in _VALID_PLATFORM_ROLES:
+        raise HTTPException(status_code=422,
+                            detail=f"platform_role must be one of {sorted(_VALID_PLATFORM_ROLES)}")
+    target = _get_target(db, staff_id)
+    if target.id == staff.id:
+        raise HTTPException(status_code=400, detail="you cannot change your own role")
+    if target.platform_role == "superadmin" and role != "superadmin":
+        others = db.execute(
+            select(func.count()).select_from(StaffUser)
+            .where(StaffUser.platform_role == "superadmin",
+                   StaffUser.disabled.is_(False), StaffUser.id != target.id)
+        ).scalar_one()
+        if others == 0:
+            raise HTTPException(status_code=400, detail="cannot demote the last active superadmin")
+    old = target.platform_role
+    target.platform_role = role
+    record_admin_action(db, staff, "staff.role", target_type="staff_user",
+                        target_id=str(target.id),
+                        detail={"email": target.email, "from": old, "to": role},
+                        ip=client_ip(request))
+    db.commit()
+    return {"status": "updated", "id": str(target.id), "platform_role": role}
+
+
+@router.post("/v1/staff/{staff_id}/enable")
+def enable_staff(
+    staff_id: str,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("superadmin")),
+    db: Session = Depends(get_db),
+):
+    """Re-enable a disabled staff account."""
+    target = _get_target(db, staff_id)
+    target.disabled = False
+    record_admin_action(db, staff, "staff.enable", target_type="staff_user",
+                        target_id=str(target.id), detail={"email": target.email},
+                        ip=client_ip(request))
+    db.commit()
+    return {"status": "enabled", "id": str(target.id)}
+
+
+@router.post("/v1/staff/{staff_id}/mfa/reset")
+def reset_staff_mfa(
+    staff_id: str,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("superadmin")),
+    db: Session = Depends(get_db),
+):
+    """Clear a staff member's MFA enrolment (recovery for a lost authenticator)."""
+    target = _get_target(db, staff_id)
+    target.mfa_enabled = False
+    target.mfa_code_hash = None
+    target.mfa_code_expires_at = None
+    record_admin_action(db, staff, "staff.mfa_reset", target_type="staff_user",
+                        target_id=str(target.id), detail={"email": target.email},
+                        ip=client_ip(request))
+    db.commit()
+    return {"status": "mfa_reset", "id": str(target.id)}
+
+
+@router.get("/v1/staff/{staff_id}/activity")
+def staff_activity(
+    staff_id: str,
+    staff: StaffUser = Depends(require_platform_role("superadmin")),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Recent audit trail for a staff member — both actions they performed and
+    actions performed ON their account (role change, disable, MFA reset)."""
+    target = _get_target(db, staff_id)
+    sid = target.id
+    rows = db.execute(
+        select(AdminAction).where(
+            or_(AdminAction.staff_user_id == sid,
+                and_(AdminAction.target_type == "staff_user",
+                     AdminAction.target_id == str(sid)))
+        ).order_by(AdminAction.created_at.desc()).limit(limit)
+    ).scalars().all()
+    return {"items": [
+        {"action": a.action, "target_type": a.target_type, "target_id": a.target_id,
+         "target_org_id": str(a.target_org_id) if a.target_org_id else None,
+         "detail": a.detail, "ip": a.ip,
+         "at": a.created_at.isoformat() if a.created_at else None,
+         "by_self": str(a.staff_user_id) == str(sid)}
+        for a in rows
+    ]}
