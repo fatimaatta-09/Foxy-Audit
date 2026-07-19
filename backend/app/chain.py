@@ -16,6 +16,7 @@ import json
 GENESIS_HASH = "0" * 64
 CHAIN_VERSION_LEGACY = 1
 CHAIN_VERSION_CAPTURE_V2 = 2
+CHAIN_VERSION_POLICY_V3 = 3
 
 
 def compute_chain_hash(
@@ -50,6 +51,10 @@ def compute_chain_hash(
             "occurred_at": occurred_at.isoformat() if hasattr(occurred_at, "isoformat") else occurred_at,
             "seq": seq,
         }
+        # V3 binds the declared chain format too. Earlier V2 rows remain exactly
+        # byte-compatible so their historic hashes continue to verify.
+        if chain_version >= CHAIN_VERSION_POLICY_V3:
+            event["chain_version"] = chain_version
         data_blob = json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256((data_blob + prev_hash).encode("utf-8")).hexdigest()
     data_blob = f"{org_id}|{prompt_hash}|{response_hash}|{token_count}|{policy_tag}|{seq}"

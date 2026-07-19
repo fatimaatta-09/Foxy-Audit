@@ -45,6 +45,20 @@ Staff/admin console -> tenant-scoped operations, alerts, grading, anchors, billi
 Sales site           -> product explanation and onboarding
 ```
 
+```mermaid
+flowchart LR
+    A["Customer AI application"] --> B["Foxy SDK"]
+    B --> C["Local commitments and retry spool"]
+    C --> D["Foxy API and PostgreSQL evidence chain"]
+    D --> E["Metadata-only OpenAI/Gemini judge"]
+    D --> F["Customer dashboard and Compliance Passport"]
+    D --> G["Independent export verifier"]
+    H["Staff operations console"] --> D
+    I["Optional public-chain anchor"] --> D
+```
+
+Raw prompts and responses do not leave the customer process through this path.
+
 - **SDK:** one decorator, local keyed commitments, durable retry spool, sync,
   async, and generator support.
 - **Backend:** tenant-isolated ingestion, ordered chain, usage, policies,
@@ -54,6 +68,23 @@ Sales site           -> product explanation and onboarding
 - **Desktop companion:** local visual feedback and a dashboard shortcut.
 - **Verifier:** standard-library verification of exports and known events.
 - **Admin console:** staff operations and customer/account monitoring.
+
+## Capture Coverage: The Evidence Boundary
+
+Tamper evidence is only useful when a buyer can also see the boundary of what
+was observed. Foxy records an SDK-local `client_id` and monotonic `client_seq`
+inside each chained event, then exposes a content-blind coverage report at
+`GET /v1/coverage`. It reports:
+
+- contiguous client sequences that reached Foxy;
+- missing client-sequence ranges and duplicate sequence reuse;
+- events captured without a complete client identity;
+- whether the server-side hash chain currently verifies.
+
+This is deliberately stronger than a green dashboard badge and deliberately
+more honest than a claim of total capture. The report covers SDK-reported
+events only; it cannot see a model call made outside the SDK. That limitation
+is visible to the customer, auditor, and reviewer instead of being hidden.
 
 ## Fastest Judge Test: No LLM Required
 
@@ -184,7 +215,8 @@ The verifier can prove that exported rows match their chain hashes and that
 known prompt/response pairs match their customer-keyed commitments. It cannot
 prove that a customer integrated every model call, infer content that was
 discarded locally, or replace a formal regulatory audit. Customers should
-monitor SDK coverage and treat bypassed integrations as an evidence gap.
+monitor the dashboard's Capture coverage panel (or `GET /v1/coverage`) and
+treat bypassed integrations as an evidence gap.
 
 ## Devpost / OpenAI Build Week Judge Checklist
 

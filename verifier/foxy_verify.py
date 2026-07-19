@@ -55,6 +55,8 @@ def compute_chain_hash(*, org_id, prompt_hash, response_hash, token_count,
             "pii_signals": pii_signals, "event_metadata": event_metadata,
             "occurred_at": occurred_at, "seq": seq,
         }
+        if chain_version >= 3:
+            event["chain_version"] = chain_version
         blob = json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256((blob + prev_hash).encode("utf-8")).hexdigest()
     data_blob = f"{org_id}|{prompt_hash}|{response_hash}|{token_count}|{policy_tag}|{seq}"

@@ -124,6 +124,34 @@ def test_capture_v2_export_includes_all_chain_fields():
     assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is True
 
 
+def test_policy_v3_export_binds_the_chain_version_and_snapshot_metadata():
+    fields = {
+        "event_id": None, "client_id": None, "client_seq": None,
+        "event_type": "interaction", "commitment_alg": "sha256-legacy",
+        "event_metadata": {
+            "policy_snapshot": {
+                "schema": "foxy-policy-v1", "pii_detection": True,
+                "prompt_injection": True, "regulated_data_mode": False,
+                "max_token_threshold": 50000,
+            },
+            "policy_snapshot_hash": "c" * 64,
+        },
+        "pii_signals": None, "occurred_at": None, "chain_version": 3,
+    }
+    row = {"seq": 1, "prev_hash": fv.GENESIS_HASH,
+           "prompt_hash": "a" * 64, "response_hash": "b" * 64,
+           "token_count": 10, "policy_tag": "chat", **fields}
+    row["chain_hash"] = fv.compute_chain_hash(
+        org_id=ORG, prev_hash=fv.GENESIS_HASH, **{key: row[key] for key in (
+            "prompt_hash", "response_hash", "token_count", "policy_tag", "seq",
+            "event_id", "client_id", "client_seq", "event_type", "commitment_alg",
+            "event_metadata", "pii_signals", "occurred_at", "chain_version")})
+    assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is True
+
+    row["chain_version"] = 2
+    assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is False
+
+
 def test_customer_key_verifies_known_event_sidecar():
     key = "customer-secret"
     event_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"

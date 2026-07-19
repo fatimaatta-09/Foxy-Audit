@@ -61,6 +61,9 @@ python scripts/verify_chain.py        # per-row PASS/FAIL table
   never raw prompt or response text. When both are configured, a breach from either
   known provider wins. Provider outages are explicit `unknown` results; deterministic
   local metadata rules still run and unknown is never counted as clean.
+- **Policy provenance:** New V3 ledger records bind a canonical hash of the safe
+  policy configuration active at capture time. The worker grades against that
+  snapshot, so later policy edits cannot change which rules governed a record.
 - **RLS:** `auth.require_org` sets `app.current_org` via `set_config(..., true)`
   per transaction; the `org_isolation` policy (with `FORCE`) scopes every
   `audit_logs` query to the calling tenant.
@@ -68,6 +71,8 @@ python scripts/verify_chain.py        # per-row PASS/FAIL table
   hash — the old key is immediately invalid. Copy the new key on the spot.
 - **Stripe billing:** `POST /v1/webhooks/stripe` auto-provisions orgs on
   checkout completion and tracks subscription status changes.
-- **Compliance passport:** `POST /v1/passport` renders a self-verifiable HTML
-  report with chain root hash, stats, and policy breakdown.
+- **Compliance passport:** `POST /v1/passport` renders a content-blind report
+  with the report-period chain check, SDK capture-coverage evidence, root hash,
+  stats, and policy breakdown. Retain its root outside Foxy or use a confirmed
+  public-chain anchor for independent historical rewrite detection.
 

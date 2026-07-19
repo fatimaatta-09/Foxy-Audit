@@ -25,7 +25,9 @@ from ..anchor import latest_anchor
 from ..auth import resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
 from ..db import get_db
+from ..evidence_coverage import calculate_capture_coverage
 from ..models import AuditLog, Organization
+from ..policy_snapshot import policy_snapshot_hash
 
 log = logging.getLogger("foxy.passport")
 router = APIRouter()
@@ -74,8 +76,9 @@ def generate_passport(
     ).scalars().all()
 
     # ── Verify the chain ─────────────────────────────────────────────────
-    chain_intact = True
+    chain_verified: bool | None = True if rows else None
     broken_seq = None
+    chain_detail = "Report-period chain hashes verified."
     prev_hash = GENESIS_HASH
 
     # If the window doesn't start at seq 1, fetch the hash of the row before.
@@ -103,15 +106,19 @@ def generate_passport(
             occurred_at=row.occurred_at,
         )
         if expected != row.chain_hash:
-            chain_intact = False
+            chain_verified = False
             broken_seq = row.seq
+            chain_detail = f"Report-period chain hash mismatch at seq {row.seq}."
             break
         prev_hash = row.chain_hash
+    if not rows:
+        chain_detail = "No audit events were captured in the selected report period."
 
     # ── Aggregate stats ──────────────────────────────────────────────────
     policy_stats: dict[str, dict] = defaultdict(
         lambda: {"count": 0, "breaches": 0, "total_tokens": 0}
     )
+    policy_snapshots: dict[str, dict] = {}
     breach_events = 0
     for row in rows:
         tag = row.policy_tag
@@ -121,6 +128,15 @@ def generate_passport(
         if verdict.get("policy_breach"):
             policy_stats[tag]["breaches"] += 1
             breach_events += 1
+        metadata = row.event_metadata or {}
+        snapshot = metadata.get("policy_snapshot")
+        snapshot_hash = metadata.get("policy_snapshot_hash")
+        if (isinstance(snapshot, dict) and isinstance(snapshot_hash, str)
+                and policy_snapshot_hash(snapshot) == snapshot_hash):
+            item = policy_snapshots.setdefault(snapshot_hash, {
+                "hash": snapshot_hash, "events": 0, "snapshot": snapshot,
+            })
+            item["events"] += 1
 
     policies = []
     for tag, s in sorted(policy_stats.items()):
@@ -130,11 +146,24 @@ def generate_passport(
             "breaches": s["breaches"],
             "avg_tokens": round(s["total_tokens"] / s["count"]) if s["count"] else 0,
         })
+    policy_snapshot_rows = sorted(
+        policy_snapshots.values(), key=lambda item: item["hash"]
+    )
 
     total_events = len(rows)
     compliant_events = total_events - breach_events
     compliance_rate = round(
         (compliant_events / total_events * 100) if total_events else 100, 1
+    )
+
+    coverage = calculate_capture_coverage(
+        db,
+        org.id,
+        start=start,
+        end=window_end,
+        limit=25,
+        chain_verified=chain_verified,
+        chain_detail=chain_detail,
     )
 
     # ── Public-chain anchor (Phase 3 A1) — cite it if the org has one ────
@@ -166,16 +195,21 @@ def generate_passport(
         breach_events=breach_events,
         compliance_rate=compliance_rate,
         policies=policies,
-        chain_intact=chain_intact,
+        policy_snapshots=policy_snapshot_rows,
+        chain_verification=("verified" if chain_verified is True
+                            else "failed" if chain_verified is False
+                            else "not_checked"),
+        chain_detail=chain_detail,
         broken_seq=broken_seq,
         first_seq=rows[0].seq if rows else "—",
         last_seq=rows[-1].seq if rows else "—",
         root_hash=rows[-1].chain_hash if rows else GENESIS_HASH,
         genesis_hash=GENESIS_HASH,
         anchor=anchor_ctx,
+        coverage=coverage,
     )
     
-    # Prefer a signed PDF, but degrade to HTML if weasyprint's native libraries
+    # Prefer PDF, but degrade to HTML if weasyprint's native libraries
     # aren't installed (the review flagged weasyprint as a deploy risk — a missing
     # lib must not take down the endpoint, and the import stays lazy so the app
     # still boots without it).

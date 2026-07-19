@@ -23,10 +23,11 @@ from starlette.status import HTTP_202_ACCEPTED
 
 from ..anchor import latest_anchor
 from ..auth import require_org, resolve_org
-from ..chain import GENESIS_HASH, compute_chain_hash
+from ..chain import CHAIN_VERSION_POLICY_V3, GENESIS_HASH, compute_chain_hash
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuditLog, Organization, OrganizationSequence
+from ..models import AuditLog, OrgPolicy, Organization, OrganizationSequence
+from ..policy_snapshot import capture_policy_snapshot, policy_snapshot_hash
 from ..schemas import (
     ActivityDay, GradingCounts, LogIngest, LogListItem, LogListResponse,
     StatsResponse,
@@ -86,6 +87,8 @@ def ingest_batch(
             ).scalar_one_or_none()
             stored_metadata = dict(existing.event_metadata or {}) if existing else {}
             stored_metadata.pop("client_seq_gap", None)
+            stored_metadata.pop("policy_snapshot", None)
+            stored_metadata.pop("policy_snapshot_hash", None)
             requested_metadata = dict(item.event_metadata or {})
             if existing and any((
                 existing.prompt_hash != item.prompt_hash,
@@ -141,6 +144,20 @@ def ingest_batch(
                         "used": int(used), "included": quota, "requested": len(new_items)},
             )
 
+    # Freeze the policy that applies to this batch before writing any evidence.
+    # The safe snapshot and its digest are included in the V3 chain payload, so a
+    # later policy update cannot rewrite the configuration that was assessed.
+    snapshot = None
+    snapshot_hash = None
+    if new_items:
+        policy = db.get(OrgPolicy, org.id)
+        if policy is None:
+            policy = OrgPolicy(org_id=org.id)
+            db.add(policy)
+            db.flush()
+        snapshot = capture_policy_snapshot(policy)
+        snapshot_hash = policy_snapshot_hash(snapshot)
+
     # Lock the org's tail row after taking the allocator lock. Legacy rows can
     # still exist, so the allocator is initialized from the observed tail above.
     prev = db.execute(
@@ -161,6 +178,8 @@ def ingest_batch(
         seq = int(sequence.next_seq)
         sequence.next_seq = seq + 1
         metadata = dict(item.event_metadata or {})
+        metadata["policy_snapshot"] = snapshot
+        metadata["policy_snapshot_hash"] = snapshot_hash
         if item.client_id and item.client_seq is not None:
             if item.client_id not in client_last:
                 client_last[item.client_id] = db.execute(
@@ -177,7 +196,7 @@ def ingest_batch(
                 warnings.append({"client_id": item.client_id,
                                  "expected": expected, "received": item.client_seq})
             client_last[item.client_id] = item.client_seq
-        chain_version = 2 if item.event_id else 1
+        chain_version = CHAIN_VERSION_POLICY_V3
         chain_hash = compute_chain_hash(
             org_id=org.id,
             prompt_hash=item.prompt_hash,

@@ -38,6 +38,9 @@
         .badge-fail {
             background: #fee2e2; color: #991b1b; border: 2px solid #ef4444;
         }
+        .badge-neutral {
+            background: #fef3c7; color: #92400e; border: 2px solid #f59e0b;
+        }
         /* ── Section ───────────────────────────────────── */
         .section {
             margin-bottom: 28px;
@@ -117,10 +120,12 @@
             <div class="subtitle">Cryptographically Verifiable Compliance Report</div>
         </div>
         <div>
-            {% if chain_intact %}
-            <span class="badge badge-pass">✓ CHAIN VERIFIED</span>
+            {% if chain_verification == "verified" %}
+            <span class="badge badge-pass">REPORT CHAIN VERIFIED</span>
+            {% elif chain_verification == "failed" %}
+            <span class="badge badge-fail">REPORT CHAIN BROKEN</span>
             {% else %}
-            <span class="badge badge-fail">✗ CHAIN BROKEN</span>
+            <span class="badge badge-neutral">NO REPORT EVENTS</span>
             {% endif %}
         </div>
     </div>
@@ -160,6 +165,37 @@
         </div>
     </div>
 
+    <!-- SDK Capture Coverage -->
+    <div class="section">
+        <h2>SDK Capture Coverage</h2>
+        <p style="font-size: 13px; color: #374151; margin-bottom: 12px;">
+            {{ coverage.message }} This is evidence about the SDK reporting boundary, not a claim that every model call was observed.
+        </p>
+        <dl class="kv-grid">
+            <dt>Coverage Status</dt>
+            <dd>
+                {% if coverage.status == "verified" %}
+                <span class="breach-no">{{ coverage.status|upper }}</span>
+                {% elif coverage.status == "partial" %}
+                <span class="breach-yes">{{ coverage.status|upper }}</span>
+                {% else %}
+                <span>{{ coverage.status|upper }}</span>
+                {% endif %}
+            </dd>
+            <dt>Evidence Scope</dt>       <dd>{{ coverage.scope }}</dd>
+            <dt>Observed Events</dt>      <dd>{{ coverage.total_events }}</dd>
+            <dt>With Client Identity</dt> <dd>{{ coverage.identified_events }}</dd>
+            <dt>Without Client Identity</dt><dd>{{ coverage.events_without_client_identity }}</dd>
+            <dt>SDK Clients Reporting</dt><dd>{{ coverage.instrumented_clients }}</dd>
+            <dt>Missing Client Sequence Events</dt><dd>{{ coverage.missing_events }}</dd>
+            <dt>Duplicate Client Sequences</dt><dd>{{ coverage.duplicate_client_sequences }}</dd>
+            <dt>Report Chain Check</dt>  <dd>{{ coverage.chain_verification|upper }}</dd>
+        </dl>
+        <p style="font-size: 12px; color: #6b7280; margin-top: 12px;">
+            <strong>Evidence boundary:</strong> {{ coverage.limitations[0] }}
+        </p>
+    </div>
+
     <!-- Policy Breakdown -->
     <div class="section">
         <h2>Policy Breakdown</h2>
@@ -191,6 +227,43 @@
         </table>
     </div>
 
+    <!-- Policy Provenance -->
+    <div class="section">
+        <h2>Policy Configuration Evidence</h2>
+        {% if policy_snapshots %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Policy Snapshot Hash</th>
+                    <th>Events</th>
+                    <th>Applied Settings</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in policy_snapshots %}
+                <tr>
+                    <td class="mono">{{ item.hash }}</td>
+                    <td>{{ item.events }}</td>
+                    <td>
+                        PII {{ "on" if item.snapshot.pii_detection else "off" }};
+                        injection {{ "on" if item.snapshot.prompt_injection else "off" }};
+                        regulated mode {{ "on" if item.snapshot.regulated_data_mode else "off" }};
+                        max tokens {{ item.snapshot.max_token_threshold }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">
+            Each digest is canonical JSON of the safe policy fields captured with its events and is bound into the V3 chain payload.
+        </p>
+        {% else %}
+        <p style="font-size: 13px; color: #6b7280;">
+            No policy snapshots were recorded in this report period. Historical records remain verifiable, but policy provenance was introduced with V3 evidence records.
+        </p>
+        {% endif %}
+    </div>
+
     <!-- Chain Verification -->
     <div class="section">
         <h2>Cryptographic Chain Verification</h2>
@@ -200,13 +273,16 @@
             <dt>Last Seq</dt>        <dd>{{ last_seq }}</dd>
             <dt>Chain Status</dt>
             <dd>
-                {% if chain_intact %}
-                <span class="breach-no">INTACT — all hashes verified</span>
-                {% else %}
+                {% if chain_verification == "verified" %}
+                <span class="breach-no">INTACT - report-period hashes verified</span>
+                {% elif chain_verification == "failed" %}
                 <span class="breach-yes">BROKEN at seq {{ broken_seq }}</span>
+                {% else %}
+                <span>NOT ASSESSED - no report-period events</span>
                 {% endif %}
             </dd>
         </dl>
+        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">{{ chain_detail }}</p>
         <div style="margin-top: 16px;">
             <strong style="font-size: 12px; color: #374151;">Root Chain Hash (latest):</strong>
             <div class="hash-block">{{ root_hash }}</div>
@@ -257,9 +333,9 @@
             <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 12px;">
                 H<sub>n</sub> = SHA256(data<sub>n</sub> ‖ H<sub>n-1</sub>)
             </code>.
-            Any modification to a historical record — by anyone, including the system operator —
-            breaks the chain at the tampered row and every row after it. This is mathematically
-            detectable by any party that holds a copy of the root hash.
+            A modification that does not also rewrite every later chain value breaks the chain at
+            the changed row. To make a full rewrite independently detectable, retain a copy of the
+            root hash outside the system or confirm a public-chain anchor shown in this report.
         </p>
     </div>
 
@@ -267,8 +343,9 @@
     <div class="footer">
         <p>
             Generated by Foxy Audit v0.1.0 — Governance-as-Code for AI Applications<br>
-            This document is self-verifiable. Run
-            <code>GET /v1/verify</code> against the API to independently confirm chain integrity.
+            This report contains content-blind chain evidence. Run
+            <code>GET /v1/verify</code> against the API to recheck the current ledger; a confirmed
+            public-chain anchor provides independent historical timestamp evidence.
         </p>
     </div>
 

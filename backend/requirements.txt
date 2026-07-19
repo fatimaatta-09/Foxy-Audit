@@ -1,6 +1,9 @@
 # Backend runtime deps — PINNED to the tested-green versions for reproducible
 # builds (Phase 5 · 5F). Bump deliberately, re-run the suite, then re-pin.
 fastapi==0.139.0
+# FastAPI permits a broad Starlette range. Pin the tested implementation so a
+# future Starlette release cannot silently change TestClient behaviour in CI.
+starlette==0.49.3
 uvicorn[standard]==0.49.0
 sqlalchemy==2.0.51
 psycopg[binary]==3.3.4

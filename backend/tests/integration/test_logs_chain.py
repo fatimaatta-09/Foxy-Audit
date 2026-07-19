@@ -21,6 +21,20 @@ def _rows(n):
              "token_count": 10 * i + 5, "policy_tag": "chat"} for i in range(1, n + 1)]
 
 
+def _expected_hash(org, item, prev_hash):
+    return compute_chain_hash(
+        org_id=org["org_id"], prompt_hash=item["prompt_hash"],
+        response_hash=item["response_hash"], token_count=item["token_count"],
+        policy_tag=item["policy_tag"], seq=item["seq"], prev_hash=prev_hash,
+        agent=item.get("agent"), chain_version=item.get("chain_version", 1),
+        event_id=item.get("event_id"), client_id=item.get("client_id"),
+        client_seq=item.get("client_seq"), event_type=item.get("event_type"),
+        commitment_alg=item.get("commitment_alg"),
+        event_metadata=item.get("event_metadata"), pii_signals=item.get("pii_signals"),
+        occurred_at=item.get("occurred_at"),
+    )
+
+
 def test_ingest_then_verify_intact(make_org, client):
     org = make_org()
     assert client.post("/v1/logs/batch", json=_rows(5), headers=org["auth"]).status_code == 202
@@ -37,11 +51,7 @@ def test_stored_chain_hashes_link(make_org, client):
                    key=lambda x: x["seq"])
     prev = GENESIS_HASH
     for it in items:
-        expected = compute_chain_hash(
-            org_id=org["org_id"], prompt_hash=it["prompt_hash"],
-            response_hash=it["response_hash"], token_count=it["token_count"],
-            policy_tag=it["policy_tag"], seq=it["seq"], prev_hash=prev,
-        )
+        expected = _expected_hash(org, it, prev)
         assert it["chain_hash"] == expected
         prev = it["chain_hash"]
 
@@ -58,11 +68,10 @@ def test_ingest_with_agent_stored_and_in_chain(make_org, client):
     assert not items[1].get("agent")            # seq 2 had no agent
 
     # seq 1's stored hash matches the recompute WITH agent, and NOT without it.
-    common = dict(org_id=org["org_id"], prompt_hash=items[0]["prompt_hash"],
-                  response_hash=items[0]["response_hash"], token_count=items[0]["token_count"],
-                  policy_tag=items[0]["policy_tag"], seq=1, prev_hash=GENESIS_HASH)
-    assert items[0]["chain_hash"] == compute_chain_hash(**common, agent="gpt-4o")
-    assert items[0]["chain_hash"] != compute_chain_hash(**common)
+    assert items[0]["chain_hash"] == _expected_hash(org, items[0], GENESIS_HASH)
+    no_agent = dict(items[0])
+    no_agent["agent"] = None
+    assert items[0]["chain_hash"] != _expected_hash(org, no_agent, GENESIS_HASH)
     # the whole chain still verifies intact
     assert client.get("/v1/verify", headers=org["auth"]).json()["ok"] is True
 

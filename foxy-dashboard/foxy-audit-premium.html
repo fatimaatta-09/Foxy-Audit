@@ -537,6 +537,32 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div id="firstRunSteps"></div>
       </div>
 
+      <div class="clay pad" id="captureCoverage" style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div>
+            <div class="eyebrow">Evidence boundary</div>
+            <div style="font-weight:800;font-size:16px;">Capture coverage<span class="fox-dot">.</span></div>
+            <div id="captureCoverageMessage" style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:4px;">Loading observed SDK continuity…</div>
+          </div>
+          <span id="captureCoverageStatus" class="pill warn"><i></i>checking</span>
+        </div>
+        <div class="g2" style="margin-top:14px;gap:12px;">
+          <div style="font-size:11px;color:var(--muted);line-height:1.6;">
+            <div><b id="coverageEvents" style="color:var(--ink);font-family:var(--mono);">—</b> events observed</div>
+            <div><b id="coverageClients" style="color:var(--ink);font-family:var(--mono);">—</b> SDK clients reporting</div>
+            <div><b id="coverageGaps" style="color:var(--ink);font-family:var(--mono);">—</b> missing client events</div>
+            <div><b id="coverageIdentity" style="color:var(--ink);font-family:var(--mono);">—</b> events without client identity</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Observed clients</div>
+            <div id="coverageClientList" style="font-size:10.5px;color:var(--muted);">No coverage data yet.</div>
+          </div>
+        </div>
+        <div id="captureCoverageLimit" style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:12px;border-top:2px dashed var(--line);padding-top:9px;">
+          This measures events that reached Foxy. It cannot detect an AI call that bypasses the SDK, and it never reads raw prompts or responses.
+        </div>
+      </div>
+
       <div class="hero-grid">
         <div class="hero-balance">
           <div class="hb-top">
@@ -812,7 +838,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div><div class="flabel" style="margin-top:0;">to</div><input class="cin" id="expTo" type="date"></div>
           </div>
           <button class="btn pri" onclick="runExport()">generate passport</button>
-          <div style="font-size:10.5px;color:var(--muted);margin-top:10px;line-height:1.5;">The passport is a self-contained, signed PDF you can send to clients or auditors. For a live, no-login proof page, mint a <b onclick="go('settings',null)" style="color:var(--fox2);cursor:pointer;">public verify link</b> in Settings.</div>
+          <div style="font-size:10.5px;color:var(--muted);margin-top:10px;line-height:1.5;">The passport is a self-contained PDF with content-blind hash-chain and capture-coverage evidence. For a live, no-login proof page, mint a <b onclick="go('settings',null)" style="color:var(--fox2);cursor:pointer;">public verify link</b> in Settings.</div>
           <div id="exportProgress" style="display:none;margin-top:10px;">
             <div class="pbar-wrap"><div class="pbar-fill" id="pbar"></div></div>
             <div class="plbl" id="plbl">aggregating hash chain…</div>
@@ -1284,18 +1310,6 @@ async function loadLoginHistory(){
       : '<div style="color:var(--muted);">no login events yet</div>';
   }catch(e){ showToast('Could not reach the server'); }
 }
-function runExport(){
-  if(_exporting)return; _exporting=true;
-  const prog=document.getElementById('exportProgress'), pbar=document.getElementById('pbar'), plbl=document.getElementById('plbl');
-  prog.style.display='block'; plbl.style.color='';
-  const steps=[[15,'aggregating hash chain…'],[35,'verifying chain continuity…'],[55,'computing chain head…'],[75,'signing with org key…'],[90,'rendering pdf…'],[100,'passport ready']];
-  let i=0;
-  function step(){
-    if(i>=steps.length){plbl.textContent='done — 142 entries · chain head a3f9…7e02';plbl.style.color='var(--safe-bg)';showToast('Compliance passport generated');_exporting=false;return;}
-    pbar.style.width=steps[i][0]+'%'; plbl.textContent=steps[i][1]; i++; setTimeout(step,500);
-  }
-  step();
-}
 </script>
 
 <!-- ═══ live backend integration: auth + real /v1/stats + /v1/logs ═══ -->
@@ -1441,6 +1455,43 @@ function runExport(){
         const sl=$('metaSLA'); if(sl&&sla.cadence_human) sl.textContent='every '+sla.cadence_human+(sla.plan_tier?' · '+sla.plan_tier:''); }catch(_){}
     }catch(e){}
   }
+  async function loadCoverage(){
+    const status=$('captureCoverageStatus'), message=$('captureCoverageMessage');
+    try{
+      const r=await api('/v1/coverage');
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      const state=d.status||'unknown';
+      const label=state==='verified'?'observed coverage verified':(state==='partial'?'partial coverage':'coverage unknown');
+      if(status){
+        status.className='pill '+(state==='verified'?'safe':'warn');
+        status.innerHTML='<i></i>'+label;
+      }
+      if(message){
+        const chain=d.chain_verification==='verified'?'chain verified':(d.chain_verification==='failed'?'chain check failed':'chain check not run');
+        message.textContent=(d.message||'Coverage is unavailable.')+' '+chain+'.';
+      }
+      const events=$('coverageEvents'); if(events)events.textContent=money(d.total_events);
+      const clients=$('coverageClients'); if(clients)clients.textContent=money(d.instrumented_clients);
+      const gaps=$('coverageGaps'); if(gaps)gaps.textContent=money(d.missing_events);
+      const identity=$('coverageIdentity'); if(identity)identity.textContent=money(d.events_without_client_identity);
+      const list=$('coverageClientList');
+      if(list){
+        const rows=Array.isArray(d.clients)?d.clients:[];
+        list.innerHTML=rows.length?rows.map(c=>{
+          const gaps=(c.missing_ranges||[]).map(g=>g.start===g.end?String(g.start):(g.start+'-'+g.end)).join(', ');
+          const dup=(c.duplicate_client_sequences||[]).length;
+          const detail=gaps?'gap '+esc(gaps):(dup?'duplicate sequence':'continuous');
+          return '<div style="padding:5px 0;border-bottom:1px solid rgba(0,0,0,.06);display:flex;justify-content:space-between;gap:8px;">'
+            +'<span style="font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(c.client_id)+'</span>'
+            +'<span style="white-space:nowrap;">'+money(c.events)+' · '+esc(detail)+'</span></div>';
+        }).join(''):'<div style="font-size:10.5px;color:var(--muted);">No identified SDK clients yet.</div>';
+      }
+    }catch(e){
+      if(status){ status.className='pill warn'; status.innerHTML='<i></i>unavailable'; }
+      if(message)message.textContent='Capture coverage could not be loaded. No conclusion is shown.';
+    }
+  }
   async function verifyChain(){
     const el=$('chainCheckResult'); if(!el)return;
     el.className='vres match'; el.textContent='checking chain…';
@@ -1482,7 +1533,7 @@ function runExport(){
     if(days===0){ from.value=''; }
     else { const f=new Date(); f.setDate(f.getDate()-days); from.value=iso(f); }
   };
-  // real passport export: POST /v1/passport (honouring the date range) -> open the signed PDF
+  // Real Passport export: POST /v1/passport (honouring the date range) -> open the PDF.
   window.runExport=async function(){
     const prog=$('exportProgress'), pbar=$('pbar'), plbl=$('plbl');
     const from=(($('expFrom')||{}).value||'').trim(), to=(($('expTo')||{}).value||'').trim();
@@ -1493,7 +1544,7 @@ function runExport(){
       if(!from&&!to)qs.push('days=365');
       const res=await api('/v1/passport?'+qs.join('&'),{method:'POST'});
       if(!res.ok){ if(plbl){plbl.textContent='export failed (HTTP '+res.status+')'; plbl.style.color='var(--breach-bg)';} if(win)win.close(); return; }
-      const blob=await res.blob();   // backend returns a signed PDF
+      const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       if(win)win.location=url; else window.open(url,'_blank');
       if(pbar)pbar.style.width='100%';
@@ -1501,7 +1552,7 @@ function runExport(){
       showToast('Compliance passport generated');
     }catch(e){ if(win)win.close(); if(plbl){plbl.textContent='could not reach the server'; plbl.style.color='var(--breach-bg)';} }
   };
-  async function loadAll(){ await Promise.all([loadStats(),loadLogs(),loadChainMeta()]); }
+  async function loadAll(){ await Promise.all([loadStats(),loadLogs(),loadChainMeta(),loadCoverage()]); }
 
   async function check(){
     if(new URLSearchParams(location.search).get('reset_token')){   // arrived via reset link
