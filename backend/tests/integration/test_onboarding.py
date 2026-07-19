@@ -102,9 +102,8 @@ def test_checkout_session_returns_url(client, monkeypatch):
     assert captured["line_items"][0]["price"] == "price_guard_x"
 
 
-def test_checkout_webhook_delivers_credentials(client, monkeypatch):
-    """A completed Stripe checkout must EMAIL the new admin a set-password link +
-    their SDK key (shown once) — not silently discard a temp password. (6A)"""
+def test_checkout_webhook_invites_admin_without_emailing_a_bearer_key(client, monkeypatch):
+    """A completed checkout sends a password-set invitation, never a bearer key."""
     from app.config import get_settings
     from app import email as emailmod
     secret = "test-webhook-secret"
@@ -126,13 +125,15 @@ def test_checkout_webhook_delivers_credentials(client, monkeypatch):
     blob = json.dumps(sends)
     assert "reset_token=" in blob          # a set-password invite link was emailed
     assert "paid@co.test" in blob          # to the new admin
-    assert "foxy_sk_" in blob              # and their SDK key, shown once
+    assert "foxy_sk_" not in blob          # API keys are never transported by email
     from app.db import SessionLocal
-    from app.models import Organization
+    from app.models import ApiKey, Organization
     db = SessionLocal()
     try:
         org = db.query(Organization).filter(Organization.contact_email == "paid@co.test").one()
         assert org.plan_tier == "max"
         assert org.monthly_log_quota == get_settings().quota_for("max")
+        assert not db.query(ApiKey).filter(
+            ApiKey.org_id == org.id, ApiKey.status == "active").count()
     finally:
         db.close()

@@ -582,17 +582,9 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
                 <div class="fbottom"><span>•••• •••• •••• ••••</span><span>FOXY</span></div>
               </div>
               <div class="face face-b" onclick="event.stopPropagation()">
-                <div class="fb-head">Quick hash check — local only</div>
-                <div class="fb-grid">
-                  <input class="fb-in" id="qPrompt" placeholder="Raw prompt…">
-                  <input class="fb-in" id="qResponse" placeholder="Raw response…">
-                </div>
-                <div class="fb-grid">
-                  <input class="fb-in" id="qTimestamp" placeholder="Timestamp…">
-                  <input class="fb-in" id="qPrevHash" placeholder="Prev hash…">
-                </div>
-                <input class="fb-in" id="qLedgerHash" placeholder="Ledger hash to compare…">
-                <button class="fb-go" onclick="quickVerify()">Compute &amp; compare</button>
+                <div class="fb-head">Quick ledger check</div>
+                <input class="fb-in" id="qLedgerHash" placeholder="Paste a ledger hash...">
+                <button class="fb-go" onclick="quickVerify()">Check ledger</button>
                 <div class="fb-res" id="quickResult"></div>
               </div>
             </div>
@@ -710,18 +702,11 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <div class="g2">
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="7" stroke="#000" stroke-width="2.3" fill="none"/></svg></span></div><div class="txt">Check a single record</div></div></div>
-          <div class="flabel" style="margin-top:0;">raw prompt</div>
-          <textarea class="cin" id="vPrompt" placeholder="paste exact original prompt text…" rows="3"></textarea>
-          <div class="flabel">raw response</div>
-          <textarea class="cin" id="vResponse" placeholder="paste exact original AI response…" rows="3"></textarea>
-          <div class="fb-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div><div class="flabel">timestamp</div><input class="cin" id="vTimestamp" placeholder="2026-06-28T14:02:11Z"></div>
-            <div><div class="flabel">previous hash</div><input class="cin" id="vPrevHash" placeholder="prev ledger hash"></div>
-          </div>
-          <div class="flabel">ledger hash (to compare)</div>
-          <input class="cin" id="vLedgerHash" placeholder="paste SHA‑256 from the ledger…">
+          <div style="font-size:10.5px;color:var(--muted);line-height:1.55;margin:0 0 12px;">Enter a chain hash from your ledger. Foxy recomputes the recorded event with its real predecessor; raw prompts and responses are never uploaded from this page.</div>
+          <div class="flabel" style="margin-top:0;">ledger hash</div>
+          <input class="cin" id="vLedgerHash" placeholder="paste chain hash from the ledger...">
           <div class="btnrow">
-            <button class="btn pri half" onclick="runVerify()">verify integrity</button>
+            <button class="btn pri half" onclick="runVerify()">check record</button>
             <button class="btn ghost half" onclick="clearVerify()">clear</button>
           </div>
           <div class="vres" id="verifyResult"></div>
@@ -745,12 +730,13 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           </div>
           <details class="clay pad" style="margin-top:16px;">
             <summary style="font-weight:700;font-size:11.5px;cursor:pointer;">How the fingerprint works <span style="color:var(--muted);font-weight:500;">· advanced</span></summary>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin:10px 0;">Each record is sealed with a SHA-256 fingerprint of the one before it plus the prompt, response and time — so altering anything breaks the chain and is instantly detectable.</div>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin:10px 0;">For current SDK capture, raw content stays local while customer-keyed commitments are sent to Foxy. The backend canonically serializes those commitments with operational metadata and the preceding chain hash. Altering a stored record breaks verification; the full-ledger check below also detects gaps.</div>
             <div class="codebox">
-              input = prev_hash + prompt + response + ts<br>
-              hash &nbsp;= SHA256(UTF8(input))<br>
-              isVerified = (local === ledger)
+              prompt_commitment &nbsp;= HMAC-SHA256(customer_key, canonical_prompt)<br>
+              response_commitment = HMAC-SHA256(customer_key, canonical_response)<br>
+              chain_hash &nbsp;= SHA256(canonical_record + previous_chain_hash)
             </div>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:10px;">For independent offline proof, export your ledger and run <code>python verifier/foxy_verify.py foxy-audit-logs.json</code>. Known-content checks require your customer-held commitment key and an events sidecar; neither is sent to Foxy.</div>
           </details>
           <div class="clay pad" style="margin-top:14px;">
             <div style="font-weight:700;font-size:11.5px;margin-bottom:6px;">Check the whole ledger</div>
@@ -867,7 +853,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div class="flabel">2 · set your key (from “+ new key” above)</div>
         <div class="codebox">export FOXY_API_KEY=foxy_sk_your_key_here</div>
         <div class="flabel">3 · decorate your model call</div>
-        <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.observe(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
+        <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.audit(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
         <button class="btn" onclick="checkSdkConnection(this)" style="margin-top:12px;">Test connection</button>
         <span id="sdkCheckOut" style="margin-left:8px;font-size:11px;font-weight:700;"></span>
       </div>
@@ -1123,53 +1109,31 @@ function revokeKey(btn){
   row.querySelector('.kactions').remove();
   showToast('Access revoked');
 }
-async function sha256(text){
-  const enc=new TextEncoder().encode(text);
-  const buf=await crypto.subtle.digest('SHA-256',enc);
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-// per-hash lookup now hits GET /v1/verify/hash/{hash} (see quickVerify2) — no fabricated data
-
-async function quickVerify(){
-  const p=document.getElementById('qPrompt').value, r=document.getElementById('qResponse').value,
-        ts=document.getElementById('qTimestamp').value, ph=document.getElementById('qPrevHash').value,
-        lh=document.getElementById('qLedgerHash').value.trim();
-  const el=document.getElementById('quickResult');
-  if(!p&&!r&&!ts&&!ph&&!lh){el.className='fb-res';el.textContent='';return;}
-  const computed=await sha256(ph+p+r+ts);
-  if(!lh){el.className='fb-res ok';el.textContent='hash: '+computed.slice(0,10)+'…';return;}
-  const match=computed===lh.toLowerCase().replace(/[^a-f0-9]/g,'');
-  el.className='fb-res '+(match?'ok':'bad');
-  el.textContent=match?'✓ match — intact':'✕ no match — tampered';
-}
-async function quickVerify2(){
-  const norm=document.getElementById('q2Hash').value.trim().toLowerCase().replace(/[^a-f0-9]/g,'');
-  const el=document.getElementById('quickResult2');
-  if(!norm){el.className='fb-res';el.textContent='';return;}
-  el.className='fb-res';el.textContent='checking ledger…';
+async function lookupLedgerHash(inputId, resultId, cardStyle){
+  const norm=document.getElementById(inputId).value.trim().toLowerCase().replace(/[^a-f0-9]/g,'');
+  const el=document.getElementById(resultId);
+  const base=cardStyle?'fb-res':'vres', good=cardStyle?'fb-res ok':'vres match', badClass=cardStyle?'fb-res bad':'vres tamper';
+  if(!norm){el.className=base;el.textContent='';return;}
+  if(norm.length!==64){el.className=badClass;el.textContent='enter a 64-character chain hash';return;}
+  el.className=base;el.textContent='checking ledger...';
   try{
     const r=await fetch('/v1/verify/hash/'+encodeURIComponent(norm),{credentials:'same-origin'});
-    if(r.status===401){el.className='fb-res bad';el.textContent='sign in to check the ledger';return;}
+    if(r.status===401){el.className=badClass;el.textContent='sign in to check the ledger';return;}
     const d=await r.json();
-    if(!d.found){el.className='fb-res bad';el.textContent='✕ not in ledger';return;}
-    if(!d.verified){el.className='fb-res bad';el.textContent='⚠ found but TAMPERED · seq '+d.seq;return;}
-    const bad=d.status==='breach';
-    el.className='fb-res '+(bad?'bad':'ok');
-    el.textContent=(bad?'✕':'✓')+' in ledger · seq '+d.seq+' · '+d.status;
-  }catch(e){el.className='fb-res bad';el.textContent='could not reach the server';}
+    if(!d.found){el.className=badClass;el.textContent='not in this ledger';return;}
+    if(!d.verified){el.className=badClass;el.textContent='tampering detected at seq '+d.seq;return;}
+    const policyBreach=d.status==='breach';
+    el.className=policyBreach?badClass:good;
+    el.textContent=(policyBreach?'record intact; policy breach':'record intact')+' - seq '+d.seq+' - '+d.status;
+  }catch(e){el.className=badClass;el.textContent='could not reach the server';}
 }
+async function quickVerify(){ return lookupLedgerHash('qLedgerHash','quickResult',true); }
+async function quickVerify2(){ return lookupLedgerHash('q2Hash','quickResult2',true); }
 async function runVerify(){
-  const p=document.getElementById('vPrompt').value, r=document.getElementById('vResponse').value,
-        ts=document.getElementById('vTimestamp').value, ph=document.getElementById('vPrevHash').value,
-        lh=document.getElementById('vLedgerHash').value.trim();
-  const computed=await sha256(ph+p+r+ts);
-  const el=document.getElementById('verifyResult'); el.className='vres';
-  if(!lh){el.classList.add('match');el.innerHTML='hash computed — no ledger hash to compare.<div class="hashout">'+computed+'</div>';}
-  else if(computed===lh.toLowerCase().replace(/[^a-f0-9]/g,'')){el.classList.add('match');el.innerHTML='✓ match — payload intact · isVerified: true<div class="hashout">'+computed+'</div>';}
-  else{el.classList.add('tamper');el.innerHTML='✕ tampered — hash mismatch · isVerified: false<div class="hashout">computed: '+computed+'</div>';}
+  return lookupLedgerHash('vLedgerHash','verifyResult',false);
 }
 function clearVerify(){
-  ['vPrompt','vResponse','vTimestamp','vPrevHash','vLedgerHash'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('vLedgerHash').value='';
   const el=document.getElementById('verifyResult'); el.className='vres'; el.innerHTML='';
 }
 let _exporting=false;

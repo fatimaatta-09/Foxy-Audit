@@ -31,8 +31,8 @@
   </div>
 
   <div class="prose">
-    <p class="lead">Each record stores the SHA-256 of the call it describes <b>plus the hash of the record before it</b>. The hashes link into a single chain, the way blocks link on a blockchain — no external ledger required.</p>
-    <p>That one design choice is what makes the trail tamper-<b>evident</b>. Change a prompt, a verdict, a timestamp, or delete an entry, and its hash no longer matches — which means the next record's stored "previous hash" no longer matches either, and so on all the way to the tip. The break is obvious and points straight at what was altered.</p>
+    <p class="lead">Each captured record stores a SHA-256 chain hash built from its commitments, selected operational metadata, and <b>the hash of the record before it</b>. The records link into a single chain; public anchoring is optional.</p>
+    <p>That design makes the trail tamper-<b>evident</b>. Changing a stored commitment or protected record field makes its recomputed hash differ; changing or deleting history also breaks the expected sequence or predecessor link. The verifier reports the affected sequence rather than silently accepting the change.</p>
 
     <p class="subhead">What that gives you</p>
     <ul class="points">
@@ -55,7 +55,7 @@
     <div class="footer-grid">
       <div class="footer-brand">
         <div class="footer-logo"><img src="/logo.png" alt=""><span>Foxy Audit</span></div>
-        <p>Cryptographic AI compliance you can prove, not just promise. Tamper-evident audit trails for every model call.</p>
+        <p>Cryptographic compliance evidence, not a certification. Tamper-evident records for interactions captured through the Foxy SDK.</p>
       </div>
       <div class="footer-col"><p class="footer-col-title">Product</p>
         <a href="/how-it-works.html">How it works</a><a href="/pricing.html">Pricing</a><a href="/sdk.html">SDK</a><a href="/passport.html">Compliance passport</a><a href="/desktop.html">Desktop app</a></div>
