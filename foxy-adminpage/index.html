@@ -28,20 +28,22 @@
 :root{
   /* ─── frosted glass surfaces (translucent — .clay/.dock/popovers add blur) ─── */
   --bg:      #FBEFE6;
-  --bg2:     rgba(255,255,255,.72);   /* inputs / inset            */
-  --surf:    rgba(255,255,255,.66);   /* card glass                */
-  --surf2:   rgba(255,255,255,.46);   /* row hover / inset glass   */
-  --surf3:   rgba(255,138,61,.15);    /* warm muted / default btn  */
-  --head-bg: rgba(255,247,240,.82);   /* sticky table header       */
+  --bg2:     rgba(255,255,255,.60);   /* inputs / inset            */
+  --surf:    rgba(255,255,255,.46);   /* chrome glass (translucent)*/
+  --surf-solid: rgba(255,255,255,.76);/* data/table panels (crisp) */
+  --surf2:   rgba(255,255,255,.30);   /* row hover / inset glass   */
+  --surf3:   rgba(255,138,61,.18);    /* warm muted / default btn  */
+  --head-bg: rgba(255,248,242,.74);   /* sticky table header       */
   --line:    rgba(124,74,26,.16);     /* hairline dividers         */
   --line2:   rgba(124,74,26,.30);     /* stronger dividers (th)    */
-  --rim:     rgba(255,255,255,.65);   /* glossy glass top-edge     */
+  --rim:     rgba(255,255,255,.75);   /* glossy glass top-edge     */
+  --grain:   .34;                     /* film-grain strength       */
 
   /* ─── text (warm) ─── */
   --ink:     #241A12;
   --ink2:    #3D3025;
-  --muted:   #6B5C4C;
-  --muted2:  #897966;
+  --muted:   #5E5040;
+  --muted2:  #837462;
 
   /* ─── fox brand (ORANGE) — primary/accent: buttons, active nav, focus, links,
          default funnel-bar fill ─── */
@@ -81,8 +83,8 @@
   --clay-press:0 3px 10px rgba(120,60,10,.10);
   --ring:      0 0 0 3px rgba(234,88,12,.4);
   --gate-overlay: rgba(60,28,8,.42);
-  --glass:     saturate(165%) blur(18px);
-  --glass-sm:  saturate(160%) blur(10px);
+  --glass:     saturate(185%) blur(26px);
+  --glass-sm:  saturate(175%) blur(12px);
 
   /* ─── type ─── */
   --disp: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -98,11 +100,12 @@
 /* ══ DARK MODE — warm dark glass over a deep ember gradient ══ */
 html[data-theme="dark"]{
   --bg:      #140E09;
-  --bg2:     rgba(28,20,13,.66);
-  --surf:    rgba(42,31,22,.52);
-  --surf2:   rgba(64,47,33,.42);
-  --surf3:   rgba(255,122,46,.16);
-  --head-bg: rgba(32,23,15,.86);
+  --bg2:     rgba(28,20,13,.56);
+  --surf:    rgba(44,32,22,.40);
+  --surf-solid: rgba(40,29,19,.66);
+  --surf2:   rgba(66,48,33,.30);
+  --surf3:   rgba(255,122,46,.18);
+  --head-bg: rgba(34,24,15,.70);
   --line:    rgba(255,255,255,.10);
   --line2:   rgba(255,255,255,.18);
   --rim:     rgba(255,255,255,.10);
@@ -165,17 +168,34 @@ html[data-theme="dark"] body{
     radial-gradient(1000px 800px at 52% 124%, rgba(255,120,40,.16), transparent 60%),
     linear-gradient(160deg,#180F08,#120C07 60%,#0E0906);
 }
-/* floating colour blobs — the "life" behind the frosted glass */
+/* vivid, defined colour orbs — the light the frosted glass refracts. Kept less
+   blurred + more saturated than a wash so the frost actually reads as glass. */
 body::before{
   content:'';position:fixed;inset:-25%;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(440px 440px at 18% 28%, var(--fox-glow), transparent 62%),
-    radial-gradient(380px 380px at 82% 18%, rgba(46,144,224,.30), transparent 62%),
-    radial-gradient(520px 520px at 62% 92%, rgba(255,150,60,.30), transparent 62%);
-  filter:blur(36px);opacity:.9;
-  animation:drift 26s ease-in-out infinite alternate;
+    radial-gradient(540px 540px at 10% 14%, rgba(255,106,26,.66), transparent 60%),
+    radial-gradient(470px 470px at 92% 8%,  rgba(46,150,232,.52), transparent 60%),
+    radial-gradient(400px 400px at 40% 42%, rgba(255,120,40,.30), transparent 55%),
+    radial-gradient(440px 440px at 80% 52%, rgba(255,150,50,.38), transparent 58%),
+    radial-gradient(660px 600px at 52% 106%, rgba(255,168,64,.58), transparent 62%);
+  filter:blur(20px);opacity:1;
+  animation:drift 24s ease-in-out infinite alternate;
 }
-@keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-3%,-2.5%,0) scale(1.1)}}
+html[data-theme="dark"] body::before{
+  background:
+    radial-gradient(480px 480px at 14% 20%, rgba(255,112,32,.42), transparent 60%),
+    radial-gradient(430px 430px at 88% 12%, rgba(42,124,224,.36), transparent 60%),
+    radial-gradient(360px 360px at 74% 58%, rgba(255,84,28,.28), transparent 60%),
+    radial-gradient(600px 560px at 52% 104%, rgba(255,150,60,.36), transparent 62%);
+}
+@keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-3.5%,-3%,0) scale(1.12)}}
+/* faint film grain over the frosted surfaces — tactile "real glass" finish */
+body::after{
+  content:'';position:fixed;inset:0;z-index:500;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:150px 150px;opacity:var(--grain);mix-blend-mode:soft-light;
+}
+html[data-theme="dark"]{--grain:.22}
 
 /* focus — vivid orange ring on every keyboard-focused control */
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
@@ -284,6 +304,12 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
   -webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);
   border:1px solid var(--line);border-radius:var(--r-lg);
   box-shadow:var(--clay);
+}
+/* panels that hold dense tables use a more opaque frosted layer + softer blur
+   so tiny IDs/numbers stay crisp — the "keep data readable" tier of the glass */
+.clay:has(.twrap),.clay:has(.tbl),.clay:has(.inbox-row){
+  background:var(--surf-solid);
+  --glass:saturate(150%) blur(14px);
 }
 .pad{padding:clamp(14px,1.5vw,20px)}
 
