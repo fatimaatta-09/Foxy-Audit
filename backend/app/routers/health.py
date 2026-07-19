@@ -32,10 +32,12 @@ def health(
     ).scalar_one()
     uptime_seconds = int(time.time() - START_TIME)
     
+    settings = get_settings()
     return {
         "status": "ok",
         "org": org.name,
-        "gemini_model": get_settings().gemini_model,
+        "gemini_model": settings.gemini_model if settings.gemini_api_key else None,
+        "openai_model": settings.openai_model if settings.openai_api_key else None,
         "chain_height": chain_height,
         "uptime_seconds": uptime_seconds
     }
@@ -62,7 +64,7 @@ def ready(db: Session = Depends(get_db)):
         text("SELECT beat_at FROM worker_heartbeat WHERE id = 1")
     ).scalar_one_or_none()
     # Stale if no beat within a few poll intervals + slack for one slow Gemini call.
-    stale_after = s.grading_poll_interval * 5 + s.gemini_timeout + 10
+    stale_after = s.grading_poll_interval * 5 + max(s.gemini_timeout, s.openai_timeout) + 10
     if hb is None:
         worker_ok = False
         checks["worker"] = "no heartbeat yet"

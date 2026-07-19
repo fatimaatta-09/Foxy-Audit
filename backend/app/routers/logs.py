@@ -478,10 +478,17 @@ def stats(
     ).scalar_one()
     determinate = clean + breaches
     clean_rate = round(100.0 * clean / determinate, 1) if determinate else None
+    settings = get_settings()
+    judge_models = []
+    if settings.gemini_api_key:
+        judge_models.append(settings.gemini_model)
+    if settings.openai_api_key:
+        judge_models.append(settings.openai_model)
+    judge_model = " + ".join(judge_models) or "local-policy"
     return StatsResponse(
         total_logged=total, breaches=breaches, clean_rate=clean_rate,
         avg_token_count=round(float(avg_tokens), 1),
-        judge_model=get_settings().gemini_model,
+        judge_model=judge_model,
         avg_seconds_to_verdict=round(float(avg_verdict), 1) if avg_verdict is not None else None,
         grading=GradingCounts(**gc), activity_7d=activity,
     )

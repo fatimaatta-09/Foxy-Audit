@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"   # current free-tier model; retired 1.5-pro rejects AQ-prefixed keys
     gemini_timeout: float = 12.0
+    # Optional OpenAI Responses API judge. Blank key disables this provider.
+    # Use gpt-5.6 for the production API or chat-latest when the ChatGPT alias
+    # is specifically required by the deployment.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5.6"
+    openai_timeout: float = 12.0
     # When the judge is unreachable: False = fail-open (write row, no breach),
     # True = fail-closed (flag for human review). The chain row is always written.
     gemini_fail_closed: bool = False

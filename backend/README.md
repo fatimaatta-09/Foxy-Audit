@@ -2,7 +2,8 @@
 
 FastAPI ingestion service: validates interaction metadata, writes it into a
 tamper-evident **sequential hash chain** in PostgreSQL (with Row-Level Security
-for tenant isolation), and grades each interaction with **Gemini 2.5 Flash**.
+for tenant isolation), and optionally grades metadata with Gemini and/or the
+OpenAI Responses API.
 
 ## Endpoints
 
@@ -21,7 +22,7 @@ All endpoints except `/v1/webhooks/stripe` require `Authorization: Bearer <org_a
 
 ```bash
 cd backend
-cp .env.example .env                 # then set GEMINI_API_KEY
+cp .env.example .env                 # provider keys are optional
 docker compose up -d                 # Postgres 16 on :5432
 python -m venv .venv && . .venv/Scripts/activate   # (Windows: .venv\Scripts\activate)
 pip install -r requirements.txt
@@ -56,9 +57,10 @@ python scripts/verify_chain.py        # per-row PASS/FAIL table
 - **Async grading:** `/v1/logs/batch` returns `202 Accepted` after the chain row
   is committed. A background worker grades the metadata and writes an immutable
   verdict event; the legacy verdict column remains as a compatibility projection.
-- **Unknown on evaluator outage:** if Gemini is unreachable, deterministic local
-  metadata rules still run and semantic evaluation is reported as `unknown` when
-  it cannot be supported by the available evidence. Unknown is not counted as clean.
+- **Content-blind grading:** Gemini and OpenAI receive hashes and bounded metadata,
+  never raw prompt or response text. When both are configured, a breach from either
+  known provider wins. Provider outages are explicit `unknown` results; deterministic
+  local metadata rules still run and unknown is never counted as clean.
 - **RLS:** `auth.require_org` sets `app.current_org` via `set_config(..., true)`
   per transaction; the `org_isolation` policy (with `FORCE`) scopes every
   `audit_logs` query to the calling tenant.

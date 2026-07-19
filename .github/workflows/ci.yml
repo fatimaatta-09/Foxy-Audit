@@ -86,6 +86,8 @@ jobs:
         run: pytest sdk/tests -q
       - name: Hash-chain regression test
         run: pytest backend/tests/test_chain.py -q
+      - name: Offline judge demo
+        run: python demo/offline_demo.py
       - name: Clean-venv install (non-editable) + console script
         # Proves `pip install foxy-audit` works from a fresh environment with no
         # project history — the exact thing an outside user does.
