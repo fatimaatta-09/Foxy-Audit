@@ -21,6 +21,7 @@ from ..admin_audit import client_ip, record_admin_action
 from ..anchor import head_of, latest_anchor
 from ..auth import require_platform_role, set_org_scope_for_staff
 from ..config import get_settings
+from ..platform_config import effective_quota
 from ..db import get_db
 from ..models import ApiKey, AuditLog, OrgPolicy, Organization, StaffUser, UsageDaily, User
 from .verify import verify_chain
@@ -190,7 +191,7 @@ def set_organization_plan(
     org.monthly_log_quota = (
         body.monthly_log_quota
         if body.monthly_log_quota is not None
-        else get_settings().quota_for(plan)
+        else effective_quota(db, plan, get_settings())
     )
     org.trial_ends_at = (
         datetime.now(timezone.utc) + timedelta(days=get_settings().trial_days)

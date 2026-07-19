@@ -601,3 +601,35 @@ class AuthHandoffToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
+
+
+class PlatformConfig(Base):
+    """Platform-global config overrides (P3 · §F) — feature flags, default quotas,
+    alert thresholds. Effective value = this override OR the Settings default. No
+    org_id → platform-only (FORCE RLS with no policy; superuser staff bypass)."""
+    __tablename__ = "platform_config"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)   # scalar stored as JSON
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class PlatformAnnouncement(Base):
+    """Broadcast banner shown on the ops console (P3 · §G). Platform-only."""
+    __tablename__ = "platform_announcements"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False, server_default="info")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

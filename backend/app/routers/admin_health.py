@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..auth import require_platform_role
 from ..config import Settings, get_settings
 from ..db import get_db
+from ..platform_config import get_int
 from ..models import (
     AdminAction, AuditLog, ChainAnchor, StaffUser, UsageDaily, WorkerHeartbeat,
 )
@@ -112,7 +113,7 @@ def build_health(db: Session, settings: Settings | None = None) -> dict:
         if row.status == "confirmed" and row.confirmed_at is not None
     ]
     newest_confirmed = max(confirmed) if confirmed else None
-    stale_after_anchor = settings.anchor_stale_alert_seconds
+    stale_after_anchor = get_int(db, "anchor_stale_alert_seconds", settings.anchor_stale_alert_seconds)
     stale_latest = sum(
         1 for value in confirmed
         if stale_after_anchor > 0

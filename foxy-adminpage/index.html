@@ -11,7 +11,7 @@
   var r=document.documentElement;
   var t=localStorage.getItem('foxy_admin_theme')||'light';
   var sk=localStorage.getItem('foxy_admin_skin')||'glass';
-  r.dataset.theme=t; r.dataset.skin=sk;
+  r.dataset.theme=t; r.dataset.skin=sk; r.dataset.density=localStorage.getItem('foxy_admin_density')||'comfortable';
   if(t==='dark'){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#140E09');}
 }catch(e){}})();</script>
 <!-- Self-hosted fonts (embedded woff2, latin subset) — no external CDN, admin-CSP-safe.
@@ -585,6 +585,17 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
 .modal-x{background:var(--surf2);border:1px solid var(--line);border-radius:9px;width:32px;height:32px;min-width:32px;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
 .modal-x:hover{color:var(--fox2);border-color:var(--line2)}
 @media(prefers-reduced-motion:reduce){.modal-card{animation:none}}
+/* ════════ ANNOUNCEMENT BANNER + DENSITY (Phase 3) ════════ */
+.annbar{display:flex;align-items:flex-start;gap:12px;padding:11px 15px;border-radius:var(--r-md);margin-bottom:10px;border:1px solid var(--line2);font-size:12.5px;background:var(--info-soft);color:var(--infoc)}
+.annbar.warning{background:var(--warn-soft);color:var(--warnc)}
+.annbar.critical{background:var(--danger-soft);color:var(--danger)}
+.annbar b{font-weight:700}
+.annbar .x{margin-left:auto;cursor:pointer;background:none;border:none;color:inherit;opacity:.7;font-size:14px;line-height:1;padding:2px 4px}
+.annbar .x:hover{opacity:1}
+html[data-density="compact"] .tbl td{padding:5px 10px}
+html[data-density="compact"] .tbl th{padding:6px 10px}
+html[data-density="compact"] .kpi{padding:11px 13px}
+html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
 /* ════════ INBOX LIST ROWS ════════ */
 .inbox-row{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:10px 11px;cursor:pointer;color:var(--ink);font-family:var(--disp);border-radius:8px;transition:background var(--dur) ease}
@@ -820,6 +831,7 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
     </header>
 
     <!-- ──────────────── OVERVIEW ──────────────── -->
+      <div id="annBanner"></div>
     <section class="page active" id="page-overview">
       <div class="pagehead">
         <div>
@@ -1177,27 +1189,52 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
           <div class="sub">Local to this browser — doesn't affect other staff.</div>
         </div>
       </div>
-      <div class="split">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start;">
         <div class="clay pad">
-          <div style="font-weight:800;font-size:15px;margin-bottom:14px;">Appearance</div>
-          <label class="voxswitch">
-            <input type="checkbox" id="darkModeToggle" onchange="setTheme(this.checked?'dark':'light')">
-            <span class="voxswitch-track"><span class="voxswitch-knob"></span></span>
-            <span>dark mode</span>
-          </label>
+          <div class="panel-h"><div><div class="eyebrow">local · this browser</div><div class="panel-t">Appearance</div></div></div>
+          <label class="voxswitch" style="margin-bottom:14px;"><input type="checkbox" id="darkModeToggle" onchange="setTheme(this.checked?'dark':'light')"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>dark mode</span></label>
           <div class="flabel">surface style</div>
           <div class="segmented" role="group" aria-label="Surface style">
             <button type="button" class="segbtn" data-skin-opt="glass" aria-pressed="true" onclick="setSkin('glass')">Glass</button>
             <button type="button" class="segbtn" data-skin-opt="clay" aria-pressed="false" onclick="setSkin('clay')">Clay</button>
           </div>
-          <div class="sub" style="margin-top:8px;font-size:11px;">Glass = frosted translucent &middot; Clay = soft extruded. Saved to this browser.</div>
+          <div class="flabel">table density</div>
+          <div class="segmented" role="group" aria-label="Table density">
+            <button type="button" class="segbtn" data-density-opt="comfortable" aria-pressed="true" onclick="setDensity('comfortable')">Comfortable</button>
+            <button type="button" class="segbtn" data-density-opt="compact" aria-pressed="false" onclick="setDensity('compact')">Compact</button>
+          </div>
+          <div class="sub" style="margin-top:10px;font-size:11px;">Saved to this browser only — doesn't affect other staff.</div>
         </div>
         <div class="clay pad">
-          <div style="font-weight:800;font-size:15px;margin-bottom:14px;">Signed in as</div>
-          <div class="flabel" style="margin-top:0;">email</div>
-          <input class="cin" id="setEmail" readonly style="opacity:.7;">
-          <div class="flabel">platform role</div>
-          <input class="cin" id="setRole" readonly style="opacity:.7;">
+          <div class="panel-h"><div><div class="eyebrow">your account</div><div class="panel-t">Account &amp; security</div></div></div>
+          <div class="flabel" style="margin-top:0;">email</div><input class="cin" id="setEmail" readonly style="opacity:.7;">
+          <div class="flabel">platform role</div><input class="cin" id="setRole" readonly style="opacity:.7;">
+          <div class="flabel">security</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button class="btn sm" onclick="pwModal()">Change password</button>
+            <span id="setMfaBtns"></span>
+          </div>
+          <div class="flabel">recent activity</div>
+          <div id="setActivity" class="twrap" style="max-height:200px;overflow:auto;"><div class="sub mono">loading…</div></div>
+        </div>
+        <div class="clay pad" id="setConfigCard" style="display:none;">
+          <div class="panel-h"><div><div class="eyebrow">superadmin · platform-wide</div><div class="panel-t">Platform configuration</div></div><button class="btn sm pri" onclick="saveConfig()">Save changes</button></div>
+          <div id="setConfig"><div class="sub mono">loading…</div></div>
+        </div>
+        <div class="clay pad" id="setBroadcastCard" style="display:none;">
+          <div class="panel-h"><div><div class="eyebrow">superadmin · announcements</div><div class="panel-t">Broadcast</div></div></div>
+          <div class="flabel" style="margin-top:0;">title</div><input class="cin" id="bcTitle" placeholder="Scheduled maintenance">
+          <div class="flabel">message</div><textarea class="cin" id="bcBody" style="min-height:70px;resize:vertical;" placeholder="What's happening and when…"></textarea>
+          <div class="flabel">level</div>
+          <div class="segmented" id="bcLevel" role="group" aria-label="Level">
+            <button type="button" class="segbtn" data-level="info" aria-pressed="true" onclick="_segPick(this)">info</button>
+            <button type="button" class="segbtn" data-level="warning" aria-pressed="false" onclick="_segPick(this)">warning</button>
+            <button type="button" class="segbtn" data-level="critical" aria-pressed="false" onclick="_segPick(this)">critical</button>
+          </div>
+          <label class="sub mono" style="display:flex;gap:6px;align-items:center;margin-top:10px;cursor:pointer;font-size:11px;"><input type="checkbox" id="bcEmail"> also email all active staff</label>
+          <button class="btn pri" style="margin-top:12px;" onclick="sendBroadcast()">Post announcement</button>
+          <div class="flabel">active announcements</div>
+          <div id="setAnnouncements"><div class="sub mono">loading…</div></div>
         </div>
       </div>
     </section>
@@ -1863,6 +1900,17 @@ function loadSettings(){
   $('darkModeToggle').checked=document.documentElement.dataset.theme==='dark';
   const sk=document.documentElement.dataset.skin||'glass';
   document.querySelectorAll('[data-skin-opt]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.skinOpt===sk?'true':'false'));
+  const dn=document.documentElement.dataset.density||'comfortable';
+  document.querySelectorAll('[data-density-opt]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.densityOpt===dn?'true':'false'));
+  const mfaOn=!!(ME&&ME.mfa_enabled);
+  $('setMfaBtns').innerHTML=mfaOn
+    ? '<button class="btn sm" onclick="mfaDisable()">Disable MFA</button> <span class="chip safe">MFA on</span>'
+    : '<button class="btn sm pri" onclick="mfaEnableFlow()">Enable MFA</button> <span class="chip dim">MFA off</span>';
+  loadSelfActivity();
+  const isSuper=can('superadmin');
+  $('setConfigCard').style.display=isSuper?'':'none';
+  $('setBroadcastCard').style.display=isSuper?'':'none';
+  if(isSuper){ loadConfig(); loadAnnouncements(); }
 }
 
 /* ──────────── auth gate ──────────── */
@@ -1887,6 +1935,7 @@ function enter(me){
   if(can('superadmin'))$('navStaff').style.display='';
   loadOverview();
   loadHealth();loadAlerts();
+  loadBanner();
   pollInbox(); if(!window.__inboxTimer) window.__inboxTimer=setInterval(pollInbox,20000);
 }
 $('gateForm').addEventListener('submit',async e=>{
@@ -2507,6 +2556,122 @@ async function staffDisable(id){
 async function staffMfaReset(id){
   const r=await api('/admin/v1/staff/'+id+'/mfa/reset',{method:'POST'});
   if(r.ok){ toast('MFA enrolment reset'); await loadStaff(); staffManage(id); } else toast('MFA reset failed ('+r.status+')');
+}
+
+/* ──────────── settings (Phase 3): density, self-service, config, broadcast ──────────── */
+function setDensity(d){
+  if(d!=='compact')d='comfortable';
+  document.documentElement.dataset.density=d;
+  try{localStorage.setItem('foxy_admin_density',d)}catch(e){}
+  document.querySelectorAll('[data-density-opt]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.densityOpt===d?'true':'false'));
+}
+async function loadSelfActivity(){
+  const el=$('setActivity'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/auth/activity?limit=25'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">unavailable</div>'; return; }
+  const items=(await r.json()).items||[];
+  if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No recent activity.</div>'; return; }
+  el.innerHTML='<table class="tbl"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td></tr>`).join('')+'</tbody></table>';
+}
+function pwModal(){
+  openModal({eyebrow:'your account', title:'Change password',
+    bodyHTML:`<div class="flabel" style="margin-top:0;">current password</div><input class="cin" id="pwCur" type="password" autocomplete="current-password"><div class="flabel">new password (min 8 characters)</div><input class="cin" id="pwNew" type="password" autocomplete="new-password"><div id="pwErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doChangePw()">Change password</button>`});
+}
+async function _doChangePw(){
+  const cur=$('pwCur').value, nw=$('pwNew').value;
+  if((nw||'').length<8){ $('pwErr').textContent='New password must be at least 8 characters.'; return; }
+  const r=await api('/admin/v1/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ closeModal(); toast('password changed'); } else $('pwErr').textContent=d.detail||'Change failed.';
+}
+async function mfaEnableFlow(){
+  const r=await api('/admin/v1/auth/mfa/enable',{method:'POST'});
+  if(!r.ok){ toast('could not start MFA enrolment'); return; }
+  openModal({eyebrow:'your account', title:'Enable MFA',
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">We emailed a 6-digit code to <b>${esc(ME?ME.email:'')}</b>. Enter it to turn on MFA.</div><div class="flabel" style="margin-top:0;">code</div><input class="cin" id="mfaCode" inputmode="numeric" placeholder="123456"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doMfaConfirm()">Confirm</button>`});
+}
+async function _doMfaConfirm(){
+  const code=($('mfaCode').value||'').trim();
+  const r=await api('/admin/v1/auth/mfa/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ closeModal(); toast('MFA enabled'); if(ME)ME.mfa_enabled=true; loadSettings(); } else $('mfaErr').textContent=d.detail||'Invalid code.';
+}
+function mfaDisable(){
+  openModal({eyebrow:'your account', title:'Disable MFA',
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">Confirm your password to turn off MFA.</div><div class="flabel" style="margin-top:0;">password</div><input class="cin" id="mfaPw" type="password" autocomplete="current-password"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doMfaDisable()">Disable MFA</button>`});
+}
+async function _doMfaDisable(){
+  const pw=$('mfaPw').value;
+  const r=await api('/admin/v1/auth/mfa/disable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ closeModal(); toast('MFA disabled'); if(ME)ME.mfa_enabled=false; loadSettings(); } else $('mfaErr').textContent=d.detail||'Failed.';
+}
+let CONFIG_META={};
+async function loadConfig(){
+  const el=$('setConfig'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/config'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">unavailable ('+(r?r.status:'network')+')</div>'; return; }
+  const cfg=(await r.json()).config||{}; CONFIG_META=cfg;
+  const groups={};
+  Object.keys(cfg).forEach(k=>{ const g=cfg[k].group||'Other'; (groups[g]=groups[g]||[]).push(k); });
+  el.innerHTML=Object.keys(groups).map(g=>
+    `<div class="flabel" style="margin-top:14px;">${esc(g)}</div>`+groups[g].map(k=>{
+      const m=cfg[k];
+      const tag=m.overridden?'<span class="chip info" style="font-size:8px;">override</span>':`<span class="sub mono" style="font-size:9px;">default ${esc(m.default)}</span>`;
+      return `<div style="margin-bottom:10px;"><label class="sub" style="font-size:11px;display:block;margin-bottom:4px;">${esc(m.label||k)} ${tag}</label><input class="cin" data-cfgkey="${esc(k)}" inputmode="numeric" value="${esc(m.value)}">${m.help?`<div class="sub" style="font-size:10px;margin-top:2px;">${esc(m.help)}</div>`:''}</div>`;
+    }).join('')
+  ).join('');
+}
+async function saveConfig(){
+  const updates={};
+  document.querySelectorAll('#setConfig [data-cfgkey]').forEach(inp=>{
+    const k=inp.dataset.cfgkey, m=CONFIG_META[k]||{}, v=inp.value.trim();
+    if(m.type==='int'){ const n=Number(v); if(Number.isInteger(n)&&String(n)!==String(m.value)) updates[k]=n; }
+    else if(v!==String(m.value)) updates[k]=v;
+  });
+  if(!Object.keys(updates).length){ toast('no changes to save'); return; }
+  const r=await api('/admin/v1/config',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({updates})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ toast('configuration saved'); loadConfig(); } else toast(d.detail||('save failed ('+r.status+')'));
+}
+async function sendBroadcast(){
+  const title=$('bcTitle').value.trim(), body=$('bcBody').value.trim();
+  if(!title||!body){ toast('title and message are required'); return; }
+  const lvlBtn=document.querySelector('#bcLevel .segbtn[aria-pressed="true"]');
+  const level=lvlBtn?lvlBtn.dataset.level:'info';
+  const email_staff=$('bcEmail').checked;
+  const r=await api('/admin/v1/broadcast',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title,body,level,email_staff})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ toast('announcement posted'+(d.emailed?(' · emailed '+d.emailed+' staff'):'')); $('bcTitle').value=''; $('bcBody').value=''; $('bcEmail').checked=false; loadAnnouncements(); loadBanner(); }
+  else toast(d.detail||('broadcast failed ('+r.status+')'));
+}
+async function loadAnnouncements(){
+  const el=$('setAnnouncements'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/announcements'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">unavailable</div>'; return; }
+  const items=(await r.json()).items||[];
+  if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No active announcements.</div>'; return; }
+  el.innerHTML=items.map(a=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);"><span class="chip ${a.level==='critical'?'bad':a.level==='warning'?'warn':'info'}">${esc(a.level)}</span><div style="min-width:0;flex:1;"><b style="font-size:12px;">${esc(a.title)}</b><div class="sub" style="font-size:11px;">${esc((a.body||'').slice(0,120))}</div></div><button class="btn sm danger" onclick="deactivateAnn('${a.id}')">Deactivate</button></div>`).join('');
+}
+async function deactivateAnn(id){
+  const r=await api('/admin/v1/announcements/'+id+'/deactivate',{method:'POST'});
+  if(r.ok){ toast('deactivated'); loadAnnouncements(); loadBanner(); } else toast('deactivate failed');
+}
+async function loadBanner(){
+  const el=$('annBanner'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/announcements'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML=''; return; }
+  const items=(await r.json()).items||[];
+  let dismissed={}; try{ dismissed=JSON.parse(sessionStorage.getItem('foxy_ann_dismissed')||'{}'); }catch(e){}
+  el.innerHTML=items.filter(a=>!dismissed[a.id]).map(a=>`<div class="annbar ${esc(a.level)}"><div style="min-width:0;"><b>${esc(a.title)}</b> <span style="opacity:.9;">${esc(a.body)}</span></div><button class="x" aria-label="Dismiss" onclick="dismissAnn('${a.id}')">✕</button></div>`).join('');
+}
+function dismissAnn(id){
+  let d={}; try{ d=JSON.parse(sessionStorage.getItem('foxy_ann_dismissed')||'{}'); }catch(e){}
+  d[id]=1; try{ sessionStorage.setItem('foxy_ann_dismissed',JSON.stringify(d)); }catch(e){}
+  loadBanner();
 }
 boot();
 </script>

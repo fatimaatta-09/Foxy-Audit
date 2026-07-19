@@ -16,19 +16,19 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import email, password_reset
+from .. import email, mfa, password_reset
 from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_staff
 from ..config import get_settings
 from ..db import get_db
-from ..models import StaffUser
+from ..models import AdminAction, StaffUser
 
 # Own limiter (registered on the admin sub-app in main.py). The customer login is
 # rate-limited too (auth_human: 10/minute); the *admin* login keeps its own guard
@@ -51,6 +51,7 @@ class StaffMeResponse(BaseModel):
     id: str
     email: str
     platform_role: str
+    mfa_enabled: bool = False
 
 
 class StaffMfaRequest(BaseModel):
@@ -207,4 +208,84 @@ def staff_logout(request: Request, db: Session = Depends(get_db)):
 @router.get("/v1/auth/me", response_model=StaffMeResponse)
 def staff_me(staff: StaffUser = Depends(require_staff)):
     return StaffMeResponse(id=str(staff.id), email=staff.email,
-                           platform_role=staff.platform_role)
+                           platform_role=staff.platform_role, mfa_enabled=staff.mfa_enabled)
+
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+@router.post("/v1/auth/change-password")
+def change_password(payload: ChangePasswordRequest, request: Request,
+                    staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    """Change your own staff password (verifies the current one)."""
+    if not bcrypt.checkpw(payload.current_password.encode("utf-8"),
+                          staff.password_hash.encode("utf-8")):
+        raise HTTPException(status_code=400, detail="current password is incorrect")
+    staff.password_hash = bcrypt.hashpw(
+        payload.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    record_admin_action(db, staff, "staff.password_change", target_type="staff_user",
+                        target_id=str(staff.id), ip=client_ip(request))
+    db.commit()
+    return {"status": "password_changed"}
+
+
+@router.post("/v1/auth/mfa/enable")
+def mfa_enable(request: Request, staff: StaffUser = Depends(require_staff),
+               db: Session = Depends(get_db)):
+    """Start self-enrolment: email a code; confirm at /mfa/confirm to switch it on."""
+    mfa.issue_code(db, staff, staff.email)     # commits + emails the code
+    return {"status": "code_sent", "email": staff.email}
+
+
+class MfaConfirmRequest(BaseModel):
+    code: str
+
+
+@router.post("/v1/auth/mfa/confirm")
+def mfa_confirm(payload: MfaConfirmRequest, request: Request,
+                staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    if not mfa.code_valid(staff, payload.code):
+        raise HTTPException(status_code=400, detail="invalid or expired code")
+    staff.mfa_enabled = True
+    mfa.clear_code(staff)
+    record_admin_action(db, staff, "staff.mfa_enable", target_type="staff_user",
+                        target_id=str(staff.id), ip=client_ip(request))
+    db.commit()
+    return {"status": "mfa_enabled"}
+
+
+class MfaDisableRequest(BaseModel):
+    password: str
+
+
+@router.post("/v1/auth/mfa/disable")
+def mfa_disable(payload: MfaDisableRequest, request: Request,
+                staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    if not bcrypt.checkpw(payload.password.encode("utf-8"),
+                          staff.password_hash.encode("utf-8")):
+        raise HTTPException(status_code=400, detail="password is incorrect")
+    staff.mfa_enabled = False
+    mfa.clear_code(staff)
+    record_admin_action(db, staff, "staff.mfa_disable", target_type="staff_user",
+                        target_id=str(staff.id), ip=client_ip(request))
+    db.commit()
+    return {"status": "mfa_disabled"}
+
+
+@router.get("/v1/auth/activity")
+def my_activity(staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db),
+                limit: int = Query(default=30, ge=1, le=100)):
+    """The signed-in staff member's own recent audited actions (sessions + changes)."""
+    rows = db.execute(
+        select(AdminAction).where(AdminAction.staff_user_id == staff.id)
+        .order_by(AdminAction.created_at.desc()).limit(limit)
+    ).scalars().all()
+    return {"items": [
+        {"action": a.action, "target_type": a.target_type, "target_id": a.target_id,
+         "detail": a.detail, "ip": a.ip,
+         "at": a.created_at.isoformat() if a.created_at else None}
+        for a in rows
+    ]}

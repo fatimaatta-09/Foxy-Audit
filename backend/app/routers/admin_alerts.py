@@ -12,6 +12,7 @@ from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_platform_role
 from ..config import get_settings
 from ..db import get_db
+from ..platform_config import get_int
 from ..models import AdminAction, ChainAnchor, Organization, StaffUser
 from .admin_health import build_health
 
@@ -48,6 +49,7 @@ def _derive_alerts(db: Session) -> list[dict]:
     settings = get_settings()
     health = build_health(db, settings)
     alerts = []
+    stale_thresh = get_int(db, "anchor_stale_alert_seconds", settings.anchor_stale_alert_seconds)
 
     worker = health["worker"]
     if worker["status"] != "ok":
@@ -92,8 +94,8 @@ def _derive_alerts(db: Session) -> list[dict]:
         last_confirmed = max(confirmed) if confirmed else None
         if (
             last_confirmed is not None
-            and settings.anchor_stale_alert_seconds > 0
-            and (now - last_confirmed).total_seconds() > settings.anchor_stale_alert_seconds
+            and stale_thresh > 0
+            and (now - last_confirmed).total_seconds() > stale_thresh
         ):
             age = int((now - last_confirmed).total_seconds())
             alerts.append(_alert(
