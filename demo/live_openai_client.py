@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import uuid
 from typing import Any
 from urllib import error as urllib_error
@@ -89,6 +90,30 @@ def verify_foxy_chain(endpoint: str, api_key: str) -> dict[str, Any]:
         raise RuntimeError(f"Foxy verification request failed: {type(exc).__name__}") from exc
 
 
+def wait_for_grading(endpoint: str, api_key: str, timeout_seconds: int) -> dict[str, Any]:
+    """Wait for the worker's genuine queued verdict; never invent a clean state."""
+    deadline = time.monotonic() + timeout_seconds
+    url = endpoint.rstrip("/") + "/v1/logs?limit=1"
+    while time.monotonic() < deadline:
+        request = urllib_request.Request(
+            url,
+            headers={"Authorization": f"Bearer {api_key}"},
+            method="GET",
+        )
+        try:
+            with urllib_request.urlopen(request, timeout=15) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib_error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise RuntimeError(f"Foxy grading status request failed: {type(exc).__name__}") from exc
+        items = payload.get("items", [])
+        if items and items[0].get("grading_status") in {"graded", "failed"}:
+            return items[0]
+        time.sleep(1)
+    raise RuntimeError(
+        f"No grading result after {timeout_seconds}s. Check the foxy-worker service."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Send a real GPT-5.6 call through the Foxy SDK and verify its receipt."
@@ -101,6 +126,10 @@ def main() -> None:
     parser.add_argument(
         "--model", default=os.getenv("OPENAI_MODEL", "gpt-5.6"),
         help="OpenAI Responses API model to call (default: OPENAI_MODEL or gpt-5.6).",
+    )
+    parser.add_argument(
+        "--grading-wait-seconds", type=int, default=30,
+        help="Maximum wait for the backend worker's real verdict (default: 30).",
     )
     args = parser.parse_args()
 
@@ -122,7 +151,7 @@ def main() -> None:
     def ask_customer_model(prompt: str, **_metadata: str) -> str:
         return call_openai(prompt, args.model, openai_api_key)
 
-    print("[1/3] Calling the real OpenAI Responses API...")
+    print("[1/4] Calling the real OpenAI Responses API...")
     response = ask_customer_model(
         args.prompt,
         provider="openai",
@@ -132,10 +161,23 @@ def main() -> None:
     print("[PASS] OpenAI response received:")
     print(response[:600])
 
-    print("\n[2/3] Foxy received a durable content-blind audit receipt.")
+    print("\n[2/4] Foxy received a durable content-blind audit receipt.")
     print("[PASS] Raw prompt/response stayed in the client process; Foxy received commitments.")
 
-    print("\n[3/3] Verifying the server-owned hash chain...")
+    print("\n[3/4] Waiting for the queued metadata policy result...")
+    graded = wait_for_grading(
+        foxy_endpoint, foxy_api_key, max(1, args.grading_wait_seconds)
+    )
+    if graded.get("grading_status") == "failed":
+        raise SystemExit("Foxy grading failed: " + json.dumps(graded, sort_keys=True))
+    verdict = graded.get("gemini_verdict") or {}
+    print("[PASS] Worker verdict:", json.dumps({
+        "decision": verdict.get("decision"),
+        "risk_score": verdict.get("risk_score"),
+        "reason": verdict.get("reason"),
+    }, sort_keys=True))
+
+    print("\n[4/4] Verifying the server-owned hash chain...")
     verification = verify_foxy_chain(foxy_endpoint, foxy_api_key)
     if not verification.get("ok"):
         raise SystemExit(
