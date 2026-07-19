@@ -2224,16 +2224,16 @@ function runExport(){
   const $=id=>document.getElementById(id);
   const api=(path)=>fetch(path,{credentials:'same-origin'});
   const jget=async p=>{ try{ const r=await api(p); return r.ok?await r.json():null; }catch(e){ return null; } };
-  function stepRow(done,title,desc,actLabel,act){
+  function stepRow(done,title,desc,page,label){
     const mark=done
       ? '<span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--safe-bg);color:#0a3d20;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;border:2px solid #000;">✓</span>'
-      : '<span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:transparent;border:2px dashed var(--line);display:inline-block;"></span>';
-    return '<div style="display:flex;align-items:flex-start;gap:11px;padding:9px 0;border-bottom:2px dashed var(--line);">'
+      : '<span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:transparent;border:2px dashed var(--line);display:inline-block;margin-top:2px;"></span>';
+    return '<div style="display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:2px dashed var(--line);">'
       +mark+'<div style="flex:1;min-width:0;">'
       +'<div style="font-weight:700;font-size:12.5px;'+(done?'color:var(--muted);text-decoration:line-through;':'')+'">'+title+'</div>'
       +(done?'':'<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:2px;">'+desc+'</div>')
       +'</div>'
-      +(done?'':'<button class="btn ghost" style="flex-shrink:0;padding:5px 10px;font-size:10.5px;margin:0;" onclick="'+act+'">'+actLabel+' →</button>')
+      +(done?'':'<button class="btn ghost sm" style="flex:0 0 auto;width:auto;white-space:nowrap;margin:0;" onclick="go(\''+page+'\',null)">'+label+' →</button>')
       +'</div>';
   }
   window.loadFirstRun=async function(){
@@ -2246,9 +2246,9 @@ function runExport(){
     // live — retire the checklist so it never nags an active customer.
     if(hasKey&&logged){ card.style.display='none'; return; }
     const steps=[
-      stepRow(hasKey,'Create an API key','Mint a key for your app or SDK — shown once.',"go('keys',null)"),
-      stepRow(logged,'Log your first AI interaction','Wrap a call with the @foxy.audit SDK; only hashes leave your machine.',"go('keys',null)"),
-      stepRow(team,'Invite your team','Add a teammate so they can review the audit trail.',"go('settings',null)"),
+      stepRow(hasKey,'Create an API key','Mint a key for your app or SDK — shown once.','keys','Create key'),
+      stepRow(logged,'Log your first AI interaction','Wrap a call with the @foxy.audit SDK; only hashes leave your machine.','keys','Get started'),
+      stepRow(team,'Invite your team','Add a teammate so they can review the audit trail.','settings','Invite'),
     ];
     const done=[hasKey,logged,team].filter(Boolean).length;
     const pct=$('firstRunPct'); if(pct)pct.textContent=done+' / 3 done';
