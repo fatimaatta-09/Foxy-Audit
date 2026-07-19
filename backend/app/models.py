@@ -158,6 +158,28 @@ class AccountAction(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class WebhookSubscription(Base):
+    """A customer's outbound webhook subscription (P3 · §F) — the worker POSTs a
+    signed JSON payload to `url` for each subscribed event. Org-scoped by RLS."""
+
+    __tablename__ = "webhook_subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    secret: Mapped[str] = mapped_column(String(80), nullable=False)   # HMAC-SHA256 key
+    events: Mapped[str] = mapped_column(String(255), nullable=False, server_default="breach")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    last_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_delivery_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
 class OrgPolicy(Base):
     """Per-org compliance policy configuration — Core Requirement #1.
 

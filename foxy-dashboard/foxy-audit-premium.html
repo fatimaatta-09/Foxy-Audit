@@ -1007,6 +1007,17 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">A record of changes to keys, policy, team, and 2FA in this workspace.</div>
         <div id="auditList"><div style="font-size:11px;color:var(--muted);">loading…</div></div>
       </div>
+      <div class="clay pad" id="webhookCard" style="margin-top:14px;display:none;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M7 8a5 5 0 019 3M17 16a5 5 0 01-9-3" stroke="#000" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Outbound webhooks</div></div><span class="stitle-act" onclick="loadWebhooks()">↻ refresh</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">POST a signed JSON event to your endpoint when an interaction is graded or breaches. Each request carries an <span style="font-family:var(--mono);">X-Foxy-Signature</span> HMAC you verify with the signing secret.</div>
+        <div id="webhookList" style="margin-bottom:12px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input class="cin" id="whUrl" type="url" placeholder="https://yourapp.com/foxy-events" style="margin:0;flex:1;min-width:180px;">
+          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="whEvBreach" checked> breach</label>
+          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="whEvGraded"> graded</label>
+          <button class="btn pri sm" style="margin:0;" onclick="addWebhook()">Add</button>
+        </div>
+      </div>
     </div>
 
   </main>
@@ -1670,7 +1681,49 @@ function runExport(){
     }}catch(e){}
     const card=$('teamCard'); if(card)card.style.display=_isAdmin?'':'none';
     const ac=$('auditCard'); if(ac)ac.style.display=_isAdmin?'':'none';
-    if(_isAdmin){ loadTeam(); loadAccountAudit(); }
+    const wc=$('webhookCard'); if(wc)wc.style.display=_isAdmin?'':'none';
+    if(_isAdmin){ loadTeam(); loadAccountAudit(); loadWebhooks(); }
+  };
+  function webhookRow(w){
+    const st=w.last_status?(' · last '+esc(w.last_status)):'';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:2px dashed var(--line);">'
+      +'<div style="min-width:0;"><div style="font-family:var(--mono);font-size:10.5px;word-break:break-all;">'+esc(w.url)+'</div>'
+      +'<div style="font-size:9.5px;color:var(--muted);">'+esc(w.events)+st+' · '+esc(w.secret_prefix)+'</div></div>'
+      +'<div style="display:flex;gap:6px;flex-shrink:0;">'
+      +'<button class="btn ghost sm" style="margin:0;" onclick="testWebhook(\''+w.id+'\',this)">test</button>'
+      +'<button class="btn danger sm" style="margin:0;" onclick="deleteWebhook(\''+w.id+'\')">remove</button></div></div>';
+  }
+  window.loadWebhooks=async function(){
+    const box=$('webhookList'); if(!box)return;
+    try{ const r=await api('/v1/webhooks'); if(!r.ok){ box.innerHTML=''; return; }
+      const rows=await r.json();
+      box.innerHTML=(Array.isArray(rows)&&rows.length)?rows.map(webhookRow).join('')
+        :'<div style="font-size:11px;color:var(--muted);">No webhooks yet.</div>';
+    }catch(e){}
+  };
+  window.addWebhook=async function(){
+    const url=(($('whUrl')||{}).value||'').trim(); if(!url){ toast('Enter a URL'); return; }
+    const events=[]; if(($('whEvBreach')||{}).checked)events.push('breach'); if(($('whEvGraded')||{}).checked)events.push('graded');
+    if(!events.length){ toast('Pick at least one event'); return; }
+    try{ const r=await api('/v1/webhooks',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:url,events:events})});
+      if(!r.ok){ toast('Add failed — '+await errText(r)); return; }
+      const w=await r.json(); revealSecret('Webhook signing secret · verify X-Foxy-Signature', w.secret);
+      if($('whUrl'))$('whUrl').value=''; toast('Webhook added'); loadWebhooks();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.deleteWebhook=async function(id){
+    if(!confirm('Remove this webhook?'))return;
+    try{ const r=await api('/v1/webhooks/'+id,{method:'DELETE'});
+      if(!r.ok){ toast('Remove failed — '+await errText(r)); return; }
+      toast('Webhook removed'); loadWebhooks();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.testWebhook=async function(id,btn){
+    if(btn){ btn.disabled=true; btn.textContent='…'; }
+    try{ const r=await api('/v1/webhooks/'+id+'/test',{method:'POST'});
+      const d=await r.json().catch(()=>({})); toast(r.ok?('Test sent — status '+(d.status||'?')):'Test failed'); loadWebhooks();
+    }catch(e){ toast('Could not reach the server'); }
+    if(btn){ btn.disabled=false; btn.textContent='test'; }
   };
   const _AUDIT_LABEL={'key.create':'Created API key','key.revoke':'Revoked API key',
     'policy.update':'Updated policy','member.role_change':'Changed member role',

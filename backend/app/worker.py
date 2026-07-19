@@ -39,6 +39,7 @@ from . import gemini
 from . import judge
 from . import openai_judge
 from . import policy_engine
+from . import webhook_delivery
 from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_due
 from .config import get_settings
 from .db import SessionLocal
@@ -168,6 +169,16 @@ def _grade_one(db: Session, row) -> None:
     # failure can never lose the grade. Best-effort — never raises into grading.
     if verdict.policy_breach:
         _notify_breach(db, row, verdict)
+    # Outbound webhook subscriptions (P3 §F): deliver a signed 'graded' (and
+    # 'breach') event to each matching subscription. Best-effort, content-blind.
+    try:
+        webhook_delivery.deliver_grading(
+            db, row["org_id"], is_breach=bool(verdict.policy_breach),
+            payload={"seq": row.get("seq"), "policy_tag": row.get("policy_tag"),
+                     "decision": verdict.decision, "risk_score": verdict.risk_score,
+                     "chain_hash": row.get("chain_hash")})
+    except Exception as exc:                 # noqa: BLE001 — delivery never breaks grading
+        log.warning("webhook delivery error: %s", exc)
 
 
 def _notify_breach(db: Session, row, verdict) -> None:
