@@ -3,7 +3,8 @@
 `@client.audit(policy)` wraps any function (sync or async) that calls an LLM.
 After the wrapped function returns, the SDK:
 
-  1. SHA-256-hashes the prompt and response locally, then discards the raw text.
+  1. Creates customer-keyed HMAC-SHA-256 commitments of the prompt and response
+     locally, then discards the raw text.
   2. Fires an instant best-effort `hash_ok` UDP ping to the desktop fox.
   3. Enqueues the metadata for background HTTP delivery to the backend (only
      when an API key is configured).

@@ -100,6 +100,37 @@ python demo/run_demo.py
    with the customer's existing OpenAI, Anthropic, Gemini, or private-model
    call. No Foxy-specific model wrapper is required.
 
+## Live GPT-5.6 Client and Judge Demo
+
+This is the full judge-facing path: a real OpenAI Responses API call, a durable
+Foxy SDK receipt, a real queued metadata verdict, and server-side chain
+verification. It is intentionally separate from the offline demo. Use safe,
+non-sensitive demo content because the selected model provider receives the
+prompt; Foxy still receives commitments and bounded metadata only.
+
+```powershell
+# Terminal 1: start the local backend, database, and worker.
+cd backend
+$env:OPENAI_API_KEY = "your_openai_key"
+$env:OPENAI_MODEL = "gpt-5.6"
+docker compose up --build -d
+
+# On a fresh database, copy FOXY_API_KEY from this one-shot seed service.
+docker compose logs foxy-seed
+
+# Terminal 2: run the customer's real GPT-5.6-style call through Foxy.
+cd ..
+python -m pip install -e .\sdk
+$env:FOXY_API_KEY = "foxy_sk_key_printed_by_the_seed_service"
+$env:FOXY_BACKEND_URL = "http://127.0.0.1:8000"
+python demo\live_openai_client.py
+```
+
+The command stops with an error if the model call, durable Foxy receipt, queued
+grading result, or chain verification fails. It does not substitute a synthetic
+provider response. See [the submission runbook](docs/OPENAI_BUILD_WEEK_SUBMISSION.md)
+for a clean-room setup, video sequence, and Devpost checklist.
+
 ## OpenAI and Gemini Judges
 
 Both providers are optional. A blank key does not block capture or chain
@@ -163,12 +194,18 @@ monitor SDK coverage and treat bypassed integrations as an evidence gap.
   prerecorded result.
 - Configure an OpenAI key only if live judge-provider testing is desired; the
   opt-in real test is `backend/tests/integration/test_optional_integrations.py`.
+- Run `python demo/live_openai_client.py` with real credentials to demonstrate a
+  GPT-5.6 customer call, a durable capture receipt, a queued verdict, and chain
+  verification without fabricating any provider output.
 - Run `pytest backend/tests/integration -q` in the backend test environment.
 - The public submission must include a working repository, clear setup steps,
   a public YouTube demo under three minutes, and the required Codex feedback
   Session ID in the Devpost form. Do not invent that Session ID in this repo.
 - Select the **Developer Tools** category and ensure the repository is public,
   or grant Devpost's testing accounts access before submission.
+- Follow [docs/OPENAI_BUILD_WEEK_SUBMISSION.md](docs/OPENAI_BUILD_WEEK_SUBMISSION.md)
+  before recording or submitting; it separates verified facts from information
+  that the submitter must provide personally.
 
 ## Demo Video Outline
 
