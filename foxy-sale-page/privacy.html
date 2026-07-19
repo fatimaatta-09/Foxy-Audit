@@ -43,7 +43,7 @@
   <div class="updated">Last updated: 13 July 2026</div>
 
   <div class="card">
-    <p class="lead">Foxy Audit is a compliance-evidence platform. The single most important thing to know: <strong>we never store the raw content of your AI prompts or responses.</strong> Our audit ledger records only a cryptographic <span class="pill">SHA-256</span> fingerprint of each interaction plus the AI-judge's verdict — enough to prove nothing was tampered with, without ever holding your sensitive text.</p>
+    <p class="lead">Foxy Audit is a compliance-evidence platform. The single most important thing to know: <strong>we never store the raw content of your AI prompts or responses.</strong> Our audit ledger records customer-keyed <span class="pill">HMAC-SHA-256</span> commitments and operational metadata, which are chained for tamper-evident verification without holding your sensitive text.</p>
   </div>
 
   <div class="card">
@@ -54,7 +54,7 @@
     <ul>
       <li><strong>Account &amp; organization data</strong> — your name, email, organization name, and role. If you sign in with Google, we store your Google account's stable identifier and verified email (never your Google password).</li>
       <li><strong>API keys</strong> — stored only as a salted <span class="pill">HMAC-SHA256</span> hash; the plaintext key is shown to you once and never retained.</li>
-      <li><strong>Audit records</strong> — for each AI interaction your SDK reports: a SHA-256 hash of the prompt, a SHA-256 hash of the response, token counts, a policy tag, the model/agent name, the AI-judge's verdict, and non-identifying signals about whether personal data patterns were detected. <strong>The raw prompt and response text are hashed on your side and are never transmitted to or stored by us.</strong></li>
+      <li><strong>Audit records</strong> — for each interaction your SDK reports: customer-keyed HMAC-SHA-256 commitments of the prompt and response, token counts, a policy tag, model/agent name, event metadata, and any available judge verdict. <strong>The raw prompt and response text are committed on your side and are never transmitted to or stored by us.</strong></li>
       <li><strong>Usage &amp; billing</strong> — daily counts of logs, tokens, and breaches, plus billing records synced from Stripe.</li>
       <li><strong>Security telemetry</strong> — request metadata for rate-limiting and abuse prevention. Client IP addresses and user-agent strings are stored only as one-way <strong>hashes</strong>, never in raw form.</li>
     </ul>
