@@ -29,6 +29,9 @@ class LogIngest(BaseModel):
     client_seq: int | None = Field(default=None, ge=1)
     event_type: str = Field(default="interaction", pattern=r"^[a-z0-9_]{1,32}$")
     commitment_alg: str = Field(default="sha256-legacy", pattern=r"^[a-z0-9-]{1,32}$")
+    # A registered AI-system inventory UUID. The API validates that it belongs
+    # to this tenant and is active, then commits it into chain-bound metadata.
+    system_id: uuid.UUID | None = None
     event_metadata: dict[str, Any] | None = None
     occurred_at: datetime | None = None
 

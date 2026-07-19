@@ -91,11 +91,13 @@ class FoxyClient:
     def enabled(self) -> bool:
         return self.cfg.enabled
 
-    def _record_host_exception(self, prompt, exc, policy, agent, metadata=None):
+    def _record_host_exception(self, prompt, exc, policy, agent, metadata=None,
+                               system_id: str | None = None):
         """Telemetry failure must never replace the application's exception."""
         try:
             self.log_interaction(prompt, exc, policy, agent,
-                                 event_type="exception", metadata=metadata)
+                                 event_type="exception", metadata=metadata,
+                                 system_id=system_id)
         except AuditRequiredError:
             log.debug("foxy-audit could not capture host exception", exc_info=True)
 
@@ -103,15 +105,23 @@ class FoxyClient:
         """Keep synchronous hashing and delivery waits off the event loop."""
         return await asyncio.to_thread(self.log_interaction, *args, **kwargs)
 
-    def audit(self, policy: str = "default", agent: str | None = None):
+    def audit(self, policy: str = "default", agent: str | None = None,
+              system_id: str | None = None):
         """Return a decorator that audits the wrapped LLM-calling function.
 
         `agent` records which model/agent produced the interaction (e.g.
         "gpt-4o", "claude-3-opus"); the backend folds it into the tamper-evident
-        hash chain so it can't be altered after the fact (6B)."""
+        hash chain so it can't be altered after the fact (6B). ``system_id``
+        is the UUID from the Foxy AI-system registry; it is validated by the
+        backend and committed to the same tamper-evident event metadata."""
         if not _POLICY_RE.match(policy):
             log.warning("foxy-audit: invalid policy tag %r; falling back to 'default'", policy)
             policy = "default"
+        if system_id is not None:
+            try:
+                system_id = str(uuid.UUID(str(system_id)))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("system_id must be a UUID from the Foxy AI-system registry") from exc
 
         def decorator(fn):
             if inspect.iscoroutinefunction(fn):
@@ -122,13 +132,15 @@ class FoxyClient:
                     except BaseException as exc:
                         try:
                             await self._record_async(_extract_prompt(args, kwargs), exc,
-                                                     policy, agent, event_type="exception")
+                                                     policy, agent, event_type="exception",
+                                                     system_id=system_id)
                         except AuditRequiredError:
                             log.debug("foxy-audit could not capture async host exception",
                                       exc_info=True)
                         raise
                     await self._record_async(_extract_prompt(args, kwargs), response, policy,
-                                             agent, metadata=_metadata(kwargs, response))
+                                             agent, metadata=_metadata(kwargs, response),
+                                             system_id=system_id)
                     return response
                 return awrapper
 
@@ -144,13 +156,14 @@ class FoxyClient:
                         try:
                             await self._record_async(_extract_prompt(args, kwargs), exc,
                                                      policy, agent, event_type="exception",
-                                                     metadata=_metadata(kwargs))
+                                                     metadata=_metadata(kwargs), system_id=system_id)
                         except AuditRequiredError:
                             log.debug("foxy-audit could not capture async stream exception",
                                       exc_info=True)
                         raise
                     await self._record_async(_extract_prompt(args, kwargs), chunks, policy,
-                                             agent, metadata=_metadata(kwargs), event_type="stream")
+                                             agent, metadata=_metadata(kwargs), event_type="stream",
+                                             system_id=system_id)
                 return agen_wrapper
 
             @functools.wraps(fn)
@@ -159,7 +172,7 @@ class FoxyClient:
                     response = fn(*args, **kwargs)
                 except BaseException as exc:
                     self._record_host_exception(_extract_prompt(args, kwargs), exc,
-                                                policy, agent, _metadata(kwargs))
+                                                policy, agent, _metadata(kwargs), system_id)
                     raise
                 if inspect.isgenerator(response):
                     def generator():
@@ -170,13 +183,14 @@ class FoxyClient:
                                 yield chunk
                         except BaseException as exc:
                             self._record_host_exception(_extract_prompt(args, kwargs), exc,
-                                                        policy, agent, _metadata(kwargs))
+                                                        policy, agent, _metadata(kwargs), system_id)
                             raise
                         self.log_interaction(_extract_prompt(args, kwargs), chunks, policy, agent,
-                                             metadata=_metadata(kwargs), event_type="stream")
+                                             metadata=_metadata(kwargs), event_type="stream",
+                                             system_id=system_id)
                     return generator()
                 self.log_interaction(_extract_prompt(args, kwargs), response, policy, agent,
-                                     metadata=_metadata(kwargs, response))
+                                     metadata=_metadata(kwargs, response), system_id=system_id)
                 return response
             return wrapper
 
@@ -184,7 +198,8 @@ class FoxyClient:
 
     # ── internal ──────────────────────────────────────────────────────────
     def log_interaction(self, prompt, response, policy: str, agent: str | None = None,
-                        metadata: dict | None = None, event_type: str = "interaction"):
+                        metadata: dict | None = None, event_type: str = "interaction",
+                        system_id: str | None = None):
         """Perform cryptographic hashing synchronously and push to AsyncDispatcher."""
         try:
             prompt_s = hashing.canonical_json(prompt)
@@ -215,6 +230,8 @@ class FoxyClient:
             }
             if agent:
                 payload["agent"] = agent
+            if system_id:
+                payload["system_id"] = system_id
             if metadata:
                 payload["event_metadata"] = metadata
             # raw text goes out of scope here — never stored or transmitted

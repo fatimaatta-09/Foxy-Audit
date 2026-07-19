@@ -111,3 +111,19 @@ def test_structured_messages_and_provider_metadata_are_captured(monkeypatch):
     assert captured["commitment_alg"] == "hmac-sha256"
     assert captured["event_metadata"]["id"] == "resp_123"
     assert captured["event_metadata"]["usage"]["total_tokens"] == 10
+
+
+def test_registered_system_id_is_sent_without_raw_prompt_content(monkeypatch):
+    from foxy_audit import dispatch
+    captured = {}
+    monkeypatch.setattr(dispatch, "submit", lambda cfg, payload: captured.update(payload))
+    system_id = str(uuid.uuid4())
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)
+
+    @foxy.audit("demo", system_id=system_id)
+    def ask(prompt):
+        return "safe response"
+
+    ask("confidential prompt")
+    assert captured["system_id"] == system_id
+    assert "confidential prompt" not in str(captured)

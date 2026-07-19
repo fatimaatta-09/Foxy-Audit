@@ -26,7 +26,7 @@ from ..auth import require_org, resolve_org
 from ..chain import CHAIN_VERSION_POLICY_V3, GENESIS_HASH, compute_chain_hash
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuditLog, OrgPolicy, Organization, OrganizationSequence
+from ..models import AiSystem, AuditLog, OrgPolicy, Organization, OrganizationSequence
 from ..policy_snapshot import capture_policy_snapshot, policy_snapshot_hash
 from ..schemas import (
     ActivityDay, GradingCounts, LogIngest, LogListItem, LogListResponse,
@@ -89,6 +89,7 @@ def ingest_batch(
             stored_metadata.pop("client_seq_gap", None)
             stored_metadata.pop("policy_snapshot", None)
             stored_metadata.pop("policy_snapshot_hash", None)
+            stored_system_id = stored_metadata.pop("system_id", None)
             requested_metadata = dict(item.event_metadata or {})
             if existing and any((
                 existing.prompt_hash != item.prompt_hash,
@@ -101,6 +102,7 @@ def ingest_batch(
                 existing.event_type != item.event_type,
                 existing.commitment_alg != item.commitment_alg,
                 existing.pii_signals != item.pii_signals,
+                stored_system_id != (str(item.system_id) if item.system_id else None),
                 stored_metadata != requested_metadata,
                 existing.occurred_at != item.occurred_at,
             )):
@@ -113,6 +115,26 @@ def ingest_batch(
             })
         else:
             new_items.append(item)
+
+    # Systems are declared by the customer dashboard, never inferred from raw
+    # traffic. Only active systems can receive new evidence; the system UUID is
+    # added to V3 metadata below so an historical attribution cannot be edited
+    # without breaking verification.
+    system_ids = {item.system_id for item in new_items if item.system_id is not None}
+    if system_ids:
+        active_ids = set(db.execute(
+            select(AiSystem.id).where(
+                AiSystem.org_id == org.id,
+                AiSystem.id.in_(system_ids),
+                AiSystem.lifecycle_status == "active",
+            )
+        ).scalars().all())
+        unavailable = system_ids - active_ids
+        if unavailable:
+            raise HTTPException(
+                status_code=409,
+                detail="system_id must reference an active AI system in this workspace",
+            )
 
     now = datetime.now(timezone.utc)
     if (org.plan_tier or "").lower() == "free" and org.trial_ends_at and now >= org.trial_ends_at:
@@ -180,6 +202,8 @@ def ingest_batch(
         metadata = dict(item.event_metadata or {})
         metadata["policy_snapshot"] = snapshot
         metadata["policy_snapshot_hash"] = snapshot_hash
+        if item.system_id is not None:
+            metadata["system_id"] = str(item.system_id)
         if item.client_id and item.client_seq is not None:
             if item.client_id not in client_last:
                 client_last[item.client_id] = db.execute(

@@ -25,7 +25,7 @@ from ..auth import require_role, resolve_org
 from ..config import get_settings
 from ..db import get_db
 from ..models import (
-    AccountAction, ApiKey, AuditLog, ChainAnchor, Invoice, Organization,
+    AccountAction, AiSystem, ApiKey, AuditLog, ChainAnchor, Invoice, Organization,
     OrgPolicy, UsageDaily, User,
 )
 
@@ -314,6 +314,10 @@ def account_export(
     keys = db.execute(select(ApiKey).where(ApiKey.org_id == admin.org_id)).scalars().all()
     invoices = db.execute(select(Invoice).where(Invoice.org_id == admin.org_id)).scalars().all()
     anchors = db.execute(select(ChainAnchor).where(ChainAnchor.org_id == admin.org_id)).scalars().all()
+    systems = db.execute(
+        select(AiSystem).where(AiSystem.org_id == admin.org_id)
+        .order_by(AiSystem.created_at.asc())
+    ).scalars().all()
     logs = db.execute(
         select(AuditLog).where(AuditLog.org_id == admin.org_id)
         .order_by(AuditLog.seq.asc())
@@ -348,6 +352,13 @@ def account_export(
         "anchors": [{"root_hash": a.root_hash, "last_seq": a.last_seq, "chain": a.chain,
                      "tx_hash": a.tx_hash, "status": a.status,
                      "anchored_at": _iso(a.anchored_at)} for a in anchors],
+        "ai_systems": [{
+            "id": str(s.id), "name": s.name, "owner_email": s.owner_email,
+            "purpose": s.purpose, "provider": s.provider, "model_name": s.model_name,
+            "environment": s.environment, "data_classification": s.data_classification,
+            "risk_tier": s.risk_tier, "lifecycle_status": s.lifecycle_status,
+            "created_at": _iso(s.created_at), "updated_at": _iso(s.updated_at),
+        } for s in systems],
         "ledger": [{"seq": r.seq, "prompt_hash": r.prompt_hash, "response_hash": r.response_hash,
                     "policy_tag": r.policy_tag, "agent": r.agent, "chain_hash": r.chain_hash,
                     "grading_status": r.grading_status, "gemini_verdict": r.gemini_verdict,

@@ -227,6 +227,44 @@ class OrgPolicy(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class AiSystem(Base):
+    """A declared AI system an organization wants to govern.
+
+    This is intentionally a compact, content-blind inventory: it identifies the
+    accountable owner and operating context without accepting prompts, outputs,
+    credentials, or other model-call content. An event's system UUID is stored
+    in the event metadata, which is included in the V3 chain hash.
+    """
+
+    __tablename__ = "ai_systems"
+    __table_args__ = (UniqueConstraint("org_id", "name", name="uq_ai_system_org_name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    owner_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(256), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, server_default="other")
+    model_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    environment: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="production")
+    data_classification: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="internal")
+    risk_tier: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="medium")
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="active")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class User(Base):
     """A human dashboard account (email/password + role), scoped to one org.
 

@@ -40,6 +40,7 @@ def _client() -> FoxyClient:
     return _default_client
 
 
-def audit(policy: str = "default"):
+def audit(policy: str = "default", agent: str | None = None,
+          system_id: str | None = None):
     """Decorator bound to the default environment-configured client."""
-    return _client().audit(policy)
+    return _client().audit(policy, agent=agent, system_id=system_id)

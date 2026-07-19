@@ -57,7 +57,7 @@ def test_account_export_bundle(make_org, login):
     r = c.get("/v1/account/export")
     assert r.status_code == 200 and "attachment" in r.headers.get("content-disposition", "")
     b = r.json()
-    for k in ("organization", "users", "policy", "api_keys", "invoices", "anchors", "ledger"):
+    for k in ("organization", "users", "policy", "api_keys", "invoices", "anchors", "ai_systems", "ledger"):
         assert k in b
     assert any(u["email"] == org["admin_email"] for u in b["users"])
 
