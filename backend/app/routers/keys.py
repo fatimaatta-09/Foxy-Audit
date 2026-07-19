@@ -6,21 +6,21 @@ Two audiences share this router:
   revoke — via ``GET|POST /v1/keys`` and ``DELETE /v1/keys/{id}``. New keys are
   stored as HMAC-SHA256(server pepper, key) in the ``api_keys`` table; the
   plaintext is returned exactly once.
-* The **SDK/CLI** (machine Bearer key) can still ``POST /v1/keys/rotate`` its own
-  key without a dashboard login. Rotate now issues a peppered key, revokes the
-  org's other active keys, and invalidates the legacy plain-SHA256 org hash so
-  the old key is permanently dead.
+ * The **SDK/CLI** (machine Bearer key) can ``POST /v1/keys/rotate`` to rotate
+   only the credential used for that request. It never revokes unrelated
+   service keys, limiting the blast radius if a machine credential is exposed.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -187,16 +187,63 @@ def _rotate_org_key(db: Session, org: Organization) -> tuple[str, str]:
     return key, now.isoformat()
 
 
+def _rotate_presented_key(db: Session, org: Organization, token: str) -> tuple[str, str, str]:
+    """Replace only the authenticated machine key, leaving sibling keys usable."""
+    now = datetime.now(timezone.utc)
+    key, key_hash, prefix = _new_key()
+    presented_legacy_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    current = db.execute(
+        select(ApiKey).where(
+            ApiKey.org_id == org.id,
+            ApiKey.key_hash == hash_key(token),
+            ApiKey.status == "active",
+        )
+    ).scalar_one_or_none()
+
+    if current is not None:
+        current.status = "revoked"
+        current.revoked_at = now
+        name = current.name
+        expires_at = current.expires_at
+    else:
+        # require_org already verified this is the organization legacy key. Keep
+        # the compatibility hash only for the replacement, not for the old key.
+        name = "legacy primary"
+        expires_at = None
+
+    db.add(ApiKey(
+        org_id=org.id,
+        name=f"{name} (rotated)",
+        key_prefix=prefix,
+        key_hash=key_hash,
+        status="active",
+        expires_at=expires_at,
+    ))
+    if org.api_key_hash and hmac.compare_digest(org.api_key_hash, presented_legacy_hash):
+        org.api_key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    org.key_rotated_at = now
+    return key, now.isoformat(), name
+
+
 @router.post("/v1/keys/rotate", response_model=RotateResponse)
 def rotate_key(
+    authorization: str = Header(default=""),
     org: Organization = Depends(require_org),
     db: Session = Depends(get_db),
 ):
-    """Rotate the calling org's key (Bearer auth). Issues a peppered key, revokes
-    the org's other active keys, and kills the legacy plain-SHA256 org hash."""
-    key, rotated_at = _rotate_org_key(db, org)
+    """Rotate the presented machine key without affecting sibling credentials."""
+    token = authorization.split(" ", 1)[1].strip()
+    key, rotated_at, key_name = _rotate_presented_key(db, org, token)
+    account_audit.record_account_action(
+        db,
+        org_id=org.id,
+        actor_email="api_key",
+        action="key.rotate",
+        target=key_name,
+        detail={"mode": "self_service"},
+    )
     db.commit()
-    log.info("Rotated API key for org %s", org.id)
+    log.info("Rotated one API key for org %s", org.id)
     return RotateResponse(org_id=str(org.id), api_key=key, rotated_at=rotated_at)
 
 

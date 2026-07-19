@@ -12,7 +12,7 @@ from sqlalchemy import select
 from app.auth import hash_key
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import ApiKey, Organization
+from app.models import AccountAction, ApiKey, Organization
 
 
 def test_create_use_revoke(make_org, login, client):
@@ -81,11 +81,26 @@ def test_whitespace_name_defaults(make_org, login):
     assert c.post("/v1/keys", json={"name": "    "}).json()["name"] == "unnamed key"
 
 
-def test_rotate_invalidates_old_key(make_org, client):
+def test_rotate_invalidates_only_presented_key_and_records_audit(make_org, login, client):
     org = make_org()
     old = org["api_key"]
+    admin = login(org["admin_email"], org["admin_password"])
+    sibling = admin.post("/v1/keys", json={"name": "worker"}).json()["api_key"]
     new = client.post("/v1/keys/rotate", headers=org["auth"]).json()["api_key"]
     assert client.get("/v1/health",
                       headers={"Authorization": f"Bearer {new}"}).status_code == 200
     assert client.get("/v1/health",
                       headers={"Authorization": f"Bearer {old}"}).status_code == 401
+    assert client.get("/v1/health",
+                      headers={"Authorization": f"Bearer {sibling}"}).status_code == 200
+
+    db = SessionLocal()
+    try:
+        action = db.query(AccountAction).filter(
+            AccountAction.org_id == org["org_id"],
+            AccountAction.action == "key.rotate",
+        ).one()
+        assert action.actor_email == "api_key"
+        assert action.detail == {"mode": "self_service"}
+    finally:
+        db.close()
