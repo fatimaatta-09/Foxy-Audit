@@ -21,6 +21,56 @@ from ..schemas import LastAnchor, VerifyResponse
 router = APIRouter()
 
 
+def verify_chain(db: Session, org_id) -> tuple[bool | None, int | None, str]:
+    """Recompute the content-blind ledger once and return its evidence state.
+
+    ``None`` means verification was intentionally skipped for a chain larger than
+    the bounded request-time limit. Callers must not present that state as clean.
+    This helper is shared by the normal verifier and the capture-coverage report.
+    """
+    total = db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org_id)
+    ).scalar_one()
+    if total > 50000:
+        return None, None, "chain too long for full verify"
+
+    rows = db.execute(
+        select(AuditLog).where(AuditLog.org_id == org_id).order_by(AuditLog.seq.asc())
+    ).scalars().yield_per(1000)
+
+    prev_hash = GENESIS_HASH
+    expected_seq = 1
+    for row in rows:
+        if row.seq != expected_seq:
+            return False, row.seq, f"sequence gap before seq {row.seq}"
+        if row.prev_hash != prev_hash:
+            return False, row.seq, f"previous hash mismatch at seq {row.seq}"
+        expected = compute_chain_hash(
+            org_id=org_id,
+            prompt_hash=row.prompt_hash,
+            response_hash=row.response_hash,
+            token_count=row.token_count,
+            policy_tag=row.policy_tag,
+            seq=row.seq,
+            prev_hash=prev_hash,
+            agent=row.agent,
+            chain_version=row.chain_version or 1,
+            event_id=row.event_id,
+            client_id=row.client_id,
+            client_seq=row.client_seq,
+            event_type=row.event_type,
+            commitment_alg=row.commitment_alg,
+            event_metadata=row.event_metadata,
+            pii_signals=row.pii_signals,
+            occurred_at=row.occurred_at,
+        )
+        if expected != row.chain_hash:
+            return False, row.seq, f"chain hash mismatch at seq {row.seq}"
+        prev_hash = row.chain_hash
+        expected_seq += 1
+    return True, None, "chain intact"
+
+
 def _last_anchor(db, org_id, cross_check: bool) -> LastAnchor | None:
     """Build the LastAnchor block. When cross_check is set, recompute the chain
     up to the anchored seq and compare to the anchored root; skipped for very
@@ -54,62 +104,19 @@ def verify(
 
     anchor = _last_anchor(db, org.id, cross_check=(total <= 50000))
 
-    if total > 50000:
+    ok, first_broken_seq, detail = verify_chain(db, org.id)
+    if ok is None:
         return VerifyResponse(
             ok=False,
             count=total,
             first_broken_seq=None,
-            detail="chain too long for full verify, use partial window",
+            detail=f"{detail}, use partial window",
             last_anchor=anchor,
         )
 
-    rows = db.execute(
-        select(AuditLog).where(AuditLog.org_id == org.id).order_by(AuditLog.seq.asc())
-    ).scalars().yield_per(1000)
-
-    prev_hash = GENESIS_HASH
-    expected_seq = 1
-    for row in rows:
-        if row.seq != expected_seq:
-            return VerifyResponse(
-                ok=False, count=total, first_broken_seq=row.seq,
-                detail=f"sequence gap before seq {row.seq}", last_anchor=anchor)
-        if row.prev_hash != prev_hash:
-            return VerifyResponse(
-                ok=False, count=total, first_broken_seq=row.seq,
-                detail=f"previous hash mismatch at seq {row.seq}", last_anchor=anchor)
-        expected = compute_chain_hash(
-            org_id=org.id,
-            prompt_hash=row.prompt_hash,
-            response_hash=row.response_hash,
-            token_count=row.token_count,
-            policy_tag=row.policy_tag,
-            seq=row.seq,
-            prev_hash=prev_hash,
-            agent=row.agent,
-            chain_version=row.chain_version or 1,
-            event_id=row.event_id,
-            client_id=row.client_id,
-            client_seq=row.client_seq,
-            event_type=row.event_type,
-            commitment_alg=row.commitment_alg,
-            event_metadata=row.event_metadata,
-            pii_signals=row.pii_signals,
-            occurred_at=row.occurred_at,
-        )
-        if expected != row.chain_hash:
-            return VerifyResponse(
-                ok=False,
-                count=total,
-                first_broken_seq=row.seq,
-                detail=f"chain hash mismatch at seq {row.seq}",
-                last_anchor=anchor,
-            )
-        prev_hash = row.chain_hash
-        expected_seq += 1
-
-    return VerifyResponse(ok=True, count=total, first_broken_seq=None,
-                          detail="chain intact", last_anchor=anchor)
+    return VerifyResponse(ok=True if ok else False, count=total,
+                          first_broken_seq=first_broken_seq, detail=detail,
+                          last_anchor=anchor)
 
 
 @router.get("/v1/verify/hash/{chain_hash}")

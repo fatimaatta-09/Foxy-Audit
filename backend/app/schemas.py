@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -93,6 +93,49 @@ class VerifyResponse(BaseModel):
     first_broken_seq: int | None = None
     detail: str | None = None
     last_anchor: LastAnchor | None = None
+
+
+class CoverageGap(BaseModel):
+    """A client-reported sequence range that was not observed by Foxy."""
+
+    start: int
+    end: int
+    count: int
+
+
+class CoverageClient(BaseModel):
+    """Content-blind capture continuity for one SDK client identity."""
+
+    client_id: str
+    events: int
+    first_client_seq: int
+    last_client_seq: int
+    server_seq_start: int
+    server_seq_end: int
+    last_seen_at: datetime | None = None
+    missing_ranges: list[CoverageGap] = Field(default_factory=list)
+    duplicate_client_sequences: list[int] = Field(default_factory=list)
+
+
+class CoverageResponse(BaseModel):
+    """Evidence coverage, not a claim that every model call was captured."""
+
+    status: Literal["verified", "partial", "unknown"]
+    scope: str
+    message: str
+    total_events: int
+    identified_events: int
+    events_without_client_identity: int
+    instrumented_clients: int
+    clients_with_anomalies: int
+    missing_events: int
+    duplicate_client_sequences: int
+    chain_verified: bool | None
+    chain_verification: Literal["verified", "failed", "not_checked"]
+    chain_detail: str
+    last_event_at: datetime | None = None
+    clients: list[CoverageClient] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
 
 
 class LogListItem(BaseModel):
