@@ -45,6 +45,20 @@ Staff/admin console -> tenant-scoped operations, alerts, grading, anchors, billi
 Sales site           -> product explanation and onboarding
 ```
 
+```mermaid
+flowchart LR
+    A["Customer AI application"] --> B["Foxy SDK"]
+    B --> C["Local commitments and retry spool"]
+    C --> D["Foxy API and PostgreSQL evidence chain"]
+    D --> E["Metadata-only OpenAI/Gemini judge"]
+    D --> F["Customer dashboard and Compliance Passport"]
+    D --> G["Independent export verifier"]
+    H["Staff operations console"] --> D
+    I["Optional public-chain anchor"] --> D
+```
+
+Raw prompts and responses do not leave the customer process through this path.
+
 - **SDK:** one decorator, local keyed commitments, durable retry spool, sync,
   async, and generator support.
 - **Backend:** tenant-isolated ingestion, ordered chain, usage, policies,
