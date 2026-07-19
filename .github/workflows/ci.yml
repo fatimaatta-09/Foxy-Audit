@@ -88,6 +88,8 @@ jobs:
         run: pytest backend/tests/test_chain.py -q
       - name: Offline judge demo
         run: python demo/offline_demo.py
+      - name: Live OpenAI demo boundary tests
+        run: pytest demo/test_live_openai_client.py -q
       - name: Clean-venv install (non-editable) + console script
         # Proves `pip install foxy-audit` works from a fresh environment with no
         # project history — the exact thing an outside user does.
