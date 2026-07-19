@@ -776,6 +776,22 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h7l2 2h7v12a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 12h8M8 16h5"/></svg>
       <span>DATA</span>
     </button>
+    <button class="dock-item" data-page="revenue" onclick="go('revenue',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <span>Revenue</span>
+    </button>
+    <button class="dock-item" data-page="security" onclick="go('security',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span>Security</span>
+    </button>
+    <button class="dock-item" data-page="audit" onclick="go('audit',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
+      <span>Audit</span>
+    </button>
+    <button class="dock-item" data-page="leads" onclick="go('leads',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg>
+      <span>Leads</span>
+    </button>
     <button class="dock-item" data-page="inbox" onclick="go('inbox',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
       <span>INBOX</span>
@@ -1181,6 +1197,60 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <!-- ──────────────── SETTINGS ──────────────── -->
+    <!-- ──────────────── REVENUE ──────────────── -->
+    <section class="page" id="page-revenue">
+      <div class="pagehead"><div><div class="eyebrow">P4 · finance</div><h1>Revenue</h1><div class="sub">Paid-invoice revenue across all tenants.</div></div><button class="btn" onclick="loadRevenue()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="grid kpis">
+        <div class="clay kpi hot"><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></div>
+        <div class="clay kpi"><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></div>
+        <div class="clay kpi"><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></div>
+      </div>
+      <div class="split">
+        <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">monthly</div><div class="panel-t">Revenue trend</div></div></div><div id="rvMonthly" style="min-height:200px;"></div></div>
+        <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by plan · 6 months</div><div class="panel-t">Revenue by plan</div></div></div><div id="rvByPlan" style="min-height:200px;"></div></div>
+      </div>
+      <div class="clay pad" style="margin-top:16px;">
+        <div class="panel-h"><div><div class="eyebrow">webhooks</div><div class="panel-t">Stripe events</div></div>
+          <div class="fauxselect" id="seStatus" data-value="" data-onchange="loadStripeEvents" style="min-width:150px;">
+            <button type="button" class="cin fauxselect-trigger"><span class="fauxselect-label">all statuses</span><svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+            <div class="fauxselect-list"><div class="fauxselect-opt sel" data-value="">all statuses</div><div class="fauxselect-opt" data-value="failed">failed</div><div class="fauxselect-opt" data-value="processed">processed</div><div class="fauxselect-opt" data-value="ignored">ignored</div><div class="fauxselect-opt" data-value="received">received</div></div>
+          </div>
+        </div>
+        <div class="twrap"><table class="tbl"><thead><tr><th>Type</th><th>Status</th><th>Org</th><th>Received</th><th>Error</th><th style="text-align:right;">Action</th></tr></thead><tbody id="seRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ──────────────── SECURITY ──────────────── -->
+    <section class="page" id="page-security">
+      <div class="pagehead"><div><div class="eyebrow">P4 · login monitor</div><h1>Security</h1><div class="sub">Login successes and failures across all sites. Watch failed spikes by IP and email.</div></div><button class="btn" onclick="loadSecurity()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="split">
+        <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">last 7 days</div><div class="panel-t">Failed logins</div></div></div><div id="secTrend" style="min-height:190px;"></div></div>
+        <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by IP</div><div class="panel-t">Top offenders</div></div></div><div id="secOffenders" style="min-height:190px;"></div></div>
+      </div>
+      <div class="split" style="margin-top:16px;">
+        <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl"><thead><tr><th>Email</th><th style="text-align:right;">Fails · 24h</th><th>Last</th></tr></thead><tbody id="secWatch"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table></div></div>
+        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap" style="max-height:360px;overflow:auto;"><table class="tbl"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table></div></div>
+      </div>
+    </section>
+
+    <!-- ──────────────── AUDIT ──────────────── -->
+    <section class="page" id="page-audit">
+      <div class="pagehead"><div><div class="eyebrow">P4 · staff audit trail</div><h1>Audit log</h1><div class="sub">Every staff mutation, filterable and exportable — from the append-only admin_actions.</div></div><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button><button class="btn" onclick="loadAudit()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div></div>
+      <div class="clay pad" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">action (prefix)</div><input class="cin" id="auAction" placeholder="e.g. org." oninput="auditDebounced()"></div>
+        <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">actor (email)</div><input class="cin" id="auActor" placeholder="staff@foxy.audit" oninput="auditDebounced()"></div>
+        <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">since</div><input class="cin" id="auSince" type="date" onchange="loadAudit()"></div>
+        <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">until</div><input class="cin" id="auUntil" type="date" onchange="loadAudit()"></div>
+      </div>
+      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Org</th><th>IP</th></tr></thead><tbody id="auRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:12px;"></div></div>
+    </section>
+
+    <!-- ──────────────── LEADS ──────────────── -->
+    <section class="page" id="page-leads">
+      <div class="pagehead"><div><div class="eyebrow">P4 · pipeline</div><h1>Leads</h1><div class="sub">Pre-sales pipeline over marketing_leads. Operators can move a lead's stage.</div></div><button class="btn" onclick="loadLeads()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">funnel</div><div class="panel-t">Conversion</div></div><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div><div class="fun" id="ldFunnel"></div></div>
+      <div id="ldKanban" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
+    </section>
     <section class="page" id="page-settings">
       <div class="pagehead">
         <div>
@@ -1670,7 +1740,7 @@ function _arc(cx,cy,r,ri,a0,a1){
 
 let CUR_PAGE='overview';
 /* built lazily at call time so all loader fn declarations are already hoisted+defined */
-function _loaders(){return {overview:loadOverview,health:loadHealth,deadletter:loadDeadletter,anchors:loadAnchors,alerts:loadAlerts,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox};}
+function _loaders(){return {overview:loadOverview,health:loadHealth,deadletter:loadDeadletter,anchors:loadAnchors,alerts:loadAlerts,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox,revenue:loadRevenue,security:loadSecurity,audit:loadAudit,leads:loadLeads};}
 function go(page,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   $('page-'+page).classList.add('active');
@@ -2672,6 +2742,116 @@ function dismissAnn(id){
   let d={}; try{ d=JSON.parse(sessionStorage.getItem('foxy_ann_dismissed')||'{}'); }catch(e){}
   d[id]=1; try{ sessionStorage.setItem('foxy_ann_dismissed',JSON.stringify(d)); }catch(e){}
   loadBanner();
+}
+
+/* ──────────── Phase 4: revenue / security / audit / leads ──────────── */
+function _cents(c){return '$'+num(Math.round((c||0)/100));}
+async function loadRevenue(){
+  let r; try{ r=await api('/admin/v1/revenue'); }catch(e){ r=null; }
+  if(!r||!r.ok){ toast('revenue unavailable'); return; }
+  const d=await r.json();
+  $('rvRev30').textContent=_cents(d.revenue_30d_cents);
+  const subs=d.subscriptions||{};
+  $('rvActive').textContent=num(subs.active||0);
+  $('rvSubFoot').textContent=Object.entries(subs).filter(([k])=>k!=='active').map(([k,v])=>k+' '+v).join(' · ')||'—';
+  $('rvTrial').textContent=num(d.trialing||0);
+  const months=(d.monthly||[]).map(x=>x.month);
+  chart('rvMonthly',{type:'area',height:200,labels:months,xFormat:v=>String(v).slice(2),
+    series:[{name:'revenue',values:(d.monthly||[]).map(x=>x.cents/100)}],
+    yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'monthly revenue', empty:'No paid invoices yet'});
+  const bpm=d.by_plan_monthly||[]; const plans=['free','pro','max','premium'];
+  const bmonths=bpm.map(x=>x.month);
+  chart('rvByPlan',{type:'stackedbar',height:200,labels:bmonths,xFormat:v=>String(v).slice(2),
+    series:plans.map(p=>({name:p,values:bpm.map(x=>(x.plans[p]||0)/100)})),
+    yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'revenue by plan', empty:'No paid invoices yet'});
+  loadStripeEvents();
+}
+async function loadStripeEvents(){
+  const st=fauxVal('seStatus');
+  let r; try{ r=await api('/admin/v1/billing/stripe-events?limit=50'+(st?('&status='+st):'')); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('seRows').innerHTML='<tr><td colspan="6" class="sub mono">unavailable</td></tr>'; return; }
+  const items=(await r.json()).items||[];
+  if(!items.length){ $('seRows').innerHTML='<tr><td colspan="6" class="sub mono">no stripe events'+(st?(' with status '+esc(st)):'')+'</td></tr>'; return; }
+  const canReplay=can('operator');
+  $('seRows').innerHTML=items.map(e=>{
+    const cls=e.status==='processed'?'safe':e.status==='failed'?'bad':e.status==='ignored'?'dim':'warn';
+    const act=(canReplay&&(e.status==='failed'))?`<button class="btn sm pri" onclick="replayStripe('${e.id}')">Replay</button>`:'';
+    return `<tr><td class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td><span class="chip ${cls}">${esc(e.status)}</span></td><td class="mono" style="font-size:10px;">${e.org_id?esc(e.org_id.slice(0,8))+'…':'—'}</td><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td style="text-align:right;">${act}</td></tr>`;
+  }).join('');
+}
+async function replayStripe(id){
+  const r=await api('/admin/v1/billing/stripe-events/'+id+'/replay',{method:'POST'});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ toast('replayed · '+(d.result||d.event_status||'ok')); loadStripeEvents(); } else toast(d.detail||('replay failed ('+r.status+')'));
+}
+async function loadSecurity(){
+  let r; try{ r=await api('/admin/v1/security/logins?days=7'); }catch(e){ r=null; }
+  if(!r||!r.ok){ toast('security unavailable'); return; }
+  const d=await r.json();
+  const days=(d.series||[]).map(x=>x.day);
+  chart('secTrend',{type:'line',height:190,labels:days,xFormat:v=>String(v).slice(5),
+    series:[{name:'failed',values:(d.series||[]).map(x=>x.failed)},{name:'success',values:(d.series||[]).map(x=>x.success)}],
+    ariaLabel:'logins over time', empty:'No login activity yet'});
+  const off=d.top_offenders||[];
+  if(off.length) chart('secOffenders',{type:'bar',height:190,labels:off.map(o=>o.ip),series:[{name:'failed',values:off.map(o=>o.failed)}],ariaLabel:'top offending IPs'});
+  else $('secOffenders').innerHTML='<div class="chart-empty">No failed logins yet</div>';
+  const wl=d.watchlist||[];
+  $('secWatch').innerHTML=wl.length?wl.map(w=>`<tr><td class="mono" style="font-size:11px;">${esc(w.email)}</td><td class="mono" style="text-align:right;color:var(--danger);font-weight:700;">${num(w.failed_24h)}</td><td class="mono" style="font-size:10px;">${fmtTime(w.last_at)}</td></tr>`).join(''):'<tr><td colspan="3" class="sub mono">no lockout signals</td></tr>';
+  const rec=d.recent||[];
+  $('secRecent').innerHTML=rec.length?rec.map(x=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(x.at)}</td><td class="mono" style="font-size:11px;">${esc(x.email)}</td><td class="mono" style="font-size:10px;">${esc(x.ip||'—')}</td><td>${x.success?'<span class="chip safe">ok</span>':'<span class="chip bad">fail</span>'}</td></tr>`).join(''):'<tr><td colspan="4" class="sub mono">no attempts recorded</td></tr>';
+}
+let AU_OFF=0, _auT;
+function auditDebounced(){ clearTimeout(_auT); _auT=setTimeout(()=>loadAudit(),300); }
+function _auditParams(){
+  const p=new URLSearchParams();
+  const a=$('auAction').value.trim(); if(a)p.set('action',a);
+  const ac=$('auActor').value.trim(); if(ac)p.set('actor',ac);
+  const s=$('auSince').value; if(s)p.set('since',s);
+  const u=$('auUntil').value; if(u)p.set('until',u+'T23:59:59');
+  return p;
+}
+async function loadAudit(keepOff){
+  if(!keepOff)AU_OFF=0;
+  const p=_auditParams(); p.set('limit','50'); p.set('offset',String(AU_OFF));
+  let r; try{ r=await api('/admin/v1/audit?'+p.toString()); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">unavailable</td></tr>'; return; }
+  const d=await r.json();
+  if(!d.items.length){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">no matching actions</td></tr>'; $('auPager').innerHTML=''; return; }
+  $('auRows').innerHTML=d.items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.actor||'—')}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td><td class="mono" style="font-size:10px;">${esc(a.target_type||'—')}${a.target_id?(' '+esc(a.target_id.slice(0,8))+'…'):''}</td><td class="mono" style="font-size:10px;">${esc(a.org_name||'—')}</td><td class="mono" style="font-size:10px;">${esc(a.ip||'—')}</td></tr>`).join('');
+  const from=d.offset+1, to=Math.min(d.offset+d.limit,d.total);
+  $('auPager').innerHTML=`<span class="sub mono" style="font-size:10px;">${num(d.total)} rows · ${from}–${to}</span><button class="btn sm" ${d.offset<=0?'disabled':''} onclick="AU_OFF=Math.max(0,AU_OFF-50);loadAudit(true)">← prev</button><button class="btn sm" ${d.offset+d.limit>=d.total?'disabled':''} onclick="AU_OFF=AU_OFF+50;loadAudit(true)">next →</button>`;
+}
+function auditExport(){
+  const p=_auditParams(); p.set('format','csv');
+  window.open('/admin/v1/audit?'+p.toString(),'_blank');
+}
+let _ldT;
+function leadsDebounced(){ clearTimeout(_ldT); _ldT=setTimeout(()=>loadLeads(),250); }
+async function loadLeads(){
+  const q=$('ldSearch')?$('ldSearch').value.trim():'';
+  let r; try{ r=await api('/admin/v1/leads'+(q?('?q='+encodeURIComponent(q)):'')); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('ldKanban').innerHTML='<div class="sub mono">unavailable</div>'; return; }
+  const d=await r.json();
+  const c=d.counts||{new:0,trial:0,converted:0,churned:0};
+  const mx=Math.max(c.new,c.trial,c.converted,c.churned,1);
+  $('ldFunnel').innerHTML=funnelRow('new',c.new,mx)+funnelRow('trial',c.trial,mx,'var(--warn-bg)')+funnelRow('converted',c.converted,mx,'var(--safe-bg)')+funnelRow('churned',c.churned,mx,'var(--breach-bg)');
+  const cols=[['new','New','info'],['trial','Trial','warn'],['converted','Converted','safe'],['churned','Churned','bad']];
+  $('ldKanban').innerHTML=cols.map(([k,label,col])=>{
+    const items=(d.buckets&&d.buckets[k])||[];
+    const cards=items.length?items.map(l=>_leadCard(l,k)).join(''):'<div class="sub mono" style="padding:8px 2px;">none</div>';
+    return `<div class="clay pad"><div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;"><span class="chip ${col}">${label}</span><b class="mono">${items.length}</b></div><div style="display:flex;flex-direction:column;gap:8px;max-height:62vh;overflow:auto;">${cards}</div></div>`;
+  }).join('');
+}
+function _leadCard(l,cur){
+  const moves=can('operator')?['new','trial','converted','churned'].filter(s=>s!==cur).map(s=>`<button class="btn sm" style="padding:3px 7px;font-size:9px;" onclick="leadMove('${l.id}','${s}')">→ ${s}</button>`).join(''):'';
+  const utm=l.utm_source?`<span class="chip dim" style="font-size:8px;">${esc(l.utm_source)}</span>`:'';
+  const conv=l.converted_org_name?`<div class="sub mono" style="font-size:9px;color:var(--ok);">→ ${esc(l.converted_org_name)}</div>`:'';
+  return `<div style="border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:var(--surf2);"><div style="font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.email)}</div><div class="sub" style="font-size:10.5px;">${esc(l.company||l.name||'—')}${l.source?' · '+esc(l.source):''}</div>${conv}<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${utm}${moves}</div></div>`;
+}
+async function leadMove(id,status){
+  const r=await api('/admin/v1/leads/'+id+'/status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({status})});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ toast('lead moved to '+status); loadLeads(); } else toast(d.detail||('move failed ('+r.status+')'));
 }
 boot();
 </script>
