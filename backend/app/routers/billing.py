@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
-from .. import email, password_reset
+from .. import password_reset
 from ..auth import hash_key, require_role, resolve_org
 from ..config import get_settings
 from ..db import SessionLocal, get_db
@@ -225,10 +225,11 @@ async def stripe_webhook(
             )
             db.commit()
             # Post-commit side-effect (never before the row is durable): a fresh
-            # checkout provision emails the new admin a set-password link + SDK key.
+            # Checkout provisioning emails the new admin a set-password link. API
+            # keys are deliberately created only from the authenticated dashboard.
             if (event_type == "checkout.session.completed"
                     and result.get("status") == "provisioned"):
-                _deliver_credentials(db, org_id, result.get("api_key", ""))
+                _deliver_credentials(db, org_id)
             return result
         except Exception as exc:  # noqa: BLE001 — persist the failure, never drop the record
             db.rollback()
@@ -260,9 +261,13 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     if existing:
         return {"status": "already_provisioned", "org_id": str(existing.id)}, str(existing.id)
 
-    plaintext_key, key_hash = _generate_api_key()
+    # ``organizations.api_key_hash`` is a required legacy column. Keep it bound to
+    # an unrecoverable random value rather than minting a bearer key that would need
+    # to be transported by email. The buyer creates their first named key after
+    # setting a password and signing in to the dashboard.
+    inactive_legacy_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
     org = Organization(
-        name=customer_email, api_key_hash=key_hash, stripe_customer_id=customer_id,
+        name=customer_email, api_key_hash=inactive_legacy_hash, stripe_customer_id=customer_id,
         stripe_subscription_id=subscription_id, plan_tier=plan_tier,
         subscription_status="active", contact_email=customer_email,
         monthly_log_quota=get_settings().quota_for(plan_tier),
@@ -270,15 +275,9 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     db.add(org)
     db.flush()   # assign org.id without committing
 
-    # Make the org actually USABLE, not just an orphan row (Phase 5 · 5A.2):
-    # a peppered API key (the primary require_org path) + an INVITED admin dashboard
-    # user. The webhook emails a set-password link + the SDK key post-commit, so no
-    # shared plaintext password is ever created (6A credential delivery).
-    db.add(ApiKey(
-        org_id=org.id, name="primary",
-        key_prefix=plaintext_key[:11] + "…" + plaintext_key[-4:],
-        key_hash=hash_key(plaintext_key), status="active",
-    ))
+    # Make the org usable without sending a bearer secret over email. The invited
+    # admin sets a password, signs in, and creates a named SDK key in /v1/keys,
+    # where plaintext is returned exactly once over the authenticated session.
     db.add(User(
         org_id=org.id, email=customer_email,
         password_hash=bcrypt.hashpw(secrets.token_urlsafe(32).encode(), bcrypt.gensalt()).decode(),
@@ -297,14 +296,17 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
         lead.converted_org_id = org.id
 
     log.info("Provisioned org %s for customer %s", org.id, customer_id)
-    return {"status": "provisioned", "org_id": str(org.id),
-            "api_key": plaintext_key}, str(org.id)
+    return {"status": "provisioned", "org_id": str(org.id)}, str(org.id)
 
 
-def _deliver_credentials(db: Session, org_id: str | None, api_key: str) -> None:
-    """After a checkout provision COMMITS, email the new admin a set-password link
-    (5D invite) + their SDK key (shown once). Best-effort: a mail failure must never
-    fail the webhook — Stripe would otherwise retry an already-completed provision."""
+def _deliver_credentials(db: Session, org_id: str | None) -> None:
+    """After checkout commits, email only a password-set invitation.
+
+    Bearer API keys must never be sent by email. The recipient creates a named key
+    after signing in, where the dashboard can display it once over an authenticated
+    session. Delivery is best-effort so a mail failure cannot trigger a duplicate
+    Stripe provisioning attempt.
+    """
     if not org_id:
         return
     try:
@@ -315,13 +317,6 @@ def _deliver_credentials(db: Session, org_id: str | None, api_key: str) -> None:
             return
         password_reset.issue_reset(db, admin, admin.email,
                                    get_settings().dashboard_url, invite=True)
-        if api_key:
-            email.send_email(
-                to=admin.email, subject="Your Foxy Audit API key",
-                html=("<p>Welcome to Foxy Audit! Your SDK key — store it securely, it "
-                      f"is shown only once:</p><pre>{api_key}</pre>"),
-                text=("Welcome to Foxy Audit! Your SDK key — store it securely, it is "
-                      f"shown only once:\n{api_key}"))
     except Exception as exc:                # noqa: BLE001
         log.warning("credential delivery failed for org %s: %s", org_id, exc)
 
