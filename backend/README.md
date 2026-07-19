@@ -68,6 +68,8 @@ python scripts/verify_chain.py        # per-row PASS/FAIL table
   hash — the old key is immediately invalid. Copy the new key on the spot.
 - **Stripe billing:** `POST /v1/webhooks/stripe` auto-provisions orgs on
   checkout completion and tracks subscription status changes.
-- **Compliance passport:** `POST /v1/passport` renders a self-verifiable HTML
-  report with chain root hash, stats, and policy breakdown.
+- **Compliance passport:** `POST /v1/passport` renders a content-blind report
+  with the report-period chain check, SDK capture-coverage evidence, root hash,
+  stats, and policy breakdown. Retain its root outside Foxy or use a confirmed
+  public-chain anchor for independent historical rewrite detection.
 
