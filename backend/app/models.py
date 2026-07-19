@@ -158,6 +158,26 @@ class AccountAction(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class SsoConnection(Base):
+    """Per-org enterprise SSO (OIDC) connection (P3 · §H). Users whose email
+    domain matches are routed to this IdP at login. One per org / per domain."""
+
+    __tablename__ = "sso_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False, unique=True)
+    email_domain: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    issuer: Mapped[str] = mapped_column(String(512), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    client_secret: Mapped[str] = mapped_column(String(512), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
 class WebhookSubscription(Base):
     """A customer's outbound webhook subscription (P3 · §F) — the worker POSTs a
     signed JSON payload to `url` for each subscribed event. Org-scoped by RLS."""

@@ -1026,6 +1026,18 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <button class="btn pri sm" style="margin:0;" onclick="addWebhook()">Add</button>
         </div>
       </div>
+      <div class="clay pad" id="ssoCard" style="margin-top:14px;display:none;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/><path d="M9 12l2 2 4-4" stroke="var(--fox)" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Enterprise SSO (OIDC)</div></div><span class="stitle-act" id="ssoStatus"></span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Route users whose email matches your domain to your identity provider. Works with any OIDC IdP (Okta, Entra ID, Auth0, Google Workspace). New users join this workspace as members.</div>
+        <div class="flabel" style="margin-top:0;">email domain</div><input class="cin" id="ssoDomain" placeholder="acme.com">
+        <div class="flabel">issuer URL</div><input class="cin" id="ssoIssuer" placeholder="https://your-idp.okta.com">
+        <div class="flabel">client ID</div><input class="cin" id="ssoClientId" placeholder="client id from your IdP">
+        <div class="flabel">client secret</div><input class="cin" id="ssoClientSecret" type="password" placeholder="stored encrypted; leave blank to keep existing">
+        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;margin:10px 0;"><input type="checkbox" id="ssoActive" checked> enabled</label>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Set your IdP's redirect/callback URL to <span style="font-family:var(--mono);color:var(--fox2);" id="ssoCallback">…/v1/auth/sso/callback</span></div>
+        <button class="btn pri" onclick="saveSso()" style="margin-top:0;">Save SSO</button>
+        <button class="btn ghost" onclick="removeSso()" style="margin-top:0;margin-left:8px;">Remove</button>
+      </div>
     </div>
 
   </main>
@@ -1106,6 +1118,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     </div>
     <div class="sub mono" style="margin-top:12px;font-size:10px;">No account yet? <a href="https://foxyaudit.tech/book-a-demo.html" style="color:var(--fox2);text-decoration:underline;">Book a demo →</a></div>
     <div id="forgotLink" class="sub mono" style="margin-top:8px;font-size:10px;cursor:pointer;text-decoration:underline;">Forgot password?</div>
+    <div id="ssoLink" class="sub mono" style="margin-top:6px;font-size:10px;cursor:pointer;text-decoration:underline;" onclick="ssoSignIn()">Sign in with your company (SSO)</div>
   </form>
   <form id="authMfa" class="clay pad" style="display:none;width:340px;max-width:100%;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
@@ -1735,7 +1748,48 @@ function runExport(){
     const card=$('teamCard'); if(card)card.style.display=_isAdmin?'':'none';
     const ac=$('auditCard'); if(ac)ac.style.display=_isAdmin?'':'none';
     const wc=$('webhookCard'); if(wc)wc.style.display=_isAdmin?'':'none';
-    if(_isAdmin){ loadTeam(); loadAccountAudit(); loadWebhooks(); }
+    if(_isAdmin){ loadTeam(); loadAccountAudit(); loadWebhooks(); loadSso(); }
+  };
+  window.ssoSignIn=async function(){
+    const email=(($('authEmail')||{}).value||'').trim(); const e=$('authErr');
+    if(!email||email.indexOf('@')<0){ if(e)e.textContent='Enter your work email first'; return; }
+    try{ const r=await api('/v1/auth/sso/discover',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email})});
+      const d=await r.json();
+      if(d.sso&&d.authorize_url){ window.location.href=d.authorize_url; }
+      else if(e){ e.textContent='No SSO for that domain — sign in with your password.'; }
+    }catch(err){ if(e)e.textContent='Could not reach the server'; }
+  };
+  window.loadSso=async function(){
+    const card=$('ssoCard'); if(card)card.style.display=_isAdmin?'':'none';
+    if(!_isAdmin)return;
+    const cb=$('ssoCallback'); if(cb)cb.textContent=location.origin+'/v1/auth/sso/callback';
+    try{ const r=await api('/v1/auth/sso/connection'); if(!r.ok)return; const c=await r.json();
+      const st=$('ssoStatus'); if(st)st.textContent=c.configured?(c.active?'active':'disabled'):'not set up';
+      if(c.configured){
+        if($('ssoDomain'))$('ssoDomain').value=c.email_domain||'';
+        if($('ssoIssuer'))$('ssoIssuer').value=c.issuer||'';
+        if($('ssoClientId'))$('ssoClientId').value=c.client_id||'';
+        if($('ssoActive'))$('ssoActive').checked=!!c.active;
+      }
+    }catch(e){}
+  };
+  window.saveSso=async function(){
+    const domain=(($('ssoDomain')||{}).value||'').trim(), issuer=(($('ssoIssuer')||{}).value||'').trim();
+    const clientId=(($('ssoClientId')||{}).value||'').trim(), secret=(($('ssoClientSecret')||{}).value||'').trim();
+    if(!domain||!issuer||!clientId){ toast('Domain, issuer, and client ID are required'); return; }
+    const body={email_domain:domain,issuer:issuer,client_id:clientId,client_secret:secret,active:!!($('ssoActive')||{}).checked};
+    try{ const r=await api('/v1/auth/sso/connection',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      if(!r.ok){ toast('Save failed — '+await errText(r)); return; }
+      if($('ssoClientSecret'))$('ssoClientSecret').value=''; toast('SSO saved'); loadSso();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.removeSso=async function(){
+    if(!confirm('Remove SSO for this workspace?'))return;
+    try{ const r=await api('/v1/auth/sso/connection',{method:'DELETE'});
+      if(!r.ok){ toast('Remove failed'); return; }
+      ['ssoDomain','ssoIssuer','ssoClientId','ssoClientSecret'].forEach(id=>{ const e=$(id); if(e)e.value=''; });
+      toast('SSO removed'); loadSso();
+    }catch(e){ toast('Could not reach the server'); }
   };
   function webhookRow(w){
     const st=w.last_status?(' · last '+esc(w.last_status)):'';
