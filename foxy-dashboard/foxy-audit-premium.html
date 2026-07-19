@@ -484,6 +484,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="currentColor"/></svg></span>
       <span>Policy</span>
     </div>
+    <div class="dock-item" data-page="systems" onclick="go('systems',this)">
+      <span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span>Systems</span>
+    </div>
     <div class="dock-item" data-page="export" onclick="go('export',this)">
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 4 5-4"/><path d="M4 19h16"/></svg></span>
       <span>Export</span>
@@ -858,6 +862,44 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       </div>
     </div>
 
+    <!-- ═════════════ AI SYSTEMS ═════════════ -->
+    <div class="page" id="page-systems">
+      <div class="pg-head">
+        <div><div class="eyebrow">Enterprise inventory</div><div class="h1">AI systems<span class="fox-dot">.</span></div><div class="sub">declare accountable systems, then bind each SDK event to its operating context</div></div>
+        <button class="btn ghost sm" onclick="loadSystems()">↻ refresh</button>
+      </div>
+      <div class="g2">
+        <div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3" fill="#000"/><path d="M8 9h8M8 13h5" stroke="var(--fox)" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="txt">Registered systems</div></div></div>
+          <div style="font-size:11px;color:var(--muted);margin:0 0 14px;line-height:1.6;">This inventory holds declared ownership and risk context only. It never accepts prompts, responses, secrets, or customer records.</div>
+          <div id="systemsList"><div style="font-size:11px;color:var(--muted);">loading systems…</div></div>
+        </div>
+        <div class="clay pad" id="systemFormCard">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="2.5" stroke-linecap="round"/></svg></span></div><div class="txt">Register a system</div></div></div>
+          <div style="font-size:11px;color:var(--muted);margin:0 0 12px;line-height:1.55;">Use business-level descriptions only. Do not enter model inputs, outputs, API keys, or regulated records.</div>
+          <div id="systemForm">
+            <div class="flabel" style="margin-top:0;">system name</div><input class="cin" id="sysName" maxlength="120" autocomplete="off">
+            <div class="flabel">accountable owner</div><input class="cin" id="sysOwner" type="email" maxlength="320" autocomplete="email">
+            <div class="flabel">business purpose</div><input class="cin" id="sysPurpose" maxlength="256" autocomplete="off">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div><div class="flabel">provider</div><select id="sysProvider"><option value="openai">OpenAI</option><option value="azure_openai">Azure OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google</option><option value="aws_bedrock">AWS Bedrock</option><option value="self_hosted">Self-hosted</option><option value="other" selected>Other</option></select></div>
+              <div><div class="flabel">model name <span style="color:var(--muted);font-weight:400;">(optional)</span></div><input class="cin" id="sysModel" maxlength="128" autocomplete="off"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div><div class="flabel">environment</div><select id="sysEnvironment"><option value="development">Development</option><option value="staging">Staging</option><option value="production" selected>Production</option></select></div>
+              <div><div class="flabel">risk tier</div><select id="sysRisk"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+            </div>
+            <div class="flabel">data classification</div><select id="sysData"><option value="public">Public</option><option value="internal" selected>Internal</option><option value="confidential">Confidential</option><option value="regulated">Regulated</option></select>
+            <button class="btn pri" onclick="createSystem()">register system</button>
+          </div>
+          <div id="systemReadOnly" style="display:none;font-size:11px;color:var(--muted);line-height:1.6;">You have read access to the system inventory. A workspace admin can register or retire systems.</div>
+        </div>
+      </div>
+      <div class="clay pad" style="margin-top:16px;font-size:11.5px;color:var(--muted);line-height:1.7;">
+        <b style="color:var(--ink);">Bind real SDK evidence:</b> copy a system ID above, then add <span class="codebox" style="display:inline-block;padding:2px 7px;margin:0;">system_id=&quot;copied-id&quot;</span> to <span class="codebox" style="display:inline-block;padding:2px 7px;margin:0;">@foxy.audit(...)</span>. Foxy validates that the system is active in this workspace and commits the ID into V3 hash-chain metadata. Retiring a system stops new attribution without rewriting historical evidence.
+      </div>
+    </div>
+
     <!-- ═════════════ KEYS ═════════════ -->
     <div class="page" id="page-keys">
       <div class="pg-head">
@@ -1075,6 +1117,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
   <div class="mnbtn" data-page="ledger" onclick="go('ledger',this)"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v4l-3 3 3 3v6H4v-6l3-3-3-3z" fill="currentColor"/></svg></span>Ledger</div>
   <div class="mnbtn" data-page="verify" onclick="go('verify',this)"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="10" cy="10" r="7"/><path d="M16 16l5 5"/></svg></span>Verify</div>
   <div class="mnbtn" data-page="policy" onclick="go('policy',this)"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="currentColor"/></svg></span>Policy</div>
+  <div class="mnbtn" data-page="systems" onclick="go('systems',this)"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="2"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>Systems</div>
 </nav>
 
 <div class="toast" id="toast"><i></i><span id="toast-msg"></span></div>
@@ -1091,7 +1134,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 (function(){
   const $=id=>document.getElementById(id);
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const PAGES=[['dashboard','Home / overview'],['analytics','Threat analytics'],['ledger','Audit ledger'],['verify','Verify a record'],['policy','Policy ruleset'],['export','Compliance passport'],['keys','API keys & SDK'],['billing','Usage & billing'],['settings','Settings']];
+  const PAGES=[['dashboard','Home / overview'],['analytics','Threat analytics'],['ledger','Audit ledger'],['verify','Verify a record'],['policy','Policy ruleset'],['systems','AI systems'],['export','Compliance passport'],['keys','API keys & SDK'],['billing','Usage & billing'],['settings','Settings']];
   let items=[], sel=0;
   const pal=()=>$('cmdPalette'), inp=()=>$('cmdInput'), res=()=>$('cmdResults');
   const isOpen=()=>{ const p=pal(); return p && p.style.display==='flex'; };
@@ -1785,6 +1828,60 @@ async function loadLoginHistory(){
     catch(e){ toast('Could not reach the server'); }
   };
 
+  // ── AI-system inventory (enterprise evidence attribution) ──
+  function systemRow(s){
+    const active=s.lifecycle_status==='active';
+    const tag=active?'active':(s.lifecycle_status==='draft'?'draft':'retired');
+    const model=s.model_name?(' · '+esc(s.model_name)):'';
+    const details=[s.environment,s.data_classification,s.risk_tier+' risk'].map(esc).join(' · ');
+    const id=esc(s.id);
+    return '<div class="krow"'+(active?'':' style="opacity:.62;"')+'>'
+      +'<div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="5" width="14" height="14" rx="3" fill="'+(active?'var(--fox)':'var(--muted)')+'"/></svg></span></div>'
+      +'<div class="kbody"><div class="kname">'+esc(s.name)+'</div><div class="kmeta">'+esc(s.provider)+model+' · '+details+'</div>'
+      +'<div class="kmeta" style="font-family:var(--mono);margin-top:3px;">'+id+'</div><div class="kmeta">owner · '+esc(s.owner_email)+'</div></div>'
+      +'<span class="kstatus '+(active?'active':'revoked')+'">'+tag+'</span>'
+      +'<div class="kactions"><button class="btn ghost sm" type="button" onclick="copySystemId(\''+id+'\')">copy ID</button>'
+      +(active&&_isAdmin?'<button class="btn danger sm" type="button" onclick="retireSystem(\''+id+'\')">retire</button>':'')+'</div></div>';
+  }
+  function setSystemFormAccess(){
+    const form=$('systemForm'), ro=$('systemReadOnly');
+    if(form)form.style.display=_isAdmin?'':'none';
+    if(ro)ro.style.display=_isAdmin?'none':'';
+  }
+  window.loadSystems=async function(){
+    const box=$('systemsList'); if(!box)return;
+    try{ const me=await api('/v1/auth/me'); if(me.ok){ const d=await me.json(); _isAdmin=d.role==='admin'; setSystemFormAccess(); }
+      const r=await api('/v1/systems'); if(!r.ok){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">Could not load systems ('+esc(await errText(r))+').</div>'; return; }
+      const rows=await r.json(); box.innerHTML=(Array.isArray(rows)&&rows.length)?rows.map(systemRow).join('')
+        :'<div style="font-size:11px;color:var(--muted);padding:8px 0;line-height:1.6;">No systems are registered yet. Register the production AI system before linking its SDK events.</div>';
+    }catch(e){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">Could not reach the server.</div>'; }
+  };
+  window.copySystemId=async function(id){
+    try{ await navigator.clipboard.writeText(id); toast('System ID copied'); }
+    catch(e){ window.prompt('Copy this system ID:',id); }
+  };
+  window.createSystem=async function(){
+    const name=(($('sysName')||{}).value||'').trim(), purpose=(($('sysPurpose')||{}).value||'').trim();
+    if(!name||!purpose){ toast('System name and business purpose are required'); return; }
+    const owner=(($('sysOwner')||{}).value||'').trim(), model=(($('sysModel')||{}).value||'').trim();
+    const body={name:name,purpose:purpose,provider:($('sysProvider')||{}).value||'other',
+      environment:($('sysEnvironment')||{}).value||'production',risk_tier:($('sysRisk')||{}).value||'medium',
+      data_classification:($('sysData')||{}).value||'internal'};
+    if(owner)body.owner_email=owner; if(model)body.model_name=model;
+    try{ const r=await api('/v1/systems',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      if(!r.ok){ toast('Registration failed — '+await errText(r)); return; }
+      ['sysName','sysOwner','sysPurpose','sysModel'].forEach(id=>{ const el=$(id); if(el)el.value=''; });
+      toast('AI system registered'); loadSystems();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  window.retireSystem=async function(id){
+    if(!confirm('Retire this AI system? New SDK events cannot use it. Historical evidence remains intact.'))return;
+    try{ const r=await api('/v1/systems/'+id+'/retire',{method:'POST'});
+      if(!r.ok){ toast('Retire failed — '+await errText(r)); return; }
+      toast('AI system retired'); loadSystems();
+    }catch(e){ toast('Could not reach the server'); }
+  };
+
   // ── Settings + Team (B3) ──
   let _isAdmin=false;
   window.loadSettings=async function(){
@@ -1884,6 +1981,7 @@ async function loadLoginHistory(){
     if(btn){ btn.disabled=false; btn.textContent='test'; }
   };
   const _AUDIT_LABEL={'key.create':'Created API key','key.revoke':'Revoked API key',
+    'system.create':'Registered AI system','system.update':'Updated AI system','system.retire':'Retired AI system',
     'policy.update':'Updated policy','member.role_change':'Changed member role',
     'member.enable':'Re-enabled member','member.disable':'Disabled member',
     'mfa.enable':'Enabled 2FA','mfa.disable':'Disabled 2FA'};
@@ -2019,6 +2117,7 @@ async function loadLoginHistory(){
     window.go=function(page,el){ _go(page,el);
       if(page==='policy')loadPolicy();
       else if(page==='keys')loadKeys();
+      else if(page==='systems')loadSystems();
       else if(page==='settings')loadSettings();
     };
   }
