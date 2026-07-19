@@ -978,6 +978,14 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div id="badgeOut" style="margin-top:12px;display:none;"></div>
           </div>
           <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">What Foxy stores</div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.65;">
+              <div style="display:flex;gap:8px;margin-bottom:7px;"><span style="color:var(--safe-bg);font-weight:900;">✓</span><div><b>Stored:</b> per-interaction SHA-256 / customer-keyed HMAC commitments, a token count, your policy tag + agent label, the Judge verdict, and the tamper-evident chain hash.</div></div>
+              <div style="display:flex;gap:8px;margin-bottom:7px;"><span style="color:var(--breach-bg);font-weight:900;">✕</span><div><b>Never stored or transmitted:</b> your raw prompts or responses. They are hashed locally by the SDK and discarded — Foxy never receives them.</div></div>
+              <div style="display:flex;gap:8px;"><span style="color:var(--fox2);font-weight:900;">↗</span><div>Anchoring publishes only a chain-head hash to a public blockchain — no content, no workspace identity. Export or delete your data anytime from the danger zone below.</div></div>
+            </div>
+          </div>
+          <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Desktop app</div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Run the Foxy compliance-officer fox on your machine — it reacts to live audit events and hosts the chat copilot. Signs you in automatically from this workspace.</div>
             <a class="btn" href="https://foxyaudit.tech/download/FoxyAudit-Setup.exe" style="text-decoration:none;display:inline-block;">Download for Windows</a>
@@ -1032,6 +1040,51 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 </nav>
 
 <div class="toast" id="toast"><i></i><span id="toast-msg"></span></div>
+
+<!-- ═══ P3 · §J command palette (Cmd/Ctrl-K) ═══ -->
+<div id="cmdPalette" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(6,5,4,.6);align-items:flex-start;justify-content:center;padding-top:12vh;">
+  <div class="clay pad" style="width:520px;max-width:92%;padding:14px;" onclick="event.stopPropagation()">
+    <input id="cmdInput" class="cin" placeholder="Jump to a section, or paste a ledger hash / #seq…" style="margin:0;font-size:13px;" autocomplete="off">
+    <div id="cmdResults" style="margin-top:10px;max-height:320px;overflow-y:auto;"></div>
+    <div style="font-size:9.5px;color:var(--muted);margin-top:8px;font-family:var(--mono);">↑↓ navigate · ↵ open · esc close</div>
+  </div>
+</div>
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const PAGES=[['dashboard','Home / overview'],['analytics','Threat analytics'],['ledger','Audit ledger'],['verify','Verify a record'],['policy','Policy ruleset'],['export','Compliance passport'],['keys','API keys & SDK'],['billing','Usage & billing'],['settings','Settings']];
+  let items=[], sel=0;
+  const pal=()=>$('cmdPalette'), inp=()=>$('cmdInput'), res=()=>$('cmdResults');
+  const isOpen=()=>{ const p=pal(); return p && p.style.display==='flex'; };
+  function open(){ const p=pal(); if(!p)return; p.style.display='flex'; inp().value=''; render(''); inp().focus(); }
+  function close(){ const p=pal(); if(p)p.style.display='none'; }
+  function build(q){
+    const out=[], norm=q.trim(), lc=norm.toLowerCase();
+    PAGES.forEach(([id,label])=>{ if(!norm||label.toLowerCase().includes(lc)||id.includes(lc)) out.push({label:'Go to '+label, act:()=>{ close(); window.go(id,null); }}); });
+    const hex=lc.replace(/[^a-f0-9]/g,'');
+    if(hex.length>=8) out.push({label:'Verify ledger hash '+hex.slice(0,16)+'…', act:()=>{ close(); window.go('verify',null); const el=$('vLedgerHash'); if(el){ el.value=hex; if(window.runVerify)window.runVerify(); } }});
+    if(/^#?\d+$/.test(norm)) out.push({label:'Open the audit ledger (record '+norm.replace('#','#')+')', act:()=>{ close(); window.go('ledger',null); }});
+    return out;
+  }
+  function render(q){ items=build(q); sel=0; paint(); }
+  function paint(){
+    const r=res(); if(!r)return;
+    r.innerHTML=items.length?items.map((it,i)=>'<div class="cmdrow" data-i="'+i+'" style="padding:9px 10px;border-radius:8px;cursor:pointer;font-size:12.5px;'+(i===sel?'background:var(--surf2);font-weight:700;':'')+'">'+esc(it.label)+'</div>').join(''):'<div style="padding:9px 10px;color:var(--muted);font-size:12px;">No matches</div>';
+    Array.from(r.querySelectorAll('.cmdrow')).forEach(el=>{ el.onclick=()=>{ const it=items[+el.dataset.i]; if(it)it.act(); }; });
+  }
+  document.addEventListener('keydown',e=>{
+    if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); isOpen()?close():open(); return; }
+    if(!isOpen())return;
+    if(e.key==='Escape'){ close(); }
+    else if(e.key==='ArrowDown'){ e.preventDefault(); sel=Math.min(items.length-1,sel+1); paint(); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); sel=Math.max(0,sel-1); paint(); }
+    else if(e.key==='Enter'){ if(items[sel]){ e.preventDefault(); items[sel].act(); } }
+  });
+  function wire(){ const p=pal(); if(p)p.addEventListener('click',close); const i=inp(); if(i)i.addEventListener('input',()=>render(i.value)); }
+  if(document.readyState!=='loading')wire(); else document.addEventListener('DOMContentLoaded',wire);
+})();
+</script>
 
 <!-- ═══ login gate (added for live backend integration) ═══ -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
