@@ -5,6 +5,11 @@ from __future__ import annotations
 
 import hashlib
 
+from sqlalchemy import text
+
+from app.db import SessionLocal, engine
+from app.policy_snapshot import policy_snapshot_hash
+
 
 def test_get_defaults_and_update(make_org, client, login):
     org = make_org()
@@ -62,6 +67,62 @@ def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch):
         "pii_detection": False, "prompt_injection": False,
         "regulated_data_mode": True, "max_token_threshold": 777,
     }
+
+
+def test_policy_snapshot_is_bound_and_used_after_a_later_policy_change(
+    make_org, client, login, monkeypatch,
+):
+    org = make_org()
+    admin = login(org["admin_email"], org["admin_password"])
+    initial = {
+        "pii_detection": False, "prompt_injection": True,
+        "regulated_data_mode": True, "max_token_threshold": 777,
+    }
+    assert admin.put("/v1/policies", json=initial).status_code == 200
+    _h = lambda s: hashlib.sha256(s.encode()).hexdigest()  # noqa: E731
+    assert client.post("/v1/logs/batch", headers=org["auth"], json=[
+        {"prompt_hash": _h("snapshot-p"), "response_hash": _h("snapshot-r"),
+         "token_count": 50, "policy_tag": "chat"},
+    ]).status_code == 202
+    item = client.get("/v1/logs?limit=1", headers=org["auth"]).json()["items"][0]
+    metadata = item["event_metadata"]
+    assert item["chain_version"] == 3
+    assert metadata["policy_snapshot_hash"] == policy_snapshot_hash(metadata["policy_snapshot"])
+    assert metadata["policy_snapshot"]["max_token_threshold"] == 777
+
+    updated = dict(initial, pii_detection=True, regulated_data_mode=False,
+                   max_token_threshold=9_999)
+    assert admin.put("/v1/policies", json=updated).status_code == 200
+
+    from app import worker as workermod
+    from app.schemas import Verdict
+    captured = {}
+
+    def fake_eval(meta, policy_config=None, history=None):
+        captured["policy_config"] = policy_config
+        return Verdict(decision="clean", reason="stub", risk_score=0)
+
+    monkeypatch.setattr(workermod.gemini, "evaluate", fake_eval)
+    db = SessionLocal()
+    try:
+        rows = workermod._claim_batch(db, 10, 300)
+        assert len(rows) == 1
+        workermod._grade_one(db, rows[0])
+    finally:
+        db.close()
+    assert captured["policy_config"] == {
+        "pii_detection": False, "prompt_injection": True,
+        "regulated_data_mode": True, "max_token_threshold": 777,
+    }
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE audit_logs SET event_metadata = jsonb_set("
+            "event_metadata, '{policy_snapshot,max_token_threshold}', '999'::jsonb) "
+            "WHERE org_id = :org_id"
+        ), {"org_id": org["org_id"]})
+    verified = client.get("/v1/verify", headers=org["auth"]).json()
+    assert verified["ok"] is False
 
 
 # ── Judge-sensitivity fields are now REAL persisted policy, not cosmetic (Phase 5) ──

@@ -68,6 +68,8 @@ def test_passport_reports_sdk_capture_gap_and_evidence_boundary(make_org, client
 
     assert report.status_code == 200, report.text
     assert "SDK Capture Coverage" in report.text
+    assert "Policy Configuration Evidence" in report.text
+    assert "bound into the V3 chain payload" in report.text
     assert "PARTIAL" in report.text
     assert "Missing Client Sequence Events</dt><dd>1</dd>" in report.text
     assert "calls that bypass the SDK" in report.text

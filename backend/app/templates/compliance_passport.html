@@ -227,6 +227,43 @@
         </table>
     </div>
 
+    <!-- Policy Provenance -->
+    <div class="section">
+        <h2>Policy Configuration Evidence</h2>
+        {% if policy_snapshots %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Policy Snapshot Hash</th>
+                    <th>Events</th>
+                    <th>Applied Settings</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in policy_snapshots %}
+                <tr>
+                    <td class="mono">{{ item.hash }}</td>
+                    <td>{{ item.events }}</td>
+                    <td>
+                        PII {{ "on" if item.snapshot.pii_detection else "off" }};
+                        injection {{ "on" if item.snapshot.prompt_injection else "off" }};
+                        regulated mode {{ "on" if item.snapshot.regulated_data_mode else "off" }};
+                        max tokens {{ item.snapshot.max_token_threshold }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">
+            Each digest is canonical JSON of the safe policy fields captured with its events and is bound into the V3 chain payload.
+        </p>
+        {% else %}
+        <p style="font-size: 13px; color: #6b7280;">
+            No policy snapshots were recorded in this report period. Historical records remain verifiable, but policy provenance was introduced with V3 evidence records.
+        </p>
+        {% endif %}
+    </div>
+
     <!-- Chain Verification -->
     <div class="section">
         <h2>Cryptographic Chain Verification</h2>

@@ -44,6 +44,7 @@ from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_du
 from .config import get_settings
 from .db import SessionLocal
 from .models import AuditEvent, Organization, OrgPolicy
+from .policy_snapshot import judge_policy_config, policy_snapshot_hash
 
 log = logging.getLogger("foxy.worker")
 
@@ -85,8 +86,23 @@ _MARK_RETRY_SQL = text("UPDATE audit_logs SET grading_status = 'pending' WHERE i
 _MARK_FAILED_SQL = text("UPDATE audit_logs SET grading_status = 'failed' WHERE id = :id")
 
 
-def _policy_config(db: Session, org_id) -> dict | None:
-    """Load the org's policy flags so the judge enforces what they configured."""
+def _policy_config(db: Session, org_id, event_metadata: dict | None = None) -> dict | None:
+    """Use an event's bound policy snapshot, with a legacy-row fallback."""
+    metadata = event_metadata or {}
+    snapshot = metadata.get("policy_snapshot")
+    stored_hash = metadata.get("policy_snapshot_hash")
+    if snapshot is not None or stored_hash is not None:
+        if not isinstance(snapshot, dict) or not isinstance(stored_hash, str):
+            raise ValueError("policy snapshot metadata is incomplete")
+        if policy_snapshot_hash(snapshot) != stored_hash:
+            raise ValueError("policy snapshot hash does not match stored policy")
+        config = judge_policy_config(snapshot)
+        if config is None:
+            raise ValueError("policy snapshot metadata is invalid")
+        return config
+
+    # Rows written before chain V3 did not retain policy snapshots. Preserve
+    # their legacy behavior rather than rewriting historical evidence.
     oid = org_id if isinstance(org_id, uuid.UUID) else uuid.UUID(str(org_id))
     policy = db.get(OrgPolicy, oid)
     if policy is None:
@@ -138,7 +154,7 @@ def _grade_one(db: Session, row) -> None:
         "commitment_alg": row.get("commitment_alg"),
         "event_metadata": row.get("event_metadata"),
     }
-    policy_config = _policy_config(db, row["org_id"])
+    policy_config = _policy_config(db, row["org_id"], row.get("event_metadata"))
     history = _org_history(db, row["org_id"])
     verdict = gemini.evaluate(meta, policy_config, history=history)
     settings = get_settings()

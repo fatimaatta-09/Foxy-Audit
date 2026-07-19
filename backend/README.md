@@ -61,6 +61,9 @@ python scripts/verify_chain.py        # per-row PASS/FAIL table
   never raw prompt or response text. When both are configured, a breach from either
   known provider wins. Provider outages are explicit `unknown` results; deterministic
   local metadata rules still run and unknown is never counted as clean.
+- **Policy provenance:** New V3 ledger records bind a canonical hash of the safe
+  policy configuration active at capture time. The worker grades against that
+  snapshot, so later policy edits cannot change which rules governed a record.
 - **RLS:** `auth.require_org` sets `app.current_org` via `set_config(..., true)`
   per transaction; the `org_isolation` policy (with `FORCE`) scopes every
   `audit_logs` query to the calling tenant.
