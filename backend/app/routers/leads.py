@@ -32,7 +32,7 @@ router = APIRouter()
 
 # Sources whose messages are high-priority: they page every superadmin on arrival
 # and sort to the top of the admin inbox (see admin_inbox._is_priority).
-PRIORITY_SOURCES = {"enterprise", "demo", "partnership"}
+PRIORITY_SOURCES = {"checkout", "enterprise", "demo", "partnership"}
 # Founder alerts for priority contacts always also go to the team's shared inbox,
 # regardless of which superadmins happen to be registered.
 FOUNDER_ALERT_EMAIL = "foxyaudit@gmail.com"
@@ -81,8 +81,9 @@ def _notify_priority_contact(name: str | None, email_addr: str, message: str | N
     # Always include the team's shared inbox, deduped, even if no superadmin matches.
     recipients = list(dict.fromkeys([r for r in recipients if r] + [FOUNDER_ALERT_EMAIL]))
 
-    label = {"partnership": "partnership", "enterprise": "enterprise",
-             "demo": "demo"}.get((source or "").strip().lower(), "contact")
+    label = {"checkout": "checkout", "partnership": "partnership",
+             "enterprise": "enterprise", "demo": "demo"}.get(
+                 (source or "").strip().lower(), "contact")
     who = (name or email_addr or "Someone").strip()
     body = (message or "").strip()
     alert_html = (

@@ -1390,8 +1390,9 @@ document.getElementById('leadSubmit').addEventListener('click', async e => {
       const plan = (src === 'signup-max') ? 'max' : (src === 'signup-guardian' ? 'guardian' : (src === 'signup-companion' ? 'companion' : 'pro'));
       const r = await fetch(FOXY_API + '/v1/billing/checkout-session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, plan }) });
       if (r.ok) { const d = await r.json(); if (d.checkout_url) { window.location.href = d.checkout_url; return; } }
-      await postLead({ email, source: src, subject: plan, message: 'Interested in the ' + plan + ' plan (checkout not yet enabled).' });
-      leadMsg.style.color = 'var(--safe-bg)'; leadMsg.textContent = '✓ Got it — we\'ll email you to finish checkout.'; setTimeout(closeLeadModal, 2400); return;
+      const lead = await postLead({ email, source: 'checkout', subject: plan, message: 'Interested in the ' + plan + ' plan (checkout is not currently available).' });
+      if (!lead.ok) throw 0;
+      leadMsg.style.color = 'var(--safe-bg)'; leadMsg.textContent = '✓ Your checkout request has been routed to sales. We\'ll follow up at this address.'; setTimeout(closeLeadModal, 3000); return;
     }
     if (src === 'signup-free' || src === 'cta-hero' || src === 'cta') {
       const r = await fetch(FOXY_API + '/v1/signup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });

@@ -97,6 +97,7 @@ Every form posts to the backend API at **`https://app.<host>/v1/…`** (the JS r
 | Form | Endpoint | Table / effect |
 |------|----------|----------------|
 | Partnerships apply | `POST /v1/leads` `source=partnership` | `marketing_leads` → admin inbox |
+| Paid checkout unavailable | `POST /v1/leads` `source=checkout` | priority inbox + confirmation email |
 | Contact / support note | `POST /v1/leads` `source=support` | `marketing_leads` |
 | Enterprise "Contact us" | `POST /v1/leads` `source=enterprise` | `marketing_leads` |
 | Book a demo | `POST /v1/leads` `source=demo` (reCAPTCHA v3) | `marketing_leads` |
@@ -104,7 +105,7 @@ Every form posts to the backend API at **`https://app.<host>/v1/…`** (the JS r
 | Welcome terms / cookie banner | `POST /v1/consent` | `consent_events` |
 | Page-view beacon (consent-gated) | `POST /v1/track` | `traffic_events` |
 
-**Priority sources** (`enterprise`, `demo`, `partnership`) also **email the founders**
+**Priority sources** (`checkout`, `enterprise`, `demo`, `partnership`) also **email the founders**
 (`foxyaudit@gmail.com` + any superadmins) on arrival and sort to the top of the admin
 inbox — subject e.g. "🔴 Priority Partnership — <name>".
 
@@ -157,7 +158,9 @@ the updated files immediately. **Hard-refresh** after a deploy to clear the cach
 - **`index.html` is self-contained**; the card pages use `/site.css`. Keep new card
   pages on `site.css`.
 - **No emojis as brand/UI marks** — use the logo or inline SVG line icons.
-- Paid CTAs route to **Book a demo** (payment integration is parked).
+- Paid CTAs open **Stripe Checkout** when the selected plan is configured. If it
+  is unavailable, they create a priority `checkout` sales request and show that
+  state honestly instead of simulating payment.
 
 ---
 

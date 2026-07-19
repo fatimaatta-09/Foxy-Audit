@@ -48,6 +48,30 @@ def test_lead_captures_contact_message(client):
         db.close()
 
 
+def test_checkout_request_is_prioritized_and_confirms_by_email(client, monkeypatch):
+    """The disabled-checkout fallback must create a real sales follow-up path."""
+    import app.routers.leads as leads
+
+    sent = []
+    monkeypatch.setattr(leads.email_mod, "send_email", lambda **kw: sent.append(kw) or True)
+    response = client.post("/v1/leads", json={
+        "email": "buyer@corp.com",
+        "source": "checkout",
+        "subject": "pro",
+        "message": "Interested in the pro plan (checkout is not currently available).",
+    })
+    assert response.status_code == 200
+    assert {message["to"] for message in sent} >= {"buyer@corp.com", "foxyaudit@gmail.com"}
+
+    db = SessionLocal()
+    try:
+        lead = db.query(MarketingLead).filter(MarketingLead.email == "buyer@corp.com").one()
+        assert lead.source == "checkout"
+        assert lead.subject == "pro"
+    finally:
+        db.close()
+
+
 def test_marketing_beacon_writes_traffic(client):
     assert client.post("/v1/track", json={"path": "/pricing?ref=x"}).status_code == 200
     db = SessionLocal()
