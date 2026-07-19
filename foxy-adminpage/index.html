@@ -822,11 +822,29 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
         <button class="btn" onclick="loadOverview()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
       </div>
 
+      <div class="clay pad" style="margin-bottom:18px;">
+        <div class="panel-h">
+          <div><div class="eyebrow">platform trend</div><div class="panel-t" id="ovTrendTitle">Interactions · 30 days</div></div>
+          <div style="display:flex;gap:14px;align-items:center;">
+            <div style="text-align:right;"><div class="kval mono" id="ovTrendTotal" style="font-size:22px;line-height:1;">—</div><div class="sub mono" id="ovTrendDelta" style="font-size:10px;margin-top:2px;"></div></div>
+            <div class="fauxselect" id="ovMetric" data-value="interactions" data-onchange="renderOvTrend" style="min-width:148px;">
+              <button type="button" class="cin fauxselect-trigger"><span class="fauxselect-label">interactions</span><svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+              <div class="fauxselect-list">
+                <div class="fauxselect-opt sel" data-value="interactions">interactions</div>
+                <div class="fauxselect-opt" data-value="breaches">breaches</div>
+                <div class="fauxselect-opt" data-value="signups">signups</div>
+                <div class="fauxselect-opt" data-value="revenue">revenue</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="ovTrend" style="min-height:220px;"></div>
+      </div>
       <div class="grid kpis">
         <div class="clay kpi hot"><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></div>
         <div class="clay kpi"><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></div>
-        <div class="clay kpi"><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot">from usage rollup</div></div>
-        <div class="clay kpi"><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot">all-time, all orgs</div></div>
+        <div class="clay kpi"><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></div>
+        <div class="clay kpi"><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></div>
         <div class="clay kpi"><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></div>
       </div>
 
@@ -839,6 +857,14 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
         <div class="clay pad b-leads">
           <div class="panel-h"><div><div class="eyebrow">marketing funnel</div><div class="panel-t">Leads</div></div></div>
           <div class="fun" id="leadFun"></div>
+        </div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">tenants</div><div class="panel-t">Plan mix</div></div></div>
+          <div id="ovPlanMix" style="min-height:180px;"></div>
+        </div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">last 30 days</div><div class="panel-t">Top orgs by usage</div></div><a class="linklike" onclick="navTo('orgs')">all orgs →</a></div>
+          <div id="ovTopOrgs" style="min-height:180px;"></div>
         </div>
         <div class="clay pad b-health">
           <div class="panel-h"><div><div class="eyebrow">operations</div><div class="panel-t">System health</div></div><a class="linklike" onclick="goOps('health')">view →</a></div>
@@ -861,6 +887,20 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi"><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></div><div class="clay kpi"><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></div><div class="clay kpi"><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></div><div class="clay kpi"><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" class="sub mono">loading…</div></div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px;">
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">last 14 days</div><div class="panel-t">Grading throughput</div></div></div>
+          <div id="hGradingTrend" style="min-height:170px;"></div>
+        </div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">last 14 days</div><div class="panel-t">Anchor activity</div></div></div>
+          <div id="hAnchorTrend" style="min-height:170px;"></div>
+        </div>
+      </div>
+      <div class="clay pad" style="margin-top:14px;">
+        <div class="panel-h"><div><div class="eyebrow">audit</div><div class="panel-t">Alert acknowledgement history</div></div></div>
+        <div id="hAlertHistory"><div class="sub mono">loading…</div></div>
+      </div>
     </section>
 
     <section class="page" id="page-deadletter">
@@ -907,6 +947,37 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
     </section>
 
     <!-- ──────────────── TRAFFIC ──────────────── -->
+    <!-- ──────────────── ORG 360 (drill-down sub-page) ──────────────── -->
+    <section class="page" id="page-org360">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow"><a class="linklike" onclick="navTo('orgs')">&larr; organizations</a></div>
+          <h1 id="o3Name">Organization</h1>
+          <div class="sub mono" id="o3Sub" style="font-size:11px;word-break:break-all;">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span id="o3Actions" style="display:flex;gap:8px;"></span>
+          <button class="btn" onclick="orgVerify()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M12 3a9 9 0 1 0 9 9"/></svg>Verify chain</button>
+          <button class="btn" onclick="if(O3_ID)openOrg(O3_ID)"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
+        </div>
+      </div>
+      <div id="o3Chips" style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;"></div>
+      <div class="clay pad" style="margin-bottom:16px;">
+        <div class="panel-h"><div><div class="eyebrow">usage · 30 days</div><div class="panel-t">Interactions vs breaches</div></div><span id="o3VerifyState" class="sub mono" style="font-size:10.5px;"></span></div>
+        <div id="o3Usage" style="min-height:200px;"></div>
+      </div>
+      <div class="grid kpis" id="o3Kpis" style="margin-bottom:18px;"></div>
+      <div class="clay pad" style="margin-bottom:14px;display:flex;gap:6px;flex-wrap:wrap;" role="tablist" id="o3Tabs">
+        <button class="btn sm pri" data-tab="overview" onclick="o3Tab('overview')">Overview</button>
+        <button class="btn sm" data-tab="users" onclick="o3Tab('users')">Users</button>
+        <button class="btn sm" data-tab="keys" onclick="o3Tab('keys')">Keys</button>
+        <button class="btn sm" data-tab="ledger" onclick="o3Tab('ledger')">Ledger</button>
+        <button class="btn sm" data-tab="breaches" onclick="o3Tab('breaches')">Breaches</button>
+        <button class="btn sm" data-tab="policy" onclick="o3Tab('policy')">Policy</button>
+      </div>
+      <div id="o3Panel"><div class="sub mono" style="padding:14px;">loading…</div></div>
+    </section>
+
     <section class="page" id="page-traffic">
       <div class="pagehead">
         <div>
@@ -1080,7 +1151,11 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
         <button class="btn" onclick="loadInbox()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
       </div>
       <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start;">
-        <div class="clay" style="padding:6px;max-height:72vh;overflow:auto;"><div id="inboxList"><div class="sub" style="padding:16px;">Loading…</div></div></div>
+        <div class="clay" style="padding:10px;max-height:78vh;overflow:auto;">
+          <input class="cin" id="inboxSearch" placeholder="Search sender, subject, message…" oninput="renderInboxList()" style="margin-bottom:8px;">
+          <div id="inboxFilters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>
+          <div id="inboxList"><div class="sub" style="padding:16px;">Loading…</div></div>
+        </div>
         <div class="clay pad" id="inboxDetail" style="min-height:320px;"><div class="sub" style="text-align:center;padding:60px 0;">Select a message to read &amp; reply.</div></div>
       </div>
     </section>
@@ -1546,7 +1621,7 @@ function go(page,el){
   const fn=_loaders()[page]; if(fn)fn();
   window.scrollTo({top:0,behavior:'smooth'});
 }
-function refreshCurrent(){const fn=_loaders()[CUR_PAGE]; if(fn)fn();}
+function refreshCurrent(){if(CUR_PAGE==='org360'&&O3_ID){openOrg(O3_ID);return;} const fn=_loaders()[CUR_PAGE]; if(fn)fn();}
 function navTo(page){go(page,document.querySelector('.dock-item[data-page="'+page+'"]'));}
 function toggleTheme(){const next=document.documentElement.dataset.theme==='dark'?'light':'dark';setTheme(next);const t=$('darkModeToggle');if(t)t.checked=(next==='dark');}
 
@@ -1568,6 +1643,7 @@ async function loadHealth(){
   $('hWorkerFoot').textContent=w.beat_at?'last '+fmtTime(w.beat_at):'no heartbeat yet';$('hFailed').textContent=num(g.failed||0);
   $('hAnchors').textContent=num((a.failed_latest||0)+(a.stale_latest||0));
   $('healthChecks').innerHTML=opsCheck('database',d.database&&d.database.status,'readiness query')+opsCheck('worker heartbeat',w.status,w.beat_at?(w.age_seconds+'s old'):'no beat recorded')+opsCheck('anchor freshness',a.status,(a.failed_latest||0)+' failed · '+(a.stale_latest||0)+' stale')+opsCheck('circuit breaker',cb.state,cb.detail);
+  loadHealthTrends();
   const counts=g.counts||{};$('healthQueue').innerHTML='<div style="display:grid;gap:8px;">'+['pending','in_progress','graded','failed'].map(k=>`<div style="display:flex;justify-content:space-between;"><span>${esc(k)}</span><b>${num(counts[k]||0)}</b></div>`).join('')+'</div>';
 }
 async function loadDeadletter(){
@@ -1609,29 +1685,100 @@ async function ackAlert(id){
   const r=await api('/admin/v1/alerts/'+id+'/ack',{method:'POST'});
   if(r.ok){toast('alert acknowledged');loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'acknowledge failed ('+r.status+')')}
 }
+
+/* ──────────── health trends + alert history (Phase 1) ──────────── */
+async function loadHealthTrends(){
+  try{
+    const r=await api('/admin/v1/health/trends?days=14');
+    if(r.ok){
+      const d=await r.json(), g=d.grading||[], a=d.anchors||[];
+      const days=g.map(p=>p.day), xf=v=>String(v).slice(5);
+      chart('hGradingTrend',{type:'line',height:170,labels:days,xFormat:xf,
+        series:[{name:'graded',values:g.map(x=>x.graded)},{name:'failed',values:g.map(x=>x.failed)},{name:'pending',values:g.map(x=>x.pending)}],
+        ariaLabel:'grading throughput over 14 days', empty:'No grading activity yet'});
+      chart('hAnchorTrend',{type:'line',height:170,labels:days,xFormat:xf,
+        series:[{name:'anchored',values:a.map(x=>x.anchored)},{name:'confirmed',values:a.map(x=>x.confirmed)}],
+        ariaLabel:'anchor activity over 14 days', empty:'No anchor activity yet'});
+    }
+  }catch(e){}
+  loadAlertHistory();
+}
+async function loadAlertHistory(){
+  const el=$('hAlertHistory'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/health/alert-history'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">unavailable</div>'; return; }
+  const items=(await r.json()).items||[];
+  if(!items.length){ el.innerHTML='<div class="chart-empty" style="min-height:60px;">No alerts have been acknowledged yet.</div>'; return; }
+  el.innerHTML='<div class="twrap"><table class="tbl"><thead><tr><th>When</th><th>Staff</th><th>Alert</th></tr></thead><tbody>'+items.map(x=>
+    '<tr><td class="mono" style="font-size:11px;white-space:nowrap;">'+fmtTime(x.at)+'</td><td class="mono" style="font-size:11px;">'+esc(x.actor||'—')+'</td><td class="mono" style="font-size:11px;">'+esc((x.detail&&x.detail.title)||x.target_id||'alert')+'</td></tr>'
+  ).join('')+'</tbody></table></div>';
+}
+
+let INBOX_FILTER='all';
+const CANNED=[
+  {label:'Thanks', body:'Thanks for reaching out to Foxy Audit — we appreciate you getting in touch.\n\n'},
+  {label:'Follow up', body:'Following up on your message — happy to help. Could you share a bit more detail so we can point you in the right direction?\n\n'},
+  {label:'Book a call', body:'Happy to walk you through this on a quick call. What times work for you this week?\n\n'},
+  {label:'Resolved', body:'Glad we could help! Let us know if anything else comes up.\n\n— Foxy Audit support'},
+];
+function insertCanned(i){ const b=$('replyBox'); if(!b||!CANNED[i])return; b.value=CANNED[i].body+(b.value||''); b.focus(); }
+function _inboxMatch(it,f){
+  if(f==='unread') return !it.read;
+  if(f==='priority') return !!it.priority;
+  if(f==='replied') return !!it.replied_at;
+  if(f==='mine') return !!(ME && it.claimed_by_id===ME.id);
+  if(f==='unclaimed') return !it.claimed_by_id;
+  return true;
+}
+function _inboxCounts(){
+  const c={all:INBOX.length,unread:0,priority:0,replied:0,mine:0,unclaimed:0};
+  INBOX.forEach(it=>{ if(!it.read)c.unread++; if(it.priority)c.priority++; if(it.replied_at)c.replied++; if(ME&&it.claimed_by_id===ME.id)c.mine++; if(!it.claimed_by_id)c.unclaimed++; });
+  return c;
+}
+function renderInboxFilters(){
+  const el=$('inboxFilters'); if(!el)return;
+  const c=_inboxCounts();
+  const defs=[['all','All'],['unread','Unread'],['priority','Priority'],['unclaimed','Unclaimed'],['mine','Mine'],['replied','Replied']];
+  el.innerHTML=defs.map(d=>'<button class="segbtn" style="min-height:30px;padding:4px 10px;font-size:11px;border-radius:7px;" aria-pressed="'+(INBOX_FILTER===d[0]?'true':'false')+'" onclick="INBOX_FILTER=\''+d[0]+'\';renderInboxFilters();renderInboxList()">'+d[1]+' <b style="opacity:.65;">'+(c[d[0]]||0)+'</b></button>').join('');
+}
+function inboxKey(e){
+  if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
+  e.preventDefault();
+  const rows=[...document.querySelectorAll('#inboxList .inbox-row')];
+  const i=rows.indexOf(document.activeElement);
+  const n=e.key==='ArrowDown'?Math.min(rows.length-1,i+1):Math.max(0,i-1);
+  if(rows[n])rows[n].focus();
+}
 async function loadInbox(){
+  $('inboxList').innerHTML='<div>'+Array(4).fill('<div class="inbox-row" style="pointer-events:none;opacity:.6;"><div style="height:12px;width:58%;background:var(--surf2);border-radius:4px;"></div><div style="height:10px;width:86%;background:var(--surf2);border-radius:4px;margin-top:8px;"></div></div>').join('')+'</div>';
   let r;try{r=await api('/admin/v1/inbox')}catch(e){r=null}
   if(!r||!r.ok){$('inboxList').innerHTML='<div class="sub" style="padding:16px;">Failed to load.</div>';return;}
   const d=await r.json(); INBOX=d.items||[]; updateInboxBadge(d.unread);
-  renderInboxList();
+  renderInboxFilters(); renderInboxList();
   if(INBOX_OPEN){const it=INBOX.find(x=>x.id===INBOX_OPEN); it?renderInboxDetail(it):($('inboxDetail').innerHTML='<div class="sub" style="text-align:center;padding:60px 0;">Select a message to read &amp; reply.</div>');}
 }
 function renderInboxList(){
-  if(!INBOX.length){$('inboxList').innerHTML='<div class="sub" style="padding:16px;">No messages yet.</div>';return;}
-  $('inboxList').innerHTML=INBOX.map(it=>{
-    const lock=it.claimed_by?`<span style="color:var(--fox);font-weight:700;">● ${esc(it.claimed_by.split('@')[0])}</span>`:'';
+  const q=($('inboxSearch')?$('inboxSearch').value:'').trim().toLowerCase();
+  if(!INBOX.length){$('inboxList').innerHTML='<div class="chart-empty" style="min-height:120px;">No messages yet.</div>';return;}
+  let rows=INBOX.filter(it=>_inboxMatch(it,INBOX_FILTER));
+  if(q) rows=rows.filter(it=>((it.email||'')+' '+(it.name||'')+' '+(it.company||'')+' '+(it.subject||'')+' '+(it.message||'')).toLowerCase().includes(q));
+  if(!rows.length){$('inboxList').innerHTML='<div class="chart-empty" style="min-height:120px;">No messages match this filter'+(q?' + search':'')+'.</div>';return;}
+  $('inboxList').innerHTML=rows.map(it=>{
+    const lock=it.claimed_by?'<span style="color:var(--fox);font-weight:700;">● '+esc(it.claimed_by.split('@')[0])+'</span>':'';
     const done=it.replied_at?'<span style="color:var(--ok);font-weight:700;">&#10003; replied</span>':'';
     const dot=it.read?'':'<span style="color:var(--danger);">&#9679; </span>';
     const pri=it.priority?'<span style="display:inline-flex;align-items:center;gap:3px;background:var(--warn-soft);color:var(--warnc);font-size:8px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:5px;"><svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor" style="flex-shrink:0;"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>PRIORITY</span>':'';
-    return `<button class="inbox-row${it.priority?' pri':''}${it.id===INBOX_OPEN?' on':''}" onclick="openMessage('${it.id}')">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
-        <span style="font-weight:${it.read?600:800};font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${dot}${esc(it.email)}</span>
-        <span class="sub mono" style="font-size:9px;white-space:nowrap;">${fmtTime(it.created_at)}</span>
-      </div>
-      <div class="sub" style="font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc((it.message||'').slice(0,72))}</div>
-      <div style="margin-top:4px;font-size:10px;display:flex;gap:8px;align-items:center;">${pri}${done}${lock}</div>
-    </button>`;}).join('');
+    return '<button class="inbox-row'+(it.priority?' pri':'')+(it.id===INBOX_OPEN?' on':'')+'" onclick="openMessage(\''+it.id+'\')" onkeydown="inboxKey(event)">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">'+
+        '<span style="font-weight:'+(it.read?600:800)+';font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+dot+esc(it.email)+'</span>'+
+        '<span class="sub mono" style="font-size:9px;white-space:nowrap;">'+fmtTime(it.created_at)+'</span>'+
+      '</div>'+
+      '<div class="sub" style="font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc((it.subject||it.message||'').slice(0,72))+'</div>'+
+      '<div style="margin-top:4px;font-size:10px;display:flex;gap:8px;align-items:center;">'+pri+done+lock+'</div>'+
+    '</button>';
+  }).join('');
 }
+
 async function openMessage(id){
   INBOX_OPEN=id; const it=INBOX.find(x=>x.id===id); if(!it)return;
   if(!it.read){try{await api('/admin/v1/inbox/'+id+'/read',{method:'POST'})}catch(e){} it.read=true; updateInboxBadge(INBOX.filter(x=>!x.read).length);}
@@ -1647,7 +1794,7 @@ function renderInboxDetail(it){
   }else{
     const claim=it.claimed_by_id?'':`<a href="#" onclick="claimMsg('${it.id}');return false;" class="sub" style="font-size:11px;color:var(--fox);">claim (lock to me)</a>`;
     const rel=mine?`<a href="#" onclick="releaseMsg('${it.id}');return false;" class="sub" style="font-size:10px;">release lock</a>`:'';
-    foot=`<textarea id="replyBox" class="cin" placeholder="Write a reply — this emails ${esc(it.email)}…" style="width:100%;min-height:110px;margin-top:16px;resize:vertical;"></textarea>
+    foot=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;">${CANNED.map((c,i)=>`<button class="btn sm" type="button" onclick="insertCanned(${i})">${esc(c.label)}</button>`).join('')}</div><textarea id="replyBox" class="cin" placeholder="Write a reply — this emails ${esc(it.email)}…" style="width:100%;min-height:120px;margin-top:8px;resize:vertical;"></textarea>
       <div style="display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap;">
         <button class="btn pri" onclick="sendReply('${it.id}')">Send reply</button>
         ${claim}${rel}
@@ -1830,6 +1977,7 @@ async function loadOverview(){
       :'no 4xx/5xx responses in the last 7 days';
   }
   loadOverviewExtras();
+  renderOvTrend(); loadPlanMix(); loadTopOrgs(); loadKpiSparks();
 }
 /* enrich the overview with real cross-page signals (best-effort; each panel
    degrades independently if its endpoint is unavailable — no fabricated data). */
@@ -1850,6 +1998,63 @@ async function loadOverviewExtras(){
 }
 
 /* ──────────── orgs ──────────── */
+
+/* ──────────── overview trend charts (Phase 1) ──────────── */
+function _ovDelta(el,dp){
+  const e=$(el); if(!e)return;
+  if(dp==null){ e.textContent='no prior data'; e.style.color='var(--muted)'; return; }
+  const up=dp>=0;
+  e.textContent=(up?'▲ ':'▼ ')+Math.abs(dp).toFixed(1)+'% vs prev';
+  e.style.color=up?'var(--ok)':'var(--danger)';
+}
+function _revFmt(v){ return '$'+Math.round(v).toLocaleString(); }
+async function renderOvTrend(){
+  const metric=fauxVal('ovMetric')||'interactions';
+  $('ovTrendTitle').textContent=metric.charAt(0).toUpperCase()+metric.slice(1)+' · 30 days';
+  const el=$('ovTrend'); el.innerHTML='<div class="chart-empty">loading…</div>';
+  let r; try{ r=await api('/admin/v1/stats/timeseries?metric='+metric+'&days=30'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="chart-empty">trend unavailable</div>'; return; }
+  const d=await r.json();
+  const isRev=d.unit==='cents';
+  const vals=(d.points||[]).map(p=>isRev?p.value/100:p.value);
+  $('ovTrendTotal').textContent=isRev?_revFmt(d.total/100):num(d.total);
+  _ovDelta('ovTrendDelta',d.delta_pct);
+  chart(el,{type:'area',height:220,labels:(d.points||[]).map(p=>p.day),xFormat:v=>String(v).slice(5),
+    yFormat:isRev?(v=>'$'+num(Math.round(v))):num, series:[{name:metric,values:vals}],
+    ariaLabel:metric+' over the last 30 days', empty:'No data in the last 30 days'});
+}
+async function loadPlanMix(){
+  const el=$('ovPlanMix'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/stats/plan-mix'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="chart-empty">unavailable</div>'; return; }
+  const d=await r.json();
+  chart(el,{type:'donut',height:180,centerLabel:'orgs',
+    series:(d.items||[]).map(x=>({name:x.plan,value:x.count})), empty:'No tenants yet'});
+}
+async function loadTopOrgs(){
+  const el=$('ovTopOrgs'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/stats/top-orgs?days=30&limit=6'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="chart-empty">unavailable</div>'; return; }
+  const items=(await r.json()).items||[];
+  if(!items.length){ el.innerHTML='<div class="chart-empty">No usage in the last 30 days</div>'; return; }
+  chart(el,{type:'bar',height:180,labels:items.map(x=>x.name),
+    series:[{name:'interactions',values:items.map(x=>x.logs)}],
+    yFormat:v=>v>=1000?(Math.round(v/1000))+'k':v, ariaLabel:'top organizations by usage'});
+}
+async function loadKpiSparks(){
+  const cfg=[['interactions','kLogsSpark','kLogsFoot','--fox'],
+             ['breaches','kBreachesSpark','kBreachesFoot','--breach-bg']];
+  for(const c of cfg){
+    let r; try{ r=await api('/admin/v1/stats/timeseries?metric='+c[0]+'&days=30'); }catch(e){ r=null; }
+    if(!r||!r.ok) continue;
+    const d=await r.json();
+    const col=(getComputedStyle(document.documentElement).getPropertyValue(c[3])||'').trim()||'#FF6A1A';
+    chart(c[1],{type:'sparkline',height:30,series:[{values:(d.points||[]).map(p=>p.value),color:col}]});
+    const f=$(c[2]);
+    if(f&&d.delta_pct!=null){ const up=d.delta_pct>=0; f.textContent='30d '+(up?'▲':'▼')+Math.abs(d.delta_pct).toFixed(0)+'% · '+num(d.total)+' total'; f.style.color=up?'var(--ok)':'var(--danger)'; }
+  }
+}
+
 let ORG_OPEN=null;
 async function loadOrgs(){
   const inc=$('showDeleted').checked?'?include_deleted=true':'';
@@ -1864,7 +2069,7 @@ async function loadOrgs(){
     const sub=o.subscription_status
       ?`<span class="chip ${o.subscription_status==='active'?'safe':'warn'}">${esc(o.subscription_status)}</span>`
       :'<span class="chip dim">none</span>';
-    return `<tr class="rowbtn" onclick="toggleOrg('${o.id}',this)">
+    return `<tr class="rowbtn" onclick="openOrg('${o.id}')">
       <td><b>${esc(o.name)}</b><div class="sub mono" style="font-size:9px;">${o.id.slice(0,8)}…</div></td>
       <td class="mono">${esc(o.plan_tier||'—')}</td>
       <td>${sub}</td><td>${access}</td>
@@ -1904,11 +2109,11 @@ async function orgSuspend(id){
   if(reason===null)return;
   const r=await api(`/admin/v1/organizations/${id}/suspend`,{method:'POST',
     headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
-  if(r.ok){toast('org suspended');loadOrgs()}else toast('suspend failed ('+r.status+')');
+  if(r.ok){toast('org suspended');_orgActionDone()}else toast('suspend failed ('+r.status+')');
 }
 async function orgEnable(id){
   const r=await api(`/admin/v1/organizations/${id}/enable`,{method:'POST'});
-  if(r.ok){toast('suspension lifted');loadOrgs()}else toast('enable failed ('+r.status+')');
+  if(r.ok){toast('suspension lifted');_orgActionDone()}else toast('enable failed ('+r.status+')');
 }
 async function orgPlan(id,current){
   const plan=(prompt('Plan: free, pro, max, or premium',current)||'').trim().toLowerCase();
@@ -1918,8 +2123,171 @@ async function orgPlan(id,current){
   if(quota.trim())body.monthly_log_quota=Number(quota);
   if(Object.prototype.hasOwnProperty.call(body,'monthly_log_quota') && (!Number.isInteger(body.monthly_log_quota)||body.monthly_log_quota<0)){toast('enter a non-negative whole-number quota');return}
   const r=await api(`/admin/v1/organizations/${id}/plan`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  if(r.ok){toast('plan updated');loadOrgs()}else toast('plan update failed ('+r.status+')');
+  if(r.ok){toast('plan updated');_orgActionDone()}else toast('plan update failed ('+r.status+')');
 }
+
+/* ──────────── org 360 (tenant drill-down) ──────────── */
+let O3_ID=null, O3_DATA=null, O3_TAB='overview', O3_LEDGER_OFF=0, O3_BREACH_OFF=0, O3_LEDGER_BREACH=false;
+function _orgActionDone(){ if(CUR_PAGE==='org360'&&O3_ID){openOrg(O3_ID);} else {loadOrgs();} }
+async function openOrg(id){
+  O3_ID=id; O3_TAB='overview'; O3_LEDGER_OFF=0; O3_BREACH_OFF=0; O3_LEDGER_BREACH=false;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  $('page-org360').classList.add('active'); CUR_PAGE='org360';
+  document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
+  const od=document.querySelector('.dock-item[data-page="orgs"]'); if(od)od.classList.add('active');
+  window.scrollTo({top:0,behavior:'smooth'});
+  $('o3Name').textContent='Loading…'; $('o3Sub').textContent=''; $('o3Chips').innerHTML=''; $('o3Actions').innerHTML='';
+  $('o3Usage').innerHTML=''; $('o3Kpis').innerHTML=''; $('o3VerifyState').textContent='';
+  $('o3Panel').innerHTML='<div class="sub mono" style="padding:14px;">loading…</div>';
+  let r; try{ r=await api('/admin/v1/organizations/'+id+'/overview'); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('o3Name').textContent='Organization'; $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load ('+(r?r.status:'network')+').</div></div>'; return; }
+  O3_DATA=await r.json();
+  renderO3Header(O3_DATA);
+  o3Tab('overview');
+}
+function renderO3Header(d){
+  $('o3Name').textContent=d.name||'Organization';
+  $('o3Sub').textContent=d.id;
+  const access=d.deleted?'<span class="chip dim">offboarded</span>':d.suspended?'<span class="chip bad">suspended</span>':'<span class="chip safe">active</span>';
+  const sub=d.subscription_status?('<span class="chip '+(d.subscription_status==='active'?'safe':'warn')+'">'+esc(d.subscription_status)+'</span>'):'';
+  const plan='<span class="chip info">'+esc(d.plan_tier||'no plan')+'</span>';
+  const quota='<span class="chip dim">quota '+(d.monthly_log_quota==null?'∞':num(d.monthly_log_quota))+'</span>';
+  const trial=d.trial_ends_at?('<span class="chip warn">trial ends '+fmtDay(d.trial_ends_at)+'</span>'):'';
+  $('o3Chips').innerHTML=plan+sub+access+quota+trial;
+  let acts='';
+  if(can('operator')){
+    acts += d.suspended
+      ? '<button class="btn safe sm" onclick="orgEnable(\''+d.id+'\')">Lift suspension</button>'
+      : '<button class="btn danger sm" onclick="orgSuspend(\''+d.id+'\')">Suspend</button>';
+  }
+  if(can('superadmin')) acts += '<button class="btn sm" onclick="orgPlan(\''+d.id+'\',\''+esc(d.plan_tier||'premium')+'\')">Set plan</button>';
+  $('o3Actions').innerHTML=acts;
+
+  const usage=d.usage||[];
+  const logs=usage.map(p=>p.logs), breaches=usage.map(p=>p.breaches), days=usage.map(p=>p.day);
+  const totLogs=logs.reduce((a,b)=>a+b,0), totBr=breaches.reduce((a,b)=>a+b,0);
+  $('o3Kpis').innerHTML=
+    '<div class="clay kpi hot"><div class="klabel">Interactions · '+usage.length+'d</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:32px;margin-top:6px;"></div></div>'+
+    '<div class="clay kpi"><div class="klabel">Breaches · '+usage.length+'d</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:32px;margin-top:6px;"></div></div>'+
+    '<div class="clay kpi"><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot mono">'+(d.ledger_head?esc(d.ledger_head.slice(0,12))+'…':'—')+'</div></div>'+
+    '<div class="clay kpi"><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></div>'+
+    '<div class="clay kpi"><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></div>';
+  if(usage.length){
+    chart('o3Usage',{type:'area',height:200,labels:days,xFormat:v=>String(v).slice(5),
+      series:[{name:'interactions',values:logs},{name:'breaches',values:breaches}],
+      ariaLabel:'usage over time for '+d.name});
+    chart('o3spInt',{type:'sparkline',height:32,series:[{values:logs}]});
+    const bc=(getComputedStyle(document.documentElement).getPropertyValue('--breach-bg')||'').trim()||'#DC2626';
+    chart('o3spBr',{type:'sparkline',height:32,series:[{values:breaches,color:bc}]});
+  } else {
+    $('o3Usage').innerHTML='<div class="chart-empty">No usage recorded for this tenant yet.</div>';
+  }
+  $('o3VerifyState').innerHTML='<a class="linklike" onclick="orgVerify()">run integrity check →</a>';
+}
+function o3Tab(name){
+  O3_TAB=name;
+  document.querySelectorAll('#o3Tabs [data-tab]').forEach(b=>b.classList.toggle('pri',b.dataset.tab===name));
+  $('o3Panel').innerHTML='<div class="sub mono" style="padding:14px;">loading…</div>';
+  if(name==='overview') return renderO3Overview();
+  if(name==='policy') return renderO3Policy();
+  if(name==='users') return o3LoadList('users',renderO3Users);
+  if(name==='keys') return o3LoadList('keys',renderO3Keys);
+  if(name==='ledger') return o3LoadLedger();
+  if(name==='breaches') return o3LoadBreaches();
+}
+function _dgrid(rows){
+  return '<div class="clay pad"><div class="dgrid">'+rows.map(kv=>'<div class="dcell"><div class="dl">'+esc(kv[0])+'</div><div class="dv" style="word-break:break-word;">'+kv[1]+'</div></div>').join('')+'</div></div>';
+}
+function renderO3Overview(){
+  const d=O3_DATA;
+  const rows=[
+    ['contact', esc(d.contact_email||'—')],
+    ['subscription', esc(d.subscription_status||'—')],
+    ['monthly quota', d.monthly_log_quota==null?'∞ unlimited':num(d.monthly_log_quota)],
+    ['trial ends', d.trial_ends_at?fmtDay(d.trial_ends_at):'—'],
+    ['created', fmtDay(d.created_at)],
+    ['ledger head', '<span class="mono" style="font-size:11px;">'+esc(d.ledger_head||'—')+'</span>'],
+    ['last anchor', (d.last_anchor_status?opsChip(d.last_anchor_status):'—')+(d.last_anchor_at?(' <span class="sub mono" style="font-size:10px;">'+fmtTime(d.last_anchor_at)+'</span>'):'')],
+    ['IP allow-list', d.ip_allowlist&&d.ip_allowlist.length?('<span class="mono" style="font-size:11px;">'+esc(d.ip_allowlist.join(', '))+'</span>'):'<span class="sub">none (open)</span>'],
+    ['suspended reason', esc(d.suspended_reason||'—')],
+  ];
+  $('o3Panel').innerHTML=_dgrid(rows);
+}
+function renderO3Policy(){
+  const p=O3_DATA.policy;
+  if(!p){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy configured for this tenant yet.</div></div>'; return; }
+  const flag=b=>b?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>';
+  const rows=[
+    ['PII detection', flag(p.pii_detection)],
+    ['Prompt-injection', flag(p.prompt_injection)],
+    ['Regulated-data mode', flag(p.regulated_data_mode)],
+    ['Max token threshold', '<b class="mono">'+num(p.max_token_threshold)+'</b>'],
+    ['Enforcement', '<span class="chip info">'+esc(p.enforcement_mode)+'</span>'],
+    ['Confidence', '<span class="chip info">'+esc(p.confidence_threshold)+'</span>'],
+    ['Notify on breach', '<span class="chip info">'+esc(p.notify_on_breach)+'</span>'],
+    ['Notify email', esc(p.notify_email||'— (uses contact)')],
+    ['Notify webhook', esc(p.notify_webhook_url||'—')],
+  ];
+  $('o3Panel').innerHTML=_dgrid(rows);
+}
+async function o3LoadList(kind,render){
+  let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/'+kind); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load.</div></div>'; return; }
+  render(await r.json());
+}
+function renderO3Users(rows){
+  if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No dashboard users.</div></div>'; return; }
+  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>SSO</th><th>Status</th><th>Created</th></tr></thead><tbody>'+rows.map(u=>
+    '<tr><td><b>'+esc(u.email)+'</b></td><td><span class="chip '+(u.role==='admin'?'info':'dim')+'">'+esc(u.role)+'</span></td><td>'+(u.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>')+'</td><td class="mono" style="font-size:11px;">'+(u.google_linked?'google':'—')+'</td><td>'+(u.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>')+'</td><td class="mono" style="font-size:11px;">'+fmtDay(u.created_at)+'</td></tr>'
+  ).join('')+'</tbody></table></div>';
+}
+function renderO3Keys(rows){
+  if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No API keys.</div></div>'; return; }
+  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl"><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last used</th><th>Created</th><th>Expires</th></tr></thead><tbody>'+rows.map(k=>
+    '<tr><td><b>'+esc(k.name)+'</b></td><td class="mono" style="font-size:11px;">'+esc(k.key_prefix)+'</td><td>'+(k.status==='active'?'<span class="chip safe">active</span>':'<span class="chip bad">'+esc(k.status)+'</span>')+'</td><td class="mono" style="font-size:11px;">'+(k.last_used_at?fmtTime(k.last_used_at):'never')+'</td><td class="mono" style="font-size:11px;">'+fmtDay(k.created_at)+'</td><td class="mono" style="font-size:11px;">'+(k.expires_at?fmtDay(k.expires_at):'—')+'</td></tr>'
+  ).join('')+'</tbody></table></div>';
+}
+function _pager(off,limit,total,fn){
+  return '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn sm" '+(off<=0?'disabled':'')+' onclick="'+fn+'(-1)">← prev</button><button class="btn sm" '+(off+limit>=total?'disabled':'')+' onclick="'+fn+'(1)">next →</button></div>';
+}
+async function o3LoadLedger(dir){
+  if(dir===1)O3_LEDGER_OFF+=50; else if(dir===-1)O3_LEDGER_OFF=Math.max(0,O3_LEDGER_OFF-50);
+  const bo=O3_LEDGER_BREACH?'&breaches_only=true':'';
+  let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/logs?limit=50&offset='+O3_LEDGER_OFF+bo); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load ledger.</div></div>'; return; }
+  const d=await r.json();
+  const head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;"><label class="sub mono" style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:11px;"><input type="checkbox" '+(O3_LEDGER_BREACH?'checked':'')+' onchange="O3_LEDGER_BREACH=this.checked;O3_LEDGER_OFF=0;o3LoadLedger()"> breaches only</label><span class="sub mono" style="font-size:11px;">'+num(d.total)+' rows'+(d.total?(' · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)):'')+'</span></div>';
+  const body=d.items.length
+    ? '<div class="twrap"><table class="tbl"><thead><tr><th style="text-align:right;">Seq</th><th>Type</th><th>Policy</th><th>Agent</th><th style="text-align:right;">Tokens</th><th>Grading</th><th>Hash</th><th>Time</th></tr></thead><tbody>'+d.items.map(x=>
+        '<tr><td class="mono" style="text-align:right;">'+num(x.seq)+'</td><td class="mono">'+esc(x.event_type||'—')+'</td><td><span class="chip '+(x.breach?'bad':'dim')+'">'+esc(x.policy_tag||'—')+'</span></td><td class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td class="mono" style="text-align:right;">'+num(x.token_count)+'</td><td>'+(x.breach?'<span class="chip bad">breach</span>':'<span class="chip '+(x.grading_status==='graded'?'safe':x.grading_status==='failed'?'bad':'warn')+'">'+esc(x.grading_status||'—')+'</span>')+'</td><td class="mono" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">'+esc((x.chain_hash||'').slice(0,12))+'…</td><td class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>'
+      ).join('')+'</tbody></table></div>'
+    : '<div class="chart-empty">No ledger rows'+(O3_LEDGER_BREACH?' with breaches':'')+'.</div>';
+  $('o3Panel').innerHTML='<div class="clay pad">'+head+body+(d.total>d.limit?_pager(d.offset,d.limit,d.total,'o3LoadLedger'):'')+'</div>';
+}
+async function o3LoadBreaches(dir){
+  if(dir===1)O3_BREACH_OFF+=50; else if(dir===-1)O3_BREACH_OFF=Math.max(0,O3_BREACH_OFF-50);
+  let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/breaches?limit=50&offset='+O3_BREACH_OFF); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load.</div></div>'; return; }
+  const d=await r.json();
+  if(!d.total){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy breaches for this tenant.</div></div>'; return; }
+  const rows=d.items.map(x=>{ const v=x.verdict||{}; const reason=v.reason||v.rationale||(Array.isArray(v.labels)?v.labels.join(', '):'')||'—'; return
+    '<tr><td class="mono" style="text-align:right;">'+num(x.seq)+'</td><td><span class="chip bad">'+esc(x.policy_tag||'—')+'</span></td><td class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td class="sub" style="max-width:360px;">'+esc(String(reason).slice(0,180))+'</td><td class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>';
+  }).join('');
+  const head='<div class="sub mono" style="margin-bottom:12px;font-size:11px;">'+num(d.total)+' breaches · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)+'</div>';
+  $('o3Panel').innerHTML='<div class="clay pad">'+head+'<div class="twrap"><table class="tbl"><thead><tr><th style="text-align:right;">Seq</th><th>Policy</th><th>Agent</th><th>Verdict</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+(d.total>d.limit?_pager(d.offset,d.limit,d.total,'o3LoadBreaches'):'')+'</div>';
+}
+async function orgVerify(){
+  if(!O3_ID)return;
+  $('o3VerifyState').innerHTML='<span class="sub mono">verifying…</span>';
+  let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/verify'); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('o3VerifyState').innerHTML='<span class="chip bad">verify failed</span>'; return; }
+  const d=await r.json();
+  $('o3VerifyState').innerHTML=d.ok
+    ? '<span class="chip safe">✓ chain intact · '+num(d.count)+' rows</span>'
+    : '<span class="chip bad">✗ '+esc(d.detail)+(d.first_broken_seq?(' @ seq '+d.first_broken_seq):'')+'</span>';
+  toast(d.ok?('Chain verified — intact ('+num(d.count)+' rows)'):('Chain verify: '+d.detail));
+}
+
 
 /* ──────────── traffic ──────────── */
 let TRAFFIC_ROWS=[];

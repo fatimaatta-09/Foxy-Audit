@@ -9,12 +9,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import email as email_mod
+from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_staff
 from ..db import get_db
 from ..models import MarketingLead, StaffUser
@@ -113,7 +114,8 @@ def mark_read(lead_id: str, staff: StaffUser = Depends(require_staff), db: Sessi
 
 
 @router.post("/v1/inbox/{lead_id}/claim")
-def claim(lead_id: str, staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+def claim(lead_id: str, request: Request,
+          staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
     lead = _get_lead(db, lead_id)
     if lead.claimed_by and lead.claimed_by != staff.id:
         holder = db.get(StaffUser, lead.claimed_by)
@@ -124,18 +126,23 @@ def claim(lead_id: str, staff: StaffUser = Depends(require_staff), db: Session =
     lead.claimed_at = lead.claimed_at or now
     if lead.read_at is None:
         lead.read_at = now
+    record_admin_action(db, staff, "inbox.claim", target_type="marketing_lead",
+                        target_id=str(lead.id), ip=client_ip(request))
     db.commit()
     return {"status": "claimed", "claimed_by": staff.email}
 
 
 @router.post("/v1/inbox/{lead_id}/release")
-def release(lead_id: str, staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+def release(lead_id: str, request: Request,
+            staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
     lead = _get_lead(db, lead_id)
     if lead.claimed_by and lead.claimed_by != staff.id and staff.platform_role != "superadmin":
         raise HTTPException(status_code=403,
                             detail="only the admin who claimed it (or a superadmin) can release it")
     lead.claimed_by = None
     lead.claimed_at = None
+    record_admin_action(db, staff, "inbox.release", target_type="marketing_lead",
+                        target_id=str(lead.id), ip=client_ip(request))
     db.commit()
     return {"status": "released"}
 
@@ -145,7 +152,7 @@ class ReplyRequest(BaseModel):
 
 
 @router.post("/v1/inbox/{lead_id}/reply")
-def reply(lead_id: str, payload: ReplyRequest,
+def reply(lead_id: str, payload: ReplyRequest, request: Request,
           staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
     lead = _get_lead(db, lead_id)
     if lead.claimed_by and lead.claimed_by != staff.id:
@@ -159,6 +166,8 @@ def reply(lead_id: str, payload: ReplyRequest,
     lead.replied_at = now
     if lead.read_at is None:
         lead.read_at = now
+    record_admin_action(db, staff, "inbox.reply", target_type="marketing_lead",
+                        target_id=str(lead.id), ip=client_ip(request))
     db.commit()
     body = payload.message.strip()
     sent = email_mod.send_email(

@@ -11,18 +11,24 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
+from ..anchor import head_of, latest_anchor
 from ..auth import require_platform_role, set_org_scope_for_staff
 from ..config import get_settings
 from ..db import get_db
-from ..models import ApiKey, AuditLog, Organization, StaffUser, User
+from ..models import ApiKey, AuditLog, OrgPolicy, Organization, StaffUser, UsageDaily, User
+from .verify import verify_chain
 
 router = APIRouter()
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
 
 
 class OrgListItem(BaseModel):
@@ -199,3 +205,331 @@ def set_organization_plan(
     db.commit()
     return {"status": "updated", "org_id": str(org.id), "plan_tier": plan,
             "monthly_log_quota": org.monthly_log_quota}
+
+
+# ============================ Org 360 (Phase 1) ============================
+# Deep per-tenant read views for the Org 360 sub-page. All viewer-gated; every
+# per-org read drills in through set_org_scope_for_staff. NEVER expose secrets
+# (no password_hash, no key_hash) — only key_prefix is shown for API keys.
+
+
+def _scoped_org(db: Session, org_id: str) -> Organization:
+    """Load + validate a tenant (superuser), then scope RLS to just that org."""
+    org = _load_active_org(db, org_id)
+    set_org_scope_for_staff(db, org.id)
+    return org
+
+
+def _breach_filter():
+    return AuditLog.gemini_verdict["policy_breach"].astext == "true"
+
+
+class UsagePoint(BaseModel):
+    day: str
+    logs: int
+    breaches: int
+    tokens: int
+
+
+class PolicySnapshot(BaseModel):
+    pii_detection: bool
+    prompt_injection: bool
+    regulated_data_mode: bool
+    max_token_threshold: int
+    enforcement_mode: str
+    confidence_threshold: str
+    notify_on_breach: str
+    notify_email: str | None = None
+    notify_webhook_url: str | None = None
+
+
+class OrgOverview(BaseModel):
+    id: str
+    name: str
+    plan_tier: str | None = None
+    subscription_status: str | None = None
+    suspended: bool = False
+    suspended_reason: str | None = None
+    deleted: bool = False
+    monthly_log_quota: int | None = None
+    trial_ends_at: str | None = None
+    contact_email: str | None = None
+    created_at: str | None = None
+    ip_allowlist: list[str] = []
+    user_count: int = 0
+    api_key_count: int = 0
+    active_key_count: int = 0
+    ledger_height: int = 0
+    ledger_head: str | None = None
+    total_logs: int = 0
+    breaches: int = 0
+    last_anchor_status: str | None = None
+    last_anchor_at: str | None = None
+    usage: list[UsagePoint] = []
+    policy: PolicySnapshot | None = None
+
+
+@router.get("/v1/organizations/{org_id}/overview", response_model=OrgOverview)
+def org_overview(
+    org_id: str,
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+    days: int = Query(default=30, ge=1, le=365),
+):
+    """Full tenant snapshot: profile + quota/trial, usage_daily time-series, ledger
+    head + verify counts, latest anchor status, and the org policy snapshot."""
+    org = _scoped_org(db, org_id)
+
+    user_count = db.execute(
+        select(func.count()).select_from(User).where(User.org_id == org.id)
+    ).scalar_one()
+    key_count = db.execute(
+        select(func.count()).select_from(ApiKey).where(ApiKey.org_id == org.id)
+    ).scalar_one()
+    active_keys = db.execute(
+        select(func.count()).select_from(ApiKey)
+        .where(ApiKey.org_id == org.id, ApiKey.status == "active")
+    ).scalar_one()
+    total_logs = db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org.id)
+    ).scalar_one()
+    breaches = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, _breach_filter())
+    ).scalar_one()
+
+    since = datetime.now(timezone.utc).date() - timedelta(days=days - 1)
+    usage = [
+        UsagePoint(day=r.day.isoformat(), logs=int(r.logs_count),
+                   breaches=int(r.breach_count), tokens=int(r.tokens_sum))
+        for r in db.execute(
+            select(UsageDaily.day, UsageDaily.logs_count, UsageDaily.breach_count,
+                   UsageDaily.tokens_sum)
+            .where(UsageDaily.org_id == org.id, UsageDaily.day >= since)
+            .order_by(UsageDaily.day.asc())
+        ).all()
+    ]
+
+    head_hash, last_seq = head_of(db, org.id)
+    anchor = latest_anchor(db, org.id)
+    anchor_at = (anchor.confirmed_at or anchor.anchored_at) if anchor else None
+
+    pol = db.get(OrgPolicy, org.id)
+    policy = None
+    if pol is not None:
+        policy = PolicySnapshot(
+            pii_detection=pol.pii_detection, prompt_injection=pol.prompt_injection,
+            regulated_data_mode=pol.regulated_data_mode,
+            max_token_threshold=pol.max_token_threshold,
+            enforcement_mode=pol.enforcement_mode,
+            confidence_threshold=pol.confidence_threshold,
+            notify_on_breach=pol.notify_on_breach,
+            notify_email=pol.notify_email, notify_webhook_url=pol.notify_webhook_url,
+        )
+
+    allowlist = [ip.strip() for ip in (org.ip_allowlist or "").split(",") if ip.strip()]
+    return OrgOverview(
+        id=str(org.id), name=org.name, plan_tier=org.plan_tier,
+        subscription_status=org.subscription_status, suspended=bool(org.suspended),
+        suspended_reason=org.suspended_reason, deleted=org.deleted_at is not None,
+        monthly_log_quota=org.monthly_log_quota, trial_ends_at=_iso(org.trial_ends_at),
+        contact_email=org.contact_email, created_at=_iso(org.created_at),
+        ip_allowlist=allowlist, user_count=user_count, api_key_count=key_count,
+        active_key_count=active_keys, ledger_height=last_seq, ledger_head=head_hash,
+        total_logs=total_logs, breaches=breaches,
+        last_anchor_status=(anchor.status if anchor else None),
+        last_anchor_at=_iso(anchor_at), usage=usage, policy=policy,
+    )
+
+
+class OrgUser(BaseModel):
+    id: str
+    email: str
+    role: str
+    disabled: bool = False
+    mfa_enabled: bool = False
+    google_linked: bool = False
+    created_at: str | None = None
+
+
+@router.get("/v1/organizations/{org_id}/users", response_model=list[OrgUser])
+def org_users(
+    org_id: str,
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    """This tenant's dashboard users. password_hash is never serialized."""
+    org = _scoped_org(db, org_id)
+    rows = db.execute(
+        select(User).where(User.org_id == org.id).order_by(User.created_at.asc())
+    ).scalars().all()
+    return [
+        OrgUser(id=str(u.id), email=u.email, role=u.role, disabled=bool(u.disabled),
+                mfa_enabled=bool(u.mfa_enabled), google_linked=u.google_sub is not None,
+                created_at=_iso(u.created_at))
+        for u in rows
+    ]
+
+
+class OrgKey(BaseModel):
+    id: str
+    name: str
+    key_prefix: str
+    status: str
+    created_at: str | None = None
+    last_used_at: str | None = None
+    expires_at: str | None = None
+    revoked_at: str | None = None
+
+
+@router.get("/v1/organizations/{org_id}/keys", response_model=list[OrgKey])
+def org_keys(
+    org_id: str,
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    """This tenant's SDK API keys. key_hash is never serialized (display prefix only)."""
+    org = _scoped_org(db, org_id)
+    rows = db.execute(
+        select(ApiKey).where(ApiKey.org_id == org.id).order_by(ApiKey.created_at.desc())
+    ).scalars().all()
+    return [
+        OrgKey(id=str(k.id), name=k.name, key_prefix=k.key_prefix, status=k.status,
+               created_at=_iso(k.created_at), last_used_at=_iso(k.last_used_at),
+               expires_at=_iso(k.expires_at), revoked_at=_iso(k.revoked_at))
+        for k in rows
+    ]
+
+
+class LedgerRow(BaseModel):
+    seq: int
+    event_type: str | None = None
+    policy_tag: str | None = None
+    agent: str | None = None
+    token_count: int | None = None
+    grading_status: str | None = None
+    breach: bool = False
+    chain_hash: str | None = None
+    occurred_at: str | None = None
+    created_at: str | None = None
+
+
+class LedgerPage(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[LedgerRow]
+
+
+@router.get("/v1/organizations/{org_id}/logs", response_model=LedgerPage)
+def org_logs(
+    org_id: str,
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    breaches_only: bool = False,
+):
+    """Staff-scoped ledger page (hashes only — no raw prompt/response is stored)."""
+    org = _scoped_org(db, org_id)
+    where = [AuditLog.org_id == org.id]
+    if breaches_only:
+        where.append(_breach_filter())
+    total = db.execute(
+        select(func.count()).select_from(AuditLog).where(*where)
+    ).scalar_one()
+    rows = db.execute(
+        select(AuditLog).where(*where)
+        .order_by(AuditLog.seq.desc()).limit(limit).offset(offset)
+    ).scalars().all()
+    items = [
+        LedgerRow(
+            seq=r.seq, event_type=r.event_type, policy_tag=r.policy_tag, agent=r.agent,
+            token_count=r.token_count, grading_status=r.grading_status,
+            breach=bool((r.gemini_verdict or {}).get("policy_breach")),
+            chain_hash=r.chain_hash, occurred_at=_iso(r.occurred_at),
+            created_at=_iso(r.created_at),
+        )
+        for r in rows
+    ]
+    return LedgerPage(total=total, limit=limit, offset=offset, items=items)
+
+
+class OrgVerify(BaseModel):
+    ok: bool
+    detail: str
+    first_broken_seq: int | None = None
+    count: int = 0
+    ledger_head: str | None = None
+    last_seq: int = 0
+    last_anchor_status: str | None = None
+    last_anchor_at: str | None = None
+
+
+@router.get("/v1/organizations/{org_id}/verify", response_model=OrgVerify)
+def org_verify(
+    org_id: str,
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    """One-click integrity recompute for this tenant's ledger (reuses verify_chain)."""
+    org = _scoped_org(db, org_id)
+    ok, first_broken, detail = verify_chain(db, org.id)
+    head_hash, last_seq = head_of(db, org.id)
+    total = db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.org_id == org.id)
+    ).scalar_one()
+    anchor = latest_anchor(db, org.id)
+    anchor_at = (anchor.confirmed_at or anchor.anchored_at) if anchor else None
+    return OrgVerify(
+        ok=bool(ok) if ok is not None else False,
+        detail=detail if ok is not None else f"{detail}, use partial window",
+        first_broken_seq=first_broken, count=total,
+        ledger_head=head_hash, last_seq=last_seq,
+        last_anchor_status=(anchor.status if anchor else None),
+        last_anchor_at=_iso(anchor_at),
+    )
+
+
+class BreachRow(BaseModel):
+    seq: int
+    policy_tag: str | None = None
+    agent: str | None = None
+    grading_status: str | None = None
+    verdict: dict | None = None
+    occurred_at: str | None = None
+    created_at: str | None = None
+
+
+class BreachPage(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[BreachRow]
+
+
+@router.get("/v1/organizations/{org_id}/breaches", response_model=BreachPage)
+def org_breaches(
+    org_id: str,
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """Policy breaches for this tenant (over audit_logs.gemini_verdict)."""
+    org = _scoped_org(db, org_id)
+    total = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, _breach_filter())
+    ).scalar_one()
+    rows = db.execute(
+        select(AuditLog).where(AuditLog.org_id == org.id, _breach_filter())
+        .order_by(AuditLog.seq.desc()).limit(limit).offset(offset)
+    ).scalars().all()
+    items = [
+        BreachRow(seq=r.seq, policy_tag=r.policy_tag, agent=r.agent,
+                  grading_status=r.grading_status, verdict=r.gemini_verdict,
+                  occurred_at=_iso(r.occurred_at), created_at=_iso(r.created_at))
+        for r in rows
+    ]
+    return BreachPage(total=total, limit=limit, offset=offset, items=items)

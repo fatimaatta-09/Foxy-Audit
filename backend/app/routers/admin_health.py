@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import func, select, text
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import Date, case, cast, func, select, text
 from sqlalchemy.orm import Session
 
 from ..auth import require_platform_role
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..models import AuditLog, ChainAnchor, StaffUser, WorkerHeartbeat
+from ..models import (
+    AdminAction, AuditLog, ChainAnchor, StaffUser, UsageDaily, WorkerHeartbeat,
+)
 
 router = APIRouter()
 
@@ -144,3 +146,75 @@ def system_health(
     db: Session = Depends(get_db),
 ):
     return build_health(db)
+
+
+# ============================ Ops trends (Phase 1) ============================
+# HONEST subset only: worker_heartbeat is a single current-value row and wallet
+# balance is a live RPC (neither has stored history), so those are NOT charted.
+# Real, durable series: grading throughput (usage_daily) + anchor activity
+# (chain_anchors timestamps) + persisted alert-ack history (admin_actions).
+
+
+@router.get("/v1/health/trends")
+def health_trends(
+    days: int = Query(default=14, ge=1, le=90),
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    """Grading throughput + anchor activity per day, cross-org, zero-filled."""
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=days - 1)
+
+    gmap = {
+        r[0]: (int(r[1]), int(r[2]), int(r[3]))
+        for r in db.execute(
+            select(UsageDaily.day,
+                   func.coalesce(func.sum(UsageDaily.graded_count), 0),
+                   func.coalesce(func.sum(UsageDaily.failed_count), 0),
+                   func.coalesce(func.sum(UsageDaily.pending_count), 0))
+            .where(UsageDaily.day >= start)
+            .group_by(UsageDaily.day)
+        ).all()
+    }
+    dexpr = cast(func.timezone("UTC", ChainAnchor.anchored_at), Date)
+    amap = {
+        r[0]: (int(r[1]), int(r[2]))
+        for r in db.execute(
+            select(dexpr, func.count(),
+                   func.coalesce(func.sum(case((ChainAnchor.status == "confirmed", 1),
+                                               else_=0)), 0))
+            .where(dexpr >= start)
+            .group_by(dexpr)
+        ).all()
+    }
+    grading, anchors, d = [], [], start
+    while d <= today:
+        g = gmap.get(d, (0, 0, 0))
+        a = amap.get(d, (0, 0))
+        grading.append({"day": d.isoformat(), "graded": g[0], "failed": g[1], "pending": g[2]})
+        anchors.append({"day": d.isoformat(), "anchored": a[0], "confirmed": a[1]})
+        d += timedelta(days=1)
+    return {"days": days, "grading": grading, "anchors": anchors}
+
+
+@router.get("/v1/health/alert-history")
+def alert_history(
+    limit: int = Query(default=50, ge=1, le=200),
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    """Persisted alert acknowledgements (admin_actions where action='alert.ack')."""
+    from ..models import StaffUser as _Staff
+    rows = db.execute(
+        select(AdminAction, _Staff.email)
+        .join(_Staff, _Staff.id == AdminAction.staff_user_id, isouter=True)
+        .where(AdminAction.action == "alert.ack")
+        .order_by(AdminAction.created_at.desc())
+        .limit(limit)
+    ).all()
+    return {"items": [
+        {"id": str(a.id), "actor": email, "target_id": a.target_id,
+         "target_type": a.target_type, "detail": a.detail,
+         "at": a.created_at.isoformat() if a.created_at else None}
+        for a, email in rows
+    ]}
