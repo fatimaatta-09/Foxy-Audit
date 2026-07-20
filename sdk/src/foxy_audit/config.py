@@ -17,6 +17,12 @@ DEFAULT_UDP_HOST = "127.0.0.1"
 DEFAULT_UDP_PORT = 9999
 DEFAULT_TIMEOUT = 5.0
 
+# Preflight-guard modes. "observe" is the historical, fully back-compatible path
+# (run first, hash after). "block"/"redact" evaluate policy BEFORE the wrapped
+# function runs. Anything else resolves back to "observe".
+DEFAULT_MODE = "observe"
+_VALID_MODES = ("observe", "block", "redact")
+
 
 @dataclass(frozen=True)
 class FoxyConfig:
@@ -30,6 +36,7 @@ class FoxyConfig:
     spool_path: str = ""
     client_id: str = ""
     audit_required: bool = False
+    mode: str = DEFAULT_MODE
 
     @classmethod
     def resolve(
@@ -44,9 +51,14 @@ class FoxyConfig:
         spool_path: str | None = None,
         client_id: str | None = None,
         audit_required: bool | None = None,
+        mode: str | None = None,
     ) -> "FoxyConfig":
         key = api_key if api_key is not None else os.getenv("FOXY_API_KEY", "")
         ep = endpoint if endpoint is not None else os.getenv("FOXY_BACKEND_URL", DEFAULT_ENDPOINT)
+        raw_mode = (mode if mode is not None else os.getenv("FOXY_MODE", DEFAULT_MODE))
+        resolved_mode = str(raw_mode).strip().lower()
+        if resolved_mode not in _VALID_MODES:
+            resolved_mode = DEFAULT_MODE
         return cls(
             api_key=key.strip(),
             endpoint=ep.rstrip("/"),
@@ -62,6 +74,7 @@ class FoxyConfig:
             client_id=client_id or os.getenv("FOXY_CLIENT_ID", ""),
             audit_required=(audit_required if audit_required is not None
                             else os.getenv("FOXY_AUDIT_REQUIRED", "false").lower() in {"1", "true", "yes"}),
+            mode=resolved_mode,
         )
 
     @property
