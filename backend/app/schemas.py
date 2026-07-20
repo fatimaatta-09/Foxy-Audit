@@ -39,7 +39,11 @@ class LogIngest(BaseModel):
             return value
         allowed = {"request_id", "trace_id", "session_id", "provider", "model",
                    "id", "usage", "choice_count", "tool_names", "retrieval_refs",
-                   "client_seq_gap"}
+                   "client_seq_gap",
+                   # Host-side enforcement labels (blocked/redacted events). These
+                   # are content-blind: an allowed|blocked|redacted decision, a short
+                   # blocked_reason label, and the list of policy rule ids that fired.
+                   "decision", "blocked_reason", "policy_rules"}
         unknown = set(value) - allowed
         if unknown:
             raise ValueError("event_metadata contains unsupported fields")
