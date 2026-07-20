@@ -755,6 +755,59 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .gate-mark svg{width:21px;height:21px}
 .gerr{font-family:var(--mono);font-size:10.5px;color:var(--breach-bg);min-height:15px;margin-top:10px}
 
+/* ════════ PHASE A — cross-cutting systems (tooltip · mask/reveal · command palette) ════════
+   All token-driven so both skins × light/dark render; no hardcoded colours. */
+
+/* delayed hover/focus tooltip — one shared node (.datatip), auto-flip, reduced-motion aware */
+.datatip{
+  position:fixed;z-index:10000;top:0;left:0;pointer-events:none;   /* above modals (9600) / gate (9999) */
+  max-width:260px;padding:6px 9px;border-radius:8px;
+  background:var(--surf-over);color:var(--ink);border:1px solid var(--line2);
+  box-shadow:0 8px 22px var(--shadow);
+  font-family:var(--body);font-size:11.5px;font-weight:500;line-height:1.35;
+  opacity:0;transform:translateY(3px);
+  transition:opacity .12s var(--ease-out),transform .12s var(--ease-out);
+}
+.datatip.on{opacity:1;transform:none}
+
+/* sensitive value: mask · reveal · copy (honours PREFS.hide_sensitive_metadata) */
+.sens{display:inline-flex;align-items:center;gap:3px;vertical-align:middle;max-width:100%}
+.sens-val{font-family:var(--mono);font-size:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sens.masked .sens-val{letter-spacing:1.5px;color:var(--muted2)}
+.sens-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;min-width:26px;padding:0;
+  border:none;background:none;color:var(--muted);cursor:pointer;border-radius:6px;flex-shrink:0;
+  transition:background var(--dur) ease,color var(--dur) ease}
+.sens-btn:hover{background:var(--surf2);color:var(--ink)}
+.sens-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.sens-btn svg{width:13px;height:13px}
+.sens-btn.ok{color:var(--ok)}
+
+/* command palette (Cmd/Ctrl-K) */
+.cmdk-back{position:fixed;inset:0;z-index:9700;background:var(--gate-overlay);display:none;
+  align-items:flex-start;justify-content:center;padding:12vh 16px 16px}
+.cmdk-back.on{display:flex}
+.cmdk{width:min(560px,100%);max-height:76vh;display:flex;flex-direction:column;
+  background:var(--surf-over);-webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);
+  border:1px solid var(--line2);border-radius:14px;box-shadow:0 28px 70px rgba(0,0,0,.28);overflow:hidden}
+.cmdk-in{width:100%;border:none;outline:none;background:none;
+  padding:16px 17px;font-family:var(--body);font-size:15px;color:var(--ink);border-bottom:1px solid var(--line)}
+.cmdk-in::placeholder{color:var(--muted2)}
+.cmdk-list{flex:1;overflow:auto;padding:6px}
+.cmdk-cat{font-family:var(--mono);font-size:9px;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);padding:9px 11px 4px}
+.cmdk-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;cursor:pointer;
+  color:var(--ink);font-size:13.5px;min-height:38px}
+.cmdk-item .k{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.cmdk-item.sel{background:color-mix(in srgb,var(--fox) 13%,var(--surf));color:var(--fox2)}
+.cmdk-item.sel .k{color:var(--fox2)}
+.cmdk-empty{padding:18px 12px;color:var(--muted);font-size:12.5px;text-align:center}
+
+/* shortcuts help (rendered inside the shared modal) */
+.sc-grid{display:flex;flex-direction:column;gap:2px}
+.sc-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 2px;border-bottom:1px solid var(--line)}
+.sc-row:last-child{border-bottom:none}
+.sc-kbd{font-family:var(--mono);font-size:11px;color:var(--ink2);background:var(--surf2);
+  border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
+
 /* ════════ RESPONSIVE ════════ */
 @media(max-width:760px){
   .dock{
@@ -764,6 +817,15 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
   }
   .dock-mark,.dock-ops,.dock-foot{display:none}
   .dock-item{width:60px;height:52px;flex-shrink:0;border-radius:12px}
+  .dock-item.active{box-shadow:inset 0 -3px 0 var(--fox)}   /* accent flips to the bottom in the bottom-bar layout */
+  /* wide tables → stacked cards (opt-in via .cardify + per-cell data-label; else they still scroll in .twrap) */
+  .tbl.cardify thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
+  .tbl.cardify tr{display:block;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;padding:6px 11px;background:var(--surf2)}
+  .tbl.cardify td{display:flex;justify-content:space-between;align-items:center;gap:12px;border:none;padding:5px 0;
+    max-width:none!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+  .tbl.cardify td::before{content:attr(data-label);font-family:var(--mono);font-size:9px;letter-spacing:.5px;
+    text-transform:uppercase;color:var(--muted);flex-shrink:0}
+  .tbl.cardify td:empty{display:none}
   .main{margin-left:0;padding:14px 14px calc(60px + 24px)}
   .pagehead{margin-bottom:16px}
   .topbar{top:6px}
@@ -928,22 +990,22 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <span class="topbar-sub">internal ops console</span>
       </div>
       <div class="topbar-actions">
-        <button class="topbtn" type="button" title="Refresh this page" aria-label="Refresh this page" onclick="refreshCurrent()">
+        <button class="topbtn" type="button" data-tip="Refresh this page" aria-label="Refresh this page" onclick="refreshCurrent()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         </button>
-        <button class="topbtn" type="button" title="Alerts" aria-label="Open alerts" onclick="goOps('alerts')">
+        <button class="topbtn" type="button" data-tip="Alerts" aria-label="Open alerts" onclick="goOps('alerts')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
           <span class="topbadge" id="topAlertBadge" style="display:none;">0</span>
         </button>
-        <button class="topbtn" type="button" title="Inbox" aria-label="Open inbox" onclick="navTo('inbox')">
+        <button class="topbtn" type="button" data-tip="Inbox" aria-label="Open inbox" onclick="navTo('inbox')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
           <span class="topbadge" id="topInboxBadge" style="display:none;">0</span>
         </button>
-        <button class="topbtn theme-toggle" type="button" title="Toggle light / dark" aria-label="Toggle light or dark theme" onclick="toggleTheme()">
+        <button class="topbtn theme-toggle" type="button" data-tip="Toggle light / dark" aria-label="Toggle light or dark theme" onclick="toggleTheme()">
           <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
           <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         </button>
-        <button class="topbtn skin-toggle" type="button" title="Toggle surface style (Liquid Glass / Skeuomorphism)" aria-label="Toggle surface style between Liquid Glass and Skeuomorphism" onclick="toggleSkin()">
+        <button class="topbtn skin-toggle" type="button" data-tip="Toggle surface style (Liquid Glass / Skeuomorphism)" aria-label="Toggle surface style between Liquid Glass and Skeuomorphism" onclick="toggleSkin()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </button>
         <div class="topuser">
@@ -1178,7 +1240,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <button class="btn sm" style="margin-bottom:4px;" onclick="fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTraffic()">clear</button>
         </div>
         <div class="twrap">
-          <table class="tbl">
+          <table class="tbl cardify">
             <thead><tr>
               <th>When</th><th>Site</th><th>Method</th><th>Path</th><th>Status</th><th>Latency</th><th>Org</th>
             </tr></thead>
@@ -1650,7 +1712,7 @@ async function refreshData(){
       else if(typeof v==='object')v=JSON.stringify(v);
       v=String(v);
       const short=v.length>60?v.slice(0,60)+'…':v;
-      return `<td class="mono" style="font-size:10.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(v)}">${esc(short)}</td>`;
+      return `<td class="mono" style="font-size:10.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-tip="${esc(v)}">${esc(short)}</td>`;
     }).join('');
     let actionsCell='';
     if(showActions){
@@ -1760,12 +1822,14 @@ function _fmtNum(n){return (typeof n==='number')?n.toLocaleString(undefined,{max
 function _niceMax(v){ if(!(v>0))return 1; var p=Math.pow(10,Math.floor(Math.log10(v))); var f=v/p; var m=f<=1?1:f<=2?2:f<=5?5:10; return m*p; }
 function _bindChartTT(el,W,H){
   var svg=el.querySelector('svg'); if(!svg) return;
-  var tt=document.createElement('div'); tt.className='chart-tt'; el.appendChild(tt);
-  function show(t){ var r=svg.getBoundingClientRect(); var x=parseFloat(t.getAttribute('data-x'))/W*r.width; var y=parseFloat(t.getAttribute('data-y'))/H*r.height; tt.textContent=t.getAttribute('data-tt')||''; tt.style.left=x+'px'; tt.style.top=y+'px'; tt.classList.add('on'); }
-  function hide(){ tt.classList.remove('on'); }
+  /* folded into the shared .datatip node (Phase A) — instant, no per-chart tooltip DOM. */
+  function show(t){ var r=svg.getBoundingClientRect();
+    var x=r.left+parseFloat(t.getAttribute('data-x'))/W*r.width;
+    var y=r.top +parseFloat(t.getAttribute('data-y'))/H*r.height;
+    tipShowAt(t.getAttribute('data-tt')||'', x, y, 'top'); }
   Array.prototype.forEach.call(el.querySelectorAll('.chart-dpt'),function(p){
-    p.addEventListener('mouseenter',function(){show(p);}); p.addEventListener('mouseleave',hide);
-    p.addEventListener('focus',function(){show(p);}); p.addEventListener('blur',hide);
+    p.addEventListener('mouseenter',function(){show(p);}); p.addEventListener('mouseleave',tipHide);
+    p.addEventListener('focus',function(){show(p);}); p.addEventListener('blur',tipHide);
   });
 }
 function chart(el,opts){
@@ -2135,7 +2199,7 @@ function enter(me){
   $('gate').style.display='none';
   $('app').style.visibility='visible';
   $('avatar').textContent=(me.email[0]||'?').toUpperCase();
-  $('avatar').title=me.email+' · '+me.platform_role;
+  $('avatar').setAttribute('data-tip',me.email+' · '+me.platform_role);
   const _ta=$('topAvatar');if(_ta)_ta.textContent=(me.email[0]||'?').toUpperCase();
   const _tn=$('topUserName');if(_tn)_tn.textContent=me.email;
   const _trole=$('topUserRole');if(_trole)_trole.textContent=me.platform_role;
@@ -2348,7 +2412,7 @@ async function loadOrgs(){
       ?`<span class="chip ${o.subscription_status==='active'?'safe':'warn'}">${esc(o.subscription_status)}</span>`
       :'<span class="chip dim">none</span>';
     return `<tr class="rowbtn" onclick="openOrg('${o.id}')">
-      <td><b>${esc(o.name)}</b><div class="sub mono" style="font-size:9px;">${o.id.slice(0,8)}…</div></td>
+      <td><b>${esc(o.name)}</b><div class="sub" style="font-size:9px;">${sens(o.id,{short:o.id.slice(0,8)+'…'})}</div></td>
       <td class="mono">${esc(o.plan_tier||'—')}</td>
       <td>${sub}</td><td>${access}</td>
       <td class="mono" style="font-size:11px;">${esc(o.contact_email||'—')}</td>
@@ -2447,7 +2511,7 @@ function renderO3Header(d){
   $('o3Kpis').innerHTML=
     '<div class="clay kpi hot"><div class="klabel">Interactions · '+usage.length+'d</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:32px;margin-top:6px;"></div></div>'+
     '<div class="clay kpi"><div class="klabel">Breaches · '+usage.length+'d</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:32px;margin-top:6px;"></div></div>'+
-    '<div class="clay kpi"><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot mono">'+(d.ledger_head?esc(d.ledger_head.slice(0,12))+'…':'—')+'</div></div>'+
+    '<div class="clay kpi"><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot">'+(d.ledger_head?sens(d.ledger_head,{short:d.ledger_head.slice(0,12)+'…'}):'—')+'</div></div>'+
     '<div class="clay kpi"><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></div>'+
     '<div class="clay kpi"><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></div>';
   if(usage.length){
@@ -2484,7 +2548,7 @@ function renderO3Overview(){
     ['monthly quota', d.monthly_log_quota==null?'∞ unlimited':num(d.monthly_log_quota)],
     ['trial ends', d.trial_ends_at?fmtDay(d.trial_ends_at):'—'],
     ['created', fmtDay(d.created_at)],
-    ['ledger head', '<span class="mono" style="font-size:11px;">'+esc(d.ledger_head||'—')+'</span>'],
+    ['ledger head', d.ledger_head ? sens(d.ledger_head,{max:20}) : '<span class="sub">—</span>'],
     ['last anchor', (d.last_anchor_status?opsChip(d.last_anchor_status):'—')+(d.last_anchor_at?(' <span class="sub mono" style="font-size:10px;">'+fmtTime(d.last_anchor_at)+'</span>'):'')],
     ['IP allow-list', d.ip_allowlist&&d.ip_allowlist.length?('<span class="mono" style="font-size:11px;">'+esc(d.ip_allowlist.join(', '))+'</span>'):'<span class="sub">none (open)</span>'],
     ['suspended reason', esc(d.suspended_reason||'—')],
@@ -2597,13 +2661,13 @@ function renderTraffic(){
     const sc=e.status_code>=500?'bad':e.status_code>=400?'warn':'safe';
     const site=e.site==='marketing'?'info':e.site==='admin'?'warn':'dim';
     return `<tr>
-      <td class="mono" style="font-size:10.5px;white-space:nowrap;">${fmtTime(e.created_at)}</td>
-      <td><span class="chip ${site}">${esc(e.site)}</span></td>
-      <td class="mono">${esc(e.method)}</td>
-      <td class="mono" style="font-size:11px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.path)}</td>
-      <td><span class="chip ${sc}">${e.status_code}</span></td>
-      <td class="mono" style="font-size:11px;">${e.latency_ms==null?'—':e.latency_ms+' ms'}</td>
-      <td class="mono" style="font-size:10px;">${e.org_id?e.org_id.slice(0,8)+'…':'—'}</td>
+      <td data-label="When" class="mono" style="font-size:10.5px;white-space:nowrap;">${fmtTime(e.created_at)}</td>
+      <td data-label="Site"><span class="chip ${site}">${esc(e.site)}</span></td>
+      <td data-label="Method" class="mono">${esc(e.method)}</td>
+      <td data-label="Path" class="mono" style="font-size:11px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.path)}</td>
+      <td data-label="Status"><span class="chip ${sc}">${e.status_code}</span></td>
+      <td data-label="Latency" class="mono" style="font-size:11px;">${e.latency_ms==null?'—':e.latency_ms+' ms'}</td>
+      <td data-label="Org" class="mono" style="font-size:10px;">${e.org_id?sens(e.org_id,{short:e.org_id.slice(0,8)+'…'}):'—'}</td>
     </tr>`;
   }).join('');
 }
@@ -2913,7 +2977,7 @@ async function loadStripeEvents(){
   $('seRows').innerHTML=items.map(e=>{
     const cls=e.status==='processed'?'safe':e.status==='failed'?'bad':e.status==='ignored'?'dim':'warn';
     const act=(canReplay&&(e.status==='failed'))?`<button class="btn sm pri" onclick="replayStripe('${e.id}')">Replay</button>`:'';
-    return `<tr><td class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td><span class="chip ${cls}">${esc(e.status)}</span></td><td class="mono" style="font-size:10px;">${e.org_id?esc(e.org_id.slice(0,8))+'…':'—'}</td><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td style="text-align:right;">${act}</td></tr>`;
+    return `<tr><td class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td><span class="chip ${cls}">${esc(e.status)}</span></td><td class="mono" style="font-size:10px;">${e.org_id?sens(e.org_id,{short:e.org_id.slice(0,8)+'…'}):'—'}</td><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td style="text-align:right;">${act}</td></tr>`;
   }).join('');
 }
 async function replayStripe(id){
@@ -2990,6 +3054,143 @@ async function leadMove(id,status){
   const d=await r.json().catch(()=>({}));
   if(r.ok){ toast('lead moved to '+status); loadLeads(); } else toast(d.detail||('move failed ('+r.status+')'));
 }
+/* ════════════════════ PHASE A — cross-cutting FE systems ════════════════════
+   Delayed tooltip (data-tip) · sensitive mask/reveal+copy · command palette (Cmd/Ctrl-K)
+   + shortcuts help. Reuse esc()/openModal()/closeModal()/go()/navTo()/can()/toast(); all
+   token-driven (no hardcoded colours). PREFS is populated from the server in Phase B. */
+window.PREFS = window.PREFS || { hide_sensitive_metadata:false };
+
+var _EYE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+var _COPY_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
+/* ---- delayed hover/focus tooltip (data-tip) ---- */
+var _tipEl=null,_tipTimer=0,_tipCur=null,_TIP_DELAY=450;
+function _tipNode(){ if(_tipEl)return _tipEl;
+  _tipEl=document.createElement('div'); _tipEl.className='datatip'; _tipEl.id='datatip';
+  _tipEl.setAttribute('role','tooltip'); _tipEl.setAttribute('aria-hidden','true');
+  document.body.appendChild(_tipEl); return _tipEl; }
+function tipShowAt(text,x,y,place){ if(!text)return; var el=_tipNode();
+  el.textContent=text; el.classList.add('on'); el.setAttribute('aria-hidden','false');
+  var r=el.getBoundingClientRect(),pad=8,vw=window.innerWidth,vh=window.innerHeight;
+  place=place||'top'; var left=x-r.width/2, top=(place==='bottom')?y+pad:y-r.height-pad;
+  if(place!=='bottom'&&top<pad) top=y+pad;                    /* flip below if it would clip the top */
+  if(top+r.height>vh-pad) top=Math.max(pad,y-r.height-pad);   /* flip above if it would clip the bottom */
+  left=Math.max(pad,Math.min(left,vw-r.width-pad));
+  el.style.left=left+'px'; el.style.top=top+'px'; }
+function tipHide(){ if(_tipTimer){clearTimeout(_tipTimer);_tipTimer=0;}
+  if(_tipEl){ _tipEl.classList.remove('on'); _tipEl.setAttribute('aria-hidden','true'); }
+  if(_tipCur){ _tipCur.removeAttribute('aria-describedby'); _tipCur=null; } }
+function _tipForEl(el){ var text=el.getAttribute('data-tip'); if(!text)return;
+  var r=el.getBoundingClientRect(); tipShowAt(text,r.left+r.width/2,r.top,'top');
+  el.setAttribute('aria-describedby','datatip'); }
+document.addEventListener('mouseover',function(e){
+  var t=e.target.closest?e.target.closest('[data-tip]'):null; if(!t||t===_tipCur)return;
+  if(_tipTimer)clearTimeout(_tipTimer); _tipCur=t;
+  _tipTimer=setTimeout(function(){_tipTimer=0; if(_tipCur===t)_tipForEl(t);},_TIP_DELAY); });
+document.addEventListener('mouseout',function(e){
+  var t=e.target.closest?e.target.closest('[data-tip]'):null;
+  if(t&&t===_tipCur){ if(e.relatedTarget&&t.contains(e.relatedTarget))return; tipHide(); } });
+document.addEventListener('focusin',function(e){
+  var t=e.target.closest?e.target.closest('[data-tip]'):null; if(!t)return;
+  var vis=true; try{vis=t.matches(':focus-visible');}catch(_){}   /* keyboard focus only, not mouse-click */
+  if(!vis)return; _tipCur=t; _tipForEl(t); });
+document.addEventListener('focusout',function(e){
+  var t=e.target.closest?e.target.closest('[data-tip]'):null; if(t&&t===_tipCur)tipHide(); });
+window.addEventListener('scroll',tipHide,true);
+
+/* ---- sensitive value: mask · reveal · copy (honours PREFS.hide_sensitive_metadata) ---- */
+function sens(value,opts){ opts=opts||{}; value=String(value==null?'':value);
+  var max=opts.max||14;
+  var short=opts.short || (value.length>max? value.slice(0,max)+'…' : value);
+  var masked=!!(window.PREFS&&PREFS.hide_sensitive_metadata);
+  var shown=masked?'••••••':short;
+  return '<span class="sens'+(masked?' masked':'')+'" data-v="'+esc(value)+'" data-short="'+esc(short)+'">'
+    +'<span class="sens-val">'+esc(shown)+'</span>'
+    +'<button type="button" class="sens-btn" data-act="reveal" data-tip="Reveal" aria-label="Reveal full value">'+_EYE_SVG+'</button>'
+    +'<button type="button" class="sens-btn" data-act="copy" data-tip="Copy" aria-label="Copy to clipboard">'+_COPY_SVG+'</button>'
+    +'</span>'; }
+function _copyFallback(text){ try{ var ta=document.createElement('textarea'); ta.value=text;
+  ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select();
+  document.execCommand('copy'); document.body.removeChild(ta);}catch(e){} }
+function _copyText(text,btn){
+  function done(){ if(!btn)return; btn.classList.add('ok'); var old=btn.getAttribute('data-tip');
+    btn.setAttribute('data-tip','Copied'); tipHide(); _tipForEl(btn);
+    setTimeout(function(){ btn.classList.remove('ok'); if(old)btn.setAttribute('data-tip',old); tipHide(); },1100); }
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done,function(){_copyFallback(text);done();}); }
+    else{ _copyFallback(text); done(); } }
+  catch(e){ _copyFallback(text); } }
+document.addEventListener('click',function(e){
+  var btn=e.target.closest?e.target.closest('.sens-btn'):null; if(!btn)return;
+  var wrap=btn.closest('.sens'); if(!wrap)return; e.preventDefault(); e.stopPropagation();
+  var full=wrap.getAttribute('data-v'), short=wrap.getAttribute('data-short'), valEl=wrap.querySelector('.sens-val');
+  if(btn.getAttribute('data-act')==='copy'){ _copyText(full,btn); return; }
+  var revealed=wrap.classList.toggle('revealed'); wrap.classList.remove('masked');
+  valEl.textContent=revealed?full:short;
+  btn.setAttribute('aria-label',revealed?'Hide value':'Reveal full value'); });
+
+/* ---- command palette (Cmd/Ctrl-K) + shortcuts help ---- */
+var CMDK=null,_cmdkItems=[],_cmdkSel=0;
+function _cmdkCommands(){
+  var pages=[['overview','Overview',null],['health','System health',null],['orgs','Organizations',null],
+    ['traffic','Traffic',null],['staff','Staff','superadmin'],['data','Data browser',null],
+    ['revenue','Revenue',null],['security','Security',null],['audit','Audit log',null],
+    ['leads','Leads',null],['inbox','Inbox',null],['settings','Settings',null]];
+  var cmds=[];
+  pages.forEach(function(p){ if(p[2]&&!can(p[2]))return; cmds.push({cat:'Go to',label:p[1],act:function(){navTo(p[0]);}}); });
+  cmds.push({cat:'Actions',label:'Refresh this page',act:refreshCurrent});
+  cmds.push({cat:'Actions',label:'Toggle light / dark',act:toggleTheme});
+  cmds.push({cat:'Actions',label:'Toggle surface style',act:toggleSkin});
+  cmds.push({cat:'Actions',label:'Keyboard shortcuts',act:showShortcuts});
+  return cmds; }
+function _cmdkBuild(){ if(CMDK)return;
+  CMDK=document.createElement('div'); CMDK.className='cmdk-back';
+  CMDK.setAttribute('role','dialog'); CMDK.setAttribute('aria-modal','true'); CMDK.setAttribute('aria-label','Command palette');
+  CMDK.innerHTML='<div class="cmdk"><input class="cmdk-in" type="text" autocomplete="off" spellcheck="false" placeholder="Search pages and actions…" aria-label="Command palette" aria-controls="cmdkList"><div class="cmdk-list" id="cmdkList" role="listbox"></div></div>';
+  document.body.appendChild(CMDK);
+  var input=CMDK.querySelector('.cmdk-in');
+  input.addEventListener('input',_cmdkRender);
+  input.addEventListener('keydown',_cmdkKey);
+  CMDK.addEventListener('mousedown',function(e){ if(e.target===CMDK)closeCmdk(); });
+  CMDK.querySelector('.cmdk-list').addEventListener('click',function(e){ var it=e.target.closest('.cmdk-item'); if(it)_cmdkRun(parseInt(it.getAttribute('data-i'),10)); }); }
+function openCmdk(){ if(!ME)return;   /* logged-in only */
+  _cmdkBuild(); CMDK.classList.add('on'); var input=CMDK.querySelector('.cmdk-in');
+  input.value=''; _cmdkSel=0; _cmdkRender(); setTimeout(function(){input.focus();},20); }
+function closeCmdk(){ if(CMDK)CMDK.classList.remove('on'); }
+function _cmdkOpen(){ return !!(CMDK&&CMDK.classList.contains('on')); }
+function _fuzzy(q,s){ q=q.toLowerCase(); s=s.toLowerCase(); if(!q)return true; var i=0;
+  for(var j=0;j<s.length&&i<q.length;j++){ if(s[j]===q[i])i++; } return i===q.length; }
+function _cmdkRender(){ var input=CMDK.querySelector('.cmdk-in'), q=(input.value||'').trim();
+  _cmdkItems=_cmdkCommands().filter(function(c){return _fuzzy(q,c.label);});
+  if(_cmdkSel>=_cmdkItems.length)_cmdkSel=Math.max(0,_cmdkItems.length-1);
+  var list=CMDK.querySelector('.cmdk-list');
+  if(!_cmdkItems.length){ list.innerHTML='<div class="cmdk-empty">No matching command</div>'; return; }
+  var html='',lastCat=null;
+  _cmdkItems.forEach(function(c,i){ if(c.cat!==lastCat){ html+='<div class="cmdk-cat">'+esc(c.cat)+'</div>'; lastCat=c.cat; }
+    html+='<div class="cmdk-item'+(i===_cmdkSel?' sel':'')+'" role="option" aria-selected="'+(i===_cmdkSel?'true':'false')+'" data-i="'+i+'"><span>'+esc(c.label)+'</span></div>'; });
+  list.innerHTML=html; }
+function _cmdkRun(i){ var c=_cmdkItems[i]; closeCmdk(); if(c&&c.act)c.act(); }
+function _cmdkScroll(){ if(!CMDK)return; var s=CMDK.querySelector('.cmdk-item.sel'); if(s&&s.scrollIntoView)s.scrollIntoView({block:'nearest'}); }
+function _cmdkKey(e){
+  if(e.key==='ArrowDown'){ e.preventDefault(); _cmdkSel=Math.min(_cmdkItems.length-1,_cmdkSel+1); _cmdkRender(); _cmdkScroll(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); _cmdkSel=Math.max(0,_cmdkSel-1); _cmdkRender(); _cmdkScroll(); }
+  else if(e.key==='Enter'){ e.preventDefault(); _cmdkRun(_cmdkSel); }
+  else if(e.key==='Escape'){ e.preventDefault(); closeCmdk(); } }
+function _scRow(l,k){ return '<div class="sc-row"><span>'+esc(l)+'</span><kbd class="sc-kbd">'+esc(k)+'</kbd></div>'; }
+function showShortcuts(){ openModal({eyebrow:'keyboard',title:'Shortcuts',
+  bodyHTML:'<div class="sc-grid">'
+    +_scRow('Open command palette','Ctrl / Cmd + K')
+    +_scRow('Show this help','?')
+    +_scRow('Navigate palette','Up / Down · Enter')
+    +_scRow('Close dialog / tooltip','Esc')+'</div>',
+  footHTML:'<button class="btn" onclick="closeModal()">Close</button>'}); }
+function _inField(el){ return !!(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable)); }
+document.addEventListener('keydown',function(e){
+  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); if(_cmdkOpen())closeCmdk(); else openCmdk(); return; }
+  if(e.key==='Escape'){ tipHide(); if(_cmdkOpen())closeCmdk(); return; }
+  if(e.key==='?'&&!_inField(e.target)&&!_cmdkOpen()){ e.preventDefault(); showShortcuts(); } });
+/* ══════════════════ end Phase A systems ══════════════════ */
+
 boot();
 </script>
 </body>
