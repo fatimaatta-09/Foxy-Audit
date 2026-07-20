@@ -199,6 +199,10 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none;}
 .dtbl tbody tr:hover{background:var(--surf2);}
 .dtbl .num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;}
 .dtbl .mono{font-family:var(--mono);font-size:10px;color:var(--muted);}
+/* reusable filter chip */
+.seg-chip{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;padding:6px 13px;border-radius:20px;cursor:pointer;background:var(--surf2);border:var(--border-sm);color:var(--ink2);transition:background .14s,color .14s;}
+.seg-chip:hover{background:var(--surf3);color:var(--fox2);}
+.seg-chip:focus-visible{outline:2px solid var(--fox);outline-offset:2px;}
 @media(max-width:820px){ .skinseg{display:none;} }   /* on small screens the skin picker lives in Settings (P14) */
 
 html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth;}
@@ -1135,12 +1139,35 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div><div class="eyebrow">No prompts stored</div><div class="h1">Audit ledger<span class="fox-dot">.</span></div><div class="sub">Only the verdict + a tamper-proof fingerprint of each interaction — never the raw prompt or response.</div></div>
         <button class="btn ghost sm" onclick="applyLedgerFilters()">↻ refresh</button>
       </div>
+      <!-- P8 · ledger summary + volume + verdict mix -->
+      <div class="stats" style="margin-bottom:14px;">
+        <div class="stat"><div class="v fox" id="ldgTotal">—</div><div class="l">Records</div></div>
+        <div class="stat"><div class="v danger" id="ldgBreaches">—</div><div class="l">Breaches</div></div>
+        <div class="stat"><div class="v" id="ldgClean">—</div><div class="l">Clean rate</div></div>
+        <div class="stat"><div class="v" id="ldgPending">—</div><div class="l">Pending grading</div></div>
+      </div>
+      <div class="p5row" style="margin-bottom:14px;">
+        <div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="txt" style="font-size:12px;">Volume <span style="color:var(--muted);font-weight:400;font-family:var(--mono);font-size:9.5px;">· logged / day, last 90</span></div></div></div>
+          <div class="chart-host" id="ledgerVolume" style="min-height:140px;"></div>
+        </div>
+        <div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="txt" style="font-size:12px;">Verdict mix</div></div></div>
+          <div class="chart-host" id="ledgerVerdictDonut" style="min-height:150px;"></div>
+        </div>
+      </div>
       <div class="clay" style="margin-bottom:12px;padding:11px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <input class="cin" id="ledgerQ" placeholder="Search hash or agent…" style="margin:0;flex:1;min-width:150px;" onkeydown="if(event.key==='Enter')applyLedgerFilters()">
         <input class="cin" id="ledgerPolicy" placeholder="policy tag" style="margin:0;width:120px;" onkeydown="if(event.key==='Enter')applyLedgerFilters()">
         <select id="ledgerVerdict" style="margin:0;width:140px;"><option value="">any verdict</option><option value="breach">breach</option><option value="clean">clean</option><option value="unknown">unknown</option><option value="pending">pending</option></select>
         <button class="btn pri sm" style="margin:0;" onclick="applyLedgerFilters()">Filter</button>
         <button class="btn ghost sm" style="margin:0;" onclick="clearLedgerFilters()">Clear</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        <button type="button" class="seg-chip" onclick="quickLedger('')">All</button>
+        <button type="button" class="seg-chip" onclick="quickLedger('breach')">Breaches</button>
+        <button type="button" class="seg-chip" onclick="quickLedger('clean')">Clean</button>
+        <button type="button" class="seg-chip" onclick="quickLedger('pending')">Pending</button>
       </div>
       <div class="clay pad" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;min-width:480px;">
@@ -3180,6 +3207,40 @@ async function loadLoginHistory(){
   var _go=window.go;
   if(typeof _go==='function'){ window.go=function(p,e){ _go(p,e); if(p==='dashboard')window.loadHomeCharts(); }; }
   if(document.readyState!=='loading')window.loadHomeCharts(); else document.addEventListener('DOMContentLoaded',window.loadHomeCharts);
+})();
+</script>
+
+<!-- ═══ P8 · Ledger — summary stats · volume-over-time · verdict-mix donut · quick filters ═══ -->
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var api=function(p){return fetch(p,{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});};
+  var num=function(n){return Number(n||0).toLocaleString();};
+  var fmtPct=function(v){return v==null?'—':v+'%';};
+  window.quickLedger=function(v){ var s=$('ledgerVerdict'); if(s)s.value=v; if(window.applyLedgerFilters)window.applyLedgerFilters(); };
+  window.loadLedgerCharts=async function(){
+    if(!$('ledgerVolume')&&!$('ledgerVerdictDonut')&&!$('ldgTotal'))return;
+    var u=await api('/v1/usage?days=90'); var days=(u&&Array.isArray(u.days))?u.days:[];
+    if($('ledgerVolume')&&window.foxChart)window.foxChart('ledgerVolume',{type:'area',height:140,tone:'fox',
+      data:days.map(function(d){return {label:d.day,value:+d.logs_count||0};}),
+      empty:{title:'No records yet',desc:'Logged interactions appear here as your SDK reports them.'}});
+    var s=await api('/v1/stats'); if(!s)return; var g=s.grading||{};
+    if($('ldgTotal'))$('ldgTotal').textContent=num(s.total_logged);
+    if($('ldgBreaches'))$('ldgBreaches').textContent=num(s.breaches);
+    if($('ldgClean'))$('ldgClean').textContent=fmtPct(s.clean_rate);
+    if($('ldgPending'))$('ldgPending').textContent=num((g.pending||0)+(g.in_progress||0));
+    var breaches=+s.breaches||0, graded=+g.graded||0, clean=Math.max(0,graded-breaches),
+        pending=(+g.pending||0)+(+g.in_progress||0), failed=+g.failed||0;
+    var parts=[{label:'Clean',value:clean,tone:'ok'},{label:'Breach',value:breaches,tone:'bad'},{label:'Pending',value:pending,tone:'warn'},{label:'Failed',value:failed,tone:'mute'}];
+    var total=parts.reduce(function(a,x){return a+x.value;},0);
+    var dn=$('ledgerVerdictDonut');
+    if(dn&&window.foxChart){
+      if(total>0)window.foxChart('ledgerVerdictDonut',{type:'donut',height:150,center:total,data:parts,aria:'verdict distribution'});
+      else dn.innerHTML='<div class="empty" style="padding:16px 0;"><div class="empty-t">Nothing graded yet</div><div class="empty-d">Verdicts appear once the Judge processes interactions.</div></div>';
+    }
+  };
+  var _go=window.go;
+  if(typeof _go==='function'){ window.go=function(p,e){ _go(p,e); if(p==='ledger')window.loadLedgerCharts(); }; }
 })();
 </script>
 </body>
