@@ -1342,7 +1342,9 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
             <div><div class="flabel" style="margin-top:0;">from</div><input class="cin" id="expFrom" type="date"></div>
             <div><div class="flabel" style="margin-top:0;">to</div><input class="cin" id="expTo" type="date"></div>
           </div>
-          <button class="btn pri" onclick="runExport()">generate passport</button>
+          <div class="flabel">export type</div>
+          <select id="exportType"><option value="passport">Compliance passport · HTML</option><option value="logs_csv">Audit logs · CSV</option><option value="logs_json">Audit logs · JSON</option></select>
+          <button class="btn pri" onclick="runExportFlow()">Generate export</button>
           <div style="font-size:10.5px;color:var(--muted);margin-top:10px;line-height:1.5;">The passport is a self-contained PDF with content-blind hash-chain and capture-coverage evidence. For a live, no-login proof page, mint a <b onclick="go('settings',null)" style="color:var(--fox2);cursor:pointer;">public verify link</b> in Settings.</div>
           <div id="exportProgress" style="display:none;margin-top:10px;">
             <div class="pbar-wrap"><div class="pbar-fill" id="pbar"></div></div>
@@ -1359,6 +1361,17 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div style="margin-top:16px;border-top:2px dashed var(--line);padding-top:14px;font-size:11px;color:var(--muted);line-height:1.6;">
             Passports are generated on demand and open in a new tab — the server doesn't keep a download archive.
           </div>
+        </div>
+      </div>
+      <!-- P11 · export history -->
+      <div class="clay pad" style="margin-top:16px;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="#000" stroke-width="2.2" stroke-linecap="round" fill="none"/><circle cx="12" cy="12" r="9" stroke="#000" stroke-width="2.2" fill="none"/></svg></span></div><div class="txt">Export history</div></div></div>
+        <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:12px;">A record of every export you've generated. The server keeps no file archive — re-generate above to download again.</div>
+        <div style="overflow-x:auto;">
+          <table class="dtbl">
+            <thead><tr><th>Type</th><th>Range</th><th>By</th><th>When</th></tr></thead>
+            <tbody id="exportHistory"><tr><td colspan="4" style="color:var(--muted);padding:10px;">No exports yet.</td></tr></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -3319,6 +3332,44 @@ async function loadLoginHistory(){
   };
   var _go=window.go;
   if(typeof _go==='function'){ window.go=function(p,e){ _go(p,e); if(p==='ledger')window.loadLedgerCharts(); }; }
+})();
+</script>
+
+<!-- ═══ P11 · Export — file-type flow (records a job) + export history ═══ -->
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var api=function(p){return fetch(p,{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+  // NON-async so window.open (passport) + the download link stay inside the click gesture
+  window.runExportFlow=function(){
+    var type=(($('exportType')||{}).value)||'passport';
+    var from=(($('expFrom')||{}).value||'').trim(), to=(($('expTo')||{}).value||'').trim();
+    var params={}; if(from)params.date_from=from; if(to)params.date_to=to; if(!from&&!to)params.days=365;
+    // record the export in history/audit (fire-and-forget so it never blocks the producer/popup)
+    try{ fetch('/v1/exports',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},
+      body:JSON.stringify({type:type,params:params})}).then(function(){ if(window.loadExportHistory)window.loadExportHistory(); }); }catch(e){}
+    if(type==='passport'){ if(window.runExport)window.runExport(); }
+    else {
+      var fmt=(type==='logs_csv')?'csv':'json';
+      var a=document.createElement('a'); a.href='/v1/logs/export?format='+fmt; a.download='foxy-audit-logs.'+fmt;
+      document.body.appendChild(a); a.click(); a.remove();
+      try{ showToast('Logs export ('+fmt.toUpperCase()+') started'); }catch(e){}
+    }
+  };
+  window.loadExportHistory=async function(){
+    var tb=$('exportHistory'); if(!tb)return;
+    var d=await api('/v1/exports'); var items=(d&&Array.isArray(d.items))?d.items:[];
+    var TYPE={passport:'Passport · HTML',logs_csv:'Logs · CSV',logs_json:'Logs · JSON'};
+    tb.innerHTML=items.length?items.map(function(j){
+      var p=j.params||{};
+      var range=p.date_from?(esc(p.date_from)+' → '+esc(p.date_to||'now')):(p.days?('last '+esc(String(p.days))+'d'):'all time');
+      var when=j.created_at?new Date(j.created_at).toLocaleString():'';
+      return '<tr><td>'+esc(TYPE[j.type]||j.type)+'</td><td class="mono">'+range+'</td><td class="mono">'+esc(j.requested_by||'—')+'</td><td class="mono">'+esc(when)+'</td></tr>';
+    }).join(''):'<tr><td colspan="4" style="color:var(--muted);padding:10px;">No exports yet.</td></tr>';
+  };
+  var _go=window.go;
+  if(typeof _go==='function'){ window.go=function(p,e){ _go(p,e); if(p==='export')window.loadExportHistory(); }; }
 })();
 </script>
 </body>

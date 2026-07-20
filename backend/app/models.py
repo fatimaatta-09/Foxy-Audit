@@ -480,6 +480,27 @@ class UserSession(Base):
         DateTime(timezone=True), nullable=True)
 
 
+class ExportJob(Base):
+    """History/audit of a compliance export (dashboard P11) — logs CSV/JSON or the passport. The
+    server keeps NO file archive; a re-download re-runs the producer, so file_ref is reserved. Per-org
+    (org_isolation RLS)."""
+    __tablename__ = "export_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    requested_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="completed")
+    file_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
 class TrafficEvent(Base):
     """One request across any of the 3 sites — the traffic feed for the admin
     site. Written OFF the request hot path by

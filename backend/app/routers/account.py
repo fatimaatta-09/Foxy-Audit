@@ -20,12 +20,12 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import ip_allow
+from .. import account_audit, ip_allow
 from ..auth import require_role, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
 from ..models import (
-    AccountAction, ApiKey, AuditLog, ChainAnchor, Invoice, Organization,
+    AccountAction, ApiKey, AuditLog, ChainAnchor, ExportJob, Invoice, Organization,
     OrgPolicy, UsageDaily, User,
 )
 
@@ -452,3 +452,63 @@ def put_onboarding(body: OnboardingUpdate, user: User = Depends(require_user),
     resp = _onboarding_state(user, db)   # compute BEFORE commit — require_user's RLS GUC is still set
     db.commit()
     return resp
+
+
+# ─────────────────────────── export history / jobs (P11) ─────────────────────
+_EXPORT_TYPES = {"passport", "logs_csv", "logs_json"}
+
+
+class ExportCreate(BaseModel):
+    type: str
+    params: dict | None = None
+
+
+def _export_dict(j: ExportJob) -> dict:
+    return {
+        "id": str(j.id), "type": j.type, "params": j.params or {}, "status": j.status,
+        "requested_by": j.requested_by,
+        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "completed_at": j.completed_at.isoformat() if j.completed_at else None,
+    }
+
+
+@router.post("/v1/exports")
+def create_export(body: ExportCreate, user: User = Depends(require_user),
+                  db: Session = Depends(get_db)):
+    """Record a compliance export in the history/audit trail. The file itself is produced by the
+    existing /v1/logs/export or /v1/passport endpoints — the server keeps NO archive, so this is the
+    who/what/when record (also mirrored into account_actions)."""
+    t = (body.type or "").strip()
+    if t not in _EXPORT_TYPES:
+        raise HTTPException(status_code=422, detail="unknown export type")
+    now = datetime.now(timezone.utc)
+    job = ExportJob(id=uuid.uuid4(), org_id=user.org_id, requested_by=user.email, type=t,
+                    params=(body.params or {}), status="completed",
+                    created_at=now, completed_at=now)
+    db.add(job)
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email, action="export.create", target=t)
+    db.commit()
+    return _export_dict(job)
+
+
+@router.get("/v1/exports")
+def list_exports(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """The org's recent export history (newest first)."""
+    rows = db.execute(
+        select(ExportJob).where(ExportJob.org_id == user.org_id)
+        .order_by(ExportJob.created_at.desc()).limit(100)
+    ).scalars().all()
+    return {"items": [_export_dict(j) for j in rows]}
+
+
+@router.get("/v1/exports/{export_id}")
+def get_export(export_id: str, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    try:
+        eid = uuid.UUID(export_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="not found")
+    j = db.get(ExportJob, eid)          # RLS-scoped by require_user → cross-org rows are invisible
+    if j is None or j.org_id != user.org_id:
+        raise HTTPException(status_code=404, detail="not found")
+    return _export_dict(j)
