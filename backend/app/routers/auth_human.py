@@ -48,6 +48,8 @@ class MeResponse(BaseModel):
     role: str
     org_id: str
     mfa_enabled: bool = False
+    full_name: str | None = None       # P14: identity — avatar/greeting use this once set
+    preferences: dict | None = None    # P14: hide_sensitive_metadata + notification prefs
 
 
 class UserListItem(BaseModel):
@@ -354,7 +356,8 @@ def redeem_handoff(payload: HandoffRedeemRequest, request: Request,
 @router.get("/v1/auth/me", response_model=MeResponse)
 def me(user: User = Depends(require_user)):
     return MeResponse(email=user.email, role=user.role, org_id=str(user.org_id),
-                      mfa_enabled=bool(user.mfa_enabled))
+                      mfa_enabled=bool(user.mfa_enabled),
+                      full_name=user.full_name, preferences=user.preferences or {})
 
 
 class LoginHistoryItem(BaseModel):

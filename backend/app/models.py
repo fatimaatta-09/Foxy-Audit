@@ -267,6 +267,10 @@ class User(Base):
     # Dashboard onboarding checklist state (P4) — a small JSONB bag, e.g. {"dismissed": true}. The
     # checklist COMPLETION is computed live from real data; only dismissal is persisted here.
     onboarding_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Identity + prefs (P14). full_name → avatar initial + greeting once set (else the email localpart).
+    # preferences: small JSONB bag (hide_sensitive_metadata + notification prefs).
+    full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class ApiKey(Base):

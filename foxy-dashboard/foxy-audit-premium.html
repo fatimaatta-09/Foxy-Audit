@@ -834,6 +834,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="3" fill="currentColor"/><rect x="2" y="9" width="20" height="3.2" fill="#000" opacity=".4"/><rect x="5" y="14.5" width="6" height="2.2" rx="1" fill="#000" opacity=".4"/></svg></span>
       <span>Billing</span>
     </div>
+    <div class="dock-item" data-page="settings" onclick="go('settings',this)">
+      <span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span>Settings</span>
+    </div>
 
     <div class="dock-foot">
       <div class="dock-user" id="dockUser" data-avatar data-tip="Open settings" onclick="go('settings',null)">F</div>
@@ -1485,8 +1489,14 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <div class="pg-head"><div><div class="eyebrow">Preferences</div><div class="h1">Settings<span class="fox-dot">.</span></div></div></div>
       <div class="g2">
         <div class="clay pad">
-          <div style="font-weight:700;font-size:13px;margin-bottom:14px;">Account</div>
-          <div class="flabel" style="margin-top:0;">email</div><input class="cin" id="setEmail" readonly style="opacity:.7;">
+          <div style="font-weight:700;font-size:13px;margin-bottom:14px;">Account &amp; identity</div>
+          <div class="flabel" style="margin-top:0;">display name <span style="color:var(--muted);font-weight:400;">(your avatar + greeting)</span></div>
+          <div style="display:flex;gap:8px;">
+            <input class="cin" id="setName" placeholder="e.g. Ada Lovelace" style="margin:0;flex:1;" maxlength="120" onkeydown="if(event.key==='Enter')saveName()">
+            <button class="btn pri sm" onclick="saveName()" style="margin:0;">Save</button>
+          </div>
+          <div id="setNameStatus" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:5px;min-height:12px;"></div>
+          <div class="flabel">email</div><input class="cin" id="setEmail" readonly style="opacity:.7;">
           <div class="flabel">role</div><input class="cin" id="setRole" readonly style="opacity:.7;">
           <div class="flabel">org id</div><input class="cin" id="setOrg" readonly style="opacity:.6;">
           <div style="border-top:2px dashed var(--line);margin:16px 0 4px;"></div>
@@ -1525,6 +1535,36 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
               <input class="cin" id="mfaOffPw" type="password" autocomplete="current-password">
               <button class="btn danger" onclick="mfaDisable()" style="margin-top:0;">Turn off 2FA</button>
             </div>
+          </div>
+          <!-- P14 · Data & privacy -->
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div class="stitle" style="margin-bottom:10px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Data &amp; privacy</div></div></div>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;cursor:pointer;">
+              <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Mask sensitive metadata</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">hide org id, chain head &amp; anchor roots by default (reveal per-field)</div></div>
+              <span class="toggle"><input type="checkbox" id="prefHideSensitive" onchange="savePref('hide_sensitive_metadata',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:2px dashed var(--line);cursor:pointer;">
+              <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Product update emails</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">occasional emails about new features</div></div>
+              <span class="toggle"><input type="checkbox" id="prefNotifyProduct" onchange="savePref('notify_product_updates',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:2px dashed var(--line);cursor:pointer;">
+              <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Security alert emails</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">breach &amp; sign-in alerts to your inbox</div></div>
+              <span class="toggle"><input type="checkbox" id="prefNotifySecurity" onchange="savePref('notify_security_alerts',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
+            </label>
+            <div style="border-top:2px dashed var(--line);margin-top:8px;padding-top:12px;">
+              <div style="font-weight:700;font-size:12px;margin-bottom:8px;">Surface style</div>
+              <div class="skinseg" role="group" aria-label="Surface style">
+                <button type="button" data-skin="original" aria-pressed="true" data-tip="Original" aria-label="Original surface style" onclick="setDashSkin('original')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></button>
+                <button type="button" data-skin="clay" aria-pressed="false" data-tip="Skeuomorphism" aria-label="Skeuomorphism surface style" onclick="setDashSkin('clay')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="7"/><path d="M7 8.5h10" opacity=".5"/></svg></button>
+                <button type="button" data-skin="glass" aria-pressed="false" data-tip="Liquid Glass" aria-label="Liquid Glass surface style" onclick="setDashSkin('glass')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 6l9 13" opacity=".5"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <!-- P14 · Devices & sessions (from P3 user_sessions) -->
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div class="stitle" style="margin-bottom:8px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2" width="14" height="20" rx="2" fill="#000"/><path d="M12 18h.01" stroke="var(--fox)" stroke-width="2.5" stroke-linecap="round"/></svg></span></div><div class="txt">Devices &amp; sessions</div></div><button class="btn ghost sm" onclick="logoutEverywhere()" style="margin:0;">Log out everywhere</button></div>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:10px;">Active devices signed in to your account · revoke any you don't recognise.</div>
+            <div id="devicesList"><div class="skel line" style="width:70%"></div><div class="skel line" style="width:55%;margin-top:8px"></div></div>
           </div>
           <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Recent logins</div>
@@ -2082,6 +2122,7 @@ async function loadLoginHistory(){
   window.foxAvatar=async function(){
     try{ var r=await fetch('/v1/auth/me',{credentials:'same-origin'}); if(!r.ok)return; var me=await r.json();
       window.__foxUser=me;
+      window.__foxPrefs=me.preferences||{};   // P14: drives the P0 mask/reveal default app-wide
       var name=(me.full_name&&String(me.full_name).trim())?String(me.full_name).trim():(me.email?String(me.email).split('@')[0]:'');
       var initial=(name?name.charAt(0):'F').toUpperCase();
       Array.prototype.forEach.call(document.querySelectorAll('[data-avatar]'),function(el){ el.textContent=initial; });
@@ -2136,7 +2177,8 @@ async function loadLoginHistory(){
     const jm=$('judgeModelLabel'); if(jm&&s.judge_model)jm.textContent=prettyModel(s.judge_model)+' · AI Judge';
     // real greeting from the signed-in user (replaces the hardcoded "Yo Fatima")
     try{ const me=await (await api('/v1/auth/me')).json(); const gn=$('greetName');
-      if(gn&&me&&me.email){ const lp=me.email.split('@')[0]; gn.textContent=lp.charAt(0).toUpperCase()+lp.slice(1); } }catch(_){}
+      if(gn&&me){ const nm=(me.full_name&&me.full_name.trim())?me.full_name.trim().split(/\s+/)[0]:(me.email?me.email.split('@')[0]:'');
+        gn.textContent=nm?(nm.charAt(0).toUpperCase()+nm.slice(1)):'there'; } }catch(_){}
     const sub=document.querySelector('#page-dashboard .sub');
     if(sub)sub.textContent=money(s.total_logged)+' events logged · '+((s.grading&&s.grading.pending)||0)+' pending grading';
     const av=document.querySelectorAll('#page-analytics .stats .stat .v');
@@ -2633,6 +2675,11 @@ async function loadLoginHistory(){
       if($('setEmail'))$('setEmail').value=me.email||'';
       if($('setRole'))$('setRole').value=me.role||'';
       if($('setOrg'))$('setOrg').value=me.org_id||'';
+      if($('setName'))$('setName').value=me.full_name||'';
+      const prefs=me.preferences||{}; window.__foxPrefs=prefs;
+      if($('prefHideSensitive'))$('prefHideSensitive').checked=!!prefs.hide_sensitive_metadata;
+      if($('prefNotifyProduct'))$('prefNotifyProduct').checked=!!prefs.notify_product_updates;
+      if($('prefNotifySecurity'))$('prefNotifySecurity').checked=!!prefs.notify_security_alerts;
       _isAdmin=(me.role==='admin');
       window.__meEmail=me.email||'';
       if(window.loadMfa)window.loadMfa(me);
@@ -2641,6 +2688,48 @@ async function loadLoginHistory(){
     const ac=$('auditCard'); if(ac)ac.style.display=_isAdmin?'':'none';
     const wc=$('webhookCard'); if(wc)wc.style.display=_isAdmin?'':'none';
     if(_isAdmin){ loadTeam(); loadAccountAudit(); loadWebhooks(); loadSso(); }
+    if(window.loadDevices)window.loadDevices();
+  };
+  // ── P14 · identity, preferences, devices ──
+  window.saveName=async function(){
+    const v=(($('setName')||{}).value||'').trim(); const st=$('setNameStatus');
+    if(st){ st.textContent='saving…'; st.style.color='var(--muted)'; }
+    try{ const r=await api('/v1/account/profile',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({full_name:v})});
+      if(r.ok){ if(st){ st.textContent='✓ saved'; st.style.color='var(--safe-bg)'; } if(window.foxAvatar)window.foxAvatar(); }
+      else { if(st){ st.textContent='save failed — '+esc(await errText(r)); st.style.color='var(--breach-bg)'; } }
+    }catch(e){ if(st){ st.textContent='could not reach the server'; st.style.color='var(--breach-bg)'; } }
+  };
+  window.savePref=async function(key,val){
+    try{ const r=await api('/v1/account/preferences',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{[key]:!!val}})});
+      if(r.ok){ const d=await r.json(); window.__foxPrefs=d.preferences||window.__foxPrefs||{}; toast('Preference saved'); }
+      else toast('Could not save preference');
+    }catch(e){ toast('Could not reach the server'); }
+  };
+  function deviceRow(s){
+    const ua=String(s.user_agent||'unknown device').slice(0,90);
+    const cur=s.current?' <span class="badge ok" style="margin-left:6px;"><i></i>this device</span>':'';
+    const when='signed in '+(s.created_at?fmtDate(s.created_at):'—')+(s.last_seen_at?(' · seen '+rel(s.last_seen_at)):'');
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:2px dashed var(--line);">'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:11.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(ua)+cur+'</div>'
+      +'<div style="font-size:9.5px;color:var(--muted);font-family:var(--mono);margin-top:2px;">'+(s.ip?esc(s.ip)+' · ':'')+esc(when)+'</div></div>'
+      +(s.current?'':'<button class="btn danger sm" type="button" style="margin:0;" onclick="revokeDevice(\''+s.id+'\')">revoke</button>')+'</div>';
+  }
+  window.loadDevices=async function(){
+    const box=$('devicesList'); if(!box)return;
+    try{ const r=await api('/v1/auth/sessions'); if(!r.ok){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">Sign-in required.</div>'; return; }
+      const d=await r.json(); const items=(d&&Array.isArray(d.items))?d.items:[];
+      box.innerHTML=items.length?items.map(deviceRow).join(''):'<div style="font-size:11px;color:var(--muted);">No active device sessions.</div>';
+    }catch(e){ box.innerHTML='<div style="font-size:11px;color:var(--muted);">Could not load sessions.</div>'; }
+  };
+  window.revokeDevice=async function(id){
+    try{ const r=await api('/v1/auth/sessions/'+encodeURIComponent(id)+'/revoke',{method:'POST'});
+      if(r.ok){ toast('Device signed out'); if(window.loadDevices)window.loadDevices(); } else toast('Revoke failed'); }
+    catch(e){ toast('Could not reach the server'); }
+  };
+  window.logoutEverywhere=async function(){
+    if(!window.confirm('Sign out of ALL devices, including this one?'))return;
+    try{ await api('/v1/auth/logout-all',{method:'POST'}); }catch(e){}
+    location.reload();
   };
   window.ssoSignIn=async function(){
     const email=(($('authEmail')||{}).value||'').trim(); const e=$('authErr');

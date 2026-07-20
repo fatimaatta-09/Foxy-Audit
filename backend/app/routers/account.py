@@ -512,3 +512,45 @@ def get_export(export_id: str, user: User = Depends(require_user), db: Session =
     if j is None or j.org_id != user.org_id:
         raise HTTPException(status_code=404, detail="not found")
     return _export_dict(j)
+
+
+# ─────────────────────────── profile + preferences (P14) ─────────────────────
+class ProfileUpdate(BaseModel):
+    full_name: str | None = None
+
+
+@router.put("/v1/account/profile")
+def update_profile(body: ProfileUpdate, user: User = Depends(require_user),
+                   db: Session = Depends(get_db)):
+    """Set the signed-in user's display name (identity defaults to email; uses the name once set —
+    drives the avatar initial + greeting). Audited via account_actions."""
+    user.full_name = (body.full_name or "").strip()[:120] or None
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email, action="account.profile_update")
+    db.commit()
+    return {"full_name": user.full_name}
+
+
+_ALLOWED_PREFS = {"hide_sensitive_metadata", "notify_product_updates", "notify_security_alerts"}
+
+
+class PreferencesUpdate(BaseModel):
+    preferences: dict
+
+
+@router.get("/v1/account/preferences")
+def get_preferences(user: User = Depends(require_user)):
+    return {"preferences": user.preferences or {}}
+
+
+@router.put("/v1/account/preferences")
+def update_preferences(body: PreferencesUpdate, user: User = Depends(require_user),
+                       db: Session = Depends(get_db)):
+    """Merge the allowed boolean preferences into the user's JSONB bag (unknown keys ignored)."""
+    cur = dict(user.preferences or {})
+    for k, v in (body.preferences or {}).items():
+        if k in _ALLOWED_PREFS:
+            cur[k] = bool(v)
+    user.preferences = cur
+    db.commit()
+    return {"preferences": cur}
