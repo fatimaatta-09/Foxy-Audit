@@ -53,7 +53,7 @@ except ImportError:  # pragma: no cover
 _DATA_TABLES = (
     "organizations, users, api_keys, audit_logs, chain_anchors, org_policies, "
     "staff_users, admin_actions, traffic_events, marketing_leads, stripe_events, "
-    "invoices, usage_daily, evaluation_redemptions"
+    "invoices, usage_daily, evaluation_campaigns, evaluation_redemptions"
 )
 
 
