@@ -11,6 +11,11 @@ default, 30-day expiry, one redemption per email, capped campaign capacity,
 Premium workspace provisioning, dashboard allowance visibility, and hard capture
 enforcement. It has not been merged into `main` or deployed yet.
 
+The threat model and evidence-boundary document is also complete. It records the
+real hash-only data flow, the metadata-only judge boundary, the limits of
+completeness and confidentiality claims, and the production checks required
+before calling the system audit-ready.
+
 ## P0: required before a public or enterprise launch
 
 1. Deploy migration `0035`, set production secrets, and run the real
@@ -44,8 +49,6 @@ enforcement. It has not been merged into `main` or deployed yet.
 
 1. Publish a short, real demonstration recorded against the deployed service:
    SDK capture, dashboard record, verifier result, and an honest anchor status.
-2. Publish a threat model and evidence-boundary document explaining what is
-   hashed locally, what metadata is retained, and what Foxy Audit cannot prove.
-3. Run design-partner pilots in a single regulated workflow at a time, measure
+2. Run design-partner pilots in a single regulated workflow at a time, measure
    time-to-evidence and audit-review effort, and turn confirmed outcomes into
    case studies only with customer approval.
