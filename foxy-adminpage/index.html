@@ -140,12 +140,13 @@ html[data-theme="dark"]{
   /* ══ warm-charcoal ladder — luminance-separated; depth from elevation + shadow, not blur (Phase B) ══ */
   --bg:      #16130F;
   --bg2:     rgba(18,15,12,.55);
-  --surf:    rgba(74,66,56,.30);
-  --surf-solid: rgba(54,47,40,.68);
-  --surf2:   rgba(96,86,74,.16);
-  --surf3:   rgba(255,138,74,.16);
-  --surf-elev: rgba(88,79,68,.60);
-  --surf-over: rgba(102,92,80,.74);
+  /* warmer amber-charcoal surfaces + a touch more opacity — owner: "still looks dead / grey tone" */
+  --surf:    rgba(98,79,58,.34);
+  --surf-solid: rgba(64,52,40,.74);
+  --surf2:   rgba(120,99,74,.18);
+  --surf3:   rgba(255,140,74,.18);
+  --surf-elev: rgba(100,84,64,.66);
+  --surf-over: rgba(114,96,74,.80);
   --head-bg: rgba(40,35,30,.74);
   --line:    rgba(255,248,240,.11);
   --line2:   rgba(255,248,240,.20);
@@ -285,10 +286,12 @@ body::before{
   /* static — owner feedback: no ambient drift behind the glass (Liquid-Glass correction 1) */
 }
 html[data-theme="dark"] body::before{
+  /* brighter, warmer ambient light + a cool teal orb for variety — glass reads alive, not grey */
   background:
-    radial-gradient(560px 460px at 3% 2%, rgba(255,126,46,.3), transparent 55%),
-    radial-gradient(540px 460px at 99% 0%, rgba(52,150,235,.24), transparent 55%),
-    radial-gradient(780px 540px at 98% 114%, rgba(255,120,40,.22), transparent 60%);
+    radial-gradient(640px 520px at 1% 0%, rgba(255,126,46,.42), transparent 56%),
+    radial-gradient(560px 480px at 99% 1%, rgba(52,150,235,.34), transparent 55%),
+    radial-gradient(560px 520px at 58% 122%, rgba(27,175,122,.24), transparent 60%),
+    radial-gradient(760px 560px at 99% 110%, rgba(255,120,40,.30), transparent 60%);
 }
 /* faint film grain over the frosted surfaces — tactile "real glass" finish */
 body::after{
@@ -477,9 +480,9 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 .clay:has(.tbl)::before{opacity:.5}
 /* Liquid Glass refraction is GATED: engines without backdrop-filter:url() keep --refract empty → clean frost,
    never a vanished panel. Only glass skin turns the lens on. */
-@supports (backdrop-filter:url(#foxGlassRefract)) or (-webkit-backdrop-filter:url(#foxGlassRefract)){
-  html[data-skin="glass"]{--refract:url(#foxGlassRefract);}
-}
+/* Liquid-Glass refraction lens DISABLED (owner: "bugged overlay behind the glass") — the
+   feDisplacementMap warped the backdrop into offset ghost panel edges behind every card. Frost
+   blur + the static specular still read as glass, without the artifact. --refract stays empty. */
 /* no backdrop-filter support at all → make chrome surfaces opaque so panels never disappear */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   :root{--surf:rgba(255,255,255,.86);--surf2:rgba(255,255,255,.7)}
@@ -563,11 +566,13 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
   background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);border-color:transparent;
   box-shadow:0 8px 20px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4);
 }
-.btn.pri:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 12px 26px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4)}
+/* Colored buttons set their gradient on :hover too, so the generic `.btn:hover` grey
+   background can never win the cascade and turn them grey. */
+.btn.pri:hover{background:linear-gradient(150deg,var(--fox-hi),var(--fox));filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 12px 26px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4)}
 .btn.danger{background:linear-gradient(150deg,var(--danger-hi),var(--destructive));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(220,38,38,.4), inset 0 1px 0 rgba(255,255,255,.25)}
-.btn.danger:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.btn.danger:hover{background:linear-gradient(150deg,var(--danger-hi),var(--destructive));filter:brightness(1.06);transform:translateY(-1px)}
 .btn.safe{background:linear-gradient(150deg,var(--safe-hi),var(--ok));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(22,163,74,.35), inset 0 1px 0 rgba(255,255,255,.25)}
-.btn.safe:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.btn.safe:hover{background:linear-gradient(150deg,var(--safe-hi),var(--ok));filter:brightness(1.06);transform:translateY(-1px)}
 .btn.sm{padding:6px 10px;font-size:11px;border-radius:8px}
 .btn.sm .ico{width:13px;height:13px}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none;filter:none}
@@ -596,9 +601,11 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 .fauxselect.open .fauxselect-chev{transform:rotate(180deg)}
 .fauxselect.open .fauxselect-trigger{border-color:var(--fox);box-shadow:var(--focus)}
 .fauxselect-list{
-  display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:50;
-  background:var(--head-bg);-webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);
-  border:1px solid var(--line);border-radius:var(--r-sm);
+  display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;
+  /* OPAQUE popover — a translucent glass surface let the page text bleed through the open list.
+     A themed translucent layer over the solid page colour composites to fully opaque in both skins. */
+  background:linear-gradient(var(--surf-solid),var(--surf-solid)), var(--bg);
+  border:1px solid var(--line2);border-radius:var(--r-sm);
   box-shadow:var(--clay);max-height:220px;overflow-y:auto;padding:4px;
 }
 .fauxselect.open .fauxselect-list{display:block}
@@ -1031,7 +1038,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <h1>Ops overview</h1>
           <div class="sub">Everything below reads across <b>all</b> tenants — staff channel only.</div>
         </div>
-        <button class="btn" onclick="loadOverview()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
+        
       </div>
 
       <div class="clay pad" style="margin-bottom:18px;">
@@ -1095,7 +1102,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── ORGS ──────────────── -->
     <section class="page" id="page-health">
-      <div class="pagehead"><div><div class="eyebrow">P0 · operations</div><h1>System health</h1><div class="sub">Durable signals only. The circuit breaker is process-local and intentionally not reported as healthy.</div></div><button class="btn" onclick="loadHealth()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="pagehead"><div><div class="eyebrow">P0 · operations</div><h1>System health</h1><div class="sub">Durable signals only. The circuit breaker is process-local and intentionally not reported as healthy.</div></div></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi"><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></div><div class="clay kpi"><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></div><div class="clay kpi"><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></div><div class="clay kpi"><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" class="sub mono">loading…</div></div></div>
@@ -1116,20 +1123,20 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-deadletter">
-      <div class="pagehead"><div><div class="eyebrow">P0 · grading recovery</div><h1>Dead letters</h1><div class="sub">Failed rows parked after the worker exhausted its retries. Raw prompt and response text are never shown.</div></div><button class="btn" onclick="loadDeadletter()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="pagehead"><div><div class="eyebrow">P0 · grading recovery</div><h1>Dead letters</h1><div class="sub">Failed rows parked after the worker exhausted its retries. Raw prompt and response text are never shown.</div></div></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm pri" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table></div>
     </section>
 
     <section class="page" id="page-anchors">
-      <div class="pagehead"><div><div class="eyebrow">P0 · public-chain receipts</div><h1>Anchor monitor</h1><div class="sub">Latest receipt per tenant, current chain head, freshness, and safe wallet status.</div></div><button class="btn" onclick="loadAnchors()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="pagehead"><div><div class="eyebrow">P0 · public-chain receipts</div><h1>Anchor monitor</h1><div class="sub">Latest receipt per tenant, current chain head, freshness, and safe wallet status.</div></div></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm pri" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="split" style="margin-bottom:18px;"><div class="clay pad" id="anchorSummary"><div class="sub mono">loading…</div></div><div class="clay pad" id="anchorWallet"><div class="sub mono">loading…</div></div></div>
       <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table></div>
     </section>
 
     <section class="page" id="page-alerts">
-      <div class="pagehead"><div><div class="eyebrow">P0 · operator attention</div><h1>Alerts center</h1><div class="sub">Derived from health, grading, and anchor conditions. Acknowledgements are staff-audited.</div></div><button class="btn" onclick="loadAlerts()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="pagehead"><div><div class="eyebrow">P0 · operator attention</div><h1>Alerts center</h1><div class="sub">Derived from health, grading, and anchor conditions. Acknowledgements are staff-audited.</div></div></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm pri" onclick="goOps('alerts')">Alerts</button></div>
       <div class="clay pad"><div id="alertSummary" class="sub mono" style="margin-bottom:14px;">loading…</div><div id="alertRows"><div class="sub mono">loading…</div></div></div>
     </section>
@@ -1145,7 +1152,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <label class="sub mono" style="font-size:10px;display:flex;gap:6px;align-items:center;cursor:pointer;">
             <input type="checkbox" id="showDeleted" onchange="loadOrgs()"> show offboarded
           </label>
-          <button class="btn" onclick="loadOrgs()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
+          
         </div>
       </div>
       <div class="clay pad twrap">
@@ -1170,7 +1177,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <span id="o3Actions" style="display:flex;gap:8px;"></span>
           <button class="btn" onclick="orgVerify()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M12 3a9 9 0 1 0 9 9"/></svg>Verify chain</button>
-          <button class="btn" onclick="if(O3_ID)openOrg(O3_ID)"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
+          
         </div>
       </div>
       <div id="o3Chips" style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;"></div>
@@ -1197,7 +1204,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <h1>Traffic feed</h1>
           <div class="sub">IP &amp; user-agent are HMAC-hashed at capture — nothing here is raw client data.</div>
         </div>
-        <button class="btn" onclick="loadTraffic()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
+        
       </div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
         <div class="clay kpi"><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></div>
@@ -1262,7 +1269,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <h1>Platform staff</h1>
           <div class="sub">Every create/disable lands in the append-only <span class="mono">admin_actions</span> audit trail.</div>
         </div>
-        <button class="btn" onclick="loadStaff()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
+        
       </div>
       <div class="split">
         <div class="clay pad twrap">
@@ -1360,7 +1367,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <h1>Inbox</h1>
           <div class="sub">Contact &amp; support messages. Claiming or replying <b>locks</b> a message to you — others can read but not reply.</div>
         </div>
-        <button class="btn" onclick="loadInbox()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button>
+        
       </div>
       <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start;">
         <div class="clay" style="padding:10px;max-height:78vh;overflow:auto;">
@@ -1375,7 +1382,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <!-- ──────────────── SETTINGS ──────────────── -->
     <!-- ──────────────── REVENUE ──────────────── -->
     <section class="page" id="page-revenue">
-      <div class="pagehead"><div><div class="eyebrow">P4 · finance</div><h1>Revenue</h1><div class="sub">Paid-invoice revenue across all tenants.</div></div><button class="btn" onclick="loadRevenue()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="pagehead"><div><div class="eyebrow">P4 · finance</div><h1>Revenue</h1><div class="sub">Paid-invoice revenue across all tenants.</div></div></div>
       <div class="grid kpis">
         <div class="clay kpi hot"><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></div>
         <div class="clay kpi"><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></div>
@@ -1398,7 +1405,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── SECURITY ──────────────── -->
     <section class="page" id="page-security">
-      <div class="pagehead"><div><div class="eyebrow">P4 · login monitor</div><h1>Security</h1><div class="sub">Login successes and failures across all sites. Watch failed spikes by IP and email.</div></div><button class="btn" onclick="loadSecurity()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="pagehead"><div><div class="eyebrow">P4 · login monitor</div><h1>Security</h1><div class="sub">Login successes and failures across all sites. Watch failed spikes by IP and email.</div></div></div>
       <div class="split">
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">last 7 days</div><div class="panel-t">Failed logins</div></div></div><div id="secTrend" style="min-height:190px;"></div></div>
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by IP</div><div class="panel-t">Top offenders</div></div></div><div id="secOffenders" style="min-height:190px;"></div></div>
@@ -1411,7 +1418,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── AUDIT ──────────────── -->
     <section class="page" id="page-audit">
-      <div class="pagehead"><div><div class="eyebrow">P4 · staff audit trail</div><h1>Audit log</h1><div class="sub">Every staff mutation, filterable and exportable — from the append-only admin_actions.</div></div><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button><button class="btn" onclick="loadAudit()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div></div>
+      <div class="pagehead"><div><div class="eyebrow">P4 · staff audit trail</div><h1>Audit log</h1><div class="sub">Every staff mutation, filterable and exportable — from the append-only admin_actions.</div></div><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button></div></div>
       <div class="clay pad" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
         <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">action (prefix)</div><input class="cin" id="auAction" placeholder="e.g. org." oninput="auditDebounced()"></div>
         <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">actor (email)</div><input class="cin" id="auActor" placeholder="staff@foxy.audit" oninput="auditDebounced()"></div>
@@ -1423,7 +1430,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── LEADS ──────────────── -->
     <section class="page" id="page-leads">
-      <div class="pagehead"><div><div class="eyebrow">P4 · pipeline</div><h1>Leads</h1><div class="sub">Pre-sales pipeline over marketing_leads. Operators can move a lead's stage.</div></div><button class="btn" onclick="loadLeads()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh</button></div>
+      <div class="pagehead"><div><div class="eyebrow">P4 · pipeline</div><h1>Leads</h1><div class="sub">Pre-sales pipeline over marketing_leads. Operators can move a lead's stage.</div></div></div>
       <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">funnel</div><div class="panel-t">Conversion</div></div><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div><div class="fun" id="ldFunnel"></div></div>
       <div id="ldKanban" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
     </section>
