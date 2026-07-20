@@ -30,6 +30,8 @@
   .dlrow{display:flex;gap:10px;flex-wrap:wrap;}
   .muted-note{font-size:12px;color:var(--muted);margin-top:10px;}
   .btn[disabled]{opacity:.45;cursor:not-allowed;transform:none;}
+  .offer-note{display:none;max-width:640px;margin:20px auto 0;padding:14px 17px;border:1.5px solid rgba(255,122,46,.48);border-radius:14px;background:rgba(255,122,46,.09);font-size:12.5px;line-height:1.55;position:relative;z-index:2;}
+  .offer-note b{color:var(--fox);}
 </style>
 </head>
 <body>
@@ -48,6 +50,7 @@
     <p class="sub" id="sub">Three quick steps — save your key, wrap one function, and (optionally) grab the desktop fox.</p>
   </div>
 
+  <div class="offer-note" id="offerNote"></div>
   <div class="steps" id="steps">
     <!-- Step 1 — accept terms -->
     <div class="step-card">
@@ -138,6 +141,18 @@
 
   const keyEl = document.getElementById('apiKey');
   const warnEl = document.getElementById('keyWarn');
+  const offerNote = document.getElementById('offerNote');
+  const offer = data && data.evaluation_offer;
+  if (offer) {
+    const expiry = offer.expires_at ? new Date(offer.expires_at).toLocaleDateString() : 'the end of the evaluation';
+    if (offerNote) {
+      offerNote.style.display = 'block';
+      offerNote.innerHTML = '<b>Premium judge access is active.</b> You have '
+        + Number(offer.credits_total || 0).toLocaleString() + ' Foxy audit-event credits until '
+        + expiry + '. No card was collected and there is no automatic charge. When the allowance ends, new capture stops while your existing evidence, dashboard, and exports remain available.';
+    }
+    document.getElementById('sub').textContent = 'Save your key, wrap a safe real model call, inspect the dashboard, then verify your exported evidence.';
+  }
   if (data && data.api_key) {
     keyEl.textContent = data.api_key;
   } else {

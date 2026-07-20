@@ -620,10 +620,12 @@
   </div>
   <div class="modal-body">
     <p class="modal-eb" id="leadEb">Get started</p>
-    <h3 class="modal-title">Prove it — start free.</h3>
-    <p class="modal-desc">Drop your email and we'll send setup steps and get you going. No credit card to start.</p>
+    <h3 class="modal-title" id="leadTitle">Prove it — start free.</h3>
+    <p class="modal-desc" id="leadDesc">Drop your email and we'll send setup steps and get you going. No credit card to start.</p>
     <input id="leadEmail" type="email" placeholder="you@company.com" autocomplete="email"
            style="width:100%;margin:16px 0 4px;padding:13px 14px;background:var(--surf);border:2px solid var(--line);border-radius:12px;color:var(--ink);font-family:var(--mono);font-size:13px;outline:none;">
+    <input id="leadOfferCode" type="text" placeholder="Evaluation code" autocomplete="one-time-code" spellcheck="false"
+           style="display:none;width:100%;margin:10px 0 4px;padding:13px 14px;background:var(--surf);border:2px solid var(--line);border-radius:12px;color:var(--ink);font-family:var(--mono);font-size:13px;letter-spacing:.06em;text-transform:uppercase;outline:none;">
     <a class="modal-cta" id="leadSubmit" href="#">
       Send it
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -1362,13 +1364,22 @@ const leadBackdrop = document.getElementById('leadBackdrop');
 const leadCard = document.getElementById('leadCard');
 const leadEb = document.getElementById('leadEb');
 const leadEmail = document.getElementById('leadEmail');
+const leadOfferCode = document.getElementById('leadOfferCode');
+const leadTitle = document.getElementById('leadTitle');
+const leadDesc = document.getElementById('leadDesc');
 const leadMsg = document.getElementById('leadMsg');
 let leadSource = 'cta';
 function openLeadModal(source, title){
   leadSource = source || 'cta';
+  const isJudgeOffer = leadSource === 'judge-offer';
   if (leadEb) leadEb.textContent = title || 'Get started';
   if (leadMsg) leadMsg.textContent = '';
   if (leadEmail) leadEmail.value = '';
+  if (leadOfferCode) { leadOfferCode.value = ''; leadOfferCode.style.display = isJudgeOffer ? 'block' : 'none'; }
+  if (leadTitle) leadTitle.textContent = isJudgeOffer ? 'Redeem judge access.' : 'Prove it — start free.';
+  if (leadDesc) leadDesc.textContent = isJudgeOffer
+    ? 'Enter your evaluation code to start premium access with a fixed event allowance. No card and no automatic charge.'
+    : "Drop your email and we'll send setup steps and get you going. No credit card to start.";
   leadBackdrop.classList.add('open'); leadCard.classList.add('open');
   document.body.style.overflow = 'hidden';
   setTimeout(() => leadEmail && leadEmail.focus(), 120);
@@ -1386,6 +1397,19 @@ document.getElementById('leadSubmit').addEventListener('click', async e => {
   leadMsg.style.color = 'var(--muted)'; leadMsg.textContent = 'Working…';
   const src = leadSource || 'cta';
   try {
+    if (src === 'judge-offer') {
+      const offerCode = (leadOfferCode && leadOfferCode.value || '').trim();
+      if (!offerCode) { leadMsg.style.color = 'var(--warn-bg)'; leadMsg.textContent = 'Enter the evaluation code.'; return; }
+      const r = await fetch(FOXY_API + '/v1/signup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, offer_code: offerCode }) });
+      if (!r.ok) {
+        leadMsg.style.color = 'var(--warn-bg)'; leadMsg.textContent = 'That evaluation offer is unavailable.'; return;
+      }
+      const d = await r.json();
+      try { sessionStorage.setItem('foxy_welcome', JSON.stringify({ email, api_key: d.api_key || '', evaluation_offer: d.evaluation_offer || null })); } catch (_) {}
+      leadMsg.style.color = 'var(--safe-bg)'; leadMsg.textContent = '✓ Judge access created — taking you to setup…';
+      window.location.href = '/welcome.html';
+      return;
+    }
     if (src === 'signup-companion' || src === 'signup-guardian') {
       const plan = src === 'signup-guardian' ? 'guardian' : 'companion';
       const r = await fetch(FOXY_API + '/v1/billing/checkout-session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, plan }) });
@@ -1416,6 +1440,11 @@ document.querySelectorAll('[data-lead]').forEach(el => el.addEventListener('clic
   openLeadModal(el.dataset.lead, el.getAttribute('data-lead-title') || 'Get started');
 }));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && leadBackdrop.classList.contains('open')) closeLeadModal(); });
+try {
+  if (new URLSearchParams(location.search).get('redeem') === 'judge') {
+    setTimeout(() => openLeadModal('judge-offer', 'Judge evaluation access'), 80);
+  }
+} catch (_) {}
 
 /* enterprise contact modal → /v1/leads (source=enterprise → priority inbox + superadmin alert) */
 const contactBackdrop = document.getElementById('contactBackdrop');
