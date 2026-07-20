@@ -220,6 +220,12 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none;}
 .vstatus.checking .vstatus-ic{background:var(--surf3);color:var(--fox2);}
 .vstatus-t{font-weight:800;font-size:13px;}
 .vstatus-d{font-size:11px;color:var(--muted);line-height:1.5;margin-top:3px;}
+/* P10 · collapsible policy group */
+.polgroup{margin-top:16px;border-top:2px dashed var(--line);padding-top:4px;}
+.polgroup>summary{cursor:pointer;font-weight:700;font-size:12px;padding:9px 0;list-style:none;display:flex;align-items:center;gap:8px;}
+.polgroup>summary::-webkit-details-marker{display:none;}
+.polgroup>summary::before{content:'▸';color:var(--fox2);font-size:10px;transition:transform .15s;}
+.polgroup[open]>summary::before{transform:rotate(90deg);}
 @media(max-width:820px){ .skinseg{display:none;} }   /* on small screens the skin picker lives in Settings (P14) */
 
 html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth;}
@@ -1278,11 +1284,16 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <div class="page" id="page-policy">
       <div class="pg-head">
         <div><div class="eyebrow" id="judgeModelLabel">AI Judge</div><div class="h1">Policy ruleset<span class="fox-dot">.</span></div><div class="sub">what the Judge flags or blocks across your workspace</div></div>
-        <button class="btn pri sm" onclick="savePolicy()">save ruleset</button>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span id="polSaveStatus" style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;"></span>
+          <button class="btn pri sm" onclick="savePolicy()" style="margin:0;">save ruleset</button>
+        </div>
       </div>
       <div class="g2">
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Content safeguards</div></div></div>
+          <input class="cin" id="polSearch" placeholder="Search safeguards…" style="margin:0 0 12px;" oninput="filterPolicies()" autocomplete="off">
+          <div id="polNoMatch" style="display:none;font-size:11px;color:var(--muted);padding:8px 0;">No safeguard matches your search.</div>
           <div class="prow"><div><div class="pname">Block PII — names, SSNs, emails</div><div class="pdesc">Judge rejects prompts/responses with detectable personal identifiers</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polPii" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
           <div class="prow"><div><div class="pname">Flag prompt injections</div><div class="pdesc">marks jailbreak and indirect injection attempts for review</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polInjection" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
           <div class="prow"><div><div class="pname">Regulated data mode — HIPAA / financial</div><div class="pdesc">stricter grading for regulated workloads (PHI, cardholder, account data)</div><span class="sev med">medium severity</span></div><label class="toggle"><input type="checkbox" id="polRegulated"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
@@ -1295,12 +1306,15 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <select id="polEnforcement"><option value="block">block on breach — highest protection</option><option value="flag">flag only, allow through</option><option value="monitor">silent monitor (log only)</option></select>
           <div class="flabel">confidence threshold</div>
           <select id="polConfidence"><option value="high">high — fewer false positives</option><option value="balanced">balanced (default)</option><option value="low">low — catch every edge case</option></select>
-          <div class="flabel">notification on breach</div>
-          <select id="polNotify"><option value="immediate">immediate alert</option><option value="digest">batch — hourly digest</option><option value="none">no notification</option></select>
-          <div class="flabel">alert email <span style="color:var(--muted);font-weight:400;">(blank = workspace contact)</span></div>
-          <input class="cin" id="polNotifyEmail" type="email" placeholder="security@yourco.com">
-          <div class="flabel">webhook URL <span style="color:var(--muted);font-weight:400;">(optional — POSTed on each breach)</span></div>
-          <input class="cin" id="polNotifyWebhook" type="url" placeholder="https://yourco.com/foxy-hook">
+          <details class="polgroup" open>
+            <summary>Alerts &amp; webhooks <span style="color:var(--muted);font-weight:400;">· where breach alerts go</span></summary>
+            <div class="flabel">notification on breach</div>
+            <select id="polNotify"><option value="immediate">immediate alert</option><option value="digest">batch — hourly digest</option><option value="none">no notification</option></select>
+            <div class="flabel">alert email <span style="color:var(--muted);font-weight:400;">(blank = workspace contact)</span></div>
+            <input class="cin" id="polNotifyEmail" type="email" placeholder="security@yourco.com">
+            <div class="flabel">webhook URL <span style="color:var(--muted);font-weight:400;">(optional — POSTed on each breach)</span></div>
+            <input class="cin" id="polNotifyWebhook" type="url" placeholder="https://yourco.com/foxy-hook">
+          </details>
         </div>
       </div>
       <div class="clay pad" style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.65;">
@@ -2474,8 +2488,25 @@ async function loadLoginHistory(){
       if($('polNotify')&&p.notify_on_breach)$('polNotify').value=p.notify_on_breach;
       if($('polNotifyEmail'))$('polNotifyEmail').value=p.notify_email||'';
       if($('polNotifyWebhook'))$('polNotifyWebhook').value=p.notify_webhook_url||'';
+      wirePolicy(); polStatus('','var(--muted)');
     }catch(e){}
   };
+  function polStatus(txt,color){ const s=$('polSaveStatus'); if(s){ s.textContent=txt||''; s.style.color=color||'var(--muted)'; } }
+  window.markPolicyDirty=function(){ polStatus('● Unsaved changes','var(--warn-bg)'); };
+  window.filterPolicies=function(){
+    const q=(($('polSearch')||{}).value||'').trim().toLowerCase(); let shown=0;
+    document.querySelectorAll('#page-policy .prow').forEach(function(row){
+      const hit=!q||(row.textContent||'').toLowerCase().indexOf(q)>=0;
+      row.style.display=hit?'':'none'; if(hit)shown++;
+    });
+    const nm=$('polNoMatch'); if(nm)nm.style.display=(q&&shown===0)?'block':'none';
+  };
+  let _polWired=false;
+  function wirePolicy(){ if(_polWired)return; _polWired=true;
+    ['polMaxTokens','polEnforcement','polConfidence','polNotify','polNotifyEmail','polNotifyWebhook'].forEach(function(id){
+      const el=$(id); if(el){ el.addEventListener('change',window.markPolicyDirty); el.addEventListener('input',window.markPolicyDirty); } });
+    document.querySelectorAll('#page-policy .toggle').forEach(function(t){ t.addEventListener('click',function(){ setTimeout(window.markPolicyDirty,0); }); });
+  }
   window.savePolicy=async function(){
     const mt=parseInt(($('polMaxTokens')||{}).value,10);
     const em=(($('polNotifyEmail')||{}).value||'').trim();
@@ -2486,8 +2517,9 @@ async function loadLoginHistory(){
       notify_on_breach:($('polNotify')||{}).value||'immediate',
       notify_email:em||null, notify_webhook_url:wh||null };
     try{ const r=await api('/v1/policies',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-      toast(r.ok?'Policy ruleset saved and propagated':('Save failed — '+await errText(r)));
-    }catch(e){ toast('Could not reach the server'); }
+      if(r.ok){ toast('Policy ruleset saved and propagated'); polStatus('✓ Saved','var(--safe-bg)'); }
+      else { toast('Save failed — '+await errText(r)); polStatus('Save failed','var(--breach-bg)'); }
+    }catch(e){ toast('Could not reach the server'); polStatus('Could not reach the server','var(--breach-bg)'); }
   };
 
   // ── Keys (B2) ──
