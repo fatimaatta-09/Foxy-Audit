@@ -85,6 +85,9 @@
   --warnc:#9E4707;   --warn-soft:rgba(245,158,11,.20);   /* light contrast fix: ~4.9:1 on .chip.warn tint (was #B45309 ≈4.0) */
   --infoc:#1D4ED8;   --info-soft:rgba(59,130,246,.16);
   --neutral:#5C5044; --neutral-soft:rgba(124,74,26,.12);
+  /* cool data-viz accents (colour pass) — validated categorical hues via the dataviz skill;
+     let single-series charts carry their own hue so the console is not all-orange */
+  --teal:#1BAF7A; --violet:#4A3AA7;
 
   /* ─── elevation ─── */
   --shadow:    rgba(120,60,10,.14);
@@ -181,6 +184,7 @@ html[data-theme="dark"]{
   --warnc:#FBBF24;   --warn-soft:rgba(245,158,11,.20);
   --infoc:#93C5FD;   --info-soft:rgba(59,130,246,.20);
   --neutral:#BEAE9A; --neutral-soft:rgba(255,255,255,.07);
+  --teal:#199E70; --violet:#9085E9;   /* dark steps of the cool accents (validated on the dark surface) */
 
   --shadow:    rgba(0,0,0,.55);
   --clay:      0 1px 0 rgba(255,244,232,.06),0 14px 34px rgba(0,0,0,.55),inset 0 1px 0 var(--rim);
@@ -1816,7 +1820,10 @@ function skeleton(el,kind,cnt){el=(typeof el==='string')?$(el):el;if(!el)return;
 /* E6 · specular is now STATIC (owner feedback: calm, still glass). The highlight sits at the
    fixed --mx/--my defaults (30%/0%); no pointer-tracking, no ambient motion, no per-move repaint. */
 function _cssvar(n,f){try{var v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||f;}catch(e){return f;}}
-function _chartPalette(){return [_cssvar('--fox','#FF6A1A'),_cssvar('--blue','#2E90E0'),_cssvar('--ok','#15803D'),_cssvar('--warnc','#B45309'),_cssvar('--infoc','#1D4ED8'),_cssvar('--neutral','#5C5044')];}
+/* categorical order (dataviz skill): orange, blue, green, violet, teal, amber — the CVD-optimal
+   ordering (worst adjacent normal-vision ΔE ≥ 24; the first four slots are maximally separated for
+   the common ≤4-series case). Multi-series charts (plan-mix donut, revenue-by-plan) cycle through it. */
+function _chartPalette(){return [_cssvar('--fox','#FF6A1A'),_cssvar('--blue','#2E90E0'),_cssvar('--ok','#15803D'),_cssvar('--violet','#4A3AA7'),_cssvar('--teal','#1BAF7A'),_cssvar('--warnc','#B45309')];}
 var _DASH=['0','5 4','2 3','8 3 2 3','1 4'];
 function _fmtNum(n){return (typeof n==='number')?n.toLocaleString(undefined,{maximumFractionDigits:2}):String(n);}
 function _niceMax(v){ if(!(v>0))return 1; var p=Math.pow(10,Math.floor(Math.log10(v))); var f=v/p; var m=f<=1?1:f<=2?2:f<=5?5:10; return m*p; }
@@ -2302,7 +2309,7 @@ async function loadOverview(){
   const lf=s.leads_by_status||{};
   const lmax=Math.max(lf.new||0,lf.trial||0,lf.converted||0,lf.churned||0);
   $('leadFun').innerHTML=
-    funnelRow('new',lf.new||0,lmax)+
+    funnelRow('new',lf.new||0,lmax,'var(--blue)')+
     funnelRow('trial',lf.trial||0,lmax,'var(--warn-bg)')+
     funnelRow('converted',lf.converted||0,lmax,'var(--safe-bg)')+
     funnelRow('churned',lf.churned||0,lmax,'var(--breach-bg)');
@@ -2311,7 +2318,7 @@ async function loadOverview(){
     const t=await rt.json();const bs=t.by_site||{};
     const smax=Math.max(bs.marketing||0,bs.app||0,bs.admin||0);
     $('siteFun').innerHTML=
-      funnelRow('marketing',bs.marketing||0,smax)+
+      funnelRow('marketing',bs.marketing||0,smax,'var(--teal)')+
       funnelRow('app',bs.app||0,smax,'var(--fox2)')+
       funnelRow('admin',bs.admin||0,smax,'var(--info-bg)');
     $('siteErrs').innerHTML=(t.errors||0)>0
@@ -2362,6 +2369,7 @@ async function renderOvTrend(){
   $('ovTrendTotal').textContent=isRev?_revFmt(d.total/100):num(d.total);
   _ovDelta('ovTrendDelta',d.delta_pct);
   chart(el,{type:'area',height:220,labels:(d.points||[]).map(p=>p.day),xFormat:v=>String(v).slice(5),
+    colors:[_cssvar(isRev?'--ok':'--teal', isRev?'#15803D':'#1BAF7A')],   /* revenue=green, activity=teal */
     yFormat:isRev?(v=>'$'+num(Math.round(v))):num, series:[{name:metric,values:vals}],
     ariaLabel:metric+' over the last 30 days', empty:'No data in the last 30 days'});
 }
@@ -2384,7 +2392,7 @@ async function loadTopOrgs(){
     yFormat:v=>v>=1000?(Math.round(v/1000))+'k':v, ariaLabel:'top organizations by usage'});
 }
 async function loadKpiSparks(){
-  const cfg=[['interactions','kLogsSpark','kLogsFoot','--fox'],
+  const cfg=[['interactions','kLogsSpark','kLogsFoot','--teal'],
              ['breaches','kBreachesSpark','kBreachesFoot','--breach-bg']];
   for(const c of cfg){
     let r; try{ r=await api('/admin/v1/stats/timeseries?metric='+c[0]+'&days=30'); }catch(e){ r=null; }
@@ -2516,9 +2524,10 @@ function renderO3Header(d){
     '<div class="clay kpi"><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></div>';
   if(usage.length){
     chart('o3Usage',{type:'area',height:200,labels:days,xFormat:v=>String(v).slice(5),
+      colors:[_cssvar('--teal','#1BAF7A'),_cssvar('--danger','#B91C1C')],   /* interactions=teal, breaches=red */
       series:[{name:'interactions',values:logs},{name:'breaches',values:breaches}],
       ariaLabel:'usage over time for '+d.name});
-    chart('o3spInt',{type:'sparkline',height:32,series:[{values:logs}]});
+    chart('o3spInt',{type:'sparkline',height:32,series:[{values:logs,color:_cssvar('--teal','#1BAF7A')}]});
     const bc=(getComputedStyle(document.documentElement).getPropertyValue('--breach-bg')||'').trim()||'#DC2626';
     chart('o3spBr',{type:'sparkline',height:32,series:[{values:breaches,color:bc}]});
   } else {
@@ -2958,6 +2967,7 @@ async function loadRevenue(){
   $('rvTrial').textContent=num(d.trialing||0);
   const months=(d.monthly||[]).map(x=>x.month);
   chart('rvMonthly',{type:'area',height:200,labels:months,xFormat:v=>String(v).slice(2),
+    colors:[_cssvar('--ok','#15803D')],   /* revenue=green */
     series:[{name:'revenue',values:(d.monthly||[]).map(x=>x.cents/100)}],
     yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'monthly revenue', empty:'No paid invoices yet'});
   const bpm=d.by_plan_monthly||[]; const plans=['free','pro','max','premium'];
@@ -2991,10 +3001,11 @@ async function loadSecurity(){
   const d=await r.json();
   const days=(d.series||[]).map(x=>x.day);
   chart('secTrend',{type:'line',height:190,labels:days,xFormat:v=>String(v).slice(5),
+    colors:[_cssvar('--danger','#B91C1C'),_cssvar('--teal','#1BAF7A')],   /* failed=red, success=teal (CVD-safe, not red/green) */
     series:[{name:'failed',values:(d.series||[]).map(x=>x.failed)},{name:'success',values:(d.series||[]).map(x=>x.success)}],
     ariaLabel:'logins over time', empty:'No login activity yet'});
   const off=d.top_offenders||[];
-  if(off.length) chart('secOffenders',{type:'bar',height:190,labels:off.map(o=>o.ip),series:[{name:'failed',values:off.map(o=>o.failed)}],ariaLabel:'top offending IPs'});
+  if(off.length) chart('secOffenders',{type:'bar',height:190,labels:off.map(o=>o.ip),colors:[_cssvar('--violet','#4A3AA7')],series:[{name:'failed',values:off.map(o=>o.failed)}],ariaLabel:'top offending IPs'});
   else $('secOffenders').innerHTML='<div class="chart-empty">No failed logins yet</div>';
   const wl=d.watchlist||[];
   $('secWatch').innerHTML=wl.length?wl.map(w=>`<tr><td class="mono" style="font-size:11px;">${esc(w.email)}</td><td class="mono" style="text-align:right;color:var(--danger);font-weight:700;">${num(w.failed_24h)}</td><td class="mono" style="font-size:10px;">${fmtTime(w.last_at)}</td></tr>`).join(''):'<tr><td colspan="3" class="sub mono">no lockout signals</td></tr>';
@@ -3035,7 +3046,7 @@ async function loadLeads(){
   const d=await r.json();
   const c=d.counts||{new:0,trial:0,converted:0,churned:0};
   const mx=Math.max(c.new,c.trial,c.converted,c.churned,1);
-  $('ldFunnel').innerHTML=funnelRow('new',c.new,mx)+funnelRow('trial',c.trial,mx,'var(--warn-bg)')+funnelRow('converted',c.converted,mx,'var(--safe-bg)')+funnelRow('churned',c.churned,mx,'var(--breach-bg)');
+  $('ldFunnel').innerHTML=funnelRow('new',c.new,mx,'var(--blue)')+funnelRow('trial',c.trial,mx,'var(--warn-bg)')+funnelRow('converted',c.converted,mx,'var(--safe-bg)')+funnelRow('churned',c.churned,mx,'var(--breach-bg)');
   const cols=[['new','New','info'],['trial','Trial','warn'],['converted','Converted','safe'],['churned','Churned','bad']];
   $('ldKanban').innerHTML=cols.map(([k,label,col])=>{
     const items=(d.buckets&&d.buckets[k])||[];
