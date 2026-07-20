@@ -62,6 +62,33 @@ def _presidio_signals(text: str) -> list[str]:
         return []
 
 
+# Ordered so multi-digit spans (cards) are handled before the narrower patterns.
+# Reuses the exact regexes above so redaction and detection never drift apart.
+_REDACTIONS = (
+    (_SSN_RE, "ssn"),
+    (_PHONE_RE, "phone"),
+    (_EMAIL_RE, "email"),
+    (_IPV4_RE, "ip_address"),
+)
+
+
+def redact(text: str) -> str:
+    """Replace detected PII spans with content-blind ``[REDACTED:<label>]`` markers.
+
+    Runs entirely in-process on the host (like detection); the raw values never
+    leave. Credit cards are Luhn-gated exactly as in detection so we never mangle
+    an unrelated long digit run.
+    """
+    def _card_sub(match: "re.Match[str]") -> str:
+        digits = re.sub(r"\D", "", match.group())
+        return "[REDACTED:credit_card]" if _luhn_ok(digits) else match.group()
+
+    out = _CARD_CANDIDATE_RE.sub(_card_sub, str(text))
+    for regex, label in _REDACTIONS:
+        out = regex.sub(f"[REDACTED:{label}]", out)
+    return out
+
+
 def detect_pii(prompt_s: str, response_s: str) -> list[str]:
     """De-duplicated PII SIGNAL labels (never raw values) for prompt+response.
     Lightweight regex always; Presidio signals appended when the extra is present."""
