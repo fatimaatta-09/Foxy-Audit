@@ -9,10 +9,10 @@
 <meta name="theme-color" content="#FEF4ED">
 <script>(function(){try{
   var r=document.documentElement;
-  var t=localStorage.getItem('foxy_admin_theme')||'light';
+  var t=localStorage.getItem('foxy_admin_theme')||((window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light');
   var sk=localStorage.getItem('foxy_admin_skin')||'glass';
   r.dataset.theme=t; r.dataset.skin=sk; r.dataset.density=localStorage.getItem('foxy_admin_density')||'comfortable';
-  if(t==='dark'){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#140E09');}
+  if(t==='dark'){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#16130F');}
 }catch(e){}})();</script>
 <!-- Self-hosted fonts (embedded woff2, latin subset) — no external CDN, admin-CSP-safe.
      Poppins (display/UI/body) + JetBrains Mono (data/hashes/IDs). Regenerate: scratchpad/inject_fonts.py -->
@@ -47,7 +47,7 @@
   --head-bg: rgba(255,248,242,.74);   /* sticky table header       */
   --line:    rgba(124,74,26,.16);     /* hairline dividers         */
   --line2:   rgba(124,74,26,.30);     /* stronger dividers (th)    */
-  --rim:     rgba(255,255,255,.75);   /* glossy glass top-edge     */
+  --rim:     rgba(255,255,255,.92);   /* glossy glass top-edge     */
   --grain:   .34;                     /* film-grain strength       */
 
   /* ─── text (warm) ─── */
@@ -94,7 +94,7 @@
   --clay-press:0 3px 10px rgba(120,60,10,.10);
   --ring:      0 0 0 3px rgba(234,88,12,.4);
   --gate-overlay: rgba(60,28,8,.42);
-  --glass:     saturate(185%) blur(26px);
+  --glass:     var(--refract) saturate(180%) blur(16px);
   --glass-sm:  saturate(175%) blur(12px);
   --glass-data: saturate(150%) blur(14px);   /* crisp frost for dense data panels */
   --focus:     0 0 0 3px color-mix(in srgb, var(--fox) 30%, transparent);
@@ -110,61 +110,90 @@
   --r-lg: 16px;
   --r-md: 12px;
   --r-sm: 9px;
+
+  /* ─── motion (Phase A — micro-interactions 120–340ms, ease-out entering) ─── */
   --dur: .18s;
+  --dur-fast: .12s;
+  --dur-slow: .34s;
+  --ease-out:    cubic-bezier(.22,1,.36,1);
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);
+
+  /* ─── spacing scale (4px base) ─── */
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:20px; --s-6:24px; --s-7:32px; --s-8:40px;
+  /* ─── interaction state (skins override for their own tactility) ─── */
+  --hover-y:-3px; --press-y:1px; --press-scale:.988;
+  /* ─── primary/semantic gradient endpoints + on-color (kills hardcoded hex; --fox-hi above) ─── */
+  --on-pri:#2A1204; --danger-hi:#EF4444; --safe-hi:#22C55E;
+  /* ─── Liquid-Glass specular + refraction (clay sets these to none in Phase D) ─── */
+  --spec:rgba(255,255,255,.90); --spec-soft:rgba(255,255,255,.42);
+  --glass-tint:rgba(255,255,255,.10);
+  --refract: ;   /* default OFF → --glass resolves to frost only. @supports gate (Phase C) flips it to url() for glass skin */
+  /* ─── elevated surfaces (modals / popovers) — light defaults; dark ramp sets its own ─── */
+  --surf-elev:rgba(255,255,255,.86); --surf-over:rgba(255,255,255,.93);
 }
 
 /* ══ DARK MODE — warm dark glass over a deep ember gradient ══ */
 html[data-theme="dark"]{
-  --bg:      #140E09;
-  --bg2:     rgba(28,20,13,.56);
-  --surf:    rgba(44,32,22,.40);
-  --surf-solid: rgba(40,29,19,.66);
-  --surf2:   rgba(66,48,33,.30);
-  --surf3:   rgba(255,122,46,.18);
-  --head-bg: rgba(34,24,15,.70);
-  --line:    rgba(255,255,255,.10);
-  --line2:   rgba(255,255,255,.18);
-  --rim:     rgba(255,255,255,.10);
+  /* ══ warm-charcoal ladder — luminance-separated; depth from elevation + shadow, not blur (Phase B) ══ */
+  --bg:      #16130F;
+  --bg2:     rgba(18,15,12,.55);
+  --surf:    rgba(74,66,56,.30);
+  --surf-solid: rgba(54,47,40,.68);
+  --surf2:   rgba(96,86,74,.16);
+  --surf3:   rgba(255,138,74,.16);
+  --surf-elev: rgba(88,79,68,.60);
+  --surf-over: rgba(102,92,80,.74);
+  --head-bg: rgba(40,35,30,.74);
+  --line:    rgba(255,248,240,.11);
+  --line2:   rgba(255,248,240,.20);
+  --rim:     rgba(255,252,247,.14);
+  --spec:    rgba(255,255,255,.22);
+  --spec-soft:rgba(255,255,255,.10);
+  --glass-tint:rgba(255,255,255,.04);
+  --grain:   .20;
 
-  --ink:     #F8F1E8;
-  --ink2:    #E4D8C8;
-  --muted:   #B7A794;
-  --muted2:  #8C7C6A;
+  --ink:     #F6EFE6;
+  --ink2:    #E6DBCC;
+  --muted:   #BEAE9A;
+  --muted2:  #A2917C;   /* ≥4.5:1 on data panels (was ~4.0) */
 
-  --fox:     #FF7A2E;
-  --fox2:    #FF9D52;
-  --fox3:    #FFB877;
-  --foxdeep: #8A3611;
-  --fox-glow:rgba(255,122,46,.5);
+  --fox:     #FF8636;
+  --fox2:    #FFAD6E;   /* text-orange role-flip — ~8.1:1 on --surf-solid */
+  --fox3:    #FFC79A;
+  --foxdeep: #7C2D12;
+  --fox-glow:rgba(255,134,54,.50);
+  --fox-hi:  #FFA25A;
+  --on-pri:  #241000;
   --blue:    #5AB0FF;
   --blue2:   #3AA0FF;
 
-  --accent:      #FF7A2E;
-  --accent-ink:  #FFB877;
-  --accent-soft: rgba(255,122,46,.20);
+  --accent:      #FF8636;
+  --accent-ink:  #FFC79A;
+  --accent-soft: rgba(255,138,74,.20);
 
-  --safe-bg:   #22C55E; --safe-tx:   #052E16;
-  --breach-bg: #F87171; --breach-tx: #2A0505;
+  --safe-bg:   #22C55E; --safe-tx:   #052E16; --safe-hi:   #34D77F;
+  --breach-bg: #F87171; --breach-tx: #2A0505; --danger-hi: #F98A8A;
   --warn-bg:   #F59E0B; --warn-tx:   #2A1D00;
   --info-bg:   #3AA0FF; --info-tx:   #06121F;
 
-  --ok:#4ADE80;      --ok-soft:rgba(34,197,94,.2);
-  --danger:#F87171;  --danger-soft:rgba(248,113,113,.2);
-  --warnc:#FBBF24;   --warn-soft:rgba(245,158,11,.22);
-  --infoc:#93C5FD;   --info-soft:rgba(59,130,246,.22);
-  --neutral:#B7A794; --neutral-soft:rgba(255,255,255,.08);
+  --ok:#4ADE80;      --ok-soft:rgba(34,197,94,.18);
+  --danger:#FCA5A5;  --danger-soft:rgba(248,113,113,.18);
+  --warnc:#FBBF24;   --warn-soft:rgba(245,158,11,.20);
+  --infoc:#93C5FD;   --info-soft:rgba(59,130,246,.20);
+  --neutral:#BEAE9A; --neutral-soft:rgba(255,255,255,.07);
 
-  --shadow:    rgba(0,0,0,.5);
-  --clay:      0 12px 36px rgba(0,0,0,.5), inset 0 1px 0 var(--rim);
-  --clay-sm:   0 8px 22px rgba(0,0,0,.45), inset 0 1px 0 var(--rim);
-  --clay-press:0 4px 12px rgba(0,0,0,.4);
-  --ring:      0 0 0 3px rgba(255,122,46,.45);
-  --gate-overlay: rgba(8,5,3,.62);
-  --glass-data: saturate(150%) blur(14px);
+  --shadow:    rgba(0,0,0,.55);
+  --clay:      0 1px 0 rgba(255,244,232,.06),0 14px 34px rgba(0,0,0,.55),inset 0 1px 0 var(--rim);
+  --clay-sm:   0 1px 0 rgba(255,244,232,.05),0 8px 20px rgba(0,0,0,.48),inset 0 1px 0 var(--rim);
+  --clay-press:inset 0 2px 8px rgba(0,0,0,.55);
+  --ring:      0 0 0 3px rgba(255,134,54,.48);
+  --gate-overlay: rgba(8,5,3,.64);
   --focus:     0 0 0 3px color-mix(in srgb, var(--fox) 42%, transparent);
-  --elev-hi:   0 16px 40px rgba(0,0,0,.55), inset 0 1px 0 var(--rim);
-  --elev-btn:  0 8px 20px rgba(0,0,0,.45);
-  --fox-hi:    #FF9D52;
+  --elev-hi:   0 22px 46px rgba(0,0,0,.60),inset 0 1px 0 var(--rim);
+  --elev-btn:  0 10px 22px rgba(0,0,0,.48);
+  --glass:     var(--refract) saturate(170%) blur(16px);
+  --glass-sm:  saturate(160%) blur(10px);
+  --glass-data:saturate(150%) blur(14px);   /* NO url() — crisp data */
 }
 
 /* ==========================================================================
@@ -174,43 +203,51 @@ html[data-theme="dark"]{
    special-casing. Glass is the default (:root / [data-theme]); clay = opt-in.
    ========================================================================== */
 html[data-skin="clay"]{
-  --bg2:     #F2E5D7;
-  --surf:    #FBF2EA;                 /* opaque, matte */
-  --surf-solid: #FDF6EF;
-  --surf2:   #F1E3D4;
-  --surf3:   #FBE3D0;
-  --head-bg: #F6EADE;
-  --line:    rgba(124,74,26,.15);
-  --line2:   rgba(124,74,26,.24);
-  --rim:     rgba(255,255,255,.9);    /* glossy top rim */
-  --grain:   .12;
-  --glass:none; --glass-sm:none; --glass-data:none;
-  /* extruded: outer drop + inner rim highlight + inner bottom shade */
-  --clay:      0 10px 22px rgba(140,84,30,.16), 0 2px 5px rgba(140,84,30,.12), inset 0 1px 0 var(--rim), inset 0 -2px 5px rgba(140,84,30,.07);
-  --clay-sm:   0 6px 14px rgba(140,84,30,.14), inset 0 1px 0 var(--rim), inset 0 -1px 3px rgba(140,84,30,.06);
-  --clay-press:inset 0 2px 6px rgba(140,84,30,.18), inset 0 -1px 0 var(--rim);
-  --elev-hi:   0 16px 30px rgba(140,84,30,.2), inset 0 1px 0 var(--rim), inset 0 -2px 6px rgba(140,84,30,.08);
-  --elev-btn:  0 8px 16px rgba(140,84,30,.18), inset 0 1px 0 var(--rim);
+  --bg2:#F1E3D4;--surf:#FBF3EB;--surf-solid:#FEF8F2;--surf2:#F1E3D4;--surf3:#FBE3D0;--head-bg:#F6EADE;
+  --surf-elev:#FDF6EF;--surf-over:#FFFBF6;
+  --line:rgba(124,74,26,.15);--line2:rgba(124,74,26,.24);
+  --rim:rgba(255,255,255,.95);--grain:.10;
+  /* Skeuomorphism: matte + opaque — kill frost, refraction lens, and the glass specular */
+  --glass:none;--glass-sm:none;--glass-data:none;--refract:none;--spec:none;--spec-soft:none;--glass-tint:transparent;
+  /* layered bevel: hairline top-gloss + soft ambient + deep cast + inner rim + inner bottom shade */
+  --clay:0 1px 0 rgba(255,255,255,.75),0 2px 4px rgba(140,84,30,.10),0 12px 26px rgba(140,84,30,.16),inset 0 1px 0 var(--rim),inset 0 -3px 6px rgba(140,84,30,.09);
+  --clay-sm:0 1px 0 rgba(255,255,255,.65),0 6px 14px rgba(140,84,30,.13),inset 0 1px 0 var(--rim),inset 0 -2px 4px rgba(140,84,30,.07);
+  --clay-press:inset 0 2px 5px rgba(140,84,30,.22),inset 0 4px 9px rgba(140,84,30,.12),inset 0 -1px 0 rgba(255,255,255,.5);
+  --elev-hi:0 22px 42px rgba(140,84,30,.22),0 4px 10px rgba(140,84,30,.14),inset 0 1px 0 var(--rim),inset 0 -3px 8px rgba(140,84,30,.10);
+  --elev-btn:0 10px 18px rgba(140,84,30,.20),inset 0 1px 0 var(--rim);
+  --hover-y:-2px;--press-y:1px;--press-scale:.99;
 }
 html[data-skin="clay"][data-theme="dark"]{
-  --bg2:     #211711;
-  --surf:    #241A12;
-  --surf-solid: #281D14;
-  --surf2:   #2F2217;
-  --surf3:   #3A2A1C;
-  --head-bg: #201710;
-  --line:    rgba(255,255,255,.08);
-  --line2:   rgba(255,255,255,.14);
-  --rim:     rgba(255,255,255,.07);
-  --grain:   .10;
-  --clay:      0 12px 26px rgba(0,0,0,.55), 0 2px 5px rgba(0,0,0,.4), inset 0 1px 0 var(--rim), inset 0 -2px 6px rgba(0,0,0,.4);
-  --clay-sm:   0 8px 18px rgba(0,0,0,.5), inset 0 1px 0 var(--rim), inset 0 -1px 3px rgba(0,0,0,.34);
-  --clay-press:inset 0 2px 7px rgba(0,0,0,.55), inset 0 -1px 0 var(--rim);
-  --elev-hi:   0 18px 34px rgba(0,0,0,.6), inset 0 1px 0 var(--rim);
-  --elev-btn:  0 8px 18px rgba(0,0,0,.5), inset 0 1px 0 var(--rim);
+  --bg2:#1E1712;--surf:#241C15;--surf-solid:#2A2119;--surf2:#322619;--surf3:#3D2E1E;--head-bg:#221A13;
+  --surf-elev:#2E251C;--surf-over:#352A20;
+  --line:rgba(255,248,240,.08);--line2:rgba(255,248,240,.15);
+  --rim:rgba(255,244,230,.08);--grain:.10;
+  --clay:0 1px 0 rgba(255,240,225,.05),0 2px 5px rgba(0,0,0,.5),0 14px 30px rgba(0,0,0,.6),inset 0 1px 0 var(--rim),inset 0 -3px 7px rgba(0,0,0,.5);
+  --clay-sm:0 1px 0 rgba(255,240,225,.04),0 8px 18px rgba(0,0,0,.5),inset 0 1px 0 var(--rim),inset 0 -2px 4px rgba(0,0,0,.4);
+  --clay-press:inset 0 2px 7px rgba(0,0,0,.6),inset 0 4px 10px rgba(0,0,0,.4),inset 0 -1px 0 rgba(255,240,225,.05);
+  --elev-hi:0 22px 40px rgba(0,0,0,.62),inset 0 1px 0 var(--rim),inset 0 -3px 8px rgba(0,0,0,.5);
+  --elev-btn:0 10px 20px rgba(0,0,0,.5),inset 0 1px 0 var(--rim);
 }
 /* Clay is opaque + matte - calm the frosted light orbs so surfaces read solid */
 html[data-skin="clay"] body::before{opacity:.45;filter:blur(70px)}
+/* ── Skeuomorphism surface treatments — reuse the .clay pseudos (base geometry from the Phase C rule),
+   scoped :not(.kpi) so KPI cards keep their accent-bar ::before ── */
+html[data-skin="clay"] .clay:not(.kpi)::before{
+  background:linear-gradient(180deg,rgba(255,255,255,.55),transparent 40%);
+  mix-blend-mode:normal;animation:none;box-shadow:none;
+}
+html[data-theme="dark"][data-skin="clay"] .clay:not(.kpi)::before{
+  background:linear-gradient(180deg,rgba(255,244,230,.06),transparent 38%);
+}
+/* faint pressed grain (data:svg is already used for body grain → CSP permits it) */
+html[data-skin="clay"] .clay:not(.kpi)::after{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23c)'/%3E%3C/svg%3E");
+  background-size:120px 120px;opacity:.05;mix-blend-mode:soft-light;
+}
+/* real depression on press */
+html[data-skin="clay"] .btn:active,html[data-skin="clay"] .kpi:active,html[data-skin="clay"] .dock-item:active{
+  box-shadow:var(--clay-press);transform:translateY(var(--press-y));
+}
 
 html{-webkit-font-smoothing:antialiased;text-size-adjust:100%}
 body{
@@ -229,8 +266,8 @@ body{
 }
 html[data-theme="dark"] body{
   background:
-    radial-gradient(1100px 560px at 50% -28%, rgba(255,120,45,.11), transparent 60%),
-    linear-gradient(165deg,#14120F,#0C0B0A 72%);
+    radial-gradient(1100px 560px at 50% -28%, rgba(255,140,60,.10), transparent 60%),
+    linear-gradient(165deg,#1A1712,#111 74%);
 }
 /* vivid, defined colour orbs — the light the frosted glass refracts. Kept less
    blurred + more saturated than a wash so the frost actually reads as glass. */
@@ -256,7 +293,7 @@ body::after{
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size:150px 150px;opacity:var(--grain);mix-blend-mode:soft-light;
 }
-html[data-theme="dark"]{--grain:.22}
+html[data-theme="dark"]{--grain:.20}
 
 /* focus — vivid orange ring on every keyboard-focused control */
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
@@ -403,25 +440,51 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 .sub{color:var(--muted);font-size:12.5px;line-height:1.55}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
-.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:22px;flex-wrap:wrap}
+.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s-4);margin-bottom:var(--s-6);flex-wrap:wrap}
 
 /* ════════ GLASS CARDS ════════ */
 .clay{
-  background:var(--surf);
+  position:relative;background:var(--surf);
   -webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);
   border:1px solid var(--line);border-radius:var(--r-lg);
-  box-shadow:var(--clay);
+  box-shadow:var(--clay);isolation:isolate;
 }
-/* panels that hold dense tables use a more opaque frosted layer + softer blur
-   so tiny IDs/numbers stay crisp — the "keep data readable" tier of the glass */
+/* Decorative glass layers live on the pseudo-elements, scoped :not(.kpi) — KPI cards are also .clay and
+   already own ::before (their accent bar); an element has only one ::before, so exclude them here. */
+.clay:not(.kpi)::before,.clay:not(.kpi)::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;
+}
+/* specular edge rim + living sheen — compositor-cheap CSS transform, NOT the SVG (which stays static/seeded).
+   --mx/--my default to a fixed spot; Phase E6 pointer-tracks them for the signature specular. */
+.clay:not(.kpi)::before{
+  background:linear-gradient(var(--glass-tint),transparent 42%),
+    radial-gradient(120% 80% at var(--mx,30%) var(--my,0%), var(--spec-soft), transparent 60%);
+  box-shadow:inset 0 1px 0 var(--spec), inset 0 0 0 1px rgba(255,255,255,.04);
+  mix-blend-mode:screen;animation:liquidSheen 16s ease-in-out infinite alternate;
+}
+@keyframes liquidSheen{from{transform:translate3d(-6%,-3%,0)}to{transform:translate3d(6%,4%,0)}}
+/* panels that hold dense tables use a more opaque frosted layer + softer blur so tiny IDs/numbers stay crisp —
+   the "keep data readable" tier: --glass-data has NO url() lens, and the specular is toned down. */
 .clay:has(.twrap),.clay:has(.tbl),.clay:has(.inbox-row){
   background:var(--surf-solid);
   --glass:var(--glass-data);
 }
+.clay:has(.tbl)::before{opacity:.5}
+/* Liquid Glass refraction is GATED: engines without backdrop-filter:url() keep --refract empty → clean frost,
+   never a vanished panel. Only glass skin turns the lens on. */
+@supports (backdrop-filter:url(#foxGlassRefract)) or (-webkit-backdrop-filter:url(#foxGlassRefract)){
+  html[data-skin="glass"]{--refract:url(#foxGlassRefract);}
+}
+/* no backdrop-filter support at all → make chrome surfaces opaque so panels never disappear */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :root{--surf:rgba(255,255,255,.86);--surf2:rgba(255,255,255,.7)}
+  html[data-theme="dark"]{--surf:rgba(70,62,53,.92);--surf2:rgba(90,80,70,.5)}
+}
+@media(prefers-reduced-motion:reduce){.clay:not(.kpi)::before{animation:none}}
 .pad{padding:clamp(14px,1.5vw,20px)}
 
-.grid{display:grid;gap:14px}
-.kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:18px}
+.grid{display:grid;gap:var(--s-4)}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:var(--s-5)}
 .kpi{padding:15px 17px;position:relative;overflow:hidden;transition:transform var(--dur) ease,box-shadow var(--dur) ease}
 .kpi::before{content:'';position:absolute;left:0;top:0;right:0;height:3px;background:linear-gradient(90deg,var(--fox),var(--fox3));transform:scaleX(0);transform-origin:left;transition:transform .25s ease}
 .kpi:hover{transform:translateY(-3px);box-shadow:var(--elev-hi)}
@@ -492,14 +555,13 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 .btn:active{transform:translateY(0);box-shadow:none}
 .btn .ico{width:14px;height:14px;flex-shrink:0}
 .btn.pri{
-  background:linear-gradient(150deg,#FF8A3D,var(--fox));color:#2A1204;border-color:transparent;
+  background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);border-color:transparent;
   box-shadow:0 8px 20px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4);
 }
 .btn.pri:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 12px 26px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4)}
-html[data-theme="dark"] .btn.pri{color:#1E0E02}
-.btn.danger{background:linear-gradient(150deg,#EF4444,var(--destructive));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(220,38,38,.4), inset 0 1px 0 rgba(255,255,255,.25)}
+.btn.danger{background:linear-gradient(150deg,var(--danger-hi),var(--destructive));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(220,38,38,.4), inset 0 1px 0 rgba(255,255,255,.25)}
 .btn.danger:hover{filter:brightness(1.05);transform:translateY(-1px)}
-.btn.safe{background:linear-gradient(150deg,#22C55E,var(--ok));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(22,163,74,.35), inset 0 1px 0 rgba(255,255,255,.25)}
+.btn.safe{background:linear-gradient(150deg,var(--safe-hi),var(--ok));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(22,163,74,.35), inset 0 1px 0 rgba(255,255,255,.25)}
 .btn.safe:hover{filter:brightness(1.05);transform:translateY(-1px)}
 .btn.sm{padding:6px 10px;font-size:11px;border-radius:8px}
 .btn.sm .ico{width:13px;height:13px}
@@ -540,7 +602,7 @@ html[data-theme="dark"] .btn.pri{color:#1E0E02}
   border-radius:6px;transition:background var(--dur) ease;
 }
 .fauxselect-opt:hover{background:var(--surf2)}
-.fauxselect-opt.sel{background:linear-gradient(150deg,#FF8A3D,var(--fox));color:#2A1204;font-weight:700}
+.fauxselect-opt.sel{background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);font-weight:700}
 
 /* ════════ CUSTOM TOGGLE SWITCH ════════ */
 .voxswitch{display:flex;align-items:center;gap:12px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:600}
@@ -554,15 +616,14 @@ html[data-theme="dark"] .btn.pri{color:#1E0E02}
   position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
   background:#fff;box-shadow:0 1px 3px rgba(60,28,8,.4);transition:transform var(--dur) ease;
 }
-.voxswitch input:checked + .voxswitch-track{background:linear-gradient(150deg,#FF8A3D,var(--fox));border-color:transparent;box-shadow:0 4px 12px var(--fox-glow)}
+.voxswitch input:checked + .voxswitch-track{background:linear-gradient(150deg,var(--fox-hi),var(--fox));border-color:transparent;box-shadow:0 4px 12px var(--fox-glow)}
 .voxswitch input:checked + .voxswitch-track .voxswitch-knob{transform:translateX(20px)}
 
 /* ==================== SEGMENTED CONTROL (skin / theme picker) ==================== */
 .segmented{display:inline-flex;gap:4px;padding:4px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r-sm)}
 .segbtn{font-family:var(--disp);font-weight:600;font-size:12px;color:var(--muted);background:none;border:1px solid transparent;border-radius:7px;padding:7px 16px;min-height:38px;cursor:pointer;transition:background var(--dur) ease,color var(--dur) ease,box-shadow var(--dur) ease}
 .segbtn:hover{color:var(--ink)}
-.segbtn[aria-pressed="true"]{background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:#2A1204;box-shadow:var(--clay-press)}
-html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
+.segbtn[aria-pressed="true"]{background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);box-shadow:var(--clay-press)}
 
 /* ==================== INLINE-SVG CHARTS (chart() helper - no external libs) ==================== */
 .chart-wrap{position:relative;width:100%}
@@ -577,6 +638,33 @@ html[data-theme="dark"] .segbtn[aria-pressed="true"]{color:#1E0E02}
 .chart-dpt{cursor:pointer;transition:opacity var(--dur) ease}
 .chart-dpt:hover{opacity:.82}
 .chart-dpt:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* ═══════════════════════ PHASE E · LIVELINESS (all behind prefers-reduced-motion) ═══════════════════════ */
+/* E1 · chart draw-in — one-time reveal; chart() adds .chart-draw only when motion is allowed */
+@keyframes drawLine{to{stroke-dashoffset:0}}
+@keyframes barGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes arcPop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@keyframes fadeIn{to{opacity:1}}
+.chart-draw path.cseries{stroke-dasharray:1;stroke-dashoffset:1;animation:drawLine .9s var(--ease-out) forwards}
+.chart-draw path.carea{opacity:0;animation:fadeIn .6s .4s ease forwards}
+.chart-draw rect.chart-dpt{transform-box:fill-box;transform-origin:bottom;animation:barGrow .55s var(--ease-out) both}
+.chart-draw path.chart-dpt{transform-box:fill-box;transform-origin:center;animation:arcPop .5s ease both}
+/* E2 · skeleton loaders (literal shimmer highlight so it reads in clay too, where --spec-soft is none) */
+.skel{position:relative;overflow:hidden;border-radius:8px;background:var(--surf2)}
+.skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);animation:shimmer 1.3s infinite}
+@keyframes shimmer{100%{transform:translateX(100%)}}
+.skel-kpi{height:64px}.skel-line{height:12px;margin:7px 0}.skel-chart{height:180px}
+/* E3 · tactile hover/press — token-driven so each skin gets its own depth for free */
+.btn:hover{background:var(--surf);border-color:var(--line2);transform:translateY(var(--hover-y));box-shadow:var(--elev-btn)}
+.btn:active{transform:translateY(var(--press-y)) scale(var(--press-scale));box-shadow:var(--clay-press)}
+.dock-item:hover:not(.active){transform:translateY(var(--hover-y))}
+.topbtn:hover{transform:translateY(var(--hover-y))}
+/* E4 · page inner-content stagger (go() sets --i per child) */
+.page.active>*{animation:rise .34s both;animation-delay:calc(var(--i,0)*45ms)}
+@media(prefers-reduced-motion:reduce){
+  .chart-draw path.cseries,.chart-draw rect.chart-dpt,.chart-draw path.chart-dpt,.chart-draw path.carea{animation:none;stroke-dashoffset:0;opacity:1;transform:none}
+  .skel::after{animation:none;opacity:.4}
+  .page.active>*{animation:none}
+}
 /* ════════ MODAL (reusable — replaces prompt()/confirm()) ════════ */
 .modal-overlay{position:fixed;inset:0;z-index:9600;display:none;align-items:center;justify-content:center;padding:20px;background:var(--gate-overlay);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .modal-overlay.on{display:flex}
@@ -609,7 +697,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .page.active{display:block;animation:pop .28s ease}
 @keyframes pop{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
 
-.split{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start}
+.split{display:grid;grid-template-columns:2fr 1fr;gap:var(--s-4);align-items:start}
 @media(max-width:980px){.split{grid-template-columns:1fr}}
 
 /* funnel bars */
@@ -631,14 +719,24 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
 /* toast */
 #toast{
-  position:fixed;bottom:22px;left:50%;transform:translate(-50%,80px);z-index:9000;
+  position:fixed;bottom:22px;left:50%;z-index:9000;
+  display:flex;align-items:center;gap:10px;
   background:linear-gradient(150deg,rgba(40,26,14,.92),rgba(28,18,10,.92));
-  -webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass);
-  border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:var(--clay);
+  -webkit-backdrop-filter:var(--glass-sm);backdrop-filter:var(--glass-sm);
+  border:1px solid rgba(255,255,255,.12);border-left:3px solid var(--tc,var(--fox));
+  border-radius:12px;box-shadow:var(--clay);
   padding:12px 20px;font-family:var(--mono);font-size:12px;font-weight:600;color:#FFF3E9;
-  transition:transform .28s cubic-bezier(.22,1,.36,1);max-width:min(560px,90vw);
+  transform:translate(-50%,80px);opacity:0;
+  transition:transform .28s var(--ease-out),opacity .28s;max-width:min(560px,90vw);
 }
-#toast.show{transform:translate(-50%,0)}
+#toast.show{transform:translate(-50%,0);opacity:1}
+#toast.success{--tc:var(--ok)}#toast.error{--tc:var(--breach-bg)}#toast.warn{--tc:var(--warnc)}#toast.info{--tc:var(--info-bg)}
+#toastIcon{width:16px;height:16px;color:var(--tc,var(--fox));flex-shrink:0;display:inline-flex}
+#toastIcon svg{width:16px;height:16px;display:block}
+/* E5 · announcement banner entrance */
+.annbar{animation:annIn .3s ease both}
+@keyframes annIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.annbar{animation:none}}
 
 /* login gate */
 #gate{
@@ -683,6 +781,17 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 </style>
 </head>
 <body>
+
+<!-- Liquid Glass refraction filter (Phase C) — CSP-safe: pure feTurbulence + feGaussianBlur + feDisplacementMap
+     primitives (no feImage/external/data:), static & seeded so it never re-rasterizes per frame. Referenced by
+     --glass via backdrop-filter:url() ONLY behind the @supports gate; --refract stays empty where unsupported. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <filter id="foxGlassRefract" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.009 0.014" numOctaves="2" seed="7" stitchTiles="stitch" result="turb"/>
+    <feGaussianBlur in="turb" stdDeviation="1.1" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="15" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
 
 <!-- ═══ staff login gate ═══ -->
 <div id="gate">
@@ -833,7 +942,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
           <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         </button>
-        <button class="topbtn skin-toggle" type="button" title="Toggle surface style (glass / clay)" aria-label="Toggle surface style between glass and clay" onclick="toggleSkin()">
+        <button class="topbtn skin-toggle" type="button" title="Toggle surface style (Liquid Glass / Skeuomorphism)" aria-label="Toggle surface style between Liquid Glass and Skeuomorphism" onclick="toggleSkin()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </button>
         <div class="topuser">
@@ -1265,8 +1374,8 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <label class="voxswitch" style="margin-bottom:14px;"><input type="checkbox" id="darkModeToggle" onchange="setTheme(this.checked?'dark':'light')"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>dark mode</span></label>
           <div class="flabel">surface style</div>
           <div class="segmented" role="group" aria-label="Surface style">
-            <button type="button" class="segbtn" data-skin-opt="glass" aria-pressed="true" onclick="setSkin('glass')">Glass</button>
-            <button type="button" class="segbtn" data-skin-opt="clay" aria-pressed="false" onclick="setSkin('clay')">Clay</button>
+            <button type="button" class="segbtn" data-skin-opt="glass" aria-pressed="true" onclick="setSkin('glass')">Liquid Glass</button>
+            <button type="button" class="segbtn" data-skin-opt="clay" aria-pressed="false" onclick="setSkin('clay')">Skeuomorphism</button>
           </div>
           <div class="flabel">table density</div>
           <div class="segmented" role="group" aria-label="Table density">
@@ -1312,7 +1421,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
   </main>
 </div>
 
-<div id="toast"><span id="toastMsg"></span></div>
+<div id="toast"><span id="toastIcon"></span><span id="toastMsg"></span></div>
 <div id="fxmodal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
   <div class="modal-card clay pad" role="dialog" aria-modal="true" aria-labelledby="fxmodalTitle">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;">
@@ -1485,7 +1594,7 @@ function dataRefreshDebounced(){
   _dataDebounce=setTimeout(()=>{DATA_PAGE=1;refreshData()},300);
 }
 function addDataFilter(){
-  if(!DATA_TABLE){toast('choose a table first');return}
+  if(!DATA_TABLE){toast('choose a table first','warn');return}
   DATA_FILTERS.push({col:'',val:''});
   renderDataFilters();
 }
@@ -1563,7 +1672,7 @@ function dataPage(delta){
 }
 function openDataEdit(pk){
   const row=DATA_ROW_CACHE[pk];
-  if(!row||!DATA_META){toast('row not found — try refreshing');return}
+  if(!row||!DATA_META){toast('row not found — try refreshing','error');return}
   DATA_EDIT_ID=pk;
   $('dataEditFields').innerHTML=DATA_META.editable_fields.map(f=>{
     const val=row[f];
@@ -1588,7 +1697,7 @@ async function saveDataEdit(){
   const r=await api(`/admin/v1/data/${DATA_TABLE}/${DATA_EDIT_ID}`,{method:'PATCH',
     headers:{'content-type':'application/json'},body:JSON.stringify({fields})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok){toast('saved');closeDataEdit();refreshData()}
+  if(r.ok){toast('saved','success');closeDataEdit();refreshData()}
   else toast(d.detail||('save failed ('+r.status+')'));
 }
 function deleteDataRow(pk){
@@ -1599,11 +1708,20 @@ function deleteDataRow(pk){
 async function _doDeleteRow(pk){
   const r=await api(`/admin/v1/data/${DATA_TABLE}/${pk}`,{method:'DELETE'});
   const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('deleted');refreshData()}
+  if(r.ok){toast('deleted','success');refreshData()}
   else toast(d.detail||('delete failed ('+r.status+')'));
 }
 
-function toast(m){const t=$('toast');$('toastMsg').textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3200)}
+function toast(m,type){const t=$('toast');t.className='';if(type)t.classList.add(type);
+  $('toastIcon').innerHTML=_toastIcon(type);$('toastMsg').textContent=m;
+  t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3200);}
+function _toastIcon(type){var p={
+  success:'<path d="M20 6 9 17l-5-5"/>',
+  error:'<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>',
+  warn:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>'
+}[type]||'<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';}
 function fmtTime(iso){if(!iso)return'—';const d=new Date(iso);return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 function fmtDay(iso){if(!iso)return'—';return new Date(iso).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}
 function num(n){return(n??0).toLocaleString()}
@@ -1619,6 +1737,31 @@ function num(n){return(n??0).toLocaleString()}
    encoding (dashed multi-series / direct value + % labels), keyboard-focusable
    points with aria-label, and a hover/focus tooltip. Returns the container el.
    ========================================================================== */
+/* ── Phase E · motion helpers ── */
+var _RM=(window.matchMedia)?matchMedia('(prefers-reduced-motion:reduce)'):{matches:false};
+function reduced(){return !!_RM.matches;}
+function _drawIn(el){if(!el||reduced())return;el.classList.add('chart-draw');clearTimeout(el._drawT);el._drawT=setTimeout(function(){el.classList.remove('chart-draw');},1600);}
+function countUp(el,to,fmt){el=(typeof el==='string')?$(el):el;if(!el)return;fmt=fmt||_fmtNum;
+  var n=Number(to);
+  if(reduced()||!isFinite(n)||(typeof to==='string'&&/[^\d.,\s+-]/.test(to))){el.textContent=(typeof to==='string')?to:fmt(n);return;}
+  var from=0,t0=performance.now(),D=650;
+  (function step(now){var k=Math.min(1,(now-t0)/D),e=1-Math.pow(1-k,3);
+    el.textContent=fmt(Math.round(from+(n-from)*e));if(k<1)requestAnimationFrame(step);})(t0);}
+function skeleton(el,kind,cnt){el=(typeof el==='string')?$(el):el;if(!el)return;
+  var one={kpi:'<div class="skel skel-kpi"></div>',row:'<div class="skel skel-line"></div>',chart:'<div class="skel skel-chart"></div>'}[kind||'row'];
+  el.innerHTML=new Array((cnt||3)+1).join(one);}
+/* E6 · signature pointer-tracked specular (fine pointer + motion allowed only) */
+if(window.matchMedia && matchMedia('(hover:hover) and (pointer:fine)').matches && !reduced()){
+  var _specRaf=0;
+  document.addEventListener('pointermove',function(e){
+    if(_specRaf)return;
+    _specRaf=requestAnimationFrame(function(){_specRaf=0;
+      var c=e.target.closest&&e.target.closest('.clay');if(!c)return;
+      var r=c.getBoundingClientRect();if(!r.width||!r.height)return;
+      c.style.setProperty('--mx',((e.clientX-r.left)/r.width*100).toFixed(1)+'%');
+      c.style.setProperty('--my',((e.clientY-r.top)/r.height*100).toFixed(1)+'%');});
+  },{passive:true});
+}
 function _cssvar(n,f){try{var v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||f;}catch(e){return f;}}
 function _chartPalette(){return [_cssvar('--fox','#FF6A1A'),_cssvar('--blue','#2E90E0'),_cssvar('--ok','#15803D'),_cssvar('--warnc','#B45309'),_cssvar('--infoc','#1D4ED8'),_cssvar('--neutral','#5C5044')];}
 var _DASH=['0','5 4','2 3','8 3 2 3','1 4'];
@@ -1690,10 +1833,11 @@ function _chartXY(el,opts,W,H,pal,yFmt,xFmt,type){
         var gid='cg'+si+'_'+Math.round(iw)+'_'+Math.round(ih);
         var dA='M'+seen[0][0].toFixed(1)+' '+Y(bot).toFixed(1)+' '+seen.map(function(p){return 'L'+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ')+' L'+seen[seen.length-1][0].toFixed(1)+' '+Y(bot).toFixed(1)+' Z';
         body+='<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+col+'" stop-opacity="0.28"/><stop offset="1" stop-color="'+col+'" stop-opacity="0.02"/></linearGradient></defs>';
-        body+='<path d="'+dA+'" fill="url(#'+gid+')"/>';
+        body+='<path class="carea" d="'+dA+'" fill="url(#'+gid+')"/>';
       }
       var da=(series.length>1)?(' stroke-dasharray="'+dash+'"'):'';
-      body+='<path d="'+d.trim()+'" fill="none" stroke="'+col+'" stroke-width="'+(spark?1.6:2)+'" stroke-linejoin="round" stroke-linecap="round"'+da+'/>';
+      var drw=(da==='')?' class="cseries" pathLength="1"':'';   /* draw-in only on solid lines; dashed multi-series keep their pattern */
+      body+='<path'+drw+' d="'+d.trim()+'" fill="none" stroke="'+col+'" stroke-width="'+(spark?1.6:2)+'" stroke-linejoin="round" stroke-linecap="round"'+da+'/>';
       if(!spark) seen.forEach(function(p){ body+='<circle class="chart-dpt" tabindex="0" role="img" cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3" fill="'+col+'" aria-label="'+esc((s.name?s.name+', ':'')+xFmt(labels[p[2]])+', '+yFmt(p[3]))+'" data-x="'+p[0].toFixed(1)+'" data-y="'+p[1].toFixed(1)+'" data-tt="'+esc((s.name?s.name+' \u00b7 ':'')+xFmt(labels[p[2]])+': '+yFmt(p[3]))+'"/>'; });
     });
   } else if(type==='bar'||stacked){
@@ -1705,7 +1849,7 @@ function _chartXY(el,opts,W,H,pal,yFmt,xFmt,type){
         if(stacked){ y0=Y(acc); acc+=v; y1=Y(acc); x=Xb(bi)-bw/2; w=bw; }
         else { y0=Y(Math.max(0,v)); y1=Y(Math.min(0,v)); w=bw/series.length; x=Xb(bi)-bw/2+si*w; }
         var hb=Math.max(1,Math.abs(y1-y0));
-        body+='<rect class="chart-dpt" tabindex="0" role="img" x="'+x.toFixed(1)+'" y="'+Math.min(y0,y1).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+hb.toFixed(1)+'" rx="2" fill="'+col+'" aria-label="'+esc((s.name?s.name+', ':'')+xFmt(labels[bi])+', '+yFmt(v))+'" data-x="'+(x+w/2).toFixed(1)+'" data-y="'+Math.min(y0,y1).toFixed(1)+'" data-tt="'+esc((s.name?s.name+' \u00b7 ':'')+xFmt(labels[bi])+': '+yFmt(v))+'"/>';
+        body+='<rect class="chart-dpt" tabindex="0" role="img" style="animation-delay:'+(bi*0.03).toFixed(2)+'s" x="'+x.toFixed(1)+'" y="'+Math.min(y0,y1).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+hb.toFixed(1)+'" rx="2" fill="'+col+'" aria-label="'+esc((s.name?s.name+', ':'')+xFmt(labels[bi])+', '+yFmt(v))+'" data-x="'+(x+w/2).toFixed(1)+'" data-y="'+Math.min(y0,y1).toFixed(1)+'" data-tt="'+esc((s.name?s.name+' \u00b7 ':'')+xFmt(labels[bi])+': '+yFmt(v))+'"/>';
       });
       if(series.length===1&&!stacked&&n<=12){ var sv=series[0].values[bi]; if(sv!=null) body+='<text x="'+Xb(bi).toFixed(1)+'" y="'+(Y(Math.max(0,sv))-5).toFixed(1)+'" text-anchor="middle" font-size="9" fill="'+muted+'">'+esc(yFmt(sv))+'</text>'; }
     }
@@ -1714,6 +1858,7 @@ function _chartXY(el,opts,W,H,pal,yFmt,xFmt,type){
   var legend='';
   if(showLegend) legend='<div class="chart-legend">'+series.map(function(s,si){return '<span class="lg"><span class="sw" style="background:'+(s.color||pal[si%pal.length])+'"></span>'+esc(s.name||('series '+(si+1)))+'</span>';}).join('')+'</div>';
   el.innerHTML=svg+legend;
+  _drawIn(el);
   if(!spark) _bindChartTT(el,W,H);
   return el;
 }
@@ -1723,13 +1868,13 @@ function _chartDonut(el,opts,W,H,pal,yFmt){
   if(!total){ el.classList.remove('chart-wrap'); el.innerHTML='<div class="chart-empty">'+esc(opts.empty||'No data yet')+'</div>'; return el; }
   var cx=W/2, cy=H/2, r=Math.min(cx,cy)-6, ri=r*0.6, a0=-Math.PI/2, body='';
   data.forEach(function(s,i){ var frac=s.value/total, a1=a0+frac*2*Math.PI, col=s.color||pal[i%pal.length];
-    body+='<path class="chart-dpt" tabindex="0" role="img" d="'+_arc(cx,cy,r,ri,a0,a1)+'" fill="'+col+'" aria-label="'+esc(s.name+', '+yFmt(s.value)+', '+Math.round(frac*100)+' percent')+'" data-x="'+cx+'" data-y="'+(cy-r).toFixed(1)+'" data-tt="'+esc(s.name+' \u00b7 '+yFmt(s.value)+' ('+Math.round(frac*100)+'%)')+'"/>';
+    body+='<path class="chart-dpt" tabindex="0" role="img" style="animation-delay:'+(i*0.05).toFixed(2)+'s" d="'+_arc(cx,cy,r,ri,a0,a1)+'" fill="'+col+'" aria-label="'+esc(s.name+', '+yFmt(s.value)+', '+Math.round(frac*100)+' percent')+'" data-x="'+cx+'" data-y="'+(cy-r).toFixed(1)+'" data-tt="'+esc(s.name+' \u00b7 '+yFmt(s.value)+' ('+Math.round(frac*100)+'%)')+'"/>';
     a0=a1; });
   body+='<text x="'+cx+'" y="'+(cy-1).toFixed(1)+'" text-anchor="middle" font-size="17" font-weight="600" fill="'+_cssvar('--ink','#222')+'">'+esc(yFmt(total))+'</text>';
   body+='<text x="'+cx+'" y="'+(cy+14).toFixed(1)+'" text-anchor="middle" font-size="9" fill="'+_cssvar('--muted','#888')+'">'+esc(opts.centerLabel||'total')+'</text>';
   var svg='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(opts.ariaLabel||'donut chart')+'" font-family="'+_cssvar('--mono','monospace')+'">'+body+'</svg>';
   var leg='<div class="chart-legend">'+data.map(function(s,i){return '<span class="lg"><span class="sw dot" style="background:'+(s.color||pal[i%pal.length])+'"></span>'+esc(s.name)+' \u00b7 '+esc(yFmt(s.value))+' ('+Math.round(s.value/total*100)+'%)</span>';}).join('')+'</div>';
-  el.innerHTML=svg+leg; _bindChartTT(el,W,H); return el;
+  el.innerHTML=svg+leg; _drawIn(el); _bindChartTT(el,W,H); return el;
 }
 function _arc(cx,cy,r,ri,a0,a1){
   var large=(a1-a0)>Math.PI?1:0;
@@ -1743,7 +1888,8 @@ let CUR_PAGE='overview';
 function _loaders(){return {overview:loadOverview,health:loadHealth,deadletter:loadDeadletter,anchors:loadAnchors,alerts:loadAlerts,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox,revenue:loadRevenue,security:loadSecurity,audit:loadAudit,leads:loadLeads};}
 function go(page,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  $('page-'+page).classList.add('active');
+  var _pg=$('page-'+page); _pg.classList.add('active');
+  if(!reduced()){[].forEach.call(_pg.children,function(c,i){c.style.setProperty('--i',i);});}
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   if(el)el.classList.add('active');
   CUR_PAGE=page;
@@ -1765,7 +1911,7 @@ function opsCheck(label,value,detail){
   return `<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:8px 0;"><span><b>${esc(label)}</b><span class="sub mono" style="display:block;font-size:10px;margin-top:3px;">${esc(detail||'')}</span></span>${opsChip(value)}</div>`;
 }
 async function loadHealth(){
-  let r;try{r=await api('/admin/v1/health')}catch(e){toast('health unavailable');return}
+  let r;try{r=await api('/admin/v1/health')}catch(e){toast('health unavailable','error');return}
   if(!r.ok){toast('health failed ('+r.status+')');return}
   const d=await r.json(),w=d.worker||{},g=d.grading||{},a=d.anchors||{},cb=d.circuit_breaker||{};
   $('hStatus').innerHTML=opsChip(d.status||'unknown');$('hWorker').innerHTML=opsChip(w.status||'unknown');
@@ -1776,7 +1922,7 @@ async function loadHealth(){
   const counts=g.counts||{};$('healthQueue').innerHTML='<div style="display:grid;gap:8px;">'+['pending','in_progress','graded','failed'].map(k=>`<div style="display:flex;justify-content:space-between;"><span>${esc(k)}</span><b>${num(counts[k]||0)}</b></div>`).join('')+'</div>';
 }
 async function loadDeadletter(){
-  let r;try{r=await api('/admin/v1/grading/deadletter')}catch(e){toast('dead-letter queue unavailable');return}
+  let r;try{r=await api('/admin/v1/grading/deadletter')}catch(e){toast('dead-letter queue unavailable','error');return}
   if(!r.ok){toast('dead-letter queue failed ('+r.status+')');return}
   const d=await r.json(),rows=d.items||[];
   if(!rows.length){$('deadRows').innerHTML='<tr><td colspan="7" class="sub mono">no failed grading rows</td></tr>';return}
@@ -1784,11 +1930,11 @@ async function loadDeadletter(){
 }
 async function requeueDeadletter(id){
   const r=await api('/admin/v1/grading/deadletter/'+id+'/requeue',{method:'POST'});
-  if(r.ok){toast('grading row requeued');loadDeadletter();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'requeue failed ('+r.status+')')}
+  if(r.ok){toast('grading row requeued','success');loadDeadletter();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'requeue failed ('+r.status+')')}
 }
 let INBOX=[], INBOX_OPEN=null;
 async function loadAnchors(){
-  let r;try{r=await api('/admin/v1/anchors')}catch(e){toast('anchor monitor unavailable');return}
+  let r;try{r=await api('/admin/v1/anchors')}catch(e){toast('anchor monitor unavailable','error');return}
   if(!r.ok){toast('anchors failed ('+r.status+')');return}
   const d=await r.json(),s=d.summary||{},w=d.wallet||{};
   $('anchorSummary').innerHTML='<div class="eyebrow">anchor summary</div><div style="font-weight:800;font-size:15px;">'+num(s.organizations||0)+' organizations</div><div class="sub mono" style="margin-top:10px;">'+Object.entries(s.by_status||{}).map(([k,v])=>esc(k)+': '+num(v)).join(' · ')+'</div><div class="sub mono" style="margin-top:8px;">provider: '+esc(d.provider||'unknown')+'</div>';
@@ -1799,7 +1945,7 @@ async function loadAnchors(){
 }
 async function reanchor(id){
   const r=await api('/admin/v1/anchors/'+id+'/anchor',{method:'POST'});
-  if(r.ok){toast('anchor receipt created');loadAnchors();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'re-anchor failed ('+r.status+')')}
+  if(r.ok){toast('anchor receipt created','success');loadAnchors();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'re-anchor failed ('+r.status+')')}
 }
 async function loadAlerts(){
   let r;try{r=await api('/admin/v1/alerts')}catch(e){return}
@@ -1812,7 +1958,7 @@ async function loadAlerts(){
 }
 async function ackAlert(id){
   const r=await api('/admin/v1/alerts/'+id+'/ack',{method:'POST'});
-  if(r.ok){toast('alert acknowledged');loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'acknowledge failed ('+r.status+')')}
+  if(r.ok){toast('alert acknowledged','success');loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'acknowledge failed ('+r.status+')')}
 }
 
 /* ──────────── health trends + alert history (Phase 1) ──────────── */
@@ -1953,7 +2099,7 @@ async function pollInbox(){try{const r=await api('/admin/v1/inbox/unread-count')
 /* ──────────── settings / theme ──────────── */
 function setTheme(mode){
   document.documentElement.dataset.theme=mode;
-  document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#140E09':'#FEF4ED');
+  document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#16130F':'#FEF4ED');
   try{localStorage.setItem('foxy_admin_theme',mode)}catch(e){}
   const t=$('darkModeToggle'); if(t)t.checked=(mode==='dark');
 }
@@ -2089,14 +2235,14 @@ function funnelRow(label,val,max,color){
 }
 async function loadOverview(){
   const [rs,rt]=await Promise.all([api('/admin/v1/stats'),api('/admin/v1/traffic?limit=1')]);
-  if(!rs.ok){toast('stats failed ('+rs.status+')');return}
+  if(!rs.ok){toast('stats failed ('+rs.status+')','error');return}
   const s=await rs.json();
-  $('kOrgs').textContent=num(s.total_orgs);
+  countUp('kOrgs',s.total_orgs,num);
   $('kOrgsFoot').textContent=num(s.active_orgs)+' active · '+num(s.suspended_orgs)+' suspended';
-  $('kUsers').textContent=num(s.total_users);
-  $('kLogs').textContent=num(s.total_logs);
-  $('kBreaches').textContent=num(s.total_breaches);
-  $('kStaff').textContent=num(s.total_staff);
+  countUp('kUsers',s.total_users,num);
+  countUp('kLogs',s.total_logs,num);
+  countUp('kBreaches',s.total_breaches,num);
+  countUp('kStaff',s.total_staff,num);
 
   const lf=s.leads_by_status||{};
   const lmax=Math.max(lf.new||0,lf.trial||0,lf.converted||0,lf.churned||0);
@@ -2152,7 +2298,7 @@ function _revFmt(v){ return '$'+Math.round(v).toLocaleString(); }
 async function renderOvTrend(){
   const metric=fauxVal('ovMetric')||'interactions';
   $('ovTrendTitle').textContent=metric.charAt(0).toUpperCase()+metric.slice(1)+' · 30 days';
-  const el=$('ovTrend'); el.innerHTML='<div class="chart-empty">loading…</div>';
+  const el=$('ovTrend'); if(reduced()){el.innerHTML='<div class="chart-empty">loading…</div>';}else{skeleton(el,'chart',1);}
   let r; try{ r=await api('/admin/v1/stats/timeseries?metric='+metric+'&days=30'); }catch(e){ r=null; }
   if(!r||!r.ok){ el.innerHTML='<div class="chart-empty">trend unavailable</div>'; return; }
   const d=await r.json();
@@ -2253,7 +2399,7 @@ async function orgSuspend(id){
 
 async function orgEnable(id){
   const r=await api(`/admin/v1/organizations/${id}/enable`,{method:'POST'});
-  if(r.ok){toast('suspension lifted');_orgActionDone()}else toast('enable failed ('+r.status+')');
+  if(r.ok){toast('suspension lifted','success');_orgActionDone()}else toast('enable failed ('+r.status+')');
 }
 async function orgPlan(id,current){
   const opts=['free','pro','max','premium'].map(p=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" data-plan="${p}" aria-pressed="${p===current?'true':'false'}" onclick="_segPick(this)">${p}</button>`).join('');
@@ -2492,7 +2638,7 @@ async function loadStaff(){
 
 async function createStaff(){
   const email=$('nsEmail').value.trim(),role=fauxVal('nsRole');
-  if(!email){toast('email required');return}
+  if(!email){toast('email required','warn');return}
   const r=await api('/admin/v1/staff',{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({email,platform_role:role})});
   const d=await r.json().catch(()=>({}));
@@ -2528,17 +2674,17 @@ function _segPick(el){ const p=el.closest('.segmented'); if(p)p.querySelectorAll
 async function _doSuspend(id){
   const reason=($('mReason')?$('mReason').value:'').trim();
   const r=await api('/admin/v1/organizations/'+id+'/suspend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
-  closeModal(); if(r.ok){toast('org suspended');_orgActionDone()}else toast('suspend failed ('+r.status+')');
+  closeModal(); if(r.ok){toast('org suspended','success');_orgActionDone()}else toast('suspend failed ('+r.status+')');
 }
 async function _doPlan(id){
   const sel=document.querySelector('#mPlan .segbtn[aria-pressed="true"]');
   const plan=sel?sel.dataset.plan:'';
-  if(!plan){toast('choose a plan');return}
+  if(!plan){toast('choose a plan','warn');return}
   const q=($('mQuota')?$('mQuota').value:'').trim(); const body={plan};
-  if(q){ const n=Number(q); if(!Number.isInteger(n)||n<0){toast('enter a non-negative whole-number quota');return} body.monthly_log_quota=n; }
+  if(q){ const n=Number(q); if(!Number.isInteger(n)||n<0){toast('enter a non-negative whole-number quota','warn');return} body.monthly_log_quota=n; }
   const r=await api('/admin/v1/organizations/'+id+'/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('plan updated');_orgActionDone()}else toast(d.detail||('plan update failed ('+r.status+')'));
+  if(r.ok){toast('plan updated','success');_orgActionDone()}else toast(d.detail||('plan update failed ('+r.status+')'));
 }
 function orgTrial(id){
   const quick=[7,14,30,90].map(n=>`<button type="button" class="btn sm" onclick="$('mDays').value=${n}">+${n}</button>`).join('');
@@ -2548,10 +2694,10 @@ function orgTrial(id){
 }
 async function _doTrial(id){
   const n=Number(($('mDays')?$('mDays').value:'').trim());
-  if(!Number.isInteger(n)||n===0){toast('enter a non-zero whole number of days');return}
+  if(!Number.isInteger(n)||n===0){toast('enter a non-zero whole number of days','warn');return}
   const r=await api('/admin/v1/organizations/'+id+'/trial',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({days:n})});
   const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('trial updated');_orgActionDone()}else toast(d.detail||('trial update failed ('+r.status+')'));
+  if(r.ok){toast('trial updated','success');_orgActionDone()}else toast(d.detail||('trial update failed ('+r.status+')'));
 }
 function orgIp(id){
   openModal({eyebrow:'org action', title:'Dashboard IP allow-list',
@@ -2563,7 +2709,7 @@ async function _doIp(id){
   const raw=($('mIp')?$('mIp').value:'');
   const r=await api('/admin/v1/organizations/'+id+'/ip-allowlist',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({raw})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok){closeModal();toast('allow-list saved');_orgActionDone()}else toast(d.detail||('save failed ('+r.status+')'));
+  if(r.ok){closeModal();toast('allow-list saved','success');_orgActionDone()}else toast(d.detail||('save failed ('+r.status+')'));
 }
 function orgOffboard(id,name){
   openModal({eyebrow:'danger · superadmin', title:'Offboard '+name,
@@ -2583,7 +2729,7 @@ function keyRevoke(orgId,keyId,name){
 async function _doRevoke(orgId,keyId){
   const r=await api('/admin/v1/organizations/'+orgId+'/keys/'+keyId+'/revoke',{method:'POST'});
   const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('key revoked');_orgActionDone()}else toast(d.detail||('revoke failed ('+r.status+')'));
+  if(r.ok){toast('key revoked','success');_orgActionDone()}else toast(d.detail||('revoke failed ('+r.status+')'));
 }
 
 /* staff management */
@@ -2616,16 +2762,16 @@ async function staffRole(id,role){
 }
 async function staffEnable(id){
   const r=await api('/admin/v1/staff/'+id+'/enable',{method:'POST'});
-  if(r.ok){ toast('account enabled'); await loadStaff(); staffManage(id); } else toast('enable failed ('+r.status+')');
+  if(r.ok){ toast('account enabled','success'); await loadStaff(); staffManage(id); } else toast('enable failed ('+r.status+')');
 }
 async function staffDisable(id){
   const r=await api('/admin/v1/staff/'+id+'/disable',{method:'POST'});
   const d=await r.json().catch(()=>({}));
-  if(r.ok){ toast('account disabled'); await loadStaff(); staffManage(id); } else toast(d.detail||('disable failed ('+r.status+')'));
+  if(r.ok){ toast('account disabled','success'); await loadStaff(); staffManage(id); } else toast(d.detail||('disable failed ('+r.status+')'));
 }
 async function staffMfaReset(id){
   const r=await api('/admin/v1/staff/'+id+'/mfa/reset',{method:'POST'});
-  if(r.ok){ toast('MFA enrolment reset'); await loadStaff(); staffManage(id); } else toast('MFA reset failed ('+r.status+')');
+  if(r.ok){ toast('MFA enrolment reset','success'); await loadStaff(); staffManage(id); } else toast('MFA reset failed ('+r.status+')');
 }
 
 /* ──────────── settings (Phase 3): density, self-service, config, broadcast ──────────── */
@@ -2653,11 +2799,11 @@ async function _doChangePw(){
   if((nw||'').length<8){ $('pwErr').textContent='New password must be at least 8 characters.'; return; }
   const r=await api('/admin/v1/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok){ closeModal(); toast('password changed'); } else $('pwErr').textContent=d.detail||'Change failed.';
+  if(r.ok){ closeModal(); toast('password changed','success'); } else $('pwErr').textContent=d.detail||'Change failed.';
 }
 async function mfaEnableFlow(){
   const r=await api('/admin/v1/auth/mfa/enable',{method:'POST'});
-  if(!r.ok){ toast('could not start MFA enrolment'); return; }
+  if(!r.ok){ toast('could not start MFA enrolment','error'); return; }
   openModal({eyebrow:'your account', title:'Enable MFA',
     bodyHTML:`<div class="sub" style="margin-bottom:12px;">We emailed a 6-digit code to <b>${esc(ME?ME.email:'')}</b>. Enter it to turn on MFA.</div><div class="flabel" style="margin-top:0;">code</div><input class="cin" id="mfaCode" inputmode="numeric" placeholder="123456"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doMfaConfirm()">Confirm</button>`});
@@ -2666,7 +2812,7 @@ async function _doMfaConfirm(){
   const code=($('mfaCode').value||'').trim();
   const r=await api('/admin/v1/auth/mfa/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok){ closeModal(); toast('MFA enabled'); if(ME)ME.mfa_enabled=true; loadSettings(); } else $('mfaErr').textContent=d.detail||'Invalid code.';
+  if(r.ok){ closeModal(); toast('MFA enabled','success'); if(ME)ME.mfa_enabled=true; loadSettings(); } else $('mfaErr').textContent=d.detail||'Invalid code.';
 }
 function mfaDisable(){
   openModal({eyebrow:'your account', title:'Disable MFA',
@@ -2677,7 +2823,7 @@ async function _doMfaDisable(){
   const pw=$('mfaPw').value;
   const r=await api('/admin/v1/auth/mfa/disable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok){ closeModal(); toast('MFA disabled'); if(ME)ME.mfa_enabled=false; loadSettings(); } else $('mfaErr').textContent=d.detail||'Failed.';
+  if(r.ok){ closeModal(); toast('MFA disabled','success'); if(ME)ME.mfa_enabled=false; loadSettings(); } else $('mfaErr').textContent=d.detail||'Failed.';
 }
 let CONFIG_META={};
 async function loadConfig(){
@@ -2702,14 +2848,14 @@ async function saveConfig(){
     if(m.type==='int'){ const n=Number(v); if(Number.isInteger(n)&&String(n)!==String(m.value)) updates[k]=n; }
     else if(v!==String(m.value)) updates[k]=v;
   });
-  if(!Object.keys(updates).length){ toast('no changes to save'); return; }
+  if(!Object.keys(updates).length){ toast('no changes to save','warn'); return; }
   const r=await api('/admin/v1/config',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({updates})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok){ toast('configuration saved'); loadConfig(); } else toast(d.detail||('save failed ('+r.status+')'));
+  if(r.ok){ toast('configuration saved','success'); loadConfig(); } else toast(d.detail||('save failed ('+r.status+')'));
 }
 async function sendBroadcast(){
   const title=$('bcTitle').value.trim(), body=$('bcBody').value.trim();
-  if(!title||!body){ toast('title and message are required'); return; }
+  if(!title||!body){ toast('title and message are required','warn'); return; }
   const lvlBtn=document.querySelector('#bcLevel .segbtn[aria-pressed="true"]');
   const level=lvlBtn?lvlBtn.dataset.level:'info';
   const email_staff=$('bcEmail').checked;
@@ -2728,7 +2874,7 @@ async function loadAnnouncements(){
 }
 async function deactivateAnn(id){
   const r=await api('/admin/v1/announcements/'+id+'/deactivate',{method:'POST'});
-  if(r.ok){ toast('deactivated'); loadAnnouncements(); loadBanner(); } else toast('deactivate failed');
+  if(r.ok){ toast('deactivated','success'); loadAnnouncements(); loadBanner(); } else toast('deactivate failed','error');
 }
 async function loadBanner(){
   const el=$('annBanner'); if(!el)return;
@@ -2748,7 +2894,7 @@ function dismissAnn(id){
 function _cents(c){return '$'+num(Math.round((c||0)/100));}
 async function loadRevenue(){
   let r; try{ r=await api('/admin/v1/revenue'); }catch(e){ r=null; }
-  if(!r||!r.ok){ toast('revenue unavailable'); return; }
+  if(!r||!r.ok){ toast('revenue unavailable','error'); return; }
   const d=await r.json();
   $('rvRev30').textContent=_cents(d.revenue_30d_cents);
   const subs=d.subscriptions||{};
@@ -2786,7 +2932,7 @@ async function replayStripe(id){
 }
 async function loadSecurity(){
   let r; try{ r=await api('/admin/v1/security/logins?days=7'); }catch(e){ r=null; }
-  if(!r||!r.ok){ toast('security unavailable'); return; }
+  if(!r||!r.ok){ toast('security unavailable','error'); return; }
   const d=await r.json();
   const days=(d.series||[]).map(x=>x.day);
   chart('secTrend',{type:'line',height:190,labels:days,xFormat:v=>String(v).slice(5),
