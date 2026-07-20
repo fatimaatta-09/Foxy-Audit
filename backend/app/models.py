@@ -52,11 +52,47 @@ class Organization(Base):
         String(255), nullable=True, default=None)
     monthly_log_quota: Mapped[int | None] = mapped_column(   # NULL = unlimited
         Integer, nullable=True, default=None)
+    # A finite, non-billable evaluation allowance. Unlike the monthly marketing
+    # quota, this allowance is enforced on ingestion and expires without deleting
+    # the tenant's already-created evidence.
+    evaluation_offer_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default=None)
+    evaluation_credit_limit: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None)
+    evaluation_credits_used: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0")
+    evaluation_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
     # Opt-in embeddable public trust badge (6C). NULL = no badge; minted on demand,
     # revocable. Resolves the org for the PUBLIC GET /v1/badge/{token}.svg — never
     # exposes org_id/name, only aggregate status. Unique so a token maps to one org.
     public_badge_token: Mapped[str | None] = mapped_column(
         String(64), nullable=True, unique=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class EvaluationRedemption(Base):
+    """One non-billable evaluation redemption, with no plaintext offer code.
+
+    This is platform-only operational data. Tenant-facing status is derived from
+    the organization fields, while this table prevents an email from redeeming
+    the same campaign repeatedly and gives support an audit trail for issuance.
+    """
+    __tablename__ = "evaluation_redemptions"
+    __table_args__ = (
+        UniqueConstraint("offer_id", "email_hash", name="uq_evaluation_offer_email"),
+        UniqueConstraint("org_id", name="uq_evaluation_redemption_org"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    offer_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    credits_granted: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 

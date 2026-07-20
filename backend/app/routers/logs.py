@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -61,6 +62,28 @@ def ingest_batch(
 ):
     """Write the batch to the hash chain synchronously (durable). Each row lands
     grading_status='pending' (column default); the poller grades them async."""
+    # Serialise allowance consumption with the chain writer. Evaluation credits
+    # are a hard cap; existing logs, exports, and verification remain available.
+    locked_org = db.execute(
+        select(Organization).where(Organization.id == org.id).with_for_update()
+    ).scalar_one()
+    if locked_org.evaluation_offer_id:
+        now = datetime.now(timezone.utc)
+        if locked_org.evaluation_ends_at and now >= locked_org.evaluation_ends_at:
+            raise HTTPException(status_code=402, detail={
+                "code": "evaluation_expired",
+                "message": "This evaluation offer has ended. Existing evidence remains available.",
+            })
+        credit_limit = locked_org.evaluation_credit_limit or 0
+        requested = len(payload)
+        if locked_org.evaluation_credits_used + requested > credit_limit:
+            raise HTTPException(status_code=402, detail={
+                "code": "evaluation_credits_exhausted",
+                "message": "This evaluation offer has no remaining event credits.",
+            })
+        locked_org.evaluation_credits_used += requested
+    org = locked_org
+
     # Lock the org's tail row so concurrent batches can't fork the chain.
     prev = db.execute(
         select(AuditLog.seq, AuditLog.chain_hash)

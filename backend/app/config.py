@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # Server-side pepper mixed into the API-key HMAC (Phase 3 A2). Required in prod.
     # Also used to HMAC-hash IPs / user-agents in traffic_events (never stored raw).
     api_key_pepper: str = ""
+    # Time-limited, no-card evaluation access. Keep JUDGE_OFFER_CODE only in the
+    # deployment secret store; a blank code disables redemption entirely.
+    judge_offer_code: str = ""
+    judge_offer_id: str = "judge-evaluation"
+    judge_offer_credits: int = 2000
+    judge_offer_days: int = 30
+    judge_offer_max_redemptions: int = 25
     # Public-chain anchoring (Phase 3 A1) — periodically publish each org's chain
     # head (latest audit_logs.chain_hash) to a public chain so tampering is
     # externally detectable, not just internally recomputable. Provider is

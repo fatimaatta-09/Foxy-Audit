@@ -15,15 +15,16 @@ happen. Handled events:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -33,7 +34,10 @@ from .. import email, password_reset
 from ..auth import hash_key
 from ..config import get_settings
 from ..db import SessionLocal, get_db
-from ..models import ApiKey, Invoice, MarketingLead, Organization, StripeEvent, User
+from ..models import (
+    ApiKey, EvaluationRedemption, Invoice, MarketingLead, Organization,
+    StripeEvent, User,
+)
 from .logs import limiter
 
 log = logging.getLogger("foxy.billing")
@@ -54,6 +58,77 @@ class SignupRequest(BaseModel):
     email: str
     name: str | None = None
     plan: str | None = None          # self-serve signup is always the free tier
+    offer_code: str | None = Field(default=None, max_length=128)
+
+
+def _normalise_offer_code(value: str) -> str:
+    return value.strip().upper()
+
+
+def _offer_email_hash(email_addr: str) -> str:
+    """Hash email with a domain-separated pepper for redemption uniqueness."""
+    pepper = get_settings().api_key_pepper.encode("utf-8")
+    return hmac.new(pepper, f"judge-offer-email:{email_addr}".encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+
+
+def _claim_judge_offer(db: Session, email_addr: str, offer_code: str | None) -> dict | None:
+    """Validate a configured judge code and reserve one redemption in this txn.
+
+    The code stays in the deployment secret store. A PostgreSQL advisory lock
+    serialises capacity checks for this one configured campaign, so two concurrent
+    signups cannot consume more than its capped redemption count.
+    """
+    if not offer_code:
+        return None
+
+    settings = get_settings()
+    supplied = _normalise_offer_code(offer_code)
+    configured = _normalise_offer_code(settings.judge_offer_code)
+    offer_id = settings.judge_offer_id.strip()[:64]
+    unavailable = (
+        not configured
+        or not supplied
+        or not offer_id
+        or not hmac.compare_digest(supplied, configured)
+        or settings.judge_offer_credits <= 0
+        or settings.judge_offer_days <= 0
+        or settings.judge_offer_max_redemptions <= 0
+    )
+    if unavailable:
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+
+    # Production and integration tests use PostgreSQL. Keeping this guarded makes
+    # lightweight local database experiments degrade safely instead of failing on
+    # PostgreSQL-specific lock syntax.
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:offer_id))"),
+                   {"offer_id": offer_id})
+
+    email_hash = _offer_email_hash(email_addr)
+    already_redeemed = db.execute(
+        select(EvaluationRedemption.id).where(
+            EvaluationRedemption.offer_id == offer_id,
+            EvaluationRedemption.email_hash == email_hash,
+        )
+    ).scalar_one_or_none()
+    redeemed_count = db.execute(
+        select(func.count()).select_from(EvaluationRedemption).where(
+            EvaluationRedemption.offer_id == offer_id,
+        )
+    ).scalar_one()
+    if already_redeemed is not None or int(redeemed_count) >= settings.judge_offer_max_redemptions:
+        # Do not distinguish an exhausted campaign from a previously redeemed
+        # email; the public signup route must not disclose campaign activity.
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.judge_offer_days)
+    return {
+        "offer_id": offer_id,
+        "email_hash": email_hash,
+        "credits": settings.judge_offer_credits,
+        "expires_at": expires_at,
+    }
 
 
 @router.post("/v1/signup")
@@ -66,12 +141,24 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
     if "@" not in email_addr or "." not in email_addr.split("@")[-1]:
         raise HTTPException(status_code=422, detail="a valid email is required")
 
+    offer = _claim_judge_offer(db, email_addr, payload.offer_code)
     plaintext_key, key_hash = _generate_api_key()
-    org = Organization(name=(payload.name or email_addr).strip()[:255],
-                       api_key_hash=key_hash, plan_tier="free", contact_email=email_addr,
-                       monthly_log_quota=get_settings().quota_for("free"))
+    org = Organization(
+        name=(payload.name or email_addr).strip()[:255], api_key_hash=key_hash,
+        plan_tier="premium" if offer else "free", contact_email=email_addr,
+        monthly_log_quota=None if offer else get_settings().quota_for("free"),
+        evaluation_offer_id=offer["offer_id"] if offer else None,
+        evaluation_credit_limit=offer["credits"] if offer else None,
+        evaluation_credits_used=0,
+        evaluation_ends_at=offer["expires_at"] if offer else None,
+    )
     db.add(org)
     db.flush()
+    if offer:
+        db.add(EvaluationRedemption(
+            offer_id=offer["offer_id"], org_id=org.id, email_hash=offer["email_hash"],
+            credits_granted=offer["credits"], expires_at=offer["expires_at"],
+        ))
     db.add(ApiKey(org_id=org.id, name="primary",
                   key_prefix=plaintext_key[:11] + "…" + plaintext_key[-4:],
                   key_hash=hash_key(plaintext_key), status="active"))
@@ -87,8 +174,19 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
     db.refresh(admin)
     # Email the invited admin a set-password link (reuse the 5D invite flow).
     password_reset.issue_reset(db, admin, admin.email, get_settings().dashboard_url, invite=True)
-    return {"status": "created", "org_id": str(org.id), "api_key": plaintext_key,
-            "message": "Check your email to set your password."}
+    response = {
+        "status": "created", "org_id": str(org.id), "api_key": plaintext_key,
+        "message": "Check your email to set your password.",
+    }
+    if offer:
+        response["evaluation_offer"] = {
+            "label": "Premium judge access",
+            "credits_total": offer["credits"],
+            "credits_remaining": offer["credits"],
+            "expires_at": offer["expires_at"].isoformat(),
+            "no_auto_charge": True,
+        }
+    return response
 
 
 class CheckoutRequest(BaseModel):

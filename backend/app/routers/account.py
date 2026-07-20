@@ -46,6 +46,16 @@ class UsageDay(BaseModel):
     pending_count: int
 
 
+class EvaluationAccess(BaseModel):
+    label: str = "Premium judge access"
+    active: bool
+    capture_available: bool
+    expires_at: str | None = None
+    credits_total: int
+    credits_used: int
+    credits_remaining: int
+
+
 class UsageQuota(BaseModel):
     plan_tier: str | None = None
     monthly_log_quota: int | None = None   # NULL = unlimited
@@ -53,6 +63,9 @@ class UsageQuota(BaseModel):
     remaining: int | None = None           # NULL when unlimited
     usage_pct: int | None = None           # 0..100+, NULL when unlimited
     over_quota: bool = False               # soft flag — ingestion is NEVER blocked
+
+
+    evaluation: EvaluationAccess | None = None
 
 
 class UsageResponse(BaseModel):
@@ -110,6 +123,21 @@ def get_usage(
 
     quota = org.monthly_log_quota
     used = int(used_this_month)
+    evaluation = None
+    if org.evaluation_offer_id and org.evaluation_credit_limit is not None:
+        now = datetime.now(timezone.utc)
+        active = not org.evaluation_ends_at or now < org.evaluation_ends_at
+        credits_used = max(0, org.evaluation_credits_used)
+        credits_remaining = (max(0, org.evaluation_credit_limit - credits_used)
+                             if active else 0)
+        evaluation = EvaluationAccess(
+            active=active,
+            capture_available=bool(active and credits_remaining > 0),
+            expires_at=org.evaluation_ends_at.isoformat() if org.evaluation_ends_at else None,
+            credits_total=org.evaluation_credit_limit,
+            credits_used=credits_used,
+            credits_remaining=credits_remaining,
+        )
     return UsageResponse(
         quota=UsageQuota(
             plan_tier=org.plan_tier,
@@ -118,6 +146,7 @@ def get_usage(
             remaining=None if quota is None else max(0, quota - used),
             usage_pct=None if not quota else round(used / quota * 100),
             over_quota=bool(quota is not None and used >= quota),
+            evaluation=evaluation,
         ),
         days=[
             UsageDay(
