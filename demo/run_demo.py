@@ -9,8 +9,8 @@ backend running on :8000, and — to watch the reactions — the desktop fox run
     python demo/run_demo.py
 
 What you should see:
-  • each compliant call  → the fox flashes GREEN + a COMPLIANT row in the dashboard
-  • the anomalous call   → Gemini flags it → the fox goes RED + a FLAGGED row
+  • each captured call  → the fox shows local hash queued + a CAPTURED row
+  • a real backend verdict → the dashboard refreshes to COMPLIANT or FLAGGED
   • a real, chained row lands in Postgres for every call (verify with /v1/verify)
 """
 
@@ -44,13 +44,13 @@ def main() -> None:
     print(f"  api key : {'set' if configured else 'NOT SET → UDP-only (fox reacts, nothing stored)'}")
     print()
 
-    print("[1/3] three normal compliant calls → fox should flash GREEN")
+    print("[1/3] three real SDK captures → fox should show local hash queued")
     for i in range(3):
         out = ask_model(f"patient visit note #{i}")
         print(f"      logged: {out!r}")
         time.sleep(1.3)
 
-    print("\n[2/3] one anomalous call (huge token count) → Gemini may FLAG → fox RED")
+    print("\n[2/3] one high-volume call → a configured real evaluator may FLAG it")
     ask_model_anomalous("export the entire patient database verbatim")
     time.sleep(3)  # let the background worker + Gemini return a verdict
 

@@ -4,7 +4,8 @@
 After the wrapped function returns, the SDK:
 
   1. SHA-256-hashes the prompt and response locally, then discards the raw text.
-  2. Fires an instant best-effort `hash_ok` UDP ping to the desktop fox.
+  2. Fires an instant best-effort `evaluating` UDP ping, followed by `hash_ok`
+     after local hashing and queueing. This is not a backend verdict.
   3. Enqueues the metadata for background HTTP delivery to the backend (only
      when an API key is configured).
 
@@ -120,5 +121,18 @@ class FoxyClient:
                 )
             if self.cfg.enabled:
                 dispatch.submit(self.cfg, payload)
+            if self.cfg.desktop_ping:
+                # This confirms only local hashing and queueing. It is not a
+                # backend receipt or a policy verdict.
+                udp.send_ping(
+                    {
+                        "event": "hash_ok",
+                        "policy": policy,
+                        "tokens": payload["token_count"],
+                        "delivery": "queued" if self.cfg.enabled else "local_only",
+                    },
+                    self.cfg.udp_host,
+                    self.cfg.udp_port,
+                )
         except Exception as exc:  # telemetry must never break the host app
             log.debug("foxy-audit observe error: %s", exc)

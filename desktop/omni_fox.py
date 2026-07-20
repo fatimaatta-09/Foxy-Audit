@@ -320,6 +320,7 @@ class OmniAwareFox(QWidget):
         self._is_hidden_in_tray = False
 
         # ── Debouncing for SDK events ─────────────────────────────────────
+        self._last_evaluating = 0.0
         self._last_hash_ok = 0.0
         self.roam_target_x  = None
         self._roam_paused   = False
@@ -731,9 +732,9 @@ class OmniAwareFox(QWidget):
         NOT green (that would imply a verdict before the Judge has run). The breach
         poller turns the fox red on the real verdict; otherwise it settles to idle."""
         now = time.time()
-        if now - self._last_hash_ok < 5.0:
-            return  # debounce busy SDKs (shared with hash_ok)
-        self._last_hash_ok = now
+        if now - self._last_evaluating < 5.0:
+            return  # debounce without suppressing the following hash_ok
+        self._last_evaluating = now
         if self._is_hidden_in_tray:
             return
         self._set_state("THINKING", ROW_THINKING, 1.5)
@@ -750,6 +751,15 @@ class OmniAwareFox(QWidget):
 
         self._set_state("STANDING", ROW_STANDING, 1.5)
         self.security_overlay.flash_green()
+        delivery = payload.get("delivery")
+        status = "local hash queued" if delivery == "queued" else "local hash only"
+        self.speech_bubble.setText(f"Foxy: {status}")
+        self.speech_bubble.adjustSize()
+        bw = self.speech_bubble.width()
+        self.speech_bubble.move(max(0, (CELL_WIDTH - bw) // 2),
+                                -self.speech_bubble.height() - 6)
+        self.speech_bubble.show()
+        QTimer.singleShot(2200, self._hide_speech)
 
     def _on_policy_breach(self, payload: dict):
         # Force pop-back if hidden

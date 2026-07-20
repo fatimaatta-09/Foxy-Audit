@@ -20,8 +20,9 @@ export FOXY_BACKEND_URL=http://127.0.0.1:8000
 python run_demo.py
 ```
 
-You'll see the fox flash **green** on each compliant call and go **red** on the anomalous one,
-the dashboard fill with COMPLIANT/FLAGGED rows, and real chained rows land in Postgres.
+You'll see the fox show a **local hash queued** reaction for each captured call. A red reaction is
+shown only for a real backend policy breach after asynchronous grading. The dashboard first shows
+CAPTURED rows, then replaces them with the authoritative backend verdict when it refreshes.
 
 ## Verify tamper-evidence
 
@@ -32,5 +33,5 @@ psql "postgresql://foxy:foxy@localhost:5432/foxy" -c \
 curl -H "Authorization: Bearer $FOXY_API_KEY" $FOXY_BACKEND_URL/v1/verify   # first_broken_seq:1
 ```
 
-Even with no backend/key set, the SDK still pings the fox green — so `python run_demo.py` is a
-valid smoke test of the SDK→fox path on its own.
+Even with no backend/key set, the SDK still emits a local-only capture signal, so `python run_demo.py`
+is a valid smoke test of the SDK-to-fox path on its own; it does not create server evidence.

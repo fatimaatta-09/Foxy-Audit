@@ -3,8 +3,9 @@
 > Governance-as-Code for AI. One decorator → a tamper-evident, privacy-preserving audit trail.
 
 The SDK hashes your LLM prompt + response **locally** (SHA-256), throws the raw text away, and
-streams only metadata to the Foxy Audit backend. It also fires a best-effort local UDP ping so the
-desktop "fox" companion reacts in real time (green on every logged call, red on a policy breach).
+streams only metadata to the Foxy Audit backend. It also fires best-effort local UDP signals so the
+desktop "fox" companion can show local capture in real time. A green capture reaction means
+"hashed locally and queued"; it is not a backend receipt or a clean policy verdict.
 
 ## Install
 
@@ -61,8 +62,8 @@ verifying.
 | Desktop ping   | `desktop_ping` | —                   | `True` (127.0.0.1:9999)  |
 
 With no API key the SDK is a **graceful no-op for the cloud path**: it still runs your function and
-still pings the desktop fox, but skips the HTTP upload — so you can see the fox react before any
-backend exists.
+still pings the desktop fox with a `local_only` capture signal, but skips the HTTP upload. This is
+useful for checking the local SDK-to-pet path, but no server record is created.
 
 ## Guarantees
 
@@ -82,6 +83,11 @@ To the backend (`POST /v1/logs`, `Authorization: Bearer <key>`):
 To the desktop fox (UDP `127.0.0.1:9999`):
 
 ```json
+{"event": "evaluating", "policy": "hipaa_basic", "tokens": 123, "ts": 1719300000}
 {"event": "hash_ok", "policy": "hipaa_basic", "tokens": 123, "ts": 1719300000}
 {"event": "policy_breach", "reason": "...", "risk_score": 87, "policy": "hipaa_basic", "ts": ...}
 ```
+
+`hash_ok` includes `delivery: "queued"` when an API key is configured and
+`delivery: "local_only"` otherwise. Neither value means that the backend has
+accepted or graded the record.
