@@ -1385,9 +1385,23 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <button class="btn pri sm" onclick="createKey()">+ new key</button>
         </div>
       </div>
-      <div class="clay pad" style="max-width:780px;">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.6;">each key maps to one developer or service · keys authenticate SDK writes via <span style="font-family:var(--mono);color:var(--fox2);">POST /v1/logs/batch</span></div>
-        <div id="keysList"></div>
+      <!-- P12 · key-usage summary -->
+      <div class="stats" style="margin-bottom:16px;">
+        <div class="stat"><div class="v fox" id="keyActiveCount">—</div><div class="l">Active keys</div></div>
+        <div class="stat"><div class="v" id="keyTotalCount">—</div><div class="l">Total keys</div></div>
+        <div class="stat"><div class="v" id="keyLimit">—</div><div class="l">Key limit</div></div>
+        <div class="stat"><div class="v" id="keyLastUsed">—</div><div class="l">Last SDK activity</div></div>
+      </div>
+      <!-- P12 · primary element: the API-key table -->
+      <div class="clay pad">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="#000"/><rect x="11" y="11.5" width="11" height="3" rx="1.2" fill="#000" transform="rotate(-45 11 13)"/></svg></span></div><div class="txt">Your API keys</div></div><button class="btn pri sm" onclick="createKey()" style="margin:0;">+ new key</button></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;">each key maps to one developer or service · keys authenticate SDK writes via <span style="font-family:var(--mono);color:var(--fox2);">POST /v1/logs/batch</span> · a key's secret is shown once at creation</div>
+        <div style="overflow-x:auto;">
+          <table class="dtbl">
+            <thead><tr><th>Name</th><th>Key</th><th>Status</th><th>Last used</th><th></th></tr></thead>
+            <tbody id="keysList"><tr><td colspan="5" style="padding:8px 10px;"><div class="skel line" style="width:60%"></div></td></tr></tbody>
+          </table>
+        </div>
       </div>
       <div class="clay pad" style="max-width:780px;margin-top:16px;">
         <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Connect the SDK</div>
@@ -2544,20 +2558,33 @@ async function loadLoginHistory(){
     if(revoked) meta='revoked '+fmtDate(k.revoked_at);
     else meta=esc(k.key_prefix)+' · used '+rel(k.last_used_at)
       +(k.expires_at?' · '+(expired?'expired '+fmtDate(k.expires_at):'expires '+fmtDate(k.expires_at)):'');
-    const label=revoked?'revoked':(expired?'expired':'active');
-    return '<div class="krow"'+(live?'':' style="opacity:.55;"')+'>'
-      +'<div class="ic-chip dark"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="'+(live?'var(--fox)':'var(--muted)')+'"/></svg></span></div>'
-      +'<div class="kbody"><div class="kname">'+esc(k.name)+'</div><div class="kmeta">'+meta+'</div></div>'
-      +'<span class="kstatus '+(live?'active':'revoked')+'">'+label+'</span>'
-      +(!revoked?'<div class="kactions"><button class="btn danger sm" type="button" onclick="revokeKeyApi(\''+k.id+'\')">revoke</button></div>':'')
-      +'</div>';
+    const chip=live?'<span class="badge ok"><i></i>active</span>'
+      :(expired?'<span class="badge warn"><i></i>expired</span>':'<span class="badge neutral">revoked</span>');
+    let used;
+    if(revoked) used='revoked '+fmtDate(k.revoked_at);
+    else used='used '+rel(k.last_used_at)+(k.expires_at?(' · '+(expired?'expired ':'expires ')+fmtDate(k.expires_at)):'');
+    return '<tr'+(live?'':' style="opacity:.55;"')+'><td>'+esc(k.name)+'</td>'
+      +'<td class="mono">'+esc(k.key_prefix)+'</td>'
+      +'<td>'+chip+'</td>'
+      +'<td class="mono">'+used+'</td>'
+      +'<td style="text-align:right;">'+(!revoked?'<button class="btn danger sm" type="button" style="margin:0;" onclick="revokeKeyApi(\''+k.id+'\')">revoke</button>':'')+'</td></tr>';
   }
   window.loadKeys=async function(){
     const box=$('keysList'); if(!box)return;
-    try{ const r=await api('/v1/keys'); if(!r.ok){ box.innerHTML='<div style="color:var(--muted);font-size:12px;">Could not load keys ('+esc(await errText(r))+').</div>'; return; }
-      const keys=await r.json();
-      box.innerHTML=(Array.isArray(keys)&&keys.length)?keys.map(keyRow).join(''):'<div style="color:var(--muted);font-size:12px;padding:8px 0;">No keys yet — create one to connect the SDK.</div>';
-    }catch(e){ box.innerHTML='<div style="color:var(--muted);font-size:12px;">Could not reach the server.</div>'; }
+    let arr=[];
+    try{ const r=await api('/v1/keys');
+      if(r.ok){ const keys=await r.json(); arr=Array.isArray(keys)?keys:[];
+        box.innerHTML=arr.length?arr.map(keyRow).join(''):'<tr><td colspan="5" style="color:var(--muted);padding:10px;">No keys yet — create one to connect the SDK.</td></tr>'; }
+      else box.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:10px;">Could not load keys ('+esc(await errText(r))+').</td></tr>';
+    }catch(e){ box.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:10px;">Could not reach the server.</td></tr>'; }
+    // key-usage context (real)
+    if($('keyTotalCount'))$('keyTotalCount').textContent=arr.length;
+    const lu=arr.map(k=>k.last_used_at).filter(Boolean).sort().pop();
+    if($('keyLastUsed'))$('keyLastUsed').textContent=lu?rel(lu):'never';
+    try{ const u=await (await api('/v1/usage?days=1')).json(); const q=(u&&u.quota)||{};
+      if($('keyActiveCount'))$('keyActiveCount').textContent=(q.active_api_keys!=null?q.active_api_keys:arr.filter(k=>k.status==='active'&&!k.expired).length);
+      if($('keyLimit'))$('keyLimit').textContent=(q.api_key_limit==null?'∞':q.api_key_limit);
+    }catch(_){ if($('keyActiveCount'))$('keyActiveCount').textContent=arr.filter(k=>k.status==='active'&&!k.expired).length; if($('keyLimit'))$('keyLimit').textContent='—'; }
   };
   window.createKey=async function(){
     const name=window.prompt('Name this key (e.g. "Backend — prod"):','SDK key'); if(name===null)return;
