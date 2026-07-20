@@ -1681,7 +1681,8 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     if(/^#?\d+$/.test(norm)) out.push({label:'Open the audit ledger (record '+norm.replace('#','#')+')', act:()=>{ close(); window.go('ledger',null); }});
     const ACTIONS=[
       {kw:'copy organization id org workspace', label:'Copy organization ID', act:()=>{ close(); const u=window.__foxUser; if(u&&u.org_id){ try{navigator.clipboard.writeText(u.org_id);}catch(e){} try{showToast('Copied organization ID');}catch(e){} } else { try{showToast('Organization ID not loaded yet');}catch(e){} } }},
-      {kw:'verify a record hash paste', label:'Verify a record by hash…', act:()=>{ close(); window.go('verify',null); const el=$('vLedgerHash'); if(el)el.focus(); }}
+      {kw:'verify a record hash paste', label:'Verify a record by hash…', act:()=>{ close(); window.go('verify',null); const el=$('vLedgerHash'); if(el)el.focus(); }},
+      {kw:'keyboard shortcuts help hotkeys cheat sheet', label:'Keyboard shortcuts', act:()=>{ close(); if(window.openShortcuts)window.openShortcuts(); }}
     ];
     ACTIONS.forEach(a=>{ if(!norm||a.label.toLowerCase().includes(lc)||a.kw.indexOf(lc)>=0) out.push({label:a.label, act:a.act}); });
     return out;
@@ -3593,6 +3594,246 @@ async function loadLoginHistory(){
   function init(){
     var ra=$('topNotifReadAll'); if(ra)ra.onclick=function(e){ if(e)e.preventDefault(); window.notifReadAll(); return false; };
     window.loadTopNotif();
+  }
+  if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
+})();
+</script>
+
+<!-- ═══ P18 · global liveliness & responsive polish ═══ -->
+<style>
+  /* live connection dot (top bar) */
+  .livedot{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);padding:0 8px 0 5px;user-select:none;}
+  .livedot i{width:7px;height:7px;border-radius:50%;background:#3ddc84;flex-shrink:0;}
+  .livedot.on i{animation:livepulse 2.4s infinite;}
+  .livedot.off{color:var(--breach-bg);}
+  .livedot.off i{background:#e0662e;animation:none;}
+  @keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.5);}70%{box-shadow:0 0 0 6px rgba(61,220,132,0);}100%{box-shadow:0 0 0 0 rgba(61,220,132,0);}}
+  @media(max-width:620px){ .livedot span{display:none;} }
+  /* global activity feed */
+  .afeed{display:flex;flex-direction:column;}
+  .aitem{display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:2px dashed var(--line);}
+  .aitem:last-child{border-bottom:none;}
+  .aic{width:28px;height:28px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--surf2);color:var(--muted);}
+  .aic svg{width:15px;height:15px;}
+  .aic.login{background:rgba(61,220,132,.14);color:#1f9d57;}
+  .aic.danger{background:rgba(255,77,77,.13);color:var(--breach-bg);}
+  .aic.key{background:rgba(255,122,46,.15);color:var(--fox2);}
+  .atxt{flex:1;min-width:0;}
+  .atxt .at-t{font-size:12px;font-weight:700;color:var(--ink);}
+  .atxt .at-s{font-size:9.5px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .awhen{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0;}
+  @media(prefers-reduced-motion:no-preference){ .aitem{animation:afade .22s ease both;} @keyframes afade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}} }
+  /* keyboard shortcuts overlay */
+  #shortcutsOverlay{display:none;position:fixed;inset:0;z-index:10001;background:rgba(6,5,4,.6);align-items:center;justify-content:center;padding:20px;}
+  #shortcutsOverlay.on{display:flex;}
+  @media(prefers-reduced-motion:no-preference){ #shortcutsOverlay.on>div{animation:afade .18s ease both;} }
+  .scrow{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 2px;border-bottom:2px dashed var(--line);font-size:12.5px;color:var(--ink);}
+  .scrow:last-child{border-bottom:none;}
+  .kbd{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:20px;padding:0 6px;border-radius:6px;background:var(--surf2);border:var(--border-sm);font-family:var(--mono);font-size:10px;font-weight:800;color:var(--ink);}
+  /* responsive: wide data tables scroll in their own box, never the page body */
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
+  @media(max-width:560px){
+    .dtbl.stackable thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0;}
+    .dtbl.stackable tr{display:block;border:var(--border-sm);border-radius:11px;margin:0 0 8px;padding:5px 10px;background:var(--surf);}
+    .dtbl.stackable tbody tr:hover{background:var(--surf);}
+    .dtbl.stackable td{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:right;border:none;padding:6px 0;}
+    .dtbl.stackable td::before{content:attr(data-label);font-family:var(--mono);font-size:8.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);text-align:left;flex-shrink:0;}
+    .dtbl.stackable td[colspan]{display:block;text-align:center;padding:10px 0;}
+    .dtbl.stackable td[colspan]::before{content:none;}
+  }
+</style>
+<div id="shortcutsOverlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onclick="if(event.target===this)this.classList.remove('on')">
+  <div class="clay pad" style="width:430px;max-width:92%;padding:18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-weight:800;font-size:15px;">Keyboard shortcuts</div>
+      <button class="ann-x" type="button" aria-label="Close" onclick="document.getElementById('shortcutsOverlay').classList.remove('on')">✕</button>
+    </div>
+    <div class="scrow"><span>Command palette &amp; search</span><span><span class="kbd">⌘/Ctrl</span> <span class="kbd">K</span></span></div>
+    <div class="scrow"><span>Show this help</span><span class="kbd">?</span></div>
+    <div class="scrow"><span>Jump to Home</span><span><span class="kbd">g</span> <span class="kbd">h</span></span></div>
+    <div class="scrow"><span>Jump to Threat analytics</span><span><span class="kbd">g</span> <span class="kbd">a</span></span></div>
+    <div class="scrow"><span>Jump to Audit ledger</span><span><span class="kbd">g</span> <span class="kbd">l</span></span></div>
+    <div class="scrow"><span>Jump to Verify a record</span><span><span class="kbd">g</span> <span class="kbd">v</span></span></div>
+    <div class="scrow"><span>Jump to Policy ruleset</span><span><span class="kbd">g</span> <span class="kbd">p</span></span></div>
+    <div class="scrow"><span>Jump to Compliance passport</span><span><span class="kbd">g</span> <span class="kbd">e</span></span></div>
+    <div class="scrow"><span>Jump to API keys</span><span><span class="kbd">g</span> <span class="kbd">k</span></span></div>
+    <div class="scrow"><span>Jump to Usage &amp; billing</span><span><span class="kbd">g</span> <span class="kbd">b</span></span></div>
+    <div class="scrow"><span>Jump to Settings</span><span><span class="kbd">g</span> <span class="kbd">s</span></span></div>
+    <div class="scrow"><span>Close any dialog</span><span class="kbd">esc</span></div>
+    <div style="margin-top:12px;font-size:10px;color:var(--muted);font-family:var(--mono);">Tip: tap <span class="kbd">g</span> then a letter to jump anywhere.</div>
+  </div>
+</div>
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id);};
+  var api=function(p,o){return fetch(p,Object.assign({credentials:'same-origin'},o||{}));};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+
+  /* ── relative, live-updating timestamps ── */
+  function rel(iso){
+    if(!iso)return '';
+    var t=new Date(iso).getTime(); if(isNaN(t))return '';
+    var s=Math.round((Date.now()-t)/1000); if(s<0)s=0;
+    if(s<45)return 'just now';
+    var m=Math.round(s/60); if(m<1)return 'just now'; if(m<60)return m+'m ago';
+    var h=Math.round(m/60); if(h<24)return h+'h ago';
+    var d=Math.round(h/24); if(d<7)return d+'d ago';
+    return new Date(iso).toLocaleDateString();
+  }
+  function tickAgo(){
+    var els=document.querySelectorAll('[data-ago]'),i,iso;
+    for(i=0;i<els.length;i++){ iso=els[i].getAttribute('data-ago'); if(iso){ els[i].textContent=rel(iso); if(!els[i].title)els[i].title=new Date(iso).toLocaleString(); } }
+  }
+  setInterval(tickAgo,30000);
+
+  /* ── live connection dot in the top bar ── */
+  function setLive(on){
+    var d=$('foxLiveDot'); if(!d)return;
+    d.className='livedot '+(on?'on':'off');
+    d.title=on?'Connected to Foxy Audit':'Offline — trying to reconnect…';
+    var s=d.querySelector('span'); if(s)s.textContent=on?'live':'offline';
+  }
+  function injectLiveDot(){
+    var host=document.querySelector('.topbar-actions'); if(!host||$('foxLiveDot'))return;
+    var el=document.createElement('div'); el.id='foxLiveDot'; el.className='livedot on';
+    el.innerHTML='<i></i><span>live</span>';
+    host.insertBefore(el,host.firstChild);
+  }
+  function pingHealth(){
+    if(!navigator.onLine){ setLive(false); return; }
+    // any HTTP response means the server is reachable; only a network error is "offline"
+    api('/v1/health').then(function(){ setLive(true); },function(){ setLive(false); });
+  }
+  window.addEventListener('online',pingHealth);
+  window.addEventListener('offline',function(){ setLive(false); });
+
+  /* ── global activity feed (account audit + org login events) ── */
+  var LBL={'key.create':'Created an API key','key.revoke':'Revoked an API key','key.regenerate':'Regenerated the API key',
+    'policy.update':'Updated the policy','member.role_change':'Changed a member role','member.enable':'Re-enabled a member',
+    'member.disable':'Disabled a member','mfa.enable':'Enabled two-factor','mfa.disable':'Disabled two-factor',
+    'profile.update':'Updated the profile','preferences.update':'Updated preferences','session.revoke':'Revoked a device session',
+    'export.create':'Started a compliance export'};
+  var IC={
+    login:'<svg viewBox="0 0 24 24" fill="none"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    key:'<svg viewBox="0 0 24 24" fill="none"><circle cx="8" cy="15" r="4" stroke="currentColor" stroke-width="2"/><path d="M10.8 12.2 20 3m-3 0 3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    danger:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    gear:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+  };
+  function kindFor(action){
+    action=action||'';
+    if(action.indexOf('key.')===0)return 'key';
+    if(action.indexOf('disable')>=0||action.indexOf('revoke')>=0||action.indexOf('breach')>=0)return 'danger';
+    return 'gear';
+  }
+  function merge(audit,logins){
+    var out=[];
+    (audit||[]).forEach(function(a){
+      var k=kindFor(a.action);
+      out.push({when:a.created_at,kind:k,cls:k,title:LBL[a.action]||a.action||'Account change',
+        sub:(a.target?(a.target+' · '):'')+(a.actor_email||'')});
+    });
+    (logins||[]).forEach(function(l){
+      out.push({when:l.created_at,kind:'login',cls:l.success?'login':'danger',
+        title:l.success?'Signed in':'Failed sign-in attempt',
+        sub:(l.email||'')+(l.ip?(' · '+l.ip):'')});
+    });
+    out.sort(function(x,y){ return (new Date(y.when).getTime()||0)-(new Date(x.when).getTime()||0); });
+    return out;
+  }
+  function renderFeed(box,list){
+    if(!list.length){ box.innerHTML='<div style="padding:22px 6px;text-align:center;color:var(--muted);font-size:11.5px;">No account activity yet — key changes and sign-ins show up here as they happen.</div>'; return; }
+    box.innerHTML='<div class="afeed">'+list.slice(0,30).map(function(it){
+      return '<div class="aitem"><div class="aic '+it.cls+'">'+(IC[it.kind]||IC.gear)+'</div>'
+        +'<div class="atxt"><div class="at-t">'+esc(it.title)+'</div><div class="at-s">'+esc(it.sub)+'</div></div>'
+        +'<span class="awhen" data-ago="'+esc(it.when||'')+'">'+esc(rel(it.when))+'</span></div>';
+    }).join('')+'</div>';
+  }
+  var _busy=false;
+  window.loadGlobalActivity=function(){
+    var box=$('homeActivityFeed'); if(!box||_busy)return;
+    _busy=true;
+    if(window.foxSkel)window.foxSkel(box,{type:'rows',rows:5});
+    Promise.all([
+      api('/v1/account/audit?limit=50').then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}),
+      api('/v1/auth/login-history').then(function(r){return r.ok?r.json():[];}).catch(function(){return [];})
+    ]).then(function(res){
+      renderFeed(box,merge(res[0],res[1]));
+      var st=$('homeActivityStamp'); if(st){ st.setAttribute('data-ago',new Date().toISOString()); st.textContent='updated just now'; }
+      _busy=false;
+    },function(){ box.innerHTML='<div style="padding:20px 6px;text-align:center;color:var(--muted);font-size:11.5px;">Could not load activity.</div>'; _busy=false; });
+  };
+  function injectHomeCard(){
+    var pd=$('page-dashboard'); if(!pd||$('homeActivityCard'))return;
+    pd.insertAdjacentHTML('beforeend',
+      '<div class="clay pad" id="homeActivityCard" style="margin-top:18px;">'
+      +'<div class="stitle" style="margin-bottom:10px;"><div class="stitle-l">'
+      +'<div class="ic-chip sm"><span class="glyph">'+IC.gear+'</span></div>'
+      +'<div class="txt">Recent activity</div></div>'
+      +'<span class="stitle-act" role="button" tabindex="0" onclick="window.loadGlobalActivity&&window.loadGlobalActivity()">↻ refresh</span></div>'
+      +'<div id="homeActivityFeed"></div>'
+      +'<div style="margin-top:9px;font-size:9px;color:var(--muted);font-family:var(--mono);"><span id="homeActivityStamp" data-ago=""></span></div>'
+      +'</div>');
+  }
+
+  /* ── responsive data tables: no page-level horizontal scroll ── */
+  function wrapTable(t){
+    if(!t.parentNode||t.parentNode.classList.contains('tbl-scroll'))return;
+    var w=document.createElement('div'); w.className='tbl-scroll';
+    t.parentNode.insertBefore(w,t); w.appendChild(t);
+  }
+  function stackTable(t){
+    if(t.__p18)return; t.__p18=true;
+    var ths=t.querySelectorAll('thead th'),labels=[],j;
+    for(j=0;j<ths.length;j++)labels.push(ths[j].textContent.trim());
+    if(!labels.length)return;
+    t.classList.add('stackable');
+    var tb=t.querySelector('tbody'); if(!tb)return;
+    var apply=function(){
+      var rows=tb.querySelectorAll('tr'),r,cells,c;
+      for(r=0;r<rows.length;r++){ cells=rows[r].children;
+        for(c=0;c<cells.length&&c<labels.length;c++){
+          if(cells[c].nodeType===1&&!cells[c].hasAttribute('colspan')&&!cells[c].getAttribute('data-label'))
+            cells[c].setAttribute('data-label',labels[c]);
+        } }
+    };
+    apply();
+    try{ new MutationObserver(apply).observe(tb,{childList:true}); }catch(e){}
+  }
+  function enhanceTables(){
+    var tbls=document.querySelectorAll('.dtbl'),i;
+    for(i=0;i<tbls.length;i++){ wrapTable(tbls[i]); stackTable(tbls[i]); }
+  }
+
+  /* ── keyboard shortcuts overlay + quick-nav (g then key) ── */
+  var NAV={h:'dashboard',d:'dashboard',a:'analytics',l:'ledger',v:'verify',p:'policy',e:'export',k:'keys',b:'billing',s:'settings'};
+  var gWait=false,gTimer=null;
+  function openShortcuts(){ var o=$('shortcutsOverlay'); if(o)o.classList.add('on'); }
+  window.openShortcuts=openShortcuts;
+  function isTyping(e){ var t=e.target,g=t&&t.tagName; return g==='INPUT'||g==='TEXTAREA'||g==='SELECT'||(t&&t.isContentEditable); }
+  document.addEventListener('keydown',function(e){
+    if(e.metaKey||e.ctrlKey||e.altKey)return;
+    if(e.key==='Escape'){ var o=$('shortcutsOverlay'); if(o)o.classList.remove('on'); gWait=false; return; }
+    if(isTyping(e))return;
+    if(e.key==='?'){ e.preventDefault(); var ov=$('shortcutsOverlay'); if(ov)ov.classList.toggle('on'); return; }
+    if(gWait){ gWait=false; if(gTimer)clearTimeout(gTimer);
+      var dest=NAV[(e.key||'').toLowerCase()];
+      if(dest&&window.go){ e.preventDefault(); window.go(dest,null); }
+      return;
+    }
+    if(e.key==='g'||e.key==='G'){ gWait=true; gTimer=setTimeout(function(){ gWait=false; },1200); }
+  });
+
+  /* ── wire P18 into navigation + startup ── */
+  function authed(){ var g=$('authGate'); if(!g)return true; var d=g.style.display||getComputedStyle(g).display; return d==='none'; }
+  if(typeof window.go==='function'){
+    var _go=window.go;
+    window.go=function(p,el){ _go(p,el); enhanceTables(); if(p==='dashboard'&&window.loadGlobalActivity)window.loadGlobalActivity(); };
+  }
+  function init(){
+    injectLiveDot(); injectHomeCard(); enhanceTables(); pingHealth();
+    setInterval(pingHealth,60000);
+    if(authed()&&window.loadGlobalActivity)window.loadGlobalActivity();
   }
   if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
 })();
