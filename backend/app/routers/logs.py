@@ -158,6 +158,27 @@ def ingest_batch(
         snapshot = capture_policy_snapshot(policy)
         snapshot_hash = policy_snapshot_hash(snapshot)
 
+    # Enforce evaluation-offer credits (judge access) under a row lock so concurrent
+    # batches can't overspend a capped, non-billable evaluation campaign. Existing
+    # logs, exports, and verification stay available even once the credits run out.
+    if org.evaluation_offer_id and new_items:
+        locked_org = db.execute(
+            select(Organization).where(Organization.id == org.id).with_for_update()
+        ).scalar_one()
+        if locked_org.evaluation_ends_at and now >= locked_org.evaluation_ends_at:
+            raise HTTPException(status_code=402, detail={
+                "code": "evaluation_expired",
+                "message": "This evaluation offer has ended. Existing evidence remains available.",
+            })
+        credit_limit = locked_org.evaluation_credit_limit or 0
+        if locked_org.evaluation_credits_used + len(new_items) > credit_limit:
+            raise HTTPException(status_code=402, detail={
+                "code": "evaluation_credits_exhausted",
+                "message": "This evaluation offer has no remaining event credits.",
+            })
+        locked_org.evaluation_credits_used += len(new_items)
+        org = locked_org
+
     # Lock the org's tail row after taking the allocator lock. Legacy rows can
     # still exist, so the allocator is initialized from the observed tail above.
     prev = db.execute(
