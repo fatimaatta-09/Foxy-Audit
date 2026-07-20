@@ -31,7 +31,7 @@ These statements are based on the current repository, not on placeholder data:
 | SDK privacy boundary | Implemented | Prompt and response are hashed locally; the metadata request contains hashes, token count, policy tag, and local PII signals. The SDK cannot detect calls that bypass its decorator. |
 | Tamper-evident ledger | Implemented in backend | The backend builds and verifies sequential chain links. This is a hash chain, not automatically a blockchain anchor. |
 | Async ingestion | Implemented | SDK dispatch is background HTTP and the customer API accepts metadata for durable processing. |
-| Policy grading | Implemented as optional Gemini path | The backend currently has a Gemini evaluator. Without a configured key or when the provider fails, the configured fallback is used; this must be visible as unavailable/advisory, not presented as a successful AI review. |
+| Policy grading | Implemented as optional Gemini path | The authenticated health response and dashboard show configured/unavailable state. Provider fallback verdicts are persisted as `decision: unknown` and excluded from clean-rate statistics. |
 | Judge access | Implemented on this branch | Campaigns have hashed codes, finite capacity, expiry, duplicate-email protection, one-time API-key provisioning, Premium workspace access, auditing, and hard `402` capture enforcement after allowance expiry. |
 | Dashboard allowance | Implemented in source | The dashboard can show the finite evaluation allowance, but the exact branch must be deployed and exercised before it can be promised to judges. |
 | Desktop companion | Partially implemented | The pet listens for local SDK events, shows local capture separately from clean verdicts, polls real backend breaches, opens the dashboard through a one-time handoff, and has optional provider-backed chat. A packaged client distribution is not yet verified. |
@@ -40,35 +40,17 @@ These statements are based on the current repository, not on placeholder data:
 
 ## Claims to Remove or Correct
 
-### P0: Capture state must be truthful
+### Implemented: truthful capture state
 
-The SDK previously sent `evaluating` without the documented capture signal. This
-branch now emits `hash_ok` after local hashing and queueing, separates the pet's
-debounce timers, and labels live rows `CAPTURED`. The signal is labeled
-**hashed locally / queued**, not **backend accepted** or **compliant**.
+The SDK emits `evaluating`, then `hash_ok` after local hashing and queueing. The
+pet and desktop table label this state as local capture, not backend acceptance
+or compliance. Offline runs are labeled `local_only`, and backend verdicts are
+shown only after the dashboard receives them.
 
-Required files:
-
-- `sdk/src/foxy_audit/client.py`
-- `sdk/tests/test_integration.py`
-- `sdk/README.md`
-- `desktop/omni_fox.py`
-- `desktop/dashboard.py` if the local row label needs clarification
-
-Acceptance criteria:
-
-1. A decorated local function emits `evaluating`, then `hash_ok`.
-2. Neither UDP event contains prompt or response text.
-3. The desktop changes to its local-capture state only after `hash_ok`.
-4. A clean backend verdict is shown only after the dashboard or breach poller
-   receives the actual server result.
-5. An offline or missing-key run says local-only/queued and does not imply that
-   the server received or graded the record.
-
-### P0: Judges need a real no-LLM path
+### Implemented: judges have a real no-LLM path
 
 An LLM is not required to test the SDK, hash chain, allowance, dashboard, or
-verifier. Provide a small judge script that wraps a deterministic local Python
+verifier. The branch provides a small judge script that wraps a deterministic local Python
 function with the real SDK. The function is a test client, not seeded audit
 data; every record is created by the judge's run and is visible in the normal
 ledger. It should accept `FOXY_API_KEY` and `FOXY_BACKEND_URL`, make one safe
@@ -81,21 +63,22 @@ unavailable unless a real configured evaluator is active. If a deterministic
 local policy mode is added later, it must be explicitly labeled as local policy
 evaluation and must be tested as a separate provider.
 
-Recommended files:
+The branch also exposes evaluator configuration state through `/v1/health`,
+shows unavailable provider state in the dashboard, and stores provider fallback
+results as `unknown` rather than clean.
 
-- `demo/judge_client.py`
-- `sdk/README.md`
-- `docs/JUDGE_ACCESS_AND_REDEMPTION.md`
-- a backend health/status response that distinguishes evaluator unavailable
-  from a clean verdict
-
-### P0: Do not claim ChatGPT judging yet
+### Remaining: do not claim ChatGPT judging yet
 
 The backend currently implements Gemini evaluation. The desktop has an optional
 OpenAI-compatible chat provider, but that is not the backend policy judge. Do
 not market “Gemini + ChatGPT judge” until a backend OpenAI provider is actually
 implemented, configured, tested, and deployed. The safe interim wording is
 “optional Gemini policy evaluator; provider status is shown honestly.”
+
+### Implemented: local diagnostic path
+
+`foxy doctor` reports authenticated upload queueing, evaluator configuration,
+local pet signals, and server-side chain verification without exposing secrets.
 
 ### P0: Deployment and origin must be proven
 
@@ -163,7 +146,7 @@ time-sensitive.
 | Build with required OpenAI developer tools | Partial | Preserve dated Codex/GPT-5.6 work evidence and describe exactly what was built or extended during the event. |
 | Select one category | Missing | Choose one category, most naturally Developer Tools, and use the same category everywhere. |
 | Public demo video under the event limit | Missing | Record the real redemption, SDK, pet, dashboard, and verifier flow with audio. No seeded data or fake provider output. |
-| Public or permitted private code repository | Partial | Confirm the repository URL, access permissions, and add a root license file that matches the stated license. |
+| Public or permitted private code repository | Completed in source | Root MIT license is present; confirm repository access permissions before submission. |
 | English submission materials | Partial | Prepare the final English project description, setup steps, architecture, and limitations. |
 | Judge setup path | Partial | Deploy this branch, create a bounded campaign, and publish only the redemption URL plus separately delivered code. |
 | Working intended platform | Partial | Run the deployed SDK-to-API-to-dashboard-to-verifier test and capture the output. |
@@ -175,15 +158,6 @@ Official references: [OpenAI Build Week rules](https://openai.devpost.com/rules)
 overview](https://openai.com/build-week/).
 
 ## Priority Implementation Order
-
-### Phase 0: Truthful local test path
-
-- [x] Emit and test SDK `hash_ok` after local hashing/queueing.
-- [x] Update pet copy and SDK documentation to distinguish local capture from
-  backend receipt and policy verdict.
-- [x] Add `demo/judge_client.py` using a real SDK call and no external LLM.
-- [x] Add a desktop bridge protocol test and run the SDK integration test.
-- Add a visible evaluator status instead of treating fallback as a clean result.
 
 ### Phase 1: Deployed redemption and evidence flow
 
@@ -198,8 +172,6 @@ overview](https://openai.com/build-week/).
 
 - Build and test a signed desktop installer for supported operating systems.
 - Make first-run API-key and backend URL setup explicit and recoverable.
-- Add an SDK doctor/diagnostic command that reports endpoint, key presence, local
-  UDP listener, and last delivery status without revealing secrets.
 - Add CI coverage for SDK, bridge, redemption, allowance, and verifier paths.
 
 ### Phase 3: Provider maturity

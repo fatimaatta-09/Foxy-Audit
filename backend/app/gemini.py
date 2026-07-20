@@ -79,9 +79,10 @@ def _build_system_prompt(policy_config: dict[str, Any] | None = None,
 
 
 def _fallback(reason: str) -> Verdict:
+    unavailable = f"evaluator_unavailable:{reason}"
     if get_settings().gemini_fail_closed:
-        return Verdict(policy_breach=True, reason=f"evaluator_unavailable:{reason}", risk_score=50)
-    return Verdict(policy_breach=False, reason="evaluator_unavailable", risk_score=0)
+        return Verdict(policy_breach=True, reason=unavailable, risk_score=50, decision="unknown")
+    return Verdict(policy_breach=False, reason=unavailable, risk_score=0, decision="unknown")
 
 
 def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
@@ -113,10 +114,12 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
             request_options={"timeout": settings.gemini_timeout},
         )
         data = json.loads(resp.text)
+        breach = bool(data.get("policy_breach", False))
         return Verdict(
-            policy_breach=bool(data.get("policy_breach", False)),
+            policy_breach=breach,
             reason=str(data.get("reason", ""))[:300],
             risk_score=int(data.get("risk_score", 0)),
+            decision="breach" if breach else "clean",
         )
     except Exception as exc:  # network / quota / bad-JSON / version drift
         log.warning("gemini evaluate failed (%s): %s", type(exc).__name__, exc)

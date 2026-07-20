@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -36,6 +36,8 @@ class Verdict(BaseModel):
     policy_breach: bool = False
     reason: str = ""
     risk_score: int = Field(default=0, ge=0, le=100)
+    # Provider outages are not clean decisions.
+    decision: Literal["clean", "breach", "unknown"] = "unknown"
 
 
 class LogResponse(BaseModel):
@@ -117,4 +119,5 @@ class StatsResponse(BaseModel):
     avg_seconds_to_verdict: float | None   # avg graded_at - created_at; None if none graded
     grading: GradingCounts
     activity_7d: list[ActivityDay]
+    evaluator_unknown: int = 0
 

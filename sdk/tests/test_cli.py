@@ -29,6 +29,23 @@ def test_doctor_all_green(monkeypatch, capsys):
     assert "Backend reachable" in out and "Ledger verified" in out
 
 
+def test_doctor_reports_evaluator_status(monkeypatch, capsys):
+    monkeypatch.setattr(cli.requests, "post", lambda *a, **k: _Resp(202))
+
+    def get(url, *args, **kwargs):
+        if url.endswith("/v1/health"):
+            return _Resp(200, {"evaluator": {
+                "provider": "gemini", "model": "gemini-2.5-flash",
+                "status": "configured",
+            }})
+        return _Resp(200, {"ok": True, "count": 1})
+
+    monkeypatch.setattr(cli.requests, "get", get)
+    monkeypatch.setattr(cli.udp, "send_ping", lambda *a, **k: True)
+    assert cli.main(["doctor", "--api-key", "foxy_sk_test", "--backend", "http://x"]) == 0
+    assert "Evaluator configured" in capsys.readouterr().out
+
+
 def test_doctor_bad_key(monkeypatch):
     monkeypatch.setattr(cli.requests, "post", lambda *a, **k: _Resp(401, text="Invalid API key"))
     monkeypatch.setattr(cli.udp, "send_ping", lambda *a, **k: True)

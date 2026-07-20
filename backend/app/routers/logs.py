@@ -50,6 +50,11 @@ router = APIRouter()
 # Reads filter explicitly on org_id (the app DB role is a superuser that bypasses
 # RLS, so the WHERE clause is what enforces tenant isolation — as in verify.py).
 _BREACH = AuditLog.gemini_verdict["policy_breach"].astext == "true"
+_UNKNOWN = (
+    (AuditLog.gemini_verdict["decision"].astext == "unknown")
+    | (AuditLog.gemini_verdict["reason"].astext.like("evaluator_unavailable:%"))
+    | (AuditLog.gemini_verdict["reason"].astext == "evaluator_unavailable")
+)
 
 
 @router.post("/v1/logs/batch", status_code=HTTP_202_ACCEPTED)
@@ -299,7 +304,25 @@ def stats(
     # has been graded yet. Replaces the dashboard's fabricated "42ms judge latency".
     avg_verdict = db.execute(
         select(func.avg(func.extract("epoch", AuditLog.graded_at - AuditLog.created_at)))
-        .where(AuditLog.org_id == org.id, AuditLog.graded_at.isnot(None))
+        .where(AuditLog.org_id == org.id, AuditLog.graded_at.isnot(None), ~_UNKNOWN)
+    ).scalar_one()
+
+    evaluator_unknown = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, AuditLog.grading_status == "graded", _UNKNOWN)
+    ).scalar_one()
+    known_graded = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, AuditLog.grading_status == "graded", ~_UNKNOWN)
+    ).scalar_one()
+    known_clean = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(
+            AuditLog.org_id == org.id,
+            AuditLog.grading_status == "graded",
+            ~_UNKNOWN,
+            ~_BREACH,
+        )
     ).scalar_one()
 
     gc = {"pending": 0, "in_progress": 0, "graded": 0, "failed": 0}
@@ -323,11 +346,12 @@ def stats(
         ).all()
     ]
 
-    clean_rate = round(100.0 * (total - breaches) / total, 1) if total else 100.0
+    clean_rate = round(100.0 * known_clean / known_graded, 1) if known_graded else 0.0
     return StatsResponse(
         total_logged=total, breaches=breaches, clean_rate=clean_rate,
         avg_token_count=round(float(avg_tokens), 1),
         judge_model=get_settings().gemini_model,
         avg_seconds_to_verdict=round(float(avg_verdict), 1) if avg_verdict is not None else None,
         grading=GradingCounts(**gc), activity_7d=activity,
+        evaluator_unknown=evaluator_unknown,
     )
