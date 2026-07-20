@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
 from ..anchor import head_of, latest_anchor
+from .. import notify
 from ..auth import require_platform_role, require_step_up_dep, set_org_scope_for_staff
 from ..config import get_settings
 from ..platform_config import effective_quota
@@ -150,6 +151,10 @@ def suspend_organization(
     record_admin_action(db, staff, "org.suspend", target_org_id=org.id,
                         target_type="organization", target_id=str(org.id),
                         detail={"reason": org.suspended_reason}, ip=client_ip(request))
+    notify.broadcast(db, "system", f"Org suspended: {org.name}",
+                     body=f"{staff.email} suspended {org.name}.", level="warning",
+                     pref="notify_system", exclude_id=staff.id,
+                     target_type="organization", target_id=str(org.id))
     db.commit()
     return {"status": "suspended", "org_id": str(org.id)}
 
@@ -673,5 +678,9 @@ def offboard_organization(
     record_admin_action(db, staff, "org.offboard", target_org_id=org.id,
                         target_type="organization", target_id=str(org.id),
                         detail={"keys_revoked": len(keys)}, ip=client_ip(request))
+    notify.broadcast(db, "system", f"Org offboarded: {org.name}",
+                     body=f"{staff.email} offboarded {org.name} ({len(keys)} keys revoked).",
+                     level="warning", pref="notify_system", exclude_id=staff.id,
+                     target_type="organization", target_id=str(org.id))
     db.commit()
     return {"status": "offboarded", "org_id": str(org.id), "keys_revoked": len(keys)}

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .. import email as email_mod
 from .. import platform_config as cfg
 from ..admin_audit import client_ip, record_admin_action
+from .. import notify
 from ..auth import require_platform_role, require_staff, require_step_up_dep
 from ..db import get_db
 from ..models import PlatformAnnouncement, StaffUser
@@ -122,6 +123,9 @@ def broadcast(
                         detail={"title": ann.title, "level": level,
                                 "email_staff": body.email_staff, "emailed": emailed},
                         ip=client_ip(request))
+    notify.broadcast(db, "broadcast", ann.title, body=ann.body, level=level,
+                     pref="notify_broadcasts", exclude_id=staff.id,
+                     target_type="announcement", target_id=str(ann.id))
     db.commit()
     return {"status": "created", "id": str(ann.id), "emailed": emailed}
 

@@ -399,6 +399,29 @@ class AdminAction(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class StaffNotification(Base):
+    """A notification for a platform-staff member, generated from a REAL event (a broadcast, a
+    staff action targeting them, or a system/org event) — never fabricated. Platform-only (no RLS
+    policy). One row per recipient (broadcasts fan out) so read state is per-staff. (Phase D)
+    """
+    __tablename__ = "staff_notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # nullable = a broadcast-to-all row (unused while broadcasts fan out per-staff; kept for flex)
+    staff_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    level: Mapped[str] = mapped_column(String(16), nullable=False, server_default="info")
+    target_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class TrafficEvent(Base):
     """One request across any of the 3 sites — the traffic feed for the admin
     site. Written OFF the request hot path by

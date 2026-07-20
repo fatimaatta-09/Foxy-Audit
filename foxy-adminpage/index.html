@@ -822,6 +822,30 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .sc-kbd{font-family:var(--mono);font-size:11px;color:var(--ink2);background:var(--surf2);
   border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
 
+/* notifications bell + dropdown (Phase D) */
+.topnotif{position:relative}
+.notif-panel{display:none;position:absolute;top:calc(100% + 8px);right:0;width:min(360px,92vw);
+  max-height:min(70vh,480px);flex-direction:column;z-index:9500;overflow:hidden;
+  background:linear-gradient(var(--surf-over),var(--surf-over)),var(--bg);
+  border:1px solid var(--line2);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.34)}
+.notif-panel.on{display:flex}
+.notif-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;
+  border-bottom:1px solid var(--line);font-family:var(--disp);font-weight:600;font-size:13px;color:var(--ink)}
+.notif-head a{font-size:11px;color:var(--fox2);cursor:pointer;text-decoration:none}
+.notif-list{overflow-y:auto;padding:6px}
+.notif-item{display:flex;gap:10px;padding:10px 11px;border-radius:9px;cursor:pointer;align-items:flex-start}
+.notif-item:hover{background:var(--surf2)}
+.notif-item.unread{background:color-mix(in srgb,var(--fox) 9%,transparent)}
+.notif-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px;background:var(--muted2)}
+.notif-item.unread .notif-dot{background:var(--fox)}
+.notif-item.lv-warning.unread .notif-dot{background:var(--warnc)}
+.notif-item.lv-critical.unread .notif-dot{background:var(--danger)}
+.notif-body{min-width:0;flex:1}
+.notif-title{font-size:12.5px;color:var(--ink);font-weight:600;line-height:1.32}
+.notif-sub{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.4}
+.notif-time{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:3px}
+.notif-empty{padding:30px 14px;text-align:center;color:var(--muted);font-size:12.5px}
+
 /* ════════ RESPONSIVE ════════ */
 @media(max-width:760px){
   .dock{
@@ -1007,8 +1031,18 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <button class="topbtn" type="button" data-tip="Refresh this page" aria-label="Refresh this page" onclick="refreshCurrent()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         </button>
+        <div class="topnotif" id="topNotifWrap">
+          <button class="topbtn" type="button" data-tip="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" onclick="toggleNotif(event)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+            <span class="topbadge" id="topNotifBadge" style="display:none;">0</span>
+          </button>
+          <div class="notif-panel" id="notifPanel" role="dialog" aria-label="Notifications">
+            <div class="notif-head"><span>Notifications</span><a href="#" id="notifReadAllLink" onclick="notifReadAll();return false;">Mark all read</a></div>
+            <div class="notif-list" id="notifList"><div class="sub mono" style="padding:16px;">loading…</div></div>
+          </div>
+        </div>
         <button class="topbtn" type="button" data-tip="Alerts" aria-label="Open alerts" onclick="goOps('alerts')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
           <span class="topbadge" id="topAlertBadge" style="display:none;">0</span>
         </button>
         <button class="topbtn" type="button" data-tip="Inbox" aria-label="Open inbox" onclick="navTo('inbox')">
@@ -2222,6 +2256,34 @@ async function releaseMsg(id){try{await api('/admin/v1/inbox/'+id+'/release',{me
 function updateInboxBadge(n){n=n||0;['inboxBadge','logoBadge','topInboxBadge'].forEach(id=>{const b=$(id);if(!b)return;if(n>0){b.textContent=n>99?'99+':n;b.style.display='';}else b.style.display='none';});}
 async function pollInbox(){try{const r=await api('/admin/v1/inbox/unread-count');if(r.ok){updateInboxBadge((await r.json()).unread);}}catch(e){}}
 
+/* ──────────── notifications (Phase D) ──────────── */
+function toggleNotif(e){ if(e){e.stopPropagation();}
+  const p=$('notifPanel'), open=!p.classList.contains('on');
+  document.querySelectorAll('.notif-panel.on').forEach(x=>x.classList.remove('on'));
+  const btn=$('topNotifWrap')&&$('topNotifWrap').querySelector('button');
+  if(open){ p.classList.add('on'); if(btn)btn.setAttribute('aria-expanded','true'); loadNotif(); }
+  else if(btn){ btn.setAttribute('aria-expanded','false'); }
+}
+async function loadNotif(){
+  const list=$('notifList'); if(!list)return;
+  let r; try{ r=await api('/admin/v1/notifications?limit=30'); }catch(e){ r=null; }
+  if(!r||!r.ok){ list.innerHTML='<div class="notif-empty">Notifications unavailable.</div>'; return; }
+  const d=await r.json(); updateNotifBadge(d.unread);
+  if(!d.items||!d.items.length){ list.innerHTML='<div class="notif-empty">You’re all caught up.</div>'; return; }
+  list.innerHTML=d.items.map(n=>'<div class="notif-item '+(n.read?'':'unread')+' lv-'+esc(n.level||'info')+'" onclick="notifRead(\''+esc(n.id)+'\',this)">'
+    +'<span class="notif-dot"></span><div class="notif-body"><div class="notif-title">'+esc(n.title)+'</div>'
+    +(n.body?'<div class="notif-sub">'+esc(n.body)+'</div>':'')
+    +'<div class="notif-time">'+(n.created_at?fmtTime(n.created_at):'')+'</div></div></div>').join('');
+}
+async function notifRead(id,el){ if(el&&el.classList.contains('unread')){ el.classList.remove('unread');
+  try{ await api('/admin/v1/notifications/'+id+'/read',{method:'POST'}); }catch(e){} pollNotif(); } }
+async function notifReadAll(){ try{ await api('/admin/v1/notifications/read-all',{method:'POST'}); }catch(e){} loadNotif(); }
+function updateNotifBadge(n){ n=n||0; const b=$('topNotifBadge'); if(!b)return;
+  if(n>0){ b.textContent=n>99?'99+':n; b.style.display=''; } else b.style.display='none'; }
+async function pollNotif(){ try{ const r=await api('/admin/v1/notifications/unread-count'); if(r.ok){ updateNotifBadge((await r.json()).unread); } }catch(e){} }
+document.addEventListener('click',function(e){ const w=$('topNotifWrap'); if(w && !w.contains(e.target)){ const p=$('notifPanel');
+  if(p&&p.classList.contains('on')){ p.classList.remove('on'); const b=w.querySelector('button'); if(b)b.setAttribute('aria-expanded','false'); } } });
+
 /* ──────────── settings / theme ──────────── */
 function setTheme(mode){
   document.documentElement.dataset.theme=mode;
@@ -2313,6 +2375,7 @@ function enter(me){
   loadHealth();loadAlerts();
   loadBanner();
   pollInbox(); if(!window.__inboxTimer) window.__inboxTimer=setInterval(pollInbox,20000);
+  pollNotif(); if(!window.__notifTimer) window.__notifTimer=setInterval(pollNotif,20000);
 }
 $('gateForm').addEventListener('submit',async e=>{
   e.preventDefault();$('gErr').textContent='';

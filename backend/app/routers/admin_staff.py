@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from .. import password_reset
 from ..admin_audit import client_ip, record_admin_action
+from .. import notify
 from ..auth import require_platform_role, require_step_up_dep
 from ..config import get_settings
 from ..db import get_db
@@ -137,6 +138,9 @@ def disable_staff(
     record_admin_action(db, staff, "staff.disable", target_type="staff_user",
                         target_id=str(target.id), detail={"email": target.email},
                         ip=client_ip(request))
+    notify.notify_staff(db, target, "staff_disable", "Your account was disabled",
+                        body="A superadmin disabled your staff account.", level="warning",
+                        target_type="staff_user", target_id=str(target.id))
     db.commit()
     return {"status": "disabled", "id": str(target.id)}
 
@@ -190,6 +194,9 @@ def set_staff_role(
                         target_id=str(target.id),
                         detail={"email": target.email, "from": old, "to": role},
                         ip=client_ip(request))
+    notify.notify_staff(db, target, "staff_role", "Your platform role changed",
+                        body=f"{old} → {role}", target_type="staff_user",
+                        target_id=str(target.id))
     db.commit()
     return {"status": "updated", "id": str(target.id), "platform_role": role}
 
@@ -207,6 +214,9 @@ def enable_staff(
     record_admin_action(db, staff, "staff.enable", target_type="staff_user",
                         target_id=str(target.id), detail={"email": target.email},
                         ip=client_ip(request))
+    notify.notify_staff(db, target, "staff_enable", "Your account was re-enabled",
+                        body="Your staff account was re-enabled.",
+                        target_type="staff_user", target_id=str(target.id))
     db.commit()
     return {"status": "enabled", "id": str(target.id)}
 
@@ -226,6 +236,9 @@ def reset_staff_mfa(
     record_admin_action(db, staff, "staff.mfa_reset", target_type="staff_user",
                         target_id=str(target.id), detail={"email": target.email},
                         ip=client_ip(request))
+    notify.notify_staff(db, target, "staff_mfa_reset", "Your MFA was reset",
+                        body="A superadmin reset your MFA enrolment. Re-enrol from Settings.",
+                        level="warning", target_type="staff_user", target_id=str(target.id))
     db.commit()
     return {"status": "mfa_reset", "id": str(target.id)}
 
