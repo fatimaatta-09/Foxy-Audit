@@ -12,7 +12,7 @@
   var t=localStorage.getItem('foxy_admin_theme')||((window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light');
   var sk=localStorage.getItem('foxy_admin_skin')||'glass';
   r.dataset.theme=t; r.dataset.skin=sk; r.dataset.density=localStorage.getItem('foxy_admin_density')||'comfortable';
-  if(t==='dark'){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#16130F');}
+  if(t==='dark'){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#0D0B14');}
 }catch(e){}})();</script>
 <!-- Self-hosted fonts (embedded woff2, latin subset) — no external CDN, admin-CSP-safe.
      Poppins (display/UI/body) + JetBrains Mono (data/hashes/IDs). Regenerate: scratchpad/inject_fonts.py -->
@@ -138,29 +138,31 @@
 /* ══ DARK MODE — warm dark glass over a deep ember gradient ══ */
 html[data-theme="dark"]{
   /* ══ warm-charcoal ladder — luminance-separated; depth from elevation + shadow, not blur (Phase B) ══ */
-  --bg:      #1C1712;
-  --bg2:     rgba(18,15,12,.55);
-  /* warm amber-charcoal surfaces — lifted + more OPAQUE so panels read as warm elevated glass
-     (not near-black) even where backdrop-filter is weak. Owner: "still looks dead / grey tone". */
-  --surf:    rgba(126,103,76,.42);
-  --surf-solid: rgba(86,70,53,.90);
-  --surf2:   rgba(146,120,90,.24);
+  /* ══ SUNSET DUSK — deep indigo/violet base; orange stays the hero over it, violet is the
+     ambient/secondary. Warm/cool split gives depth so panels no longer read as dead grey. ══ */
+  --bg:      #0D0B14;
+  --bg2:     rgba(13,11,20,.55);
+  /* violet-charcoal surfaces — translucent frosted violet-glass over the sunset ambient;
+     --surf3 stays warm-orange so the brand accent surface never goes cool. */
+  --surf:    rgba(120,110,168,.38);
+  --surf-solid: rgba(40,34,60,.90);
+  --surf2:   rgba(140,128,192,.24);
   --surf3:   rgba(255,142,78,.22);
-  --surf-elev: rgba(110,92,70,.86);
-  --surf-over: rgba(122,102,78,.94);
-  --head-bg: rgba(40,35,30,.74);
-  --line:    rgba(255,248,240,.11);
-  --line2:   rgba(255,248,240,.20);
-  --rim:     rgba(255,252,247,.14);
-  --spec:    rgba(255,255,255,.22);
+  --surf-elev: rgba(50,42,74,.88);
+  --surf-over: rgba(44,37,66,.96);
+  --head-bg: rgba(22,18,40,.76);
+  --line:    rgba(210,200,255,.12);
+  --line2:   rgba(210,200,255,.22);
+  --rim:     rgba(232,226,255,.15);
+  --spec:    rgba(255,255,255,.20);
   --spec-soft:rgba(255,255,255,.10);
-  --glass-tint:rgba(255,255,255,.04);
+  --glass-tint:rgba(200,190,255,.05);
   --grain:   .20;
 
-  --ink:     #F6EFE6;
-  --ink2:    #E6DBCC;
-  --muted:   #BEAE9A;
-  --muted2:  #A2917C;   /* ≥4.5:1 on data panels (was ~4.0) */
+  --ink:     #F4F0FA;
+  --ink2:    #DDD6EE;
+  --muted:   #ABA1C4;
+  --muted2:  #8E85A8;   /* ≥4.5:1 on the violet data panels */
 
   --fox:     #FF8636;
   --fox2:    #FFAD6E;   /* text-orange role-flip — ~8.1:1 on --surf-solid */
@@ -186,14 +188,14 @@ html[data-theme="dark"]{
   --warnc:#FBBF24;   --warn-soft:rgba(245,158,11,.20);
   --infoc:#93C5FD;   --info-soft:rgba(59,130,246,.20);
   --neutral:#BEAE9A; --neutral-soft:rgba(255,255,255,.07);
-  --teal:#199E70; --violet:#9085E9;   /* dark steps of the cool accents (validated on the dark surface) */
+  --teal:#2DD4BF; --violet:#A78BFA;   /* sunset accents — brighter cool steps that pop on the dusk base */
 
   --shadow:    rgba(0,0,0,.55);
   --clay:      0 1px 0 rgba(255,244,232,.06),0 14px 34px rgba(0,0,0,.55),inset 0 1px 0 var(--rim);
   --clay-sm:   0 1px 0 rgba(255,244,232,.05),0 8px 20px rgba(0,0,0,.48),inset 0 1px 0 var(--rim);
   --clay-press:inset 0 2px 8px rgba(0,0,0,.55);
   --ring:      0 0 0 3px rgba(255,134,54,.48);
-  --gate-overlay: rgba(8,5,3,.64);
+  --gate-overlay: rgba(8,6,18,.66);
   --focus:     0 0 0 3px color-mix(in srgb, var(--fox) 42%, transparent);
   --elev-hi:   0 22px 46px rgba(0,0,0,.60),inset 0 1px 0 var(--rim);
   --elev-btn:  0 10px 22px rgba(0,0,0,.48);
@@ -224,10 +226,11 @@ html[data-skin="clay"]{
   --hover-y:-2px;--press-y:1px;--press-scale:.99;
 }
 html[data-skin="clay"][data-theme="dark"]{
-  --bg2:#1E1712;--surf:#241C15;--surf-solid:#2A2119;--surf2:#322619;--surf3:#3D2E1E;--head-bg:#221A13;
-  --surf-elev:#2E251C;--surf-over:#352A20;
-  --line:rgba(255,248,240,.08);--line2:rgba(255,248,240,.15);
-  --rim:rgba(255,244,230,.08);--grain:.10;
+  /* Sunset Dusk clay — opaque violet-charcoal ramp */
+  --bg2:#141020;--surf:#1E1930;--surf-solid:#241E38;--surf2:#2A2342;--surf3:#332A48;--head-bg:#181330;
+  --surf-elev:#282142;--surf-over:#2E2648;
+  --line:rgba(210,200,255,.09);--line2:rgba(210,200,255,.16);
+  --rim:rgba(220,210,255,.07);--grain:.10;
   --clay:0 1px 0 rgba(255,240,225,.05),0 2px 5px rgba(0,0,0,.5),0 14px 30px rgba(0,0,0,.6),inset 0 1px 0 var(--rim),inset 0 -3px 7px rgba(0,0,0,.5);
   --clay-sm:0 1px 0 rgba(255,240,225,.04),0 8px 18px rgba(0,0,0,.5),inset 0 1px 0 var(--rim),inset 0 -2px 4px rgba(0,0,0,.4);
   --clay-press:inset 0 2px 7px rgba(0,0,0,.6),inset 0 4px 10px rgba(0,0,0,.4),inset 0 -1px 0 rgba(255,240,225,.05);
@@ -276,9 +279,10 @@ html[data-skin="original"]{
   --hover-y:-2px;--press-y:2px;--press-scale:.99;
 }
 html[data-skin="original"][data-theme="dark"]{
-  --bg:#0E0C0A;--bg2:#161310;--surf:#1C1815;--surf-solid:#1C1815;--surf2:#221D18;--surf3:#2A241D;
-  --head-bg:#161310;--surf-elev:#221D18;--surf-over:#2A241D;
-  --line:#3A3128;--line2:#4C4136;
+  /* Sunset Dusk original — deep indigo base, hard offset shadow kept as the neobrutalist signature */
+  --bg:#08060F;--bg2:#100D1C;--surf:#181428;--surf-solid:#181428;--surf2:#201A34;--surf3:#282040;
+  --head-bg:#100D1C;--surf-elev:#201A34;--surf-over:#282040;
+  --line:#332B4A;--line2:#453A60;
   --rim:transparent;--grain:.13;
   --clay:6px 6px 0 rgba(0,0,0,.55);
   --clay-sm:3px 3px 0 rgba(0,0,0,.5);
@@ -313,8 +317,8 @@ body{
 }
 html[data-theme="dark"] body{
   background:
-    radial-gradient(1100px 560px at 50% -28%, rgba(255,140,60,.10), transparent 60%),
-    linear-gradient(165deg,#1A1712,#111 74%);
+    radial-gradient(1100px 560px at 50% -28%, rgba(255,134,54,.13), transparent 60%),
+    linear-gradient(165deg,#151026,#0A0812 74%);
 }
 /* vivid, defined colour orbs — the light the frosted glass refracts. Kept less
    blurred + more saturated than a wash so the frost actually reads as glass. */
@@ -328,14 +332,14 @@ body::before{
   /* static — owner feedback: no ambient drift behind the glass (Liquid-Glass correction 1) */
 }
 html[data-theme="dark"] body::before{
-  /* bold warm ambient + cool teal/violet accents + a soft central warm wash so the whole
-     surface reads alive, not grey. (Owner: "still looks dead".) */
+  /* SUNSET DUSK — orange hero glow (top-left) + violet/indigo depth + a pink dusk band so the
+     whole canvas reads like a sunset over a dark city, not flat grey. Orange stays dominant. */
   background:
-    radial-gradient(760px 600px at 0% 0%, rgba(255,132,52,.58), transparent 58%),
-    radial-gradient(660px 560px at 100% 0%, rgba(58,158,240,.44), transparent 56%),
-    radial-gradient(620px 580px at 52% 128%, rgba(27,175,122,.30), transparent 60%),
-    radial-gradient(820px 620px at 100% 106%, rgba(150,120,255,.26), transparent 60%),
-    radial-gradient(1200px 860px at 50% 42%, rgba(255,150,70,.10), transparent 72%);
+    radial-gradient(800px 640px at 1% 5%, rgba(255,122,36,.62), transparent 58%),
+    radial-gradient(720px 600px at 100% 0%, rgba(139,124,246,.48), transparent 58%),
+    radial-gradient(700px 600px at 97% 108%, rgba(236,102,168,.36), transparent 60%),
+    radial-gradient(780px 660px at 42% 126%, rgba(124,108,240,.32), transparent 62%),
+    radial-gradient(1240px 900px at 52% 44%, rgba(255,140,60,.11), transparent 72%);
 }
 /* faint film grain over the frosted surfaces — tactile "real glass" finish */
 body::after{
@@ -530,7 +534,7 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 /* no backdrop-filter support at all → make chrome surfaces opaque so panels never disappear */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   :root{--surf:rgba(255,255,255,.86);--surf2:rgba(255,255,255,.7)}
-  html[data-theme="dark"]{--surf:rgba(70,62,53,.92);--surf2:rgba(90,80,70,.5)}
+  html[data-theme="dark"]{--surf:rgba(44,38,64,.94);--surf2:rgba(64,56,90,.55)}
 }
 @media(prefers-reduced-motion:reduce){.clay:not(.kpi)::before{animation:none}}
 .pad{padding:clamp(14px,1.5vw,20px)}
@@ -2407,7 +2411,7 @@ document.addEventListener('click',function(e){ const w=$('topNotifWrap'); if(w &
 /* ──────────── settings / theme ──────────── */
 function setTheme(mode){
   document.documentElement.dataset.theme=mode;
-  document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#16130F':'#FEF4ED');
+  document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#0D0B14':'#FEF4ED');
   try{localStorage.setItem('foxy_admin_theme',mode)}catch(e){}
   const t=$('darkModeToggle'); if(t)t.checked=(mode==='dark');
 }
