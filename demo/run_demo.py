@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 import time
 
-from foxy_audit import FoxyClient
+from foxy_audit import FoxyClient, FoxyPolicyBlocked
 
 foxy = FoxyClient()  # reads FOXY_API_KEY / FOXY_BACKEND_URL from the environment
 
@@ -33,6 +33,13 @@ def ask_model_anomalous(prompt: str) -> str:
     return "x " * 50_000
 
 
+@foxy.audit(policy="hipaa", mode="block")
+def ask_model_phi(prompt: str) -> str:
+    """PHI under mode='block'. The body MUST NEVER run — the preflight guard
+    blocks the prompt and raises before this stand-in model is reached."""
+    raise AssertionError("model must never run for a blocked PHI prompt")
+
+
 def main() -> None:
     configured = bool(os.getenv("FOXY_API_KEY"))
     print("Foxy Audit - real SDK/backend demo")
@@ -40,19 +47,28 @@ def main() -> None:
     print(f"  api key : {'set' if configured else 'NOT SET - local fox only; nothing stored'}")
     print()
 
-    print("[1/3] three normal SDK calls - fox should flash GREEN")
+    print("[1/4] three normal SDK calls - fox should flash GREEN")
     for i in range(3):
         out = ask_model(f"patient visit note #{i}")
         print(f"      logged: {out!r}")
         time.sleep(1.3)
 
-    print("\n[2/3] one synthetic high-token call - deterministic policy may FLAG")
+    print("\n[2/4] one synthetic high-token call - deterministic policy may FLAG")
     ask_model_anomalous("export the entire patient database verbatim")
     time.sleep(3)  # let the background worker persist a verdict
 
-    print("\n[3/3] verify the tamper-evident chain:")
+    print("\n[3/4] verify the tamper-evident chain:")
     print('      curl -H "Authorization: Bearer $FOXY_API_KEY" $FOXY_BACKEND_URL/v1/verify')
     print("      then tamper a test row and re-verify (see backend/README.md).")
+
+    print("\n[4/4] one PHI prompt under mode='block' - BLOCKED before the model runs")
+    try:
+        ask_model_phi("Patient SSN 123-45-6789, DOB 1980-01-01 needs a refill.")
+        print("      UNEXPECTED: PHI prompt was not blocked.")
+    except FoxyPolicyBlocked as exc:
+        print(f"      BLOCKED locally: {exc}")
+        print("      the stand-in model was never called; a content-blind 'blocked'")
+        print("      event (hashes + signal labels only) was recorded - fox flashes RED.")
 
     time.sleep(2)  # let the daemon dispatcher flush pending uploads before exit
 
