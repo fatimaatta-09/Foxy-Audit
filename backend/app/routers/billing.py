@@ -219,6 +219,12 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
     if "@" not in email_addr or "." not in email_addr.split("@")[-1]:
         raise HTTPException(status_code=422, detail="a valid email is required")
 
+    # Validate any evaluation offer BEFORE the account-exists check so the offer's
+    # per-email redemption cap surfaces its own 422 ahead of the generic duplicate-
+    # account 409 — a judge re-redeeming the same code gets the offer-specific reason
+    # (and offer capacity is never disclosed via a different status code).
+    offer = _claim_judge_offer(db, email_addr, payload.offer_code)
+
     existing = db.execute(select(Organization).where(
         func.lower(Organization.contact_email) == email_addr,
         Organization.deleted_at.is_(None),
@@ -226,7 +232,6 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
     if existing is not None:
         raise HTTPException(status_code=409, detail="an account already exists for this email")
 
-    offer = _claim_judge_offer(db, email_addr, payload.offer_code)
     plaintext_key, key_hash = _generate_api_key()
     org = Organization(
         name=(payload.name or email_addr).strip()[:255], api_key_hash=key_hash,

@@ -113,6 +113,6 @@ def test_campaign_redemption_is_real_finite_access_and_revoke_stops_new_signups(
         action = db.query(AdminAction).filter_by(
             action="evaluation_campaign.revoke", target_id="judges-flow"
         ).one()
-        assert action.staff_user_id == operator["id"]
+        assert str(action.staff_user_id) == operator["id"]
     finally:
         db.close()

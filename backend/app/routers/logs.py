@@ -489,9 +489,12 @@ def stats(
     ).scalar_one()
     # Real average time-to-verdict (ingest → graded), in seconds; None if nothing
     # has been graded yet. Replaces the dashboard's fabricated "42ms judge latency".
+    # Latency measures how long grading took, independent of the verdict content —
+    # so unknown/evaluator-unavailable rows still count (the honesty filter belongs on
+    # clean_rate below, computed from clean + breaches only).
     avg_verdict = db.execute(
         select(func.avg(func.extract("epoch", AuditLog.graded_at - AuditLog.created_at)))
-        .where(AuditLog.org_id == org.id, AuditLog.graded_at.isnot(None), ~_UNKNOWN)
+        .where(AuditLog.org_id == org.id, AuditLog.graded_at.isnot(None))
     ).scalar_one()
 
     evaluator_unknown = db.execute(
