@@ -25,10 +25,10 @@ from sqlalchemy.orm import Session
 
 from .. import email, mfa, password_reset
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import grant_step_up, require_staff
+from ..auth import grant_step_up, hash_session_token, require_staff, require_step_up_dep
 from ..config import get_settings
 from ..db import get_db
-from ..models import AdminAction, StaffUser
+from ..models import AdminAction, StaffSession, StaffUser
 
 # Own limiter (registered on the admin sub-app in main.py). The customer login is
 # rate-limited too (auth_human: 10/minute); the *admin* login keeps its own guard
@@ -54,6 +54,7 @@ class StaffMeResponse(BaseModel):
     mfa_enabled: bool = False
     full_name: str | None = None
     preferences: dict = Field(default_factory=dict)
+    last_login_at: str | None = None
 
 
 class StaffMfaRequest(BaseModel):
@@ -87,12 +88,20 @@ def _issue_mfa_code(db: Session, staff: StaffUser) -> None:
     )
 
 
-def _establish_staff_session(request: Request, staff: StaffUser) -> None:
-    # Rotate the session (drop any prior/planted state), then stamp the identity
-    # under a NAMESPACED key a customer session never carries.
+def _establish_staff_session(request: Request, staff: StaffUser, db: Session) -> None:
+    # Rotate the cookie session (drop any prior/planted state), stamp the identity under a
+    # NAMESPACED key, and mint a DB session row (Phase E) whose opaque token lives in the signed
+    # cookie. Also stamp last_login_at. NO remember-me — the 2h cookie max-age is unchanged.
     request.session.clear()
+    token = secrets.token_urlsafe(32)
+    ua = (request.headers.get("user-agent") or "")[:400] or None
+    db.add(StaffSession(staff_user_id=staff.id, token_hash=hash_session_token(token),
+                        ip=client_ip(request), user_agent=ua))
+    staff.last_login_at = datetime.now(timezone.utc)
+    db.commit()
     request.session["staff_user_id"] = str(staff.id)
     request.session["staff_role"] = staff.platform_role
+    request.session["staff_session_token"] = token
 
 
 @router.post("/v1/auth/login")
@@ -117,7 +126,7 @@ def staff_login(payload: StaffLoginRequest, request: Request, db: Session = Depe
         _issue_mfa_code(db, staff)
         return {"mfa_required": True, "email": staff.email}
 
-    _establish_staff_session(request, staff)
+    _establish_staff_session(request, staff, db)
     record_admin_action(db, staff, "staff.login", target_type="staff_user",
                         target_id=str(staff.id), detail={"mfa": False}, ip=client_ip(request))
     db.commit()
@@ -145,7 +154,7 @@ def staff_mfa(payload: StaffMfaRequest, request: Request, db: Session = Depends(
     record_admin_action(db, staff, "staff.login", target_type="staff_user",
                         target_id=str(staff.id), detail={"mfa": True}, ip=client_ip(request))
     db.commit()
-    _establish_staff_session(request, staff)
+    _establish_staff_session(request, staff, db)
     return {"id": str(staff.id), "email": staff.email, "platform_role": staff.platform_role}
 
 
@@ -200,6 +209,13 @@ def staff_logout(request: Request, db: Session = Depends(get_db)):
         except (ValueError, TypeError):
             st = None
         if st is not None:
+            token = request.session.get("staff_session_token")
+            if token:                                        # revoke this device's session row
+                db.query(StaffSession).filter(
+                    StaffSession.token_hash == hash_session_token(token),
+                    StaffSession.revoked_at.is_(None),
+                ).update({StaffSession.revoked_at: datetime.now(timezone.utc)},
+                         synchronize_session=False)
             record_admin_action(db, st, "staff.logout", target_type="staff_user",
                                 target_id=str(st.id), ip=client_ip(request))
             db.commit()
@@ -211,7 +227,8 @@ def staff_logout(request: Request, db: Session = Depends(get_db)):
 def staff_me(staff: StaffUser = Depends(require_staff)):
     return StaffMeResponse(id=str(staff.id), email=staff.email,
                            platform_role=staff.platform_role, mfa_enabled=staff.mfa_enabled,
-                           full_name=staff.full_name, preferences=staff.preferences or {})
+                           full_name=staff.full_name, preferences=staff.preferences or {},
+                           last_login_at=staff.last_login_at.isoformat() if staff.last_login_at else None)
 
 
 class UpdateProfileRequest(BaseModel):
@@ -372,3 +389,64 @@ def my_activity(staff: StaffUser = Depends(require_staff), db: Session = Depends
          "at": a.created_at.isoformat() if a.created_at else None}
         for a in rows
     ]}
+
+
+# ─────────────────────────── device sessions (Phase E) ───────────────────────
+@router.get("/v1/auth/sessions")
+def list_sessions(request: Request, staff: StaffUser = Depends(require_staff),
+                  db: Session = Depends(get_db)):
+    """Your active device sessions (this-device flagged). token_hash is NEVER serialized."""
+    cur = request.session.get("staff_session_token")
+    cur_hash = hash_session_token(cur) if cur else None
+    now = datetime.now(timezone.utc)
+    rows = db.execute(
+        select(StaffSession).where(
+            StaffSession.staff_user_id == staff.id, StaffSession.revoked_at.is_(None)
+        ).order_by(StaffSession.created_at.desc())
+    ).scalars().all()
+    items = []
+    for s in rows:
+        if s.created_at is not None and now - s.created_at > timedelta(hours=2):
+            continue                             # expired (kept in table, just not shown as active)
+        items.append({
+            "id": str(s.id), "ip": s.ip, "user_agent": s.user_agent,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,
+            "current": cur_hash is not None and s.token_hash == cur_hash,
+        })
+    return {"items": items,
+            "last_login_at": staff.last_login_at.isoformat() if staff.last_login_at else None}
+
+
+@router.post("/v1/auth/sessions/{session_id}/revoke",
+             dependencies=[Depends(require_step_up_dep)])
+def revoke_session(session_id: str, request: Request,
+                   staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    """Revoke one of your sessions (step-up gated)."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="not found")
+    s = db.get(StaffSession, sid)
+    if s is None or s.staff_user_id != staff.id:
+        raise HTTPException(status_code=404, detail="not found")
+    if s.revoked_at is None:
+        s.revoked_at = datetime.now(timezone.utc)
+        record_admin_action(db, staff, "staff.session_revoke", target_type="staff_session",
+                            target_id=str(s.id), ip=client_ip(request))
+        db.commit()
+    return {"status": "revoked", "id": str(s.id)}
+
+
+@router.post("/v1/auth/logout-all", dependencies=[Depends(require_step_up_dep)])
+def logout_all(request: Request, staff: StaffUser = Depends(require_staff),
+               db: Session = Depends(get_db)):
+    """Revoke ALL your sessions (including this device) — log out everywhere (step-up gated)."""
+    n = db.query(StaffSession).filter(
+        StaffSession.staff_user_id == staff.id, StaffSession.revoked_at.is_(None)
+    ).update({StaffSession.revoked_at: datetime.now(timezone.utc)}, synchronize_session=False)
+    record_admin_action(db, staff, "staff.logout_all", target_type="staff_user",
+                        target_id=str(staff.id), detail={"revoked": int(n)}, ip=client_ip(request))
+    db.commit()
+    request.session.clear()
+    return {"status": "logged_out_everywhere", "revoked": int(n)}

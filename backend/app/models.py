@@ -359,6 +359,9 @@ class StaffUser(Base):
     # JSONB bag of booleans (hide_sensitive_metadata + notify_*), NULL = defaults.
     full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Last successful sign-in (Phase E) — stamped by _establish_staff_session.
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     # Email-OTP MFA (opt-in, Phase 5 · 5B.5)
     mfa_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")
@@ -420,6 +423,30 @@ class StaffNotification(Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class StaffSession(Base):
+    """A device session for a platform-staff member (Phase E). The signed staff cookie carries an
+    opaque token whose SHA-256 is stored here; require_staff validates it (not revoked, <=2h) and
+    refreshes last_seen_at — enabling an active-devices list + revoke + log-out-everywhere. NO
+    remember-me: the 2h cookie max-age is kept. Platform-only (no RLS policy). token_hash never leaves
+    the server.
+    """
+    __tablename__ = "staff_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    staff_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
 
 
 class TrafficEvent(Base):

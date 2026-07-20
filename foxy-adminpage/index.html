@@ -1523,6 +1523,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <label class="voxswitch"><input type="checkbox" id="prefNotifSystem" onchange="savePrefs()"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>system alerts</span></label>
           <div id="prefMsg" class="sub" style="font-size:11px;min-height:14px;margin-top:8px;"></div>
         </div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">security · this account</div><div class="panel-t">Devices &amp; sessions</div></div></div>
+          <div class="sub" style="font-size:11px;margin-bottom:12px;" id="setLastLogin"></div>
+          <div id="setSessions"><div class="sub mono">loading…</div></div>
+          <button class="btn danger sm" style="margin-top:14px;" data-tip="Revoke every session, including this one" onclick="logoutEverywhere()">Log out everywhere</button>
+        </div>
         <div class="clay pad" id="setConfigCard" style="display:none;">
           <div class="panel-h"><div><div class="eyebrow">superadmin · platform-wide</div><div class="panel-t">Platform configuration</div></div><button class="btn sm pri" onclick="saveConfig()">Save changes</button></div>
           <div id="setConfig"><div class="sub mono">loading…</div></div>
@@ -2281,6 +2287,37 @@ async function notifReadAll(){ try{ await api('/admin/v1/notifications/read-all'
 function updateNotifBadge(n){ n=n||0; const b=$('topNotifBadge'); if(!b)return;
   if(n>0){ b.textContent=n>99?'99+':n; b.style.display=''; } else b.style.display='none'; }
 async function pollNotif(){ try{ const r=await api('/admin/v1/notifications/unread-count'); if(r.ok){ updateNotifBadge((await r.json()).unread); } }catch(e){} }
+
+/* ──────────── device sessions (Phase E) ──────────── */
+async function loadSessions(){
+  const el=$('setSessions'); if(!el)return;
+  let r; try{ r=await api('/admin/v1/auth/sessions'); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">sessions unavailable</div>'; return; }
+  const d=await r.json();
+  const ll=$('setLastLogin'); if(ll) ll.textContent=d.last_login_at?('Last sign-in · '+fmtTime(d.last_login_at)):'';
+  if(!d.items||!d.items.length){ el.innerHTML='<div class="sub mono">no active sessions</div>'; return; }
+  el.innerHTML='<div class="twrap"><table class="tbl"><thead><tr><th>Device</th><th>IP</th><th>Last seen</th><th></th></tr></thead><tbody>'
+    +d.items.map(s=>'<tr><td style="font-size:12px;">'+_uaLabel(s.user_agent)+(s.current?' <span class="chip safe">this device</span>':'')+'</td>'
+      +'<td style="font-size:10.5px;">'+(s.ip?sens(s.ip,{short:s.ip}):'—')+'</td>'
+      +'<td class="mono" style="font-size:10px;white-space:nowrap;">'+(s.last_seen_at?fmtTime(s.last_seen_at):'—')+'</td>'
+      +'<td style="text-align:right;">'+(s.current?'':'<button class="btn sm" onclick="revokeSession(\''+esc(s.id)+'\')">Revoke</button>')+'</td></tr>').join('')
+    +'</tbody></table></div>';
+}
+function _uaLabel(ua){ if(!ua)return 'Unknown device'; var u=ua.toLowerCase();
+  var os=u.indexOf('windows')>=0?'Windows':(u.indexOf('mac')>=0?'macOS':(u.indexOf('android')>=0?'Android':(u.indexOf('iphone')>=0||u.indexOf('ipad')>=0?'iOS':(u.indexOf('linux')>=0?'Linux':''))));
+  var br=u.indexOf('edg')>=0?'Edge':(u.indexOf('firefox')>=0?'Firefox':(u.indexOf('chrome')>=0?'Chrome':(u.indexOf('safari')>=0?'Safari':'Browser')));
+  return esc(br+(os?' · '+os:''));
+}
+async function revokeSession(id){
+  let r; try{ r=await api('/admin/v1/auth/sessions/'+id+'/revoke',{method:'POST'}); }catch(e){ r=null; }
+  if(r&&r.ok){ toast('session revoked','success'); loadSessions(); }
+  else if(r){ toast('could not revoke ('+r.status+')'); }
+}
+async function logoutEverywhere(){
+  let r; try{ r=await api('/admin/v1/auth/logout-all',{method:'POST'}); }catch(e){ r=null; }
+  if(r&&r.ok){ location.reload(); }   // this device's session is revoked too → back to the gate
+  else if(r){ toast('could not log out everywhere ('+r.status+')'); }
+}
 document.addEventListener('click',function(e){ const w=$('topNotifWrap'); if(w && !w.contains(e.target)){ const p=$('notifPanel');
   if(p&&p.classList.contains('on')){ p.classList.remove('on'); const b=w.querySelector('button'); if(b)b.setAttribute('aria-expanded','false'); } } });
 
@@ -2303,6 +2340,7 @@ function loadSettings(){
   $('setRole').value=ME?ME.platform_role:'';
   if($('setName')) $('setName').value=(ME&&ME.full_name)||'';
   _syncPrefToggles();
+  loadSessions();
   $('darkModeToggle').checked=document.documentElement.dataset.theme==='dark';
   const sk=document.documentElement.dataset.skin||'glass';
   document.querySelectorAll('[data-skin-opt]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.skinOpt===sk?'true':'false'));

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from . import ip_allow
 from .config import get_settings
 from .db import get_db
-from .models import ApiKey, Organization, StaffUser, User
+from .models import ApiKey, Organization, StaffSession, StaffUser, User
 
 
 def _bearer_token(authorization: str) -> str:
@@ -184,6 +184,14 @@ def resolve_org(
 _PLATFORM_ROLES = {"viewer": 0, "operator": 1, "superadmin": 2}
 
 
+# Staff sessions expire after 2h regardless of the cookie (no remember-me · Phase E).
+_STAFF_SESSION_MAX_AGE = timedelta(hours=2)
+
+
+def hash_session_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def require_staff(request: Request, db: Session = Depends(get_db)) -> StaffUser:
     """Resolve the platform-staff user from the staff session cookie.
 
@@ -199,6 +207,25 @@ def require_staff(request: Request, db: Session = Depends(get_db)) -> StaffUser:
         raise HTTPException(status_code=401, detail="Session user no longer exists")
     if staff.disabled:
         raise HTTPException(status_code=401, detail="Account disabled")
+    # Phase E: validate the DB session row so revoke / log-out-everywhere take effect and enforce
+    # the 2h cap. Cookies minted before this shipped carry no token → treated as valid (graceful).
+    token = request.session.get("staff_session_token")
+    if token:
+        sess = db.execute(
+            select(StaffSession).where(
+                StaffSession.token_hash == hash_session_token(token),
+                StaffSession.staff_user_id == staff.id,
+                StaffSession.revoked_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if sess is None or (sess.created_at is not None
+                            and now - sess.created_at > _STAFF_SESSION_MAX_AGE):
+            raise HTTPException(status_code=401, detail="Session expired or revoked")
+        # Refresh last_seen_at, throttled to at most once a minute to avoid a write per request.
+        if sess.last_seen_at is None or (now - sess.last_seen_at) > timedelta(seconds=60):
+            sess.last_seen_at = now
+            db.commit()
     return staff
 
 
