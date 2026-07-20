@@ -1455,6 +1455,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <div class="panel-h"><div><div class="eyebrow">your account</div><div class="panel-t">Account &amp; security</div></div></div>
           <div class="flabel" style="margin-top:0;">email</div><input class="cin" id="setEmail" readonly style="opacity:.7;">
           <div class="flabel">platform role</div><input class="cin" id="setRole" readonly style="opacity:.7;">
+          <div class="flabel">display name</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input class="cin" id="setName" placeholder="Add your name" maxlength="120" style="flex:1;" data-tip="Shown as your avatar initial and in the topbar">
+            <button class="btn sm pri" onclick="saveProfile()">Save</button>
+          </div>
+          <div id="setNameMsg" class="sub" style="font-size:11px;min-height:14px;"></div>
           <div class="flabel">security</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <button class="btn sm" onclick="pwModal()">Change password</button>
@@ -1462,6 +1468,16 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           </div>
           <div class="flabel">recent activity</div>
           <div id="setActivity" class="twrap" style="max-height:200px;overflow:auto;"><div class="sub mono">loading…</div></div>
+        </div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">privacy · this account</div><div class="panel-t">Privacy &amp; notifications</div></div></div>
+          <label class="voxswitch" style="margin-top:2px;"><input type="checkbox" id="prefHideSensitive" onchange="savePrefs()"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>mask sensitive metadata by default</span></label>
+          <div class="sub" style="font-size:11px;margin:6px 0 16px;">Org ids, chain hashes and key prefixes render masked until you reveal them.</div>
+          <div class="flabel" style="margin-top:0;">notify me about</div>
+          <label class="voxswitch" style="margin-bottom:9px;"><input type="checkbox" id="prefNotifBroadcasts" onchange="savePrefs()"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>broadcasts &amp; announcements</span></label>
+          <label class="voxswitch" style="margin-bottom:9px;"><input type="checkbox" id="prefNotifTargeted" onchange="savePrefs()"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>actions that target me</span></label>
+          <label class="voxswitch"><input type="checkbox" id="prefNotifSystem" onchange="savePrefs()"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>system alerts</span></label>
+          <div id="prefMsg" class="sub" style="font-size:11px;min-height:14px;margin-top:8px;"></div>
         </div>
         <div class="clay pad" id="setConfigCard" style="display:none;">
           <div class="panel-h"><div><div class="eyebrow">superadmin · platform-wide</div><div class="panel-t">Platform configuration</div></div><button class="btn sm pri" onclick="saveConfig()">Save changes</button></div>
@@ -2175,6 +2191,8 @@ function toggleSkin(){setSkin(document.documentElement.dataset.skin==='clay'?'gl
 function loadSettings(){
   $('setEmail').value=ME?ME.email:'';
   $('setRole').value=ME?ME.platform_role:'';
+  if($('setName')) $('setName').value=(ME&&ME.full_name)||'';
+  _syncPrefToggles();
   $('darkModeToggle').checked=document.documentElement.dataset.theme==='dark';
   const sk=document.documentElement.dataset.skin||'glass';
   document.querySelectorAll('[data-skin-opt]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.skinOpt===sk?'true':'false'));
@@ -2190,6 +2208,32 @@ function loadSettings(){
   $('setBroadcastCard').style.display=isSuper?'':'none';
   if(isSuper){ loadConfig(); loadAnnouncements(); }
 }
+function _syncPrefToggles(){
+  const p=window.PREFS||{}; const set=(id,v)=>{const el=$(id); if(el) el.checked=!!v;};
+  set('prefHideSensitive', p.hide_sensitive_metadata);
+  set('prefNotifBroadcasts', p.notify_broadcasts!==false);
+  set('prefNotifTargeted', p.notify_targeted!==false);
+  set('prefNotifSystem', p.notify_system!==false);
+}
+async function saveProfile(){
+  const m=$('setNameMsg'), name=$('setName').value.trim();
+  m.textContent='saving…';
+  let r; try{ r=await api('/admin/v1/auth/profile',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({full_name:name})}); }catch(e){ r=null; }
+  if(r&&r.ok){ const d=await r.json(); if(ME) ME.full_name=d.full_name; applyIdentity(ME); m.textContent='✓ saved'; toast('name updated','success'); }
+  else { const d=r?await r.json().catch(()=>({})):{}; m.textContent=(d.detail||'could not save name'); }
+}
+async function savePrefs(){
+  const m=$('prefMsg');
+  const prefs={hide_sensitive_metadata:$('prefHideSensitive').checked,
+    notify_broadcasts:$('prefNotifBroadcasts').checked,
+    notify_targeted:$('prefNotifTargeted').checked,
+    notify_system:$('prefNotifSystem').checked};
+  m.textContent='saving…';
+  let r; try{ r=await api('/admin/v1/auth/preferences',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:prefs})}); }catch(e){ r=null; }
+  if(r&&r.ok){ const d=await r.json(); window.PREFS=Object.assign({},d.preferences); if(ME) ME.preferences=d.preferences; m.textContent='✓ saved';
+    if(typeof refreshCurrent==='function') refreshCurrent(); }   // re-render current page so the mask default updates
+  else { const d=r?await r.json().catch(()=>({})):{}; m.textContent=(d.detail||'could not save preferences'); }
+}
 
 /* ──────────── auth gate ──────────── */
 async function boot(){
@@ -2201,14 +2245,20 @@ async function boot(){
   if(r&&r.ok){enter(await r.json());return}
   $('gate').style.display='flex';
 }
+function _identName(me){ return (me&&me.full_name&&me.full_name.trim())?me.full_name.trim():(me?me.email:''); }
+function applyIdentity(me){
+  const nm=_identName(me), initial=(nm[0]||'?').toUpperCase();
+  $('avatar').textContent=initial;
+  $('avatar').setAttribute('data-tip',(me.full_name?me.full_name+' · ':'')+me.email+' · '+me.platform_role);
+  const _ta=$('topAvatar');if(_ta)_ta.textContent=initial;
+  const _tn=$('topUserName');if(_tn)_tn.textContent=nm;
+}
 function enter(me){
   ME=me;
+  window.PREFS=Object.assign({hide_sensitive_metadata:false,notify_broadcasts:true,notify_targeted:true,notify_system:true},(me.preferences||{}));
   $('gate').style.display='none';
   $('app').style.visibility='visible';
-  $('avatar').textContent=(me.email[0]||'?').toUpperCase();
-  $('avatar').setAttribute('data-tip',me.email+' · '+me.platform_role);
-  const _ta=$('topAvatar');if(_ta)_ta.textContent=(me.email[0]||'?').toUpperCase();
-  const _tn=$('topUserName');if(_tn)_tn.textContent=me.email;
+  applyIdentity(me);
   const _trole=$('topUserRole');if(_trole)_trole.textContent=me.platform_role;
   if(can('superadmin'))$('navStaff').style.display='';
   loadOverview();

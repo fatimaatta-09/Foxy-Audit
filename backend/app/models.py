@@ -355,6 +355,10 @@ class StaffUser(Base):
         String(16), nullable=False, server_default="viewer")            # viewer|operator|superadmin
     disabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")
+    # Profile + preferences (Phase B · dashboard parity). preferences is a small
+    # JSONB bag of booleans (hide_sensitive_metadata + notify_*), NULL = defaults.
+    full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Email-OTP MFA (opt-in, Phase 5 · 5B.5)
     mfa_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false")

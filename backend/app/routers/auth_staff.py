@@ -52,6 +52,8 @@ class StaffMeResponse(BaseModel):
     email: str
     platform_role: str
     mfa_enabled: bool = False
+    full_name: str | None = None
+    preferences: dict = Field(default_factory=dict)
 
 
 class StaffMfaRequest(BaseModel):
@@ -208,7 +210,57 @@ def staff_logout(request: Request, db: Session = Depends(get_db)):
 @router.get("/v1/auth/me", response_model=StaffMeResponse)
 def staff_me(staff: StaffUser = Depends(require_staff)):
     return StaffMeResponse(id=str(staff.id), email=staff.email,
-                           platform_role=staff.platform_role, mfa_enabled=staff.mfa_enabled)
+                           platform_role=staff.platform_role, mfa_enabled=staff.mfa_enabled,
+                           full_name=staff.full_name, preferences=staff.preferences or {})
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(default=None, max_length=120)
+
+
+@router.put("/v1/auth/profile")
+def update_profile(payload: UpdateProfileRequest, request: Request,
+                   staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    """Set your own display name (drives the avatar initial + topbar name)."""
+    name = (payload.full_name or "").strip() or None
+    staff.full_name = name
+    record_admin_action(db, staff, "staff.profile_update", target_type="staff_user",
+                        target_id=str(staff.id), detail={"full_name": name},
+                        ip=client_ip(request))
+    db.commit()
+    return {"status": "ok", "full_name": staff.full_name}
+
+
+# Only these preference keys are accepted; anything else is dropped so a client
+# can't stuff arbitrary JSON into the row.
+_ALLOWED_PREF_KEYS = ("hide_sensitive_metadata", "notify_broadcasts",
+                      "notify_targeted", "notify_system")
+
+
+class UpdatePreferencesRequest(BaseModel):
+    preferences: dict
+
+
+@router.get("/v1/auth/preferences")
+def get_preferences(staff: StaffUser = Depends(require_staff)):
+    return {"preferences": staff.preferences or {}}
+
+
+@router.put("/v1/auth/preferences")
+def update_preferences(payload: UpdatePreferencesRequest, request: Request,
+                       staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    """Merge the known boolean preference keys (unknown keys are ignored)."""
+    incoming = payload.preferences or {}
+    merged = dict(staff.preferences or {})
+    for key in _ALLOWED_PREF_KEYS:
+        if key in incoming:
+            merged[key] = bool(incoming[key])
+    staff.preferences = merged            # reassign so SQLAlchemy flags the JSONB change
+    record_admin_action(db, staff, "staff.preferences_update", target_type="staff_user",
+                        target_id=str(staff.id), detail={"keys": sorted(merged.keys())},
+                        ip=client_ip(request))
+    db.commit()
+    return {"status": "ok", "preferences": merged}
 
 
 
