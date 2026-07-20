@@ -54,7 +54,7 @@ _DATA_TABLES = (
     "organizations, users, api_keys, audit_logs, chain_anchors, org_policies, "
     "staff_users, admin_actions, traffic_events, marketing_leads, stripe_events, "
     "invoices, usage_daily, login_events, platform_config, platform_announcements, "
-    "staff_notifications, staff_sessions, evaluation_redemptions"
+    "staff_notifications, staff_sessions, evaluation_campaigns, evaluation_redemptions"
 )
 
 

@@ -25,8 +25,9 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
@@ -35,7 +36,7 @@ from ..auth import hash_key, require_role, resolve_org
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..models import (
-    ApiKey, EvaluationRedemption, Invoice, MarketingLead, Organization,
+    ApiKey, EvaluationCampaign, EvaluationRedemption, Invoice, MarketingLead, Organization,
     StripeEvent, User,
 )
 from .logs import limiter
@@ -72,18 +73,98 @@ def _offer_email_hash(email_addr: str) -> str:
                     hashlib.sha256).hexdigest()
 
 
-def _claim_judge_offer(db: Session, email_addr: str, offer_code: str | None) -> dict | None:
-    """Validate a configured judge code and reserve one redemption in this txn.
+def _offer_code_hash(code: str) -> str:
+    """Return the non-reversible, domain-separated campaign-code fingerprint."""
+    pepper = get_settings().api_key_pepper.encode("utf-8")
+    return hmac.new(pepper, f"judge-offer-code:{code}".encode("utf-8"),
+                    hashlib.sha256).hexdigest()
 
-    The code stays in the deployment secret store. A PostgreSQL advisory lock
-    serialises capacity checks for this one configured campaign, so two concurrent
-    signups cannot consume more than its capped redemption count.
+
+def _claim_database_campaign(
+    db: Session, email_addr: str, supplied: str,
+) -> dict | None:
+    """Claim an active staff-managed campaign, if the code matches one.
+
+    A transaction advisory lock serializes capacity checks across API workers.
+    The row is re-read under ``FOR UPDATE`` after the lock so revocation and
+    redemption cannot race with one another.
+    """
+    now = datetime.now(timezone.utc)
+    code_hash = _offer_code_hash(supplied)
+    candidate = db.execute(
+        select(EvaluationCampaign.id).where(
+            EvaluationCampaign.code_hash == code_hash,
+            EvaluationCampaign.status == "active",
+            or_(EvaluationCampaign.starts_at.is_(None), EvaluationCampaign.starts_at <= now),
+            or_(EvaluationCampaign.ends_at.is_(None), EvaluationCampaign.ends_at > now),
+        )
+    ).scalar_one_or_none()
+    if candidate is None:
+        return None
+
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:offer_id))"),
+                   {"offer_id": str(candidate)})
+    campaign = db.execute(
+        select(EvaluationCampaign).where(EvaluationCampaign.id == candidate)
+        .with_for_update()
+    ).scalar_one_or_none()
+    if campaign is None or campaign.status != "active":
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+    if ((campaign.starts_at is not None and campaign.starts_at > now) or
+            (campaign.ends_at is not None and campaign.ends_at <= now)):
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+
+    email_hash = _offer_email_hash(email_addr)
+    already_redeemed = db.execute(
+        select(EvaluationRedemption.id).where(
+            EvaluationRedemption.offer_id == campaign.offer_id,
+            EvaluationRedemption.email_hash == email_hash,
+        )
+    ).scalar_one_or_none()
+    redeemed_count = db.execute(
+        select(func.count()).select_from(EvaluationRedemption).where(
+            EvaluationRedemption.offer_id == campaign.offer_id,
+        )
+    ).scalar_one()
+    if already_redeemed is not None or int(redeemed_count) >= campaign.max_redemptions:
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+
+    expires_at = now + timedelta(days=campaign.duration_days)
+    return {
+        "offer_id": campaign.offer_id,
+        "email_hash": email_hash,
+        "credits": campaign.credits,
+        "expires_at": expires_at,
+    }
+
+
+def _claim_judge_offer(db: Session, email_addr: str, offer_code: str | None) -> dict | None:
+    """Validate a database campaign or configured judge code in this txn.
+
+    Database campaigns are the normal staff-managed path. The environment-backed
+    offer remains as a deployment-safe fallback so existing installations can
+    upgrade to migration 0036 without losing their launch code.
     """
     if not offer_code:
         return None
 
     settings = get_settings()
     supplied = _normalise_offer_code(offer_code)
+    if not supplied:
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+    try:
+        database_offer = _claim_database_campaign(db, email_addr, supplied)
+    except ProgrammingError:
+        # Keep the deployment-configured launch offer usable while an older
+        # instance is being migrated. The failed table lookup aborts the
+        # transaction, so clear it before evaluating the fallback.
+        db.rollback()
+        log.warning("evaluation_campaigns table is unavailable; using env offer fallback")
+        database_offer = None
+    if database_offer is not None:
+        return database_offer
+
     configured = _normalise_offer_code(settings.judge_offer_code)
     offer_id = settings.judge_offer_id.strip()[:64]
     unavailable = (

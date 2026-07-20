@@ -45,7 +45,7 @@ from .middleware.security import BodySizeLimitMiddleware, SecurityHeadersMiddlew
 from .middleware.traffic import TrafficMiddleware
 from .observability import RequestIdMiddleware, configure_logging
 from .routers import (
-    account, admin_anchors, admin_alerts, admin_audit_view, admin_billing, admin_config, admin_data, admin_grading, admin_health,
+    account, admin_anchors, admin_alerts, admin_audit_view, admin_billing, admin_campaigns, admin_config, admin_data, admin_grading, admin_health,
     admin_inbox, admin_leads, admin_notifications, admin_orgs, admin_security, admin_staff, admin_stats, analytics, anchors,
     auth_google, auth_human, auth_staff, badge, billing, consent, health, keys, leads, logs,
     passport, policies, sso, verify, webhooks, coverage,
@@ -161,7 +161,8 @@ admin_api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 for _r in (auth_staff, admin_orgs, admin_staff, admin_stats, admin_data, admin_inbox,
            admin_health, admin_grading, admin_anchors, admin_alerts, admin_config,
-           admin_billing, admin_security, admin_audit_view, admin_leads, admin_notifications):
+           admin_billing, admin_security, admin_audit_view, admin_leads, admin_notifications,
+           admin_campaigns):
     admin_api.include_router(_r.router, tags=[_r.__name__.rsplit(".", 1)[-1]])
 
 

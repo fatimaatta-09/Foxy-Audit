@@ -97,6 +97,39 @@ class EvaluationRedemption(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class EvaluationCampaign(Base):
+    """Staff-managed evaluation campaign metadata.
+
+    The redemption code is never stored in plaintext. ``code_hash`` uses the
+    same deployment pepper as the signup path and is omitted from admin output.
+    """
+    __tablename__ = "evaluation_campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    offer_id: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    code_hash: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False)
+    credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_redemptions: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="active")  # active|revoked
+    starts_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
+    ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff_users.id", ondelete="SET NULL"),
+        nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     __table_args__ = (UniqueConstraint("org_id", "seq", name="uq_audit_org_seq"),)
