@@ -1436,6 +1436,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17l5-6 4 3 6-9" stroke="#000" stroke-width="2.5" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Daily usage — last 30 days</div></div></div>
           <div class="clay pad" style="overflow-x:auto;">
             <div class="gauge" style="margin-bottom:14px;"><div class="gauge-row"><span>Quota headroom</span><b id="bilGaugeLbl">—</b></div><div class="chart-host" id="bilGaugeChart" style="min-height:14px"></div></div>
+            <div class="chart-host" id="bilUsageTrend" style="min-height:130px;margin-bottom:16px;"></div>
             <table style="width:100%;border-collapse:collapse;min-width:380px;">
               <thead><tr>
                 <th style="font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:left;padding:0 10px 11px;border-bottom:2px dashed var(--line);">day</th>
@@ -1461,6 +1462,8 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           </div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="2" fill="#000"/><path d="M8 8h8M8 12h8M8 16h5" stroke="var(--fox)" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="txt">Invoice history</div></div></div>
           <div class="clay pad" style="overflow-x:auto;">
+            <div class="chart-host" id="bilInvoiceChart" style="min-height:130px;margin-bottom:6px;"></div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.4;">Bars show invoice totals only — Foxy stores no per-line-item breakdown.</div>
             <table style="width:100%;border-collapse:collapse;min-width:380px;">
               <thead><tr>
                 <th style="font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:left;padding:0 10px 11px;border-bottom:2px dashed var(--line);">date</th>
@@ -2890,6 +2893,7 @@ async function loadLoginHistory(){
         const pct=q.monthly_log_quota?Math.min(100,Math.round((q.used_this_month||0)/q.monthly_log_quota*100)):0;
         $('bilGaugeLbl').textContent=q.monthly_log_quota==null?'unlimited plan':(pct+'% of '+num(q.monthly_log_quota));
         if($('bilGaugeChart'))window.foxChart('bilGaugeChart',{type:'gauge',height:14,value:pct,max:100,unlimited:q.monthly_log_quota==null,tone:q.over_quota?'bad':null,tip:(q.monthly_log_quota==null?'Unlimited plan':pct+'% of monthly quota used')});
+        if($('bilUsageTrend'))window.foxChart('bilUsageTrend',{type:'area',height:130,tone:'fox',data:days.map(d=>({label:d.day,value:+d.logs_count||0})),empty:{title:'No usage yet',desc:'Daily volume appears within ~5 min of SDK activity.'}});
         const plan=$('bilPlan'); if(plan)plan.textContent=(q.plan_tier||'free').replace(/^\w/,c=>c.toUpperCase());
         const entitlement=$('bilEntitlements');
         if(entitlement){
@@ -2922,6 +2926,10 @@ async function loadLoginHistory(){
               +' <a href="#" onclick="openInvoice(event,\''+i.id+'\')" style="color:var(--fox2);margin-left:6px;white-space:nowrap;">PDF ↗</a></td>'
             +'</tr>').join('')
           :'<tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">No invoices yet — they appear after the first Stripe billing cycle.</td></tr>';
+        if($('bilInvoiceChart')&&window.foxChart){ const invArr=(Array.isArray(inv)?inv:[]).slice().reverse();
+          if(invArr.length)window.foxChart('bilInvoiceChart',{type:'bar',height:130,tone:'blue',data:invArr.map(iv=>({label:fmtD(iv.created_at),value:Math.round((iv.amount_cents||0)/100),sub:money(iv.amount_cents,iv.currency)})),aria:'invoice totals over time'});
+          else $('bilInvoiceChart').innerHTML='<div class="empty" style="padding:12px 0;"><div class="empty-t">No invoices yet</div><div class="empty-d">Invoice totals appear after your first Stripe billing cycle.</div></div>';
+        }
       }
     }catch(e){}
     window.loadPlan();
