@@ -1,0 +1,51 @@
+# Priority Implementation Plan
+
+This is the remaining-work plan. Completed work is deliberately not listed as
+pending.
+
+## Completed on `feat/judge-redemption-access`
+
+The judge evaluation offer is implemented on its own branch: non-secret
+redemption link, server-side code validation, finite 2,000 event credits by
+default, 30-day expiry, one redemption per email, capped campaign capacity,
+Premium workspace provisioning, dashboard allowance visibility, and hard capture
+enforcement. It has not been merged into `main` or deployed yet.
+
+## P0: required before a public or enterprise launch
+
+1. Deploy migration `0035`, set production secrets, and run the real
+   SDK-to-dashboard-to-verifier test described in
+   `JUDGE_ACCESS_AND_REDEMPTION.md`.
+2. Use a managed PostgreSQL service with backups, point-in-time recovery, least
+   privilege database roles, and tested restore instructions.
+3. Rotate all production secrets, configure domain/TLS, restrict CORS to the
+   deployed customer origins, and protect the admin host with its dedicated
+   cookie secret and an IP or VPN allow-list.
+4. Configure real OpenAI and/or Gemini credentials only if their judge paths are
+   implemented and tested in the deployed environment. Do not claim an AI judge
+   is active from configuration alone.
+5. Configure external anchoring only if a funded provider, contract, alerting,
+   and end-to-end verification have been tested. Otherwise describe anchors as
+   optional.
+
+## P1: enterprise purchase readiness
+
+1. Add SSO/SAML, SCIM provisioning, customer-managed retention controls, and
+   export/deletion procedures with audit logs.
+2. Convert billing tiers and credits into a signed product catalogue, then test
+   Stripe Checkout and webhooks using separate test and production accounts.
+3. Add a staff-managed campaign interface with role gates and audited mutations
+   if multiple offers or customer-specific entitlements are needed. The current
+   implementation intentionally supports one deployment-configured judge offer.
+4. Finish the admin ops roadmap, including health, dead letters, anchoring, and
+   alert actions with integration tests.
+
+## P2: product proof and go-to-market
+
+1. Publish a short, real demonstration recorded against the deployed service:
+   SDK capture, dashboard record, verifier result, and an honest anchor status.
+2. Publish a threat model and evidence-boundary document explaining what is
+   hashed locally, what metadata is retained, and what Foxy Audit cannot prove.
+3. Run design-partner pilots in a single regulated workflow at a time, measure
+   time-to-evidence and audit-review effort, and turn confirmed outcomes into
+   case studies only with customer approval.

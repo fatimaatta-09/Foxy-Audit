@@ -1080,6 +1080,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         </div>
       </div>
 
+      <div id="bilEval" style="display:none;margin-bottom:18px;padding:12px 16px;border:2.5px solid var(--fox);border-radius:12px;background:rgba(255,122,46,.10);font-weight:700;font-size:12.5px;line-height:1.55;box-shadow:var(--clay-sm);"></div>
       <div class="g2">
         <div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Active alerts</div></div><div class="stitle-act" onclick="go('analytics',null)">see all</div></div>
@@ -2993,6 +2994,37 @@ async function loadLoginHistory(){
           entitlement.textContent='Credits: '+num(q.credits_used)+' used of '+(q.credits_included==null?'unlimited':num(q.credits_included))+' · '+seats+' · '+keys+' · '+trial;
         }
         const warn=$('bilWarn'); if(warn)warn.style.display=q.over_quota?'block':'none';
+        const gf=$('bilGaugeFill'); if(gf)gf.style.background=q.over_quota?'#ff6b6b':'';
+        const evaluation=q.evaluation, evalBox=$('bilEval');
+        if(evaluation){
+          const used=Number(evaluation.credits_used||0), total=Number(evaluation.credits_total||0), remaining=Number(evaluation.credits_remaining||0);
+          const pct=total?Math.min(100,Math.round(used/total*100)):100;
+          $('bilUsed').textContent=num(used);
+          $('bilQuota').textContent=num(total);
+          $('bilRemaining').textContent=num(remaining);
+          $('bilUsed').nextElementSibling.textContent='Evaluation credits used';
+          $('bilQuota').nextElementSibling.textContent='Evaluation credits';
+          $('bilRemaining').nextElementSibling.textContent='Evaluation credits left';
+          $('bilGaugeLbl').textContent=remaining+' of '+num(total)+' evaluation credits remaining';
+          if(gf)gf.style.width=pct+'%';
+          const expiry=evaluation.expires_at?fmtD(evaluation.expires_at):'the end of the evaluation';
+          if(evalBox){
+            evalBox.style.display='block';
+            evalBox.textContent=evaluation.capture_available
+              ?'Premium judge access is active through '+expiry+'. These are Foxy audit-event credits, not model-provider tokens. No card is on file and there is no automatic charge.'
+              :(evaluation.active
+                ?'Evaluation credits are exhausted. New capture is disabled; your existing evidence, exports, and verification remain available.'
+                :'Premium judge access ended on '+expiry+'. New capture is disabled; your existing evidence, exports, and verification remain available.');
+          }
+          if(!evaluation.active||remaining===0){
+            const warn2=$('bilWarn'); if(warn2){ warn2.style.display='block'; warn2.textContent=evaluation.active?'Evaluation credits are exhausted. New capture is disabled; existing evidence remains available.':'Evaluation access has ended. New capture is disabled; existing evidence remains available.'; }
+          }
+        } else {
+          $('bilUsed').nextElementSibling.textContent='Credits used';
+          $('bilQuota').nextElementSibling.textContent='Credits included';
+          $('bilRemaining').nextElementSibling.textContent='Remaining';
+          if(evalBox)evalBox.style.display='none';
+        }
         $('usageBody').innerHTML=days.length
           ?days.slice().reverse().map(d=>'<tr>'
             +'<td style="'+tdMono+'">'+day(d.day)+'</td>'
