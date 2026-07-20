@@ -16,12 +16,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Run GitLeaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Only needed for GitHub *organization* repos; free for personal repos.
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+      # Use the gitleaks CLI binary directly — the gitleaks-action@v2 now demands a
+      # paid GITLEAKS_LICENSE even on this repo and fails before scanning. The CLI is
+      # the same engine, free, and needs no license. Full history is present (fetch-depth:0).
+      - name: Run Gitleaks (CLI — no license required)
+        run: |
+          VER=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" | tar -xzf - gitleaks
+          ./gitleaks detect --source . --redact --no-banner --exit-code 1
 
   # 📦 Dependency + filesystem scan and SBOM (CycloneDX) artifact.
   dependency-scan:
