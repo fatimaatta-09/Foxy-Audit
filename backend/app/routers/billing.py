@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
@@ -94,9 +94,6 @@ def _claim_database_campaign(
     candidate = db.execute(
         select(EvaluationCampaign.id).where(
             EvaluationCampaign.code_hash == code_hash,
-            EvaluationCampaign.status == "active",
-            or_(EvaluationCampaign.starts_at.is_(None), EvaluationCampaign.starts_at <= now),
-            or_(EvaluationCampaign.ends_at.is_(None), EvaluationCampaign.ends_at > now),
         )
     ).scalar_one_or_none()
     if candidate is None:
