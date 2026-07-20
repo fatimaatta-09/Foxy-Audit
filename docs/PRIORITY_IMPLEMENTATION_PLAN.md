@@ -16,9 +16,14 @@ real hash-only data flow, the metadata-only judge boundary, the limits of
 completeness and confidentiality claims, and the production checks required
 before calling the system audit-ready.
 
+Staff campaign management is also complete: viewer listing, superadmin
+creation with a one-time plaintext code response, operator revocation, hashed
+codes, redemption counters, finite capacity, and audited mutations. The
+deployment-configured offer remains as a backward-compatible fallback.
+
 ## P0: required before a public or enterprise launch
 
-1. Deploy migration `0035`, set production secrets, and run the real
+1. Deploy migrations `0035` and `0036`, set production secrets, and run the real
    SDK-to-dashboard-to-verifier test described in
    `JUDGE_ACCESS_AND_REDEMPTION.md`.
 2. Use a managed PostgreSQL service with backups, point-in-time recovery, least
@@ -39,10 +44,7 @@ before calling the system audit-ready.
    export/deletion procedures with audit logs.
 2. Convert billing tiers and credits into a signed product catalogue, then test
    Stripe Checkout and webhooks using separate test and production accounts.
-3. Add a staff-managed campaign interface with role gates and audited mutations
-   if multiple offers or customer-specific entitlements are needed. The current
-   implementation intentionally supports one deployment-configured judge offer.
-4. Finish the admin ops roadmap, including health, dead letters, anchoring, and
+3. Finish the admin ops roadmap, including health, dead letters, anchoring, and
    alert actions with integration tests.
 
 ## P2: product proof and go-to-market

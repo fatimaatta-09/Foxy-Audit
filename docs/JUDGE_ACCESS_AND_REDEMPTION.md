@@ -17,6 +17,14 @@ prompt/response record consumes one Foxy audit-event credit. These are not
 OpenAI, Gemini, or other model-provider tokens. There is no card on file and no
 automatic charge.
 
+For ongoing judge, partner, or customer-specific campaigns, a superadmin can
+create an evaluation campaign from the admin console. The code is HMAC-hashed
+at creation time and is returned only in that creation response; the Campaigns
+page and database never expose it again. Viewers can see status, capacity, and
+redemption counts. Operators can revoke new redemptions without shortening
+already-issued trial access. The original environment-configured offer remains
+available as a migration-safe fallback.
+
 ## What happens when access ends
 
 Capture is a hard stop: once the offer expires or its event allowance is used,
@@ -45,15 +53,18 @@ not disclose campaign activity.
 
 Before sharing the link:
 
-1. Apply migration `0035_judge_evaluation_offers` to the deployed database.
-2. Configure the variables in the hosting provider's secret manager and deploy
-   this exact branch.
+1. Apply migrations `0035_judge_evaluation_offers` and
+   `0036_evaluation_campaigns` to the deployed database.
+2. Either configure the variables in the hosting provider's secret manager, or
+   create a campaign in the admin console as a superadmin. Deploy this exact
+   branch before sharing the link.
 3. Redeem one disposable test email, use the returned API key to capture a real
    interaction, then confirm the record in the dashboard and `/v1/verify`.
 4. Confirm the Billing page displays the finite allowance and that a capture
    beyond the allowance returns HTTP 402.
-5. Share the link and the code through separate judge instructions. Disable the
-   offer after judging by clearing `JUDGE_OFFER_CODE`.
+5. Share the link and the code through separate judge instructions. Revoke a
+   database campaign from the Campaigns page, or disable the environment offer
+   by clearing `JUDGE_OFFER_CODE`.
 
 ## Judge test path
 

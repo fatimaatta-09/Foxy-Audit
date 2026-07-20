@@ -1067,6 +1067,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M15.6 14.6c2.9.2 5 1.7 5.9 4.4"/></svg>
       <span>STAFF</span>
     </button>
+    <button class="dock-item" data-page="campaigns" onclick="go('campaigns',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v9a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 16.5z"/><path d="M8 5V3.5M16 5V3.5M8 11h8M8 15h5"/></svg>
+      <span>CAMPAIGNS</span>
+    </button>
     <button class="dock-item" data-page="data" onclick="go('data',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h7l2 2h7v12a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 12h8M8 16h5"/></svg>
       <span>DATA</span>
@@ -1501,7 +1505,6 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       </div>
     </section>
 
-    <!-- ──────────────── SETTINGS ──────────────── -->
     <!-- ──────────────── REVENUE ──────────────── -->
     <section class="page" id="page-revenue">
       <div class="pagehead"><div><div class="eyebrow">P4 · finance</div><h1>Revenue</h1><div class="sub">Paid-invoice revenue across all tenants.</div></div></div>
@@ -1556,6 +1559,40 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">funnel</div><div class="panel-t">Conversion</div></div><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div><div class="fun" id="ldFunnel"></div></div>
       <div id="ldKanban" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
     </section>
+
+    <!-- ──────────────── EVALUATION CAMPAIGNS ──────────────── -->
+    <section class="page" id="page-campaigns">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">finite access / staff controlled</div>
+          <h1>Evaluation campaigns</h1>
+          <div class="sub">Create bounded Premium access for judges or design partners. Codes are hashed and never recoverable after creation.</div>
+        </div>
+        <button class="btn" onclick="loadCampaigns()">Refresh</button>
+      </div>
+      <div class="clay pad" id="campaignCreateCard" style="display:none;margin-bottom:18px;">
+        <div class="eyebrow">superadmin</div>
+        <div style="font-weight:800;font-size:15px;margin-bottom:12px;">Issue a new redemption code</div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+          <label><div class="flabel" style="margin-top:0;">offer id</div><input class="cin" id="campaignOfferId" placeholder="judges-july"></label>
+          <label><div class="flabel" style="margin-top:0;">label</div><input class="cin" id="campaignLabel" placeholder="July judge access"></label>
+          <label><div class="flabel" style="margin-top:0;">redemption code</div><input class="cin" id="campaignCode" autocomplete="off" placeholder="16+ characters"></label>
+          <label><div class="flabel" style="margin-top:0;">credits</div><input class="cin" id="campaignCredits" type="number" min="1" value="250"></label>
+          <label><div class="flabel" style="margin-top:0;">access days</div><input class="cin" id="campaignDays" type="number" min="1" value="31"></label>
+          <label><div class="flabel" style="margin-top:0;">max redemptions</div><input class="cin" id="campaignMax" type="number" min="1" value="25"></label>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;">
+          <button class="btn pri" onclick="createCampaign()">Create campaign</button>
+          <span class="sub" id="campaignOut">The plaintext code will be shown once. Store it securely before leaving this page.</span>
+        </div>
+      </div>
+      <div class="clay pad">
+        <div class="eyebrow">active and historical</div>
+        <div id="campaignRows"><div class="sub mono">Loading...</div></div>
+      </div>
+    </section>
+
+    <!-- ──────────────── SETTINGS ──────────────── -->
     <section class="page" id="page-settings">
       <div class="pagehead">
         <div>
@@ -2137,7 +2174,7 @@ function _arc(cx,cy,r,ri,a0,a1){
 
 let CUR_PAGE='overview';
 /* built lazily at call time so all loader fn declarations are already hoisted+defined */
-function _loaders(){return {overview:loadOverview,health:loadHealth,deadletter:loadDeadletter,anchors:loadAnchors,alerts:loadAlerts,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox,revenue:loadRevenue,security:loadSecurity,audit:loadAudit,leads:loadLeads};}
+function _loaders(){return {overview:loadOverview,health:loadHealth,deadletter:loadDeadletter,anchors:loadAnchors,alerts:loadAlerts,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox,revenue:loadRevenue,security:loadSecurity,audit:loadAudit,leads:loadLeads,campaigns:loadCampaigns};}
 function go(page,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   var _pg=$('page-'+page); _pg.classList.add('active');
@@ -2408,6 +2445,38 @@ document.addEventListener('click',function(e){ const w=$('topNotifWrap'); if(w &
   if(p&&p.classList.contains('on')){ p.classList.remove('on'); const b=w.querySelector('button'); if(b)b.setAttribute('aria-expanded','false'); } } });
 
 /* ──────────── settings / theme ──────────── */
+let CAMPAIGNS=[];
+async function loadCampaigns(){
+  $('campaignCreateCard').style.display=can('superadmin')?'':'none';
+  let r;try{r=await api('/admin/v1/evaluation-campaigns')}catch(e){r=null}
+  if(!r||!r.ok){$('campaignRows').innerHTML='<div class="sub mono">Unable to load campaigns.</div>';return}
+  CAMPAIGNS=await r.json();
+  if(!CAMPAIGNS.length){$('campaignRows').innerHTML='<div class="sub mono" style="padding:16px 0;">No campaigns yet.</div>';return}
+  $('campaignRows').innerHTML=CAMPAIGNS.map(c=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;flex-wrap:wrap;">
+    <div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b>${esc(c.label)}</b>${opsChip(c.status)}</div>
+    <div class="sub mono" style="font-size:10px;margin-top:5px;">${esc(c.offer_id)} Â· ${num(c.credits)} credits Â· ${num(c.duration_days)} days</div></div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span class="sub mono">${num(c.redemptions)} / ${num(c.max_redemptions)} redeemed</span>
+    ${c.status==='active'&&can('operator')?`<button class="btn sm" onclick="revokeCampaign('${esc(c.offer_id)}')">revoke</button>`:''}</div>
+  </div>`).join('');
+}
+async function createCampaign(){
+  const code=$('campaignCode').value.trim();
+  if(code.length<16){toast('Use a redemption code of at least 16 characters.');return}
+  const payload={offer_id:$('campaignOfferId').value.trim(),label:$('campaignLabel').value.trim(),code,
+    credits:Number($('campaignCredits').value),duration_days:Number($('campaignDays').value),max_redemptions:Number($('campaignMax').value)};
+  let r;try{r=await api('/admin/v1/evaluation-campaigns',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)})}catch(e){r=null}
+  const d=r?await r.json().catch(()=>({})):{};
+  if(!r||!r.ok){toast(d.detail||'Campaign creation failed.');return}
+  $('campaignOut').innerHTML='<b>Store this code now; it will not be shown again:</b> <code>'+esc(d.redemption_code)+'</code>';
+  $('campaignCode').value='';
+  toast('Campaign created');loadCampaigns();
+}
+async function revokeCampaign(offerId){
+  if(!confirm('Revoke this campaign? New redemptions will stop; existing trials keep their current expiry.'))return;
+  const r=await api('/admin/v1/evaluation-campaigns/'+encodeURIComponent(offerId)+'/revoke',{method:'POST'});
+  if(r.ok){toast('Campaign revoked');loadCampaigns()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'Campaign revoke failed.');}
+}
+
 function setTheme(mode){
   document.documentElement.dataset.theme=mode;
   document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#0D0A08':'#FEF4ED');
