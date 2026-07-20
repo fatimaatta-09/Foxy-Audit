@@ -22,6 +22,18 @@ from ..config import get_settings
 router = APIRouter()
 START_TIME = time.time()
 
+
+def _evaluator_status(settings) -> dict:
+    """Expose configuration state without pretending it is provider health."""
+    configured = bool(settings.gemini_api_key.strip())
+    return {
+        "provider": "gemini",
+        "model": settings.gemini_model,
+        "status": "configured" if configured else "unavailable",
+        "configured": configured,
+        "verdicts_advisory": True,
+    }
+
 @router.get("/v1/health")
 def health(
     org: Organization = Depends(require_org),
@@ -36,8 +48,10 @@ def health(
     return {
         "status": "ok",
         "org": org.name,
-        "gemini_model": settings.gemini_model if settings.gemini_api_key else None,
-        "openai_model": settings.openai_model if settings.openai_api_key else None,
+        "gemini_model": settings.gemini_model if getattr(settings, "gemini_api_key", "") else None,
+        "openai_model": (settings.openai_model
+                         if getattr(settings, "openai_api_key", "") else None),
+        "evaluator": _evaluator_status(settings),
         "chain_height": chain_height,
         "uptime_seconds": uptime_seconds
     }

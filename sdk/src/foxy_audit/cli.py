@@ -64,11 +64,30 @@ def _doctor(cfg: FoxyConfig) -> int:
         return 1
     print(f"  {_OK} Backend reachable + authenticated — test log accepted (HTTP {r.status_code}).")
 
+    # Provider configuration is not provider health. Surface this distinction
+    # so an unavailable evaluator cannot be mistaken for a clean verdict.
+    try:
+        health = requests.get(f"{cfg.endpoint}/v1/health",
+                              headers={"Authorization": f"Bearer {cfg.api_key}"},
+                              timeout=cfg.timeout)
+        evaluator = health.json().get("evaluator", {}) if health.ok else {}
+        if evaluator.get("status") == "configured":
+            print(f"  {_ARROW} Evaluator configured: {evaluator.get('provider', 'unknown')} "
+                  f"({evaluator.get('model', 'unknown')}); verdicts are advisory.")
+        else:
+            print(f"  {_X} Evaluator unavailable; graded fallback results remain unknown.")
+    except (requests.RequestException, ValueError):
+        print(f"  {_X} Evaluator status unavailable; do not treat fallback results as clean.")
+
     # 2) DESKTOP PET — fire the same instant signal the SDK sends on every call.
     sent = udp.send_ping({"event": "evaluating", "policy": "foxy-doctor"},
                          cfg.udp_host, cfg.udp_port)
     tail = "watch the fox react" if sent else "no pet is listening — that is fine"
     print(f"  {_ARROW} Sent a signal to the desktop pet ({tail}).")
+    captured = udp.send_ping({
+        "event": "hash_ok", "policy": "foxy-doctor", "delivery": "queued",
+    }, cfg.udp_host, cfg.udp_port)
+    print(f"  {_ARROW} Local capture signal sent ({'watch the fox react' if captured else 'no pet is listening'}).")
 
     # 3) CHAIN — confirm the ledger verifies server-side.
     try:

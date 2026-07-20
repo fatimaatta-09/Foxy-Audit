@@ -195,4 +195,5 @@ class StatsResponse(BaseModel):
     avg_seconds_to_verdict: float | None   # avg graded_at - created_at; None if none graded
     grading: GradingCounts
     activity_7d: list[ActivityDay]
+    evaluator_unknown: int = 0
 

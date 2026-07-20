@@ -2148,7 +2148,9 @@ async function loadLoginHistory(){
   let _ledgerPage=1; const _ledgerLimit=50; let _ledgerTotal=0;
 
   function verdictOf(it){
-    if(it.gemini_verdict&&it.gemini_verdict.policy_breach) return {v:'breach',cls:'breach'};
+    const verdict=it.gemini_verdict||{};
+    if(String(verdict.reason||'').startsWith('evaluator_unavailable') || verdict.decision==='unknown') return {v:'unknown',cls:'warn'};
+    if(verdict.policy_breach) return {v:'breach',cls:'breach'};
     if(it.grading_status==='graded') return {v:'safe',cls:'safe'};
     if(it.grading_status==='failed') return {v:'flag',cls:'warn'};
     return {v:'pending',cls:'warn'};
@@ -2177,6 +2179,19 @@ async function loadLoginHistory(){
     if($('gVerdictChart'))window.foxChart('gVerdictChart',{type:'gauge',height:12,value:(s.avg_seconds_to_verdict==null?0:Math.min(10,s.avg_seconds_to_verdict)),max:10,tip:'Avg time to verdict — '+ttv});
     // real judge model (replaces the hardcoded "Gemini 1.5 Pro")
     const jm=$('judgeModelLabel'); if(jm&&s.judge_model)jm.textContent=prettyModel(s.judge_model)+' · AI Judge';
+    try{
+      const hr=await api('/v1/health');
+      const h=hr.ok?await hr.json():{};
+      const ev=h.evaluator||{};
+      if(jm&&ev.model){
+        const state=ev.status==='configured'?'configured':'unavailable';
+        jm.textContent=prettyModel(ev.model)+' · Gemini · '+state;
+        jm.style.color=state==='configured'?'var(--safe-bg)':'var(--warn-bg)';
+        jm.title=state==='configured'
+          ?'Provider is configured; verdicts remain advisory.'
+          :'No Gemini provider is configured; graded fallback results are unknown.';
+      }
+    }catch(_){ }
     // real greeting from the signed-in user (replaces the hardcoded "Yo Fatima")
     try{ const me=await (await api('/v1/auth/me')).json(); const gn=$('greetName');
       if(gn&&me){ const nm=(me.full_name&&me.full_name.trim())?me.full_name.trim().split(/\s+/)[0]:(me.email?me.email.split('@')[0]:'');
