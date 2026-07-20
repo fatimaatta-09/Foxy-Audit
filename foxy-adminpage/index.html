@@ -54,7 +54,7 @@
   --ink:     #241A12;
   --ink2:    #3D3025;
   --muted:   #5E5040;
-  --muted2:  #837462;
+  --muted2:  #736451;   /* light-mode contrast fix (correction 3): ~5.1:1 on pale surfaces (was #837462 ≈4.0) */
 
   /* ─── fox brand (ORANGE) — primary/accent: buttons, active nav, focus, links,
          default funnel-bar fill ─── */
@@ -80,9 +80,9 @@
   --destructive: #DC2626;
 
   /* ─── semantic (SOFT/glass) — status chips ─── */
-  --ok:#15803D;      --ok-soft:rgba(34,197,94,.16);
+  --ok:#0F7130;      --ok-soft:rgba(34,197,94,.16);   /* light contrast fix: ~5.0:1 on .chip.safe tint (was #15803D ≈4.0) */
   --danger:#B91C1C;  --danger-soft:rgba(239,68,68,.16);
-  --warnc:#B45309;   --warn-soft:rgba(245,158,11,.20);
+  --warnc:#9E4707;   --warn-soft:rgba(245,158,11,.20);   /* light contrast fix: ~4.9:1 on .chip.warn tint (was #B45309 ≈4.0) */
   --infoc:#1D4ED8;   --info-soft:rgba(59,130,246,.16);
   --neutral:#5C5044; --neutral-soft:rgba(124,74,26,.12);
 
@@ -278,7 +278,7 @@ body::before{
     radial-gradient(580px 500px at 99% 0%, rgba(46,150,232,.4), transparent 56%),
     radial-gradient(760px 580px at 96% 112%, rgba(255,150,50,.44), transparent 60%);
   filter:blur(28px);opacity:1;
-  animation:drift 28s ease-in-out infinite alternate;
+  /* static — owner feedback: no ambient drift behind the glass (Liquid-Glass correction 1) */
 }
 html[data-theme="dark"] body::before{
   background:
@@ -286,7 +286,6 @@ html[data-theme="dark"] body::before{
     radial-gradient(540px 460px at 99% 0%, rgba(52,150,235,.24), transparent 55%),
     radial-gradient(780px 540px at 98% 114%, rgba(255,120,40,.22), transparent 60%);
 }
-@keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-3.5%,-3%,0) scale(1.12)}}
 /* faint film grain over the frosted surfaces — tactile "real glass" finish */
 body::after{
   content:'';position:fixed;inset:0;z-index:500;pointer-events:none;
@@ -328,7 +327,7 @@ html[data-theme="dark"]{--grain:.20}
   width:46px;height:46px;border-radius:14px;
   background:linear-gradient(155deg,var(--fox),var(--foxdeep));
   border:1px solid rgba(255,255,255,.35);
-  box-shadow:0 6px 18px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4);
+  box-shadow:0 4px 12px var(--shadow), inset 0 1px 0 rgba(255,255,255,.4);
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   margin-bottom:8px;position:relative;
 }
@@ -352,11 +351,13 @@ html[data-theme="dark"]{--grain:.20}
 .dock-item:hover:not(.active){background:var(--surf2);color:var(--ink);transform:translateY(-1px)}
 .dock-item:hover:not(.active) svg{transform:scale(1.12)}
 .dock-item.active{
-  background:linear-gradient(155deg,var(--fox),var(--fox3));
-  color:#fff;border-color:transparent;
-  box-shadow:0 8px 20px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.35);
+  /* restrained active state (Liquid-Glass correction 2): soft tint + orange left accent bar
+     + orange (not white-on-bright) icon/label, no glow. Token-driven → works both skins × light/dark. */
+  background:color-mix(in srgb, var(--fox) 14%, var(--surf));
+  color:var(--fox2);border-color:transparent;
+  box-shadow:inset 3px 0 0 var(--fox);
 }
-.dock-item.active span{color:#fff}
+.dock-item.active span{color:var(--fox2)}
 .dock-badge{
   position:absolute;top:4px;right:11px;min-width:16px;height:16px;padding:0 4px;
   border-radius:8px;background:var(--destructive);color:#fff;font-family:var(--mono);
@@ -412,7 +413,7 @@ html[data-theme="dark"] .dock-badge{box-shadow:0 0 0 2px rgba(0,0,0,.4)}
 html[data-theme="dark"] .theme-toggle .ic-sun{display:block}
 html[data-theme="dark"] .theme-toggle .ic-moon{display:none}
 .topuser{display:flex;align-items:center;gap:9px;padding:4px 12px 4px 4px;border-radius:12px;background:var(--surf2);border:1px solid var(--line)}
-.topuser-av{width:30px;height:30px;flex-shrink:0;border-radius:9px;background:linear-gradient(150deg,var(--fox),var(--fox3));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;box-shadow:0 3px 8px var(--fox-glow)}
+.topuser-av{width:30px;height:30px;flex-shrink:0;border-radius:9px;background:linear-gradient(150deg,var(--fox),var(--foxdeep));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;box-shadow:0 2px 6px var(--shadow)}
 .topuser-meta{display:flex;flex-direction:column;line-height:1.2;min-width:0;max-width:200px}
 .topuser-name{font-size:11.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topuser-role{font-family:var(--mono);font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
@@ -460,9 +461,9 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
   background:linear-gradient(var(--glass-tint),transparent 42%),
     radial-gradient(120% 80% at var(--mx,30%) var(--my,0%), var(--spec-soft), transparent 60%);
   box-shadow:inset 0 1px 0 var(--spec), inset 0 0 0 1px rgba(255,255,255,.04);
-  mix-blend-mode:screen;animation:liquidSheen 16s ease-in-out infinite alternate;
+  /* static specular — the highlight stays put (Liquid-Glass correction 1: calm, still glass) */
+  mix-blend-mode:screen;
 }
-@keyframes liquidSheen{from{transform:translate3d(-6%,-3%,0)}to{transform:translate3d(6%,4%,0)}}
 /* panels that hold dense tables use a more opaque frosted layer + softer blur so tiny IDs/numbers stay crisp —
    the "keep data readable" tier: --glass-data has NO url() lens, and the specular is toned down. */
 .clay:has(.twrap),.clay:has(.tbl),.clay:has(.inbox-row){
@@ -1750,18 +1751,8 @@ function countUp(el,to,fmt){el=(typeof el==='string')?$(el):el;if(!el)return;fmt
 function skeleton(el,kind,cnt){el=(typeof el==='string')?$(el):el;if(!el)return;
   var one={kpi:'<div class="skel skel-kpi"></div>',row:'<div class="skel skel-line"></div>',chart:'<div class="skel skel-chart"></div>'}[kind||'row'];
   el.innerHTML=new Array((cnt||3)+1).join(one);}
-/* E6 · signature pointer-tracked specular (fine pointer + motion allowed only) */
-if(window.matchMedia && matchMedia('(hover:hover) and (pointer:fine)').matches && !reduced()){
-  var _specRaf=0;
-  document.addEventListener('pointermove',function(e){
-    if(_specRaf)return;
-    _specRaf=requestAnimationFrame(function(){_specRaf=0;
-      var c=e.target.closest&&e.target.closest('.clay');if(!c)return;
-      var r=c.getBoundingClientRect();if(!r.width||!r.height)return;
-      c.style.setProperty('--mx',((e.clientX-r.left)/r.width*100).toFixed(1)+'%');
-      c.style.setProperty('--my',((e.clientY-r.top)/r.height*100).toFixed(1)+'%');});
-  },{passive:true});
-}
+/* E6 · specular is now STATIC (owner feedback: calm, still glass). The highlight sits at the
+   fixed --mx/--my defaults (30%/0%); no pointer-tracking, no ambient motion, no per-move repaint. */
 function _cssvar(n,f){try{var v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||f;}catch(e){return f;}}
 function _chartPalette(){return [_cssvar('--fox','#FF6A1A'),_cssvar('--blue','#2E90E0'),_cssvar('--ok','#15803D'),_cssvar('--warnc','#B45309'),_cssvar('--infoc','#1D4ED8'),_cssvar('--neutral','#5C5044')];}
 var _DASH=['0','5 4','2 3','8 3 2 3','1 4'];
