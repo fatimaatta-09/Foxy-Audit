@@ -203,6 +203,23 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none;}
 .seg-chip{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;padding:6px 13px;border-radius:20px;cursor:pointer;background:var(--surf2);border:var(--border-sm);color:var(--ink2);transition:background .14s,color .14s;}
 .seg-chip:hover{background:var(--surf3);color:var(--fox2);}
 .seg-chip:focus-visible{outline:2px solid var(--fox);outline-offset:2px;}
+/* P9 · guided verify — step markers + rich status panel */
+.vstep{display:flex;align-items:flex-start;gap:10px;margin:14px 0 7px;}
+.vstep-n{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--fox);color:#1a0900;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;border:var(--border-sm);}
+.vstep b{font-size:12px;font-weight:700;display:block;}
+.vstep-d{font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:1px;}
+.vstatus{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:var(--r-md);border:var(--border);margin-top:14px;}
+.vstatus.ok{background:rgba(61,220,132,.13);border-color:var(--safe-bg);}
+.vstatus.bad{background:rgba(255,77,77,.12);border-color:var(--breach-bg);}
+.vstatus.warn{background:rgba(255,200,61,.14);border-color:var(--warn-bg);}
+.vstatus.checking{background:var(--surf2);}
+.vstatus-ic{flex-shrink:0;width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;border:var(--border-sm);}
+.vstatus.ok .vstatus-ic{background:var(--safe-bg);color:var(--safe-tx);}
+.vstatus.bad .vstatus-ic{background:var(--breach-bg);color:var(--breach-tx);}
+.vstatus.warn .vstatus-ic{background:var(--warn-bg);color:var(--warn-tx);}
+.vstatus.checking .vstatus-ic{background:var(--surf3);color:var(--fox2);}
+.vstatus-t{font-weight:800;font-size:13px;}
+.vstatus-d{font-size:11px;color:var(--muted);line-height:1.5;margin-top:3px;}
 @media(max-width:820px){ .skinseg{display:none;} }   /* on small screens the skin picker lives in Settings (P14) */
 
 html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth;}
@@ -1199,15 +1216,17 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       </div>
       <div class="g2">
         <div class="clay pad">
-          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="7" stroke="#000" stroke-width="2.3" fill="none"/></svg></span></div><div class="txt">Check a single record</div></div></div>
-          <div style="font-size:10.5px;color:var(--muted);line-height:1.55;margin:0 0 12px;">Enter a chain hash from your ledger. Foxy recomputes the recorded event with its real predecessor; raw prompts and responses are never uploaded from this page.</div>
-          <div class="flabel" style="margin-top:0;">ledger hash</div>
-          <input class="cin" id="vLedgerHash" placeholder="paste chain hash from the ledger...">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="7" stroke="#000" stroke-width="2.3" fill="none"/></svg></span></div><div class="txt">Verify a single record</div></div></div>
+          <div class="vstep"><span class="vstep-n">1</span><div><b>Paste a chain hash</b><div class="vstep-d">Copy it from any row in your ledger. Raw prompts and responses are never uploaded from this page.</div></div></div>
+          <input class="cin" id="vLedgerHash" placeholder="paste chain hash from the ledger…" oninput="vHashValidate()" onkeydown="if(event.key==='Enter')runVerify()" autocomplete="off" spellcheck="false">
+          <div id="vHashHint" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;min-height:13px;"></div>
+          <div class="vstep"><span class="vstep-n">2</span><div><b>Run the check</b><div class="vstep-d">Foxy recomputes this record with its real predecessor and compares it to what was stored.</div></div></div>
           <div class="btnrow">
-            <button class="btn pri half" onclick="runVerify()">check record</button>
-            <button class="btn ghost half" onclick="clearVerify()">clear</button>
+            <button class="btn pri half" onclick="runVerify()">Verify record</button>
+            <button class="btn ghost half" onclick="clearVerify()">Clear</button>
           </div>
-          <div class="vres" id="verifyResult"></div>
+          <div class="vstep"><span class="vstep-n">3</span><div><b>Read the result</b><div class="vstep-d">A clear pass / fail with the record's sequence and verdict.</div></div></div>
+          <div id="verifyResult" style="display:none;"></div>
         </div>
         <div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="3" fill="#000"/></svg></span></div><div class="txt">Verification card</div></div></div>
@@ -1716,11 +1735,38 @@ async function lookupLedgerHash(inputId, resultId, cardStyle){
 async function quickVerify(){ return lookupLedgerHash('qLedgerHash','quickResult',true); }
 async function quickVerify2(){ return lookupLedgerHash('q2Hash','quickResult2',true); }
 async function runVerify(){
-  return lookupLedgerHash('vLedgerHash','verifyResult',false);
+  const input=document.getElementById('vLedgerHash');
+  const el=document.getElementById('verifyResult');
+  const norm=((input&&input.value)||'').trim().toLowerCase().replace(/[^a-f0-9]/g,'');
+  function panel(kind,icon,title,detail){
+    el.className='vstatus '+kind; el.style.display='flex';
+    el.innerHTML='<div class="vstatus-ic">'+icon+'</div><div><div class="vstatus-t">'+title+'</div>'+(detail?'<div class="vstatus-d">'+detail+'</div>':'')+'</div>';
+  }
+  if(norm.length!==64){ panel('warn','!','Enter a 64-character chain hash','Paste the full hash from a ledger row (64 hex characters).'); return; }
+  panel('checking','…','Checking the ledger…','Recomputing this record with its real predecessor.');
+  try{
+    const r=await fetch('/v1/verify/hash/'+encodeURIComponent(norm),{credentials:'same-origin'});
+    if(r.status===401){ panel('warn','!','Sign in to check the ledger',''); return; }
+    const d=await r.json();
+    if(!d.found){ panel('bad','✕','Not in this ledger','No record with this chain hash exists in your workspace.'); return; }
+    if(!d.verified){ panel('bad','⚠','Tampering detected','Verification failed at seq '+d.seq+' — this record no longer matches what was recorded.'); return; }
+    if(d.status==='breach'){ panel('warn','✓','Record intact · policy breach','Seq '+d.seq+' — the record is untampered, but the Judge flagged a policy breach.'); return; }
+    panel('ok','✓','Record verified — untampered','Seq '+d.seq+' · verdict '+(d.status||'clean')+'.');
+  }catch(e){ panel('bad','✕','Could not reach the server','Please try again in a moment.'); }
 }
 function clearVerify(){
-  document.getElementById('vLedgerHash').value='';
-  const el=document.getElementById('verifyResult'); el.className='vres'; el.innerHTML='';
+  const input=document.getElementById('vLedgerHash'); if(input)input.value='';
+  const el=document.getElementById('verifyResult'); if(el){ el.className=''; el.innerHTML=''; el.style.display='none'; }
+  const hint=document.getElementById('vHashHint'); if(hint)hint.textContent='';
+}
+function vHashValidate(){
+  const input=document.getElementById('vLedgerHash'), hint=document.getElementById('vHashHint');
+  if(!input||!hint)return;
+  const n=(input.value||'').replace(/[^a-fA-F0-9]/g,'').length;
+  if(n===0){ hint.textContent=''; hint.style.color='var(--muted)'; }
+  else if(n<64){ hint.textContent=n+' / 64 hex characters'; hint.style.color='var(--muted)'; }
+  else if(n===64){ hint.textContent='✓ looks like a valid chain hash'; hint.style.color='var(--safe-bg)'; }
+  else { hint.textContent='too long — a chain hash is exactly 64 hex characters'; hint.style.color='var(--breach-bg)'; }
 }
 let _exporting=false;
 // real data-export (5D.4): download this org's audit-log ledger (own data)
