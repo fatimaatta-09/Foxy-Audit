@@ -65,6 +65,10 @@ def test_evaluating_udp_emitted():
         assert msg["policy"] == "hipaa_basic"
         assert isinstance(msg["tokens"], int)
         assert "ts" in msg
+        data, _ = sock.recvfrom(4096)
+        captured = json.loads(data.decode())
+        assert captured["event"] == "hash_ok"
+        assert captured["delivery"] == "local_only"
     finally:
         sock.close()
 

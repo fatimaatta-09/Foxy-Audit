@@ -82,6 +82,10 @@ def _recv_event(sock, timeout=5.0):
         return None
 
 
+def _recv_capture_pair(sock, timeout=5.0):
+    return _recv_event(sock, timeout), _recv_event(sock, timeout)
+
+
 def _delivered(backend) -> list:
     """All payload items received so far, across every batch POST."""
     return [item for _, _, body in backend.requests for item in body]
@@ -107,8 +111,10 @@ def test_full_dispatch_batches_hashes_only():
         # ── first audited call ──
         assert ask("a patient prompt") == "a clinical summary response"
 
-        pending = _recv_event(sock, 2.0)
+        pending, captured = _recv_capture_pair(sock, 2.0)
         assert pending and pending["event"] == "evaluating" and pending["policy"] == "hipaa_basic", pending
+        assert captured and captured["event"] == "hash_ok", captured
+        assert captured["delivery"] == "queued", captured
 
         assert _wait_for_delivered(backend, 1), "backend never received the first batch"
         path, headers, body = backend.requests[0]
@@ -125,8 +131,9 @@ def test_full_dispatch_batches_hashes_only():
 
         # ── second call: also delivered (a later batch or coalesced) ──
         ask("another prompt")
-        pending2 = _recv_event(sock, 2.0)
+        pending2, captured2 = _recv_capture_pair(sock, 2.0)
         assert pending2 and pending2["event"] == "evaluating", pending2
+        assert captured2 and captured2["event"] == "hash_ok", captured2
 
         assert _wait_for_delivered(backend, 2), "second call was never delivered"
         delivered = _delivered(backend)

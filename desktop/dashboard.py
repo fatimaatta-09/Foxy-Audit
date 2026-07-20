@@ -743,7 +743,11 @@ class AuditTable(QTableWidget):
         self.setItem(0, 3, self._item(str(ev.get("tokens", "")), t["text"],
                                       align=Qt.AlignmentFlag.AlignRight))
         ok = ev["kind"] == "ok"
-        badge = Badge("COMPLIANT" if ok else "FLAGGED", OK_GREEN if ok else BAD_RED)
+        captured = ev["kind"] == "captured"
+        badge = Badge(
+            "COMPLIANT" if ok else "CAPTURED" if captured else "FLAGGED",
+            OK_GREEN if ok or captured else BAD_RED,
+        )
         cell = QWidget()
         lay = QHBoxLayout(cell)
         lay.setContentsMargins(8, 0, 8, 0)
@@ -1652,7 +1656,7 @@ class DashboardWindow(QWidget):
         policy = payload.get("policy", "default")
         self._add_event({
             "time": datetime.now().strftime("%H:%M:%S"),
-            "kind": "ok", "policy": policy, "hash": "",
+            "kind": "captured", "policy": policy, "hash": "",
             "tokens": payload.get("tokens", ""), "risk": None,
         })
         self._refresh_stats()
