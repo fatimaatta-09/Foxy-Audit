@@ -14,7 +14,7 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from . import email
+from . import email, email_templates as et
 
 TTL = timedelta(hours=1)
 
@@ -32,7 +32,8 @@ INVITE_TTL = timedelta(days=7)
 
 
 def issue_reset(db, subject, to_email: str, base_url: str, *,
-                invite: bool = False, ttl: timedelta | None = None) -> None:
+                invite: bool = False, ttl: timedelta | None = None,
+                surface: str = "customer") -> None:
     """Generate a token, store its hash + expiry on `subject` (which must expose
     reset_token_hash / reset_token_expires_at), commit, and email a link.
 
@@ -45,21 +46,36 @@ def issue_reset(db, subject, to_email: str, base_url: str, *,
     db.commit()
     sep = "&" if "?" in base_url else "?"
     link = f"{base_url}{sep}reset_token={token}"
+    where = "the Foxy Audit staff console" if surface == "staff" else "Foxy Audit"
     if invite:
         subject_line = "You're invited to Foxy Audit — set your password"
-        html = (f"<p>You've been invited to Foxy Audit. "
-                f"<a href=\"{link}\">Set your password</a> to activate your account. "
-                f"This link expires in 7 days.</p>")
-        text = (f"You've been invited to Foxy Audit. Set your password: {link}\n"
-                f"This link expires in 7 days.")
+        html, plain = et.layout(
+            title="Set your password",
+            preheader=f"You've been invited to {where} — set your password to activate your account.",
+            blocks=[
+                et.paragraph(f"You've been invited to {where}. Set your password to activate your "
+                             "account."),
+                et.button("Set your password", link),
+                et.muted("This invitation link expires in 7 days. If you weren't expecting it, you "
+                         "can ignore this email."),
+            ],
+            surface=surface,
+        )
     else:
         subject_line = "Reset your Foxy Audit password"
-        html = (f"<p>We received a request to reset your Foxy Audit password. "
-                f"<a href=\"{link}\">Choose a new password</a>. This link expires in "
-                f"1 hour. If you didn't request it, you can safely ignore this email.</p>")
-        text = (f"Reset your Foxy Audit password: {link}\n"
-                f"This link expires in 1 hour. If you didn't request it, ignore this email.")
-    email.send_email(to=to_email, subject=subject_line, html=html, text=text)
+        html, plain = et.layout(
+            title="Reset your password",
+            preheader="Choose a new password for your Foxy Audit account — this link expires in 1 hour.",
+            blocks=[
+                et.paragraph("We received a request to reset your Foxy Audit password. Use the "
+                             "button below to choose a new one."),
+                et.button("Choose a new password", link),
+                et.muted("This link expires in 1 hour. If you didn't request it, you can safely "
+                         "ignore this email — your password stays the same."),
+            ],
+            surface=surface,
+        )
+    email.send_email(to=to_email, subject=subject_line, html=html, text=plain)
 
 
 def token_valid(subject, token: str) -> bool:

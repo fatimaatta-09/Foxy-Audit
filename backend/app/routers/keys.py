@@ -26,7 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import account_audit
-from .. import email as email_mod
+from .. import email as email_mod, email_templates as et
 from .. import mfa
 from ..auth import hash_key, require_org, require_role, require_step_up_user
 from ..config import get_settings
@@ -220,12 +220,19 @@ def regenerate_request(
     admin.mfa_code_hash = mfa.hash_code(code)
     admin.mfa_code_expires_at = datetime.now(timezone.utc) + mfa.TTL
     db.commit()
-    email_mod.send_email(
-        to=admin.email, subject="Your Foxy Audit key-regeneration code",
-        html=(f"<p>Your code to regenerate your API key is <b>{code}</b>. It expires in "
-              "5 minutes.</p><p>If you didn't request this, ignore this email and change "
-              "your password.</p>"),
-        text=f"Your Foxy Audit key-regeneration code is {code} (expires in 5 minutes).")
+    html, plain = et.layout(
+        title="Confirm API-key regeneration",
+        preheader=f"Your Foxy Audit key-regeneration code is {code}",
+        blocks=[
+            et.paragraph("Use this one-time code to regenerate your API key. Your current key is "
+                         "revoked the moment the new one is issued."),
+            et.code_block(code),
+            et.muted("It expires in 5 minutes. If you didn't request this, ignore this email and "
+                     "change your password."),
+        ],
+    )
+    email_mod.send_email(to=admin.email, subject="Your Foxy Audit key-regeneration code",
+                         html=html, text=plain)
     return {"status": "code_sent", "email": admin.email}
 
 

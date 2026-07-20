@@ -11,7 +11,6 @@ middleware, and keeps only the path (no query string).
 
 from __future__ import annotations
 
-import html as _html
 import uuid
 
 import requests
@@ -21,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import email as email_mod
+from .. import email as email_mod, email_templates as et
 from ..config import get_settings
 from ..auth import hash_key
 from ..db import SessionLocal, get_db
@@ -36,10 +35,6 @@ PRIORITY_SOURCES = {"enterprise", "demo", "partnership"}
 # Founder alerts for priority contacts always also go to the team's shared inbox,
 # regardless of which superadmins happen to be registered.
 FOUNDER_ALERT_EMAIL = "foxyaudit@gmail.com"
-
-
-def _esc(s: str | None) -> str:
-    return _html.escape(s or "")
 
 
 def _verify_recaptcha(token: str | None) -> bool:
@@ -85,24 +80,35 @@ def _notify_priority_contact(name: str | None, email_addr: str, message: str | N
              "demo": "demo"}.get((source or "").strip().lower(), "contact")
     who = (name or email_addr or "Someone").strip()
     body = (message or "").strip()
-    alert_html = (
-        f"<p><b>{_esc(who)}</b> &lt;{_esc(email_addr)}&gt; sent a <b>priority {label}</b> inquiry:</p>"
-        f"<blockquote style='border-left:3px solid #ff7a2e;padding-left:12px;color:#333'>"
-        f"{_esc(body).replace(chr(10), '<br>')}</blockquote>"
-        f"<p>Open it in the admin inbox to claim &amp; reply.</p>")
-    alert_text = (f"{who} <{email_addr}> sent a PRIORITY {label.upper()} inquiry:\n\n{body}\n\n"
-                  "Open the admin inbox to claim & reply.")
+    body_paras = [et.paragraph(ln.strip()) for ln in body.split("\n") if ln.strip()] \
+        or [et.muted("(no message body)")]
+    alert_html, alert_text = et.layout(
+        title=f"Priority {label} inquiry",
+        preheader=f"{who} <{email_addr}> sent a priority {label} inquiry.",
+        blocks=[
+            et.paragraph(f"{who} <{email_addr}> sent a priority {label} inquiry:"),
+            et.divider(),
+            *body_paras,
+            et.divider(),
+            et.muted("Open it in the admin inbox to claim & reply."),
+        ],
+        surface="staff",
+    )
+    alert_subject = f"\U0001f534 Priority {label.capitalize()} — {who}"
     for r in recipients:
-        email_mod.send_email(to=r, subject=f"\U0001f534 Priority {label.capitalize()} — {who}",
-                             html=alert_html, text=alert_text)
+        email_mod.send_email(to=r, subject=alert_subject, html=alert_html, text=alert_text)
 
-    email_mod.send_email(
-        to=email_addr, subject="We got your message — Foxy Audit",
-        html=("<p>Thanks for reaching out to Foxy Audit.</p>"
-              "<p>Your message is with our team and we'll get back to you shortly.</p>"
-              "<p style='color:#888;font-size:12px'>— Foxy Audit</p>"),
-        text=("Thanks for reaching out to Foxy Audit.\n"
-              "Your message is with our team and we'll get back to you shortly.\n\n— Foxy Audit"))
+    conf_html, conf_text = et.layout(
+        title="We got your message",
+        preheader="Thanks for reaching out to Foxy Audit — your message is with our team.",
+        blocks=[
+            et.paragraph("Thanks for reaching out to Foxy Audit."),
+            et.paragraph("Your message is with our team and we'll get back to you shortly."),
+        ],
+        surface="customer",
+    )
+    email_mod.send_email(to=email_addr, subject="We got your message — Foxy Audit",
+                         html=conf_html, text=conf_text)
 
 
 class LeadRequest(BaseModel):

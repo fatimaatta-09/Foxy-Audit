@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from . import email
+from . import email, email_templates as et
 from .config import Settings, get_settings
 from .db import SessionLocal
 
@@ -148,14 +148,20 @@ def alert_on_grading_failures(db: Session, settings, state: dict, *,
     if not settings.alert_email or (
             last is not None and (now - last) < settings.grading_failure_alert_cooldown):
         return False
+    html, plain = et.layout(
+        title="Grading failures need attention",
+        preheader=f"{count} interaction(s) are parked in the grading dead-letter.",
+        blocks=[
+            et.paragraph(f"{count} interaction(s) are parked in grading_status='failed' — the "
+                         "Gemini judge exhausted all retries."),
+            et.muted("Check the worker logs and the affected org's policy/config."),
+        ],
+        surface="staff", variant="compact",
+    )
     ok = email.send_email(
         to=settings.alert_email,
         subject=f"[Foxy Audit] {count} grading failure(s) need attention",
-        html=(f"<p><b>{count}</b> interaction(s) are parked in "
-              f"grading_status='failed' — the Gemini judge exhausted all retries. "
-              f"Check the worker logs and the affected org's policy/config.</p>"),
-        text=(f"{count} grading failures are parked in the dead-letter "
-              f"(grading_status='failed'). Investigate the worker."),
+        html=html, text=plain,
     )
     if ok:
         state["last_alert"] = now

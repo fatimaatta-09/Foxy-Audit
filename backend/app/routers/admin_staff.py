@@ -109,7 +109,7 @@ def create_staff(
     db.refresh(new_staff)
     if invited:
         password_reset.issue_reset(db, new_staff, new_staff.email,
-                                   get_settings().admin_url, invite=True)
+                                   get_settings().admin_url, invite=True, surface="staff")
         return CreateStaffResponse(id=str(new_staff.id), email=new_staff.email,
                                    platform_role=new_staff.platform_role, invited=True,
                                    message="An invite email with a set-password link was sent.")

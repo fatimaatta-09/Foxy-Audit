@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import email as email_mod
+from .. import email as email_mod, email_templates as et
 from ..admin_audit import client_ip, record_admin_action
 from ..auth import require_staff
 from ..db import get_db
@@ -170,9 +170,15 @@ def reply(lead_id: str, payload: ReplyRequest, request: Request,
                         target_id=str(lead.id), ip=client_ip(request))
     db.commit()
     body = payload.message.strip()
+    reply_paras = [et.paragraph(ln.strip()) for ln in body.split("\n") if ln.strip()] \
+        or [et.paragraph(body)]
+    html, plain = et.layout(
+        title="A reply from Foxy Audit support",
+        preheader=body[:140],
+        blocks=[*reply_paras, et.divider(), et.muted("— The Foxy Audit team")],
+        surface="customer",
+    )
     sent = email_mod.send_email(
         to=lead.email, subject="Re: your message to Foxy Audit",
-        html=f"<div style='font-family:sans-serif;font-size:14px'>{body}</div>"
-             "<p style='color:#888;font-size:12px'>— Foxy Audit support</p>",
-        text=body + "\n\n-- Foxy Audit support")
+        html=html, text=plain, reply_to="support@foxyaudit.tech")
     return {"status": "replied", "emailed": bool(sent)}

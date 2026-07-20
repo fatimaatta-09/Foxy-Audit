@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import account_audit, email as email_mod, login_history, mfa, password_reset
+from .. import account_audit, email as email_mod, email_templates as et, login_history, mfa, password_reset
 from ..auth import (_scope_org, grant_step_up, hash_session_token, require_role,
                     require_step_up_user, require_user, resolve_org)
 from ..config import get_settings
@@ -320,11 +320,17 @@ def step_up_request(request: Request, user: User = Depends(require_user),
     db.add(VerificationCode(id=uuid.uuid4(), user_id=user.id, org_id=user.org_id, purpose="step_up",
                             code_hash=mfa.hash_code(code), expires_at=now + STEP_UP_CODE_TTL))
     db.commit()
-    email_mod.send_email(
-        to=user.email, subject="Your Foxy Audit security code",
-        html=(f"<p>Your one-time security code is <b>{code}</b>. It expires in 5 minutes.</p>"
-              "<p>If you didn't request this, ignore this email and change your password.</p>"),
-        text=f"Your Foxy Audit security code is {code} (expires in 5 minutes).")
+    html, plain = et.layout(
+        title="Confirm it's you",
+        preheader=f"Your Foxy Audit security code is {code}",
+        blocks=[
+            et.paragraph("Use this one-time code to confirm a sensitive change to your account."),
+            et.code_block(code),
+            et.muted("It expires in 5 minutes. If you didn't request this, ignore this email and "
+                     "change your password."),
+        ],
+    )
+    email_mod.send_email(to=user.email, subject="Your Foxy Audit security code", html=html, text=plain)
     return {"status": "code_sent", "email": user.email}
 
 

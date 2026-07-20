@@ -13,7 +13,7 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from . import email
+from . import email, email_templates as et
 
 TTL = timedelta(minutes=5)
 
@@ -34,13 +34,16 @@ def issue_code(db, subject, to_email: str) -> None:
     subject.mfa_code_hash = hash_code(code)
     subject.mfa_code_expires_at = datetime.now(timezone.utc) + TTL
     db.commit()
-    email.send_email(
-        to=to_email,
-        subject="Your Foxy Audit sign-in code",
-        html=(f"<p>Your sign-in code is <b>{code}</b>. It expires in 5 minutes. "
-              f"If you didn't request it, ignore this email.</p>"),
-        text=f"Your Foxy Audit sign-in code is {code} (expires in 5 minutes).",
+    html, plain = et.layout(
+        title="Your sign-in code",
+        preheader=f"Your Foxy Audit sign-in code is {code}",
+        blocks=[
+            et.paragraph("Use this one-time code to finish signing in to Foxy Audit."),
+            et.code_block(code),
+            et.muted("It expires in 5 minutes. If you didn't try to sign in, ignore this email."),
+        ],
     )
+    email.send_email(to=to_email, subject="Your Foxy Audit sign-in code", html=html, text=plain)
 
 
 def code_valid(subject, code: str) -> bool:

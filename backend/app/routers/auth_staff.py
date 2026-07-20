@@ -23,7 +23,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import email, mfa, password_reset
+from .. import email, email_templates as et, mfa, password_reset
 from ..admin_audit import client_ip, record_admin_action
 from ..auth import grant_step_up, hash_session_token, require_staff, require_step_up_dep
 from ..config import get_settings
@@ -79,13 +79,19 @@ def _issue_mfa_code(db: Session, staff: StaffUser) -> None:
     staff.mfa_code_hash = _hash_code(code)
     staff.mfa_code_expires_at = datetime.now(timezone.utc) + _MFA_TTL
     db.commit()
-    email.send_email(
-        to=staff.email,
-        subject="Your Foxy Audit sign-in code",
-        html=(f"<p>Your staff sign-in code is <b>{code}</b>. It expires in 5 minutes. "
-              f"If you didn't try to sign in, ignore this email.</p>"),
-        text=f"Your Foxy Audit staff sign-in code is {code} (expires in 5 minutes).",
+    html, plain = et.layout(
+        title="Your staff sign-in code",
+        preheader=f"Your Foxy Audit staff sign-in code is {code}",
+        blocks=[
+            et.paragraph("Use this one-time code to finish signing in to the Foxy Audit staff "
+                         "console."),
+            et.code_block(code),
+            et.muted("It expires in 5 minutes. If you didn't try to sign in, ignore this email."),
+        ],
+        surface="staff",
     )
+    email.send_email(to=staff.email, subject="Your Foxy Audit staff sign-in code",
+                     html=html, text=plain)
 
 
 def _establish_staff_session(request: Request, staff: StaffUser, db: Session) -> None:
@@ -176,7 +182,8 @@ def staff_forgot_password(payload: StaffForgotPasswordRequest, request: Request,
     staff = db.execute(
         select(StaffUser).where(StaffUser.email == email_addr)).scalar_one_or_none()
     if staff is not None and not staff.disabled:
-        password_reset.issue_reset(db, staff, staff.email, get_settings().admin_url)
+        password_reset.issue_reset(db, staff, staff.email, get_settings().admin_url,
+                                   surface="staff")
     return {"status": "ok"}
 
 

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import email as email_mod
+from .. import email as email_mod, email_templates as et
 from .. import platform_config as cfg
 from ..admin_audit import client_ip, record_admin_action
 from .. import notify
@@ -111,12 +111,19 @@ def broadcast(
         recipients = db.execute(
             select(StaffUser.email).where(StaffUser.disabled.is_(False))
         ).scalars().all()
+        html, plain = et.layout(
+            title=body.title.strip(),
+            preheader=body.body.strip()[:140],
+            blocks=[
+                et.callout(f"Platform {level} announcement",
+                           tone={"info": "info", "warning": "warn", "critical": "bad"}.get(level, "info")),
+                et.paragraph(body.body.strip()),
+            ],
+            surface="staff",
+        )
+        subject = f"[Foxy Audit] {body.title.strip()}"
         for to in recipients:
-            if email_mod.send_email(
-                to=to, subject=f"[Foxy Audit] {body.title.strip()}",
-                html=f"<div style='font-family:sans-serif;font-size:14px'>{body.body.strip()}</div>",
-                text=body.body.strip(),
-            ):
+            if email_mod.send_email(to=to, subject=subject, html=html, text=plain):
                 emailed += 1
     record_admin_action(db, staff, "broadcast.create", target_type="announcement",
                         target_id=str(ann.id),

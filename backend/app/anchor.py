@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import email
+from . import email, email_templates as et
 from .chain import GENESIS_HASH, compute_chain_hash
 from .config import Settings, get_settings
 from .models import AuditLog, ChainAnchor, Organization
@@ -356,15 +356,21 @@ def alert_on_anchor_problems(db: Session, settings, state: dict, *,
     if not settings.alert_email or (
             last is not None and (now - last) < settings.anchor_alert_cooldown):
         return False
+    html, plain = et.layout(
+        title="Anchoring needs attention",
+        preheader=f"{failed} org(s) with a failed latest anchor; {stale} with a stale confirmed anchor.",
+        blocks=[
+            et.paragraph("Public-chain anchoring health check flagged issues:"),
+            et.info_rows([("Failed latest anchor", f"{failed} org(s)"),
+                          ("Stale confirmed anchor", f"{stale} org(s)")]),
+            et.muted("Check the worker logs and the funded wallet balance."),
+        ],
+        surface="staff", variant="compact",
+    )
     ok = email.send_email(
         to=settings.alert_email,
         subject="[Foxy Audit] anchoring needs attention",
-        html=(f"<p>Public-chain anchoring health check:</p><ul>"
-              f"<li><b>{failed}</b> org(s) whose latest anchor is <b>failed</b></li>"
-              f"<li><b>{stale}</b> org(s) whose newest confirmed anchor is stale</li>"
-              f"</ul><p>Check the worker logs and the funded wallet balance.</p>"),
-        text=(f"{failed} org(s) have a failed latest anchor; {stale} have a stale "
-              f"confirmed anchor. Check the worker logs and the funded wallet."),
+        html=html, text=plain,
     )
     if ok:
         state["last_alert"] = now

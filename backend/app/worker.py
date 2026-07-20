@@ -30,11 +30,9 @@ import hashlib
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import html as _html
-
 import requests
 
-from . import email as email_mod
+from . import email as email_mod, email_templates as et
 from . import gemini
 from . import judge
 from . import openai_judge
@@ -211,15 +209,21 @@ def _notify_breach(db: Session, row, verdict) -> None:
         org = db.get(Organization, oid)
         to = policy.notify_email or (org.contact_email if org else None)
         if to:
+            html, plain = et.layout(
+                title="Policy breach flagged",
+                preheader=f"A policy breach was flagged in your audit trail (record #{seq}, risk {risk}).",
+                blocks=[
+                    et.paragraph(f"A policy breach was flagged in your audit trail "
+                                 f"(record #{seq}, risk {risk})."),
+                    et.callout(reason, tone="bad"),
+                    et.muted("Open your dashboard ledger to review. Only hashes are stored — "
+                             "never the prompt or response."),
+                ],
+                surface="customer",
+            )
             email_mod.send_email(
                 to=to, subject="\U0001f534 Policy breach flagged — Foxy Audit",
-                html=(f"<p>A policy breach was flagged in your audit trail "
-                      f"(record #{seq}, risk {risk}).</p>"
-                      f"<blockquote style='border-left:3px solid #ff7a2e;padding-left:12px'>"
-                      f"{_html.escape(reason)}</blockquote>"
-                      f"<p>Open your dashboard ledger to review. Only hashes are stored — "
-                      f"never the prompt or response.</p>"),
-                text=f"Policy breach flagged (record #{seq}, risk {risk}): {reason}")
+                html=html, text=plain)
         if policy.notify_webhook_url:
             try:
                 requests.post(policy.notify_webhook_url, json={
