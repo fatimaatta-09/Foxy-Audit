@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from .. import email, mfa, password_reset
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_staff
+from ..auth import grant_step_up, require_staff
 from ..config import get_settings
 from ..db import get_db
 from ..models import AdminAction, StaffUser
@@ -261,6 +261,37 @@ def update_preferences(payload: UpdatePreferencesRequest, request: Request,
                         ip=client_ip(request))
     db.commit()
     return {"status": "ok", "preferences": merged}
+
+
+# ───────────────────────────── step-up (re-auth) ─────────────────────────────
+# Danger mutations require a recent emailed code. request emails one (reusing the MFA
+# email-OTP on the mfa_code_* columns — safe because step-up runs inside an established
+# session, never during login); confirm verifies it and mints a ~10-min session grant that
+# auth.require_step_up_dep consumes. (If a login-OTP and a step-up-OTP ever need to coexist
+# without sharing columns, add a small staff_step_up_codes table instead.)
+@router.post("/v1/auth/step-up/request")
+def step_up_request(staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    """Email a fresh 6-digit step-up code."""
+    mfa.issue_code(db, staff, staff.email)        # commits + emails
+    return {"status": "code_sent", "email": staff.email}
+
+
+class StepUpConfirmRequest(BaseModel):
+    code: str
+
+
+@router.post("/v1/auth/step-up/confirm")
+def step_up_confirm(payload: StepUpConfirmRequest, request: Request,
+                    staff: StaffUser = Depends(require_staff), db: Session = Depends(get_db)):
+    """Verify the emailed code and mint a ~10-min step-up grant for danger actions."""
+    if not mfa.code_valid(staff, payload.code):
+        raise HTTPException(status_code=400, detail="invalid or expired code")
+    mfa.clear_code(staff)
+    grant_step_up(request)
+    record_admin_action(db, staff, "staff.step_up", target_type="staff_user",
+                        target_id=str(staff.id), ip=client_ip(request))
+    db.commit()
+    return {"status": "step_up_granted"}
 
 
 

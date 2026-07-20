@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from .. import password_reset
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role
+from ..auth import require_platform_role, require_step_up_dep
 from ..config import get_settings
 from ..db import get_db
 from ..models import AdminAction, StaffUser
@@ -75,7 +75,7 @@ def list_staff(
     ]
 
 
-@router.post("/v1/staff", response_model=CreateStaffResponse)
+@router.post("/v1/staff", response_model=CreateStaffResponse, dependencies=[Depends(require_step_up_dep)])
 def create_staff(
     payload: CreateStaffRequest,
     request: Request,
@@ -116,7 +116,7 @@ def create_staff(
                                platform_role=new_staff.platform_role, temp_password=temp)
 
 
-@router.post("/v1/staff/{staff_id}/disable")
+@router.post("/v1/staff/{staff_id}/disable", dependencies=[Depends(require_step_up_dep)])
 def disable_staff(
     staff_id: str,
     request: Request,
@@ -159,7 +159,7 @@ class RoleBody(BaseModel):
     platform_role: str
 
 
-@router.post("/v1/staff/{staff_id}/role")
+@router.post("/v1/staff/{staff_id}/role", dependencies=[Depends(require_step_up_dep)])
 def set_staff_role(
     staff_id: str,
     body: RoleBody,
@@ -194,7 +194,7 @@ def set_staff_role(
     return {"status": "updated", "id": str(target.id), "platform_role": role}
 
 
-@router.post("/v1/staff/{staff_id}/enable")
+@router.post("/v1/staff/{staff_id}/enable", dependencies=[Depends(require_step_up_dep)])
 def enable_staff(
     staff_id: str,
     request: Request,
@@ -211,7 +211,7 @@ def enable_staff(
     return {"status": "enabled", "id": str(target.id)}
 
 
-@router.post("/v1/staff/{staff_id}/mfa/reset")
+@router.post("/v1/staff/{staff_id}/mfa/reset", dependencies=[Depends(require_step_up_dep)])
 def reset_staff_mfa(
     staff_id: str,
     request: Request,

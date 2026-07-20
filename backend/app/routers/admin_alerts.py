@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role
+from ..auth import require_platform_role, require_step_up_dep
 from ..config import get_settings
 from ..db import get_db
 from ..platform_config import get_int
@@ -137,7 +137,7 @@ def list_alerts(
     }
 
 
-@router.post("/v1/alerts/{alert_id}/ack")
+@router.post("/v1/alerts/{alert_id}/ack", dependencies=[Depends(require_step_up_dep)])
 def acknowledge_alert(
     alert_id: str,
     request: Request,

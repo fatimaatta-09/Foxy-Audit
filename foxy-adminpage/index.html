@@ -138,15 +138,16 @@
 /* ══ DARK MODE — warm dark glass over a deep ember gradient ══ */
 html[data-theme="dark"]{
   /* ══ warm-charcoal ladder — luminance-separated; depth from elevation + shadow, not blur (Phase B) ══ */
-  --bg:      #16130F;
+  --bg:      #1C1712;
   --bg2:     rgba(18,15,12,.55);
-  /* warmer amber-charcoal surfaces + a touch more opacity — owner: "still looks dead / grey tone" */
-  --surf:    rgba(98,79,58,.34);
-  --surf-solid: rgba(64,52,40,.74);
-  --surf2:   rgba(120,99,74,.18);
-  --surf3:   rgba(255,140,74,.18);
-  --surf-elev: rgba(100,84,64,.66);
-  --surf-over: rgba(114,96,74,.80);
+  /* warm amber-charcoal surfaces — lifted + more OPAQUE so panels read as warm elevated glass
+     (not near-black) even where backdrop-filter is weak. Owner: "still looks dead / grey tone". */
+  --surf:    rgba(126,103,76,.42);
+  --surf-solid: rgba(86,70,53,.90);
+  --surf2:   rgba(146,120,90,.24);
+  --surf3:   rgba(255,142,78,.22);
+  --surf-elev: rgba(110,92,70,.86);
+  --surf-over: rgba(122,102,78,.94);
   --head-bg: rgba(40,35,30,.74);
   --line:    rgba(255,248,240,.11);
   --line2:   rgba(255,248,240,.20);
@@ -286,12 +287,14 @@ body::before{
   /* static — owner feedback: no ambient drift behind the glass (Liquid-Glass correction 1) */
 }
 html[data-theme="dark"] body::before{
-  /* brighter, warmer ambient light + a cool teal orb for variety — glass reads alive, not grey */
+  /* bold warm ambient + cool teal/violet accents + a soft central warm wash so the whole
+     surface reads alive, not grey. (Owner: "still looks dead".) */
   background:
-    radial-gradient(640px 520px at 1% 0%, rgba(255,126,46,.42), transparent 56%),
-    radial-gradient(560px 480px at 99% 1%, rgba(52,150,235,.34), transparent 55%),
-    radial-gradient(560px 520px at 58% 122%, rgba(27,175,122,.24), transparent 60%),
-    radial-gradient(760px 560px at 99% 110%, rgba(255,120,40,.30), transparent 60%);
+    radial-gradient(760px 600px at 0% 0%, rgba(255,132,52,.58), transparent 58%),
+    radial-gradient(660px 560px at 100% 0%, rgba(58,158,240,.44), transparent 56%),
+    radial-gradient(620px 580px at 52% 128%, rgba(27,175,122,.30), transparent 60%),
+    radial-gradient(820px 620px at 100% 106%, rgba(150,120,255,.26), transparent 60%),
+    radial-gradient(1200px 860px at 50% 42%, rgba(255,150,70,.10), transparent 72%);
 }
 /* faint film grain over the frosted surfaces — tactile "real glass" finish */
 body::after{
@@ -602,9 +605,9 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 .fauxselect.open .fauxselect-trigger{border-color:var(--fox);box-shadow:var(--focus)}
 .fauxselect-list{
   display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;
-  /* OPAQUE popover — a translucent glass surface let the page text bleed through the open list.
-     A themed translucent layer over the solid page colour composites to fully opaque in both skins. */
-  background:linear-gradient(var(--surf-solid),var(--surf-solid)), var(--bg);
+  /* OPAQUE elevated popover — a translucent glass surface let the page text bleed through the open
+     list. A themed opaque layer over the solid page colour composites to fully opaque in both skins. */
+  background:linear-gradient(var(--surf-over),var(--surf-over)), var(--bg);
   border:1px solid var(--line2);border-radius:var(--r-sm);
   box-shadow:var(--clay);max-height:220px;overflow-y:auto;padding:4px;
 }
@@ -1528,7 +1531,45 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 /* CSRF double-submit: echo the foxy_csrf cookie in X-CSRF-Token on every non-GET request */
 (function(){const _f=window.fetch;const tok=()=>{const m=document.cookie.match('(^|;)\\s*foxy_csrf\\s*=\\s*([^;]+)');return m?decodeURIComponent(m[2]):'';};window.fetch=function(input,init){try{const method=((init&&init.method)||'GET').toUpperCase();if(method!=='GET'&&method!=='HEAD'){const t=tok();if(t){init=init||{};const h=new Headers(init.headers||{});if(!h.has('X-CSRF-Token'))h.set('X-CSRF-Token',t);init.headers=h;}}}catch(e){}return _f.call(this,input,init);};})();
 const $=id=>document.getElementById(id);
-const api=(p,o)=>fetch(p,Object.assign({credentials:'same-origin'},o||{}));
+const _apiRaw=(p,o)=>fetch(p,Object.assign({credentials:'same-origin'},o||{}));
+/* Step-up interceptor: any gated danger mutation that returns 403 {detail:"step_up_required"}
+   transparently prompts for the emailed code, then retries once inside the grant window. */
+async function api(p,o){
+  let r=await _apiRaw(p,o);
+  if(r.status===403){
+    let d=null; try{ d=await r.clone().json(); }catch(_){}
+    if(d && d.detail==='step_up_required'){
+      const ok=await stepUp();
+      if(ok) r=await _apiRaw(p,o);   // one retry, now authorised
+    }
+  }
+  return r;
+}
+/* ── step-up modal (reuses openModal); resolves true if a grant was minted ── */
+let _stepUpResolve=null;
+function stepUp(){
+  return new Promise(resolve=>{
+    _stepUpResolve=resolve;
+    _apiRaw('/admin/v1/auth/step-up/request',{method:'POST'}).catch(()=>{});   // email a code
+    openModal({eyebrow:'security · confirm it is you', title:'Enter your code',
+      bodyHTML:'<div class="sub" style="margin-bottom:12px;">A 6-digit code was emailed to <b>'+esc(ME?ME.email:'you')+'</b>. It authorises this and the next few minutes of sensitive actions.</div>'
+        +'<input class="cin" id="suCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-size:20px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;"><a href="#" onclick="_stepUpResend();return false;" class="sub" style="font-size:11px;color:var(--fox2);">Resend code</a><span id="suMsg" class="sub" style="font-size:11px;"></span></div>',
+      footHTML:'<button class="btn" onclick="_stepUpDone(false)">Cancel</button><button class="btn pri" onclick="_stepUpSubmit()">Confirm</button>',
+      onOpen:function(){ document.addEventListener('keydown',_stepUpEsc); var i=$('suCode'); if(i){ i.focus(); i.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _stepUpSubmit(); } }); } }});
+  });
+}
+function _stepUpEsc(e){ if(e.key==='Escape') _stepUpDone(false); }
+function _stepUpDone(ok){ document.removeEventListener('keydown',_stepUpEsc); const res=_stepUpResolve; _stepUpResolve=null; closeModal(); if(res) res(ok); }
+function _stepUpResend(){ _apiRaw('/admin/v1/auth/step-up/request',{method:'POST'}).catch(()=>{}); const m=$('suMsg'); if(m) m.textContent='New code sent.'; }
+async function _stepUpSubmit(){
+  const m=$('suMsg'), code=($('suCode')?$('suCode').value:'').trim();
+  if(!/^\d{6}$/.test(code)){ if(m) m.textContent='Enter the 6-digit code.'; return; }
+  if(m) m.textContent='Verifying…';
+  let r; try{ r=await _apiRaw('/admin/v1/auth/step-up/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})}); }catch(e){ r=null; }
+  if(r&&r.ok){ _stepUpDone(true); }
+  else { const d=r?await r.json().catch(()=>({})):{}; if(m) m.textContent=(d.detail||'Invalid or expired code'); }
+}
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let ME=null;               // {id,email,platform_role}
 const ROLE_RANK={viewer:0,operator:1,superadmin:2};
@@ -3017,7 +3058,7 @@ async function loadRevenue(){
   let r; try{ r=await api('/admin/v1/revenue'); }catch(e){ r=null; }
   if(!r||!r.ok){ toast('revenue unavailable','error'); return; }
   const d=await r.json();
-  $('rvRev30').textContent=_cents(d.revenue_30d_cents);
+  $('rvRev30').innerHTML=sens(_cents(d.revenue_30d_cents));   /* eye toggle to hide/show revenue */
   const subs=d.subscriptions||{};
   $('rvActive').textContent=num(subs.active||0);
   $('rvSubFoot').textContent=Object.entries(subs).filter(([k])=>k!=='active').map(([k,v])=>k+' '+v).join(' · ')||'—';

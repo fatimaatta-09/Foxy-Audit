@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
 from ..anchor import head_of, latest_anchor
-from ..auth import require_platform_role, set_org_scope_for_staff
+from ..auth import require_platform_role, require_step_up_dep, set_org_scope_for_staff
 from ..config import get_settings
 from ..platform_config import effective_quota
 from ..db import get_db
@@ -135,7 +135,7 @@ def _load_active_org(db: Session, org_id: str) -> Organization:
     return org
 
 
-@router.post("/v1/organizations/{org_id}/suspend")
+@router.post("/v1/organizations/{org_id}/suspend", dependencies=[Depends(require_step_up_dep)])
 def suspend_organization(
     org_id: str,
     body: SuspendRequest,
@@ -154,7 +154,7 @@ def suspend_organization(
     return {"status": "suspended", "org_id": str(org.id)}
 
 
-@router.post("/v1/organizations/{org_id}/enable")
+@router.post("/v1/organizations/{org_id}/enable", dependencies=[Depends(require_step_up_dep)])
 def enable_organization(
     org_id: str,
     request: Request,
@@ -172,7 +172,7 @@ def enable_organization(
     return {"status": "enabled", "org_id": str(org.id)}
 
 
-@router.post("/v1/organizations/{org_id}/plan")
+@router.post("/v1/organizations/{org_id}/plan", dependencies=[Depends(require_step_up_dep)])
 def set_organization_plan(
     org_id: str,
     body: PlanRequest,
@@ -572,7 +572,7 @@ def get_ip_allowlist(
     return {"org_id": str(org.id), "entries": entries}
 
 
-@router.put("/v1/organizations/{org_id}/ip-allowlist")
+@router.put("/v1/organizations/{org_id}/ip-allowlist", dependencies=[Depends(require_step_up_dep)])
 def put_ip_allowlist(
     org_id: str,
     body: IpAllowlistBody,
@@ -592,7 +592,7 @@ def put_ip_allowlist(
     return {"status": "updated", "entries": entries}
 
 
-@router.post("/v1/organizations/{org_id}/keys/{key_id}/revoke")
+@router.post("/v1/organizations/{org_id}/keys/{key_id}/revoke", dependencies=[Depends(require_step_up_dep)])
 def revoke_key(
     org_id: str,
     key_id: str,
@@ -624,7 +624,7 @@ class TrialBody(BaseModel):
     days: int
 
 
-@router.post("/v1/organizations/{org_id}/trial")
+@router.post("/v1/organizations/{org_id}/trial", dependencies=[Depends(require_step_up_dep)])
 def extend_trial(
     org_id: str,
     body: TrialBody,
@@ -648,7 +648,7 @@ def extend_trial(
     return {"status": "updated", "trial_ends_at": new_end.isoformat()}
 
 
-@router.post("/v1/organizations/{org_id}/offboard")
+@router.post("/v1/organizations/{org_id}/offboard", dependencies=[Depends(require_step_up_dep)])
 def offboard_organization(
     org_id: str,
     request: Request,

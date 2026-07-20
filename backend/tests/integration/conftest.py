@@ -181,14 +181,37 @@ def make_staff():
 
 
 @pytest.fixture
-def staff_login():
-    """Factory: a fresh TestClient logged in to the ADMIN site as a staff user."""
-    def _login(email: str, password: str) -> TestClient:
+def staff_login(step_up):
+    """Factory: a TestClient logged in to the ADMIN site AND granted step-up by default, so the
+    many existing danger-mutation tests keep working. Pass `with_step_up=False` for the no-grant
+    path (the dedicated step-up tests)."""
+    def _login(email: str, password: str, with_step_up: bool = True) -> TestClient:
         c = TestClient(app)
         r = c.post("/admin/v1/auth/login", json={"email": email, "password": password})
         assert r.status_code == 200, f"staff login failed: {r.status_code} {r.text}"
         csrf = c.cookies.get("foxy_csrf")            # echo the double-submit token on later writes
         if csrf:
             c.headers.update({"X-CSRF-Token": csrf})
+        if with_step_up:
+            step_up(c)
         return c
     return _login
+
+
+@pytest.fixture
+def step_up():
+    """Grant a ~10-min step-up on an already-authenticated staff client, via a patched OTP.
+    Every audited danger mutation 403s (`step_up_required`) until this runs."""
+    import app.mfa as _mfa
+
+    def _grant(client: TestClient) -> None:
+        orig = _mfa.new_otp
+        _mfa.new_otp = lambda: "000000"
+        try:
+            assert client.post("/admin/v1/auth/step-up/request").status_code == 200
+            r = client.post("/admin/v1/auth/step-up/confirm", json={"code": "000000"})
+            assert r.status_code == 200, f"step-up confirm failed: {r.status_code} {r.text}"
+        finally:
+            _mfa.new_otp = orig
+
+    return _grant

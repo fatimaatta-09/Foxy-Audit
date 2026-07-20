@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role, set_org_scope_for_staff
+from ..auth import require_platform_role, require_step_up_dep, set_org_scope_for_staff
 from ..db import get_db
 from ..models import AuditLog, Organization, StaffUser
 
@@ -95,7 +95,7 @@ def list_dead_letters(
     }
 
 
-@router.post("/v1/grading/deadletter/{row_id}/requeue")
+@router.post("/v1/grading/deadletter/{row_id}/requeue", dependencies=[Depends(require_step_up_dep)])
 def requeue_dead_letter(
     row_id: str,
     request: Request,

@@ -165,13 +165,14 @@ def test_mutations_write_exactly_one_admin_action(make_org, make_staff, staff_lo
     operator = make_staff(role="operator")
     co = staff_login(operator["email"], operator["password"])
 
-    assert _count_actions() == 1              # the staff login itself is now audited
+    assert _count_actions() == 2              # staff.login + staff.step_up (auto-granted by the fixture)
     assert _count_actions("staff.login") == 1
+    assert _count_actions("staff.step_up") == 1
     co.post(f"/admin/v1/organizations/{a['org_id']}/suspend", json={"reason": "abuse"})
     assert _count_actions("org.suspend") == 1
     co.post(f"/admin/v1/organizations/{a['org_id']}/enable")
     assert _count_actions("org.enable") == 1
-    assert _count_actions() == 3   # staff.login + org.suspend + org.enable (reads write nothing)
+    assert _count_actions() == 4   # login + step_up + org.suspend + org.enable (reads write nothing)
 
 
 def test_staff_create_is_audited(make_staff, staff_login):

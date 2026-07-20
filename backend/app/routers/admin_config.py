@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from .. import email as email_mod
 from .. import platform_config as cfg
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role, require_staff
+from ..auth import require_platform_role, require_staff, require_step_up_dep
 from ..db import get_db
 from ..models import PlatformAnnouncement, StaffUser
 
@@ -38,7 +38,7 @@ class ConfigUpdate(BaseModel):
     updates: dict
 
 
-@router.put("/v1/config")
+@router.put("/v1/config", dependencies=[Depends(require_step_up_dep)])
 def put_config(
     body: ConfigUpdate,
     request: Request,
@@ -91,7 +91,7 @@ class BroadcastRequest(BaseModel):
     email_staff: bool = False
 
 
-@router.post("/v1/broadcast")
+@router.post("/v1/broadcast", dependencies=[Depends(require_step_up_dep)])
 def broadcast(
     body: BroadcastRequest,
     request: Request,
@@ -126,7 +126,7 @@ def broadcast(
     return {"status": "created", "id": str(ann.id), "emailed": emailed}
 
 
-@router.post("/v1/announcements/{ann_id}/deactivate")
+@router.post("/v1/announcements/{ann_id}/deactivate", dependencies=[Depends(require_step_up_dep)])
 def deactivate_announcement(
     ann_id: str,
     request: Request,

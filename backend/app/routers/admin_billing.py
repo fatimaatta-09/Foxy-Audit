@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role
+from ..auth import require_platform_role, require_step_up_dep
 from ..db import get_db
 from ..models import Invoice, Organization, StaffUser, StripeEvent
 from .billing import (
@@ -110,7 +110,7 @@ def stripe_events(
     ]}
 
 
-@router.post("/v1/billing/stripe-events/{event_id}/replay")
+@router.post("/v1/billing/stripe-events/{event_id}/replay", dependencies=[Depends(require_step_up_dep)])
 def replay_stripe_event(
     event_id: str,
     request: Request,

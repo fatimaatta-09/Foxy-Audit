@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select, text
@@ -214,6 +214,39 @@ def require_platform_role(min_role: str):
         return staff
 
     return _dep
+
+
+# ───────────────────────── step-up (re-auth) for danger actions ───────────────
+# Every AUDITED danger mutation additionally requires a recent emailed code. Confirming
+# one mints a short-lived grant in the staff session, so a burst of sensitive actions
+# needs a single code (not one per click). The grant lives in the signed staff cookie.
+STEP_UP_TTL = timedelta(minutes=10)
+_STEP_UP_KEY = "step_up_until"
+
+
+def grant_step_up(request: Request) -> None:
+    """Mint a ~10-min step-up grant after an emailed code is confirmed."""
+    request.session[_STEP_UP_KEY] = (datetime.now(timezone.utc) + STEP_UP_TTL).isoformat()
+
+
+def step_up_active(request: Request) -> bool:
+    raw = request.session.get(_STEP_UP_KEY)
+    if not raw:
+        return False
+    try:
+        exp = datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        return False
+    return exp >= datetime.now(timezone.utc)
+
+
+def require_step_up_dep(request: Request, staff: StaffUser = Depends(require_staff)) -> StaffUser:
+    """Route dependency for audited danger mutations — add via `dependencies=[Depends(...)]`.
+    A missing/expired grant raises 403 `step_up_required`, which the SPA turns into an
+    emailed-code prompt and then retries the request."""
+    if not step_up_active(request):
+        raise HTTPException(status_code=403, detail="step_up_required")
+    return staff
 
 
 def set_org_scope_for_staff(db: Session, org_id) -> None:

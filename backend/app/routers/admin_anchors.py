@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import anchor as anchor_engine
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role, set_org_scope_for_staff
+from ..auth import require_platform_role, require_step_up_dep, set_org_scope_for_staff
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import AuditLog, ChainAnchor, Organization, StaffUser
@@ -154,7 +154,7 @@ def list_anchor_monitor(
     }
 
 
-@router.post("/v1/anchors/{org_id}/anchor")
+@router.post("/v1/anchors/{org_id}/anchor", dependencies=[Depends(require_step_up_dep)])
 def reanchor(
     org_id: str,
     request: Request,

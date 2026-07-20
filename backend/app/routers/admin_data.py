@@ -38,7 +38,7 @@ from sqlalchemy import String, and_, cast, func, inspect, or_, select
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role
+from ..auth import require_platform_role, require_step_up_dep
 from ..db import get_db
 from ..models import (
     AdminAction, ApiKey, AuditLog, ChainAnchor, Invoice, MarketingLead,
@@ -245,7 +245,7 @@ def list_rows(
     }
 
 
-@router.patch("/v1/data/{table}/{row_id}")
+@router.patch("/v1/data/{table}/{row_id}", dependencies=[Depends(require_step_up_dep)])
 def update_row(
     table: str, row_id: str, body: UpdateBody, request: Request,
     staff: StaffUser = Depends(require_platform_role("operator")),
@@ -274,7 +274,7 @@ def update_row(
     return {"status": "updated"}
 
 
-@router.delete("/v1/data/{table}/{row_id}")
+@router.delete("/v1/data/{table}/{row_id}", dependencies=[Depends(require_step_up_dep)])
 def delete_row(
     table: str, row_id: str, request: Request,
     staff: StaffUser = Depends(require_platform_role("operator")),
