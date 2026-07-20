@@ -3310,7 +3310,7 @@ async function loadLoginHistory(){
     var tu=document.getElementById('topUser'); if(tu)tu.setAttribute('aria-expanded','false');
   }
   window.closeMenus=closeMenus;
-  window.toggleTopNotif=function(e){ if(e)e.stopPropagation(); var p=document.getElementById('topNotifPanel'); if(!p)return; var willOpen=!p.classList.contains('on'); closeMenus(); if(willOpen){ p.classList.add('on'); var nb=document.querySelector('#topNotifWrap .topbtn'); if(nb)nb.setAttribute('aria-expanded','true'); } };
+  window.toggleTopNotif=function(e){ if(e)e.stopPropagation(); var p=document.getElementById('topNotifPanel'); if(!p)return; var willOpen=!p.classList.contains('on'); closeMenus(); if(willOpen){ p.classList.add('on'); var nb=document.querySelector('#topNotifWrap .topbtn'); if(nb)nb.setAttribute('aria-expanded','true'); if(window.loadTopNotif)window.loadTopNotif(); } };
   window.toggleUserMenu=function(e){ if(e)e.stopPropagation(); var m=document.getElementById('userMenu'); if(!m)return; var willOpen=!m.classList.contains('on'); closeMenus(); if(willOpen){ m.classList.add('on'); var tu=document.getElementById('topUser'); if(tu)tu.setAttribute('aria-expanded','true'); } };
   document.addEventListener('click',function(e){ if(!e.target.closest||(!e.target.closest('#topNotifWrap')&&!e.target.closest('#topUser')))closeMenus(); });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeMenus(); });
@@ -3554,6 +3554,47 @@ async function loadLoginHistory(){
       },function(){ return res; });
     });
   };
+})();
+</script>
+
+<!-- ═══ P16 · notifications center — wire the top-bar bell (real events, honest empty state) ═══ -->
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var api=function(p,o){return fetch(p,Object.assign({credentials:'same-origin'},o||{}));};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+  function rel(s){ if(!s)return ''; try{ var d=(Date.now()-new Date(s).getTime())/1000; if(d<60)return 'just now'; if(d<3600)return Math.floor(d/60)+'m ago'; if(d<86400)return Math.floor(d/3600)+'h ago'; return Math.floor(d/86400)+'d ago'; }catch(e){ return ''; } }
+  function notifRow(n){
+    return '<div class="notif-item'+(n.read?'':' unread')+' lv-'+esc(n.level)+'" role="button" tabindex="0" onclick="onNotifClick(\''+esc(n.id)+'\',\''+esc(n.kind)+'\')">'
+      +'<div class="notif-dot"></div>'
+      +'<div class="notif-body"><div class="notif-title">'+esc(n.title)+'</div>'
+      +(n.body?'<div class="notif-sub">'+esc(n.body)+'</div>':'')
+      +'<div class="notif-time">'+esc(rel(n.created_at))+'</div></div></div>';
+  }
+  window.loadTopNotif=async function(){
+    var list=$('topNotifList'), badge=$('topNotifBadge'); if(!list)return;
+    var d=null; try{ var r=await api('/v1/notifications?limit=30'); if(r.ok)d=await r.json(); }catch(e){}
+    if(!d)return;
+    var items=Array.isArray(d.items)?d.items:[], unread=d.unread||0;
+    if(badge){ if(unread>0){ badge.textContent=unread>99?'99+':String(unread); badge.style.display=''; } else badge.style.display='none'; }
+    list.innerHTML=items.length?items.map(notifRow).join('')
+      :'<div class="empty" style="padding:24px 14px;"><div class="empty-t">No notifications yet</div><div class="empty-d">Breaches, quota and account events will show up here.</div></div>';
+  };
+  window.onNotifClick=function(id,kind){
+    try{ api('/v1/notifications/'+encodeURIComponent(id)+'/read',{method:'POST'}); }catch(e){}
+    if(window.closeMenus)window.closeMenus();
+    if(kind==='breach'&&window.go)window.go('analytics',null);
+    else if(kind==='quota'&&window.go)window.go('billing',null);
+    setTimeout(window.loadTopNotif,300);
+  };
+  window.notifReadAll=function(){
+    api('/v1/notifications/read-all',{method:'POST'}).then(function(){ window.loadTopNotif(); }).catch(function(){});
+  };
+  function init(){
+    var ra=$('topNotifReadAll'); if(ra)ra.onclick=function(e){ if(e)e.preventDefault(); window.notifReadAll(); return false; };
+    window.loadTopNotif();
+  }
+  if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
 })();
 </script>
 </body>

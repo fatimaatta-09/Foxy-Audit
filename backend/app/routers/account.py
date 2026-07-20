@@ -25,8 +25,8 @@ from ..auth import require_role, require_step_up_user, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
 from ..models import (
-    AccountAction, ApiKey, AuditLog, ChainAnchor, ExportJob, Invoice, Organization,
-    OrgPolicy, UsageDaily, User,
+    AccountAction, ApiKey, AuditLog, ChainAnchor, ExportJob, Invoice, Notification,
+    Organization, OrgPolicy, UsageDaily, User,
 )
 
 log = logging.getLogger("foxy.account")
@@ -554,3 +554,96 @@ def update_preferences(body: PreferencesUpdate, user: User = Depends(require_use
     user.preferences = cur
     db.commit()
     return {"preferences": cur}
+
+
+# ─────────────────────────── notifications center (P16) ──────────────────────
+# Rows are GENERATED FROM REAL EVENTS via an idempotent sync-on-read (recent policy breaches, deduped
+# by seq) — never fabricated. Bounded to the most recent breaches; new breaches notify on the next read.
+_NOTIF_BREACH = (AuditLog.grading_status == "graded") & (
+    AuditLog.gemini_verdict["policy_breach"].astext == "true")
+
+
+def _sync_notifications(db: Session, user: User) -> None:
+    """Stage (no commit) notification rows for recent breaches not yet notified. Runs under the
+    require_user RLS GUC; the caller commits once so the GUC survives the surrounding read."""
+    recent = db.execute(
+        select(AuditLog.seq, AuditLog.policy_tag, AuditLog.gemini_verdict, AuditLog.created_at)
+        .where(AuditLog.org_id == user.org_id, _NOTIF_BREACH)
+        .order_by(AuditLog.seq.desc()).limit(20)
+    ).all()
+    if not recent:
+        return
+    seqs = [str(r.seq) for r in recent]
+    seen = set(db.execute(
+        select(Notification.target_id).where(
+            Notification.org_id == user.org_id, Notification.kind == "breach",
+            Notification.target_id.in_(seqs))
+    ).scalars().all())
+    for r in recent:
+        tid = str(r.seq)
+        if tid in seen:
+            continue
+        try:
+            risk = int((r.gemini_verdict or {}).get("risk_score") or 0)
+        except (TypeError, ValueError):
+            risk = 0
+        level = "critical" if risk >= 70 else ("warning" if risk >= 40 else "info")
+        tag = r.policy_tag or "policy"
+        db.add(Notification(
+            org_id=user.org_id, user_id=None, kind="breach",
+            title=f"Policy breach: {tag}",
+            body=f"A '{tag}' interaction was flagged (risk {risk}). Review it under Threats.",
+            level=level, target_type="ledger", target_id=tid,
+            created_at=r.created_at or datetime.now(timezone.utc)))
+
+
+def _notif_dict(n: Notification) -> dict:
+    return {
+        "id": str(n.id), "kind": n.kind, "title": n.title, "body": n.body, "level": n.level,
+        "target_type": n.target_type, "target_id": n.target_id, "read": n.read_at is not None,
+        "created_at": n.created_at.isoformat() if n.created_at else None,
+    }
+
+
+@router.get("/v1/notifications")
+def list_notifications(user: User = Depends(require_user), db: Session = Depends(get_db),
+                       limit: int = Query(default=30, ge=1, le=100), unread_only: bool = False):
+    """The org's notifications (newest first) + unread count. Syncs real events on read."""
+    _sync_notifications(db, user)                 # stages rows (no commit)
+    db.flush()                                    # autoflush is off — flush so the SELECT sees new rows
+    q = select(Notification).where(Notification.org_id == user.org_id)
+    if unread_only:
+        q = q.where(Notification.read_at.is_(None))
+    rows = db.execute(q.order_by(Notification.created_at.desc()).limit(limit)).scalars().all()
+    unread = int(db.execute(
+        select(func.count()).select_from(Notification)
+        .where(Notification.org_id == user.org_id, Notification.read_at.is_(None))
+    ).scalar_one())
+    db.commit()                                   # persist the synced rows
+    return {"unread": unread, "items": [_notif_dict(n) for n in rows]}
+
+
+@router.post("/v1/notifications/{note_id}/read")
+def mark_notification_read(note_id: str, user: User = Depends(require_user),
+                           db: Session = Depends(get_db)):
+    try:
+        nid = uuid.UUID(note_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="not found")
+    n = db.get(Notification, nid)                 # RLS-scoped → cross-org invisible
+    if n is None or n.org_id != user.org_id:
+        raise HTTPException(status_code=404, detail="not found")
+    if n.read_at is None:
+        n.read_at = datetime.now(timezone.utc)
+        db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/v1/notifications/read-all")
+def mark_all_notifications_read(user: User = Depends(require_user),
+                                db: Session = Depends(get_db)):
+    n = db.query(Notification).filter(
+        Notification.org_id == user.org_id, Notification.read_at.is_(None)
+    ).update({Notification.read_at: datetime.now(timezone.utc)}, synchronize_session=False)
+    db.commit()
+    return {"status": "ok", "read": int(n)}
