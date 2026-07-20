@@ -51,7 +51,10 @@ class Settings(BaseSettings):
     # Human session auth (dashboard login) — signs the CUSTOMER session cookie.
     # MUST be overridden with a strong random value in production (SESSION_SECRET).
     session_secret: str = "dev-insecure-session-secret-change-me"
-    session_max_age: int = 60 * 60 * 12          # customer cookie lifetime (12h)
+    session_max_age: int = 60 * 60 * 12          # default (non-remember) session lifetime (12h)
+    # Cookie max-age ceiling. remember-me sessions live this long (30d); the cookie is minted at this
+    # ceiling and the per-session `user_sessions.expires_at` is the authoritative gate (12h vs 30d).
+    session_remember_max_age: int = 60 * 60 * 24 * 30   # 30 days
     # Platform-STAFF session (admin site "site 3") — a SEPARATE cookie signed with a
     # DISTINCT secret so a customer cookie can never satisfy a staff route, and
     # vice-versa. Required (and must differ from session_secret) in prod.

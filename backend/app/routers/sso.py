@@ -192,5 +192,5 @@ def sso_callback(request: Request, code: str = "", state: str = "",
     if org is not None and org.deleted_at is not None:
         raise HTTPException(status_code=403, detail="This workspace has been deleted")
     db.commit()
-    _establish_session(request, user)
+    _establish_session(request, user, db)
     return RedirectResponse(url=get_settings().dashboard_url or "/dashboard", status_code=303)

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from . import ip_allow
 from .config import get_settings
 from .db import get_db
-from .models import ApiKey, Organization, StaffSession, StaffUser, User
+from .models import ApiKey, Organization, StaffSession, StaffUser, User, UserSession
 
 
 def _bearer_token(authorization: str) -> str:
@@ -136,6 +136,23 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
             ip_allow.client_ip(request), ip_allow.parse_allowlist(org.ip_allowlist)):
         raise HTTPException(status_code=403, detail="Access from this IP is not allowed")
     _scope_org(db, user.org_id)
+    # P3: validate the DB-backed device session so revoke / log-out-everywhere take effect and the
+    # remember-me (30d) vs default (12h) expiry is enforced. Cookies minted before P3 carry no token
+    # → treated as valid (graceful). last_seen refresh is best-effort WITHOUT a commit here: a commit
+    # would clear the SET LOCAL RLS GUC set just above (same pattern as the api_key last_used_at stamp).
+    token = request.session.get("session_token")
+    if token:
+        sess = db.execute(
+            select(UserSession).where(
+                UserSession.token_hash == hash_session_token(token),
+                UserSession.user_id == user.id,
+                UserSession.revoked_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if sess is None or (sess.expires_at is not None and now >= sess.expires_at):
+            raise HTTPException(status_code=401, detail="Session expired or revoked")
+        sess.last_seen_at = now
     return user
 
 

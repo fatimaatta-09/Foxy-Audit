@@ -449,6 +449,34 @@ class StaffSession(Base):
         DateTime(timezone=True), nullable=True)
 
 
+class UserSession(Base):
+    """A customer device session (dashboard P3). The signed customer cookie carries an opaque token
+    whose SHA-256 is stored here; require_user validates it (not revoked, not past expires_at) and
+    refreshes last_seen_at — enabling an active-devices list + revoke + log-out-everywhere. remember_me
+    on login picks expires_at (30d) vs the 12h default. Per-org (org_isolation RLS). token_hash never
+    leaves the server.
+    """
+    __tablename__ = "user_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
 class TrafficEvent(Base):
     """One request across any of the 3 sites — the traffic feed for the admin
     site. Written OFF the request hot path by

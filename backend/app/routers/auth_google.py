@@ -126,6 +126,6 @@ def google_auth(payload: GoogleAuthRequest, request: Request, db: Session = Depe
         raise HTTPException(status_code=403, detail="This workspace is suspended")
 
     db.commit()
-    _establish_session(request, user)                # no email OTP for verified Google
+    _establish_session(request, user, db)            # no email OTP for verified Google
     login_history.record(db, request, email, True, user)
     return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}

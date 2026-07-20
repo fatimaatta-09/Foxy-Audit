@@ -142,7 +142,9 @@ customer_api.add_middleware(
     session_cookie="session",
     https_only=_settings.is_prod,          # was hardcoded False — now TLS-only in prod
     same_site="lax",
-    max_age=_settings.session_max_age,
+    # Cookie lives up to the remember-me ceiling (30d); the per-session user_sessions.expires_at is
+    # the authoritative gate (12h for non-remember, 30d for remember-me) — see require_user (P3).
+    max_age=_settings.session_remember_max_age,
 )
 # Double-submit CSRF for cookie-authenticated dashboard actions (Bearer/SDK exempt).
 customer_api.add_middleware(CSRFMiddleware, secure=_settings.is_prod)

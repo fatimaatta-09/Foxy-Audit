@@ -21,10 +21,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import account_audit, login_history, mfa, password_reset
-from ..auth import require_role, require_user, resolve_org
+from ..auth import _scope_org, hash_session_token, require_role, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuthHandoffToken, LoginEvent, Organization, User
+from ..ip_allow import client_ip
+from ..models import AuthHandoffToken, LoginEvent, Organization, User, UserSession
 from .logs import limiter          # reuse the app's single Limiter instance
 
 router = APIRouter()
@@ -39,6 +40,7 @@ def _bcrypt(password: str) -> str:
 class LoginRequest(BaseModel):
     email: str
     password: str
+    remember_me: bool = False     # P3: mint a 30-day device session vs the 12h default
 
 
 class MeResponse(BaseModel):
@@ -81,11 +83,28 @@ class ChangePasswordRequest(BaseModel):
 _DUMMY_HASH = b"$2b$12$Rz1JAD5efasLHu5D.kolz.QagN8aF7XSazm89wlVY8DJ/cjvNXsrm"
 
 
-def _establish_session(request: Request, user: User) -> None:
+def _establish_session(request: Request, user: User, db: Session,
+                       remember: bool = False) -> None:
     request.session.clear()   # rotate: drop any pre-existing (planted) session
     request.session["user_id"] = str(user.id)
     request.session["org_id"] = str(user.org_id)
     request.session["role"] = user.role
+    # P3: mint a DB-backed device session (remember-me + active-devices + revoke). Scope RLS to the
+    # user's org FIRST so the org_isolation WITH CHECK passes on INSERT; expires_at is the real gate.
+    settings = get_settings()
+    ttl = settings.session_remember_max_age if remember else settings.session_max_age
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    _scope_org(db, user.org_id)
+    db.add(UserSession(
+        id=uuid.uuid4(), user_id=user.id, org_id=user.org_id,
+        token_hash=hash_session_token(token),
+        ip=(client_ip(request) or "")[:64] or None,
+        user_agent=(request.headers.get("user-agent") or "")[:400] or None,
+        created_at=now, last_seen_at=now, expires_at=now + timedelta(seconds=ttl),
+    ))
+    db.commit()
+    request.session["session_token"] = token
 
 
 @router.post("/v1/auth/login")
@@ -114,7 +133,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             if user.mfa_enabled:
                 mfa.issue_code(db, user, user.email)
                 return {"mfa_required": True, "email": user.email}
-            _establish_session(request, user)
+            _establish_session(request, user, db, payload.remember_me)
             login_history.record(db, request, email, True, user)
             return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
     if not candidates:
@@ -128,6 +147,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 class MfaRequest(BaseModel):
     email: str
     code: str
+    remember_me: bool = False     # P3: carry the remember-me choice through the MFA step
 
 
 @router.post("/v1/auth/mfa")
@@ -144,7 +164,7 @@ def mfa_verify(payload: MfaRequest, request: Request, db: Session = Depends(get_
                 raise HTTPException(status_code=403, detail="This workspace is suspended")
             mfa.clear_code(user)
             db.commit()
-            _establish_session(request, user)
+            _establish_session(request, user, db, payload.remember_me)
             login_history.record(db, request, user.email, True, user)
             return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
     raise HTTPException(status_code=401, detail="Invalid or expired code")
@@ -195,9 +215,85 @@ def reset_password(payload: ResetPasswordRequest, request: Request,
 
 
 @router.post("/v1/auth/logout")
-def logout(request: Request):
+def logout(request: Request, db: Session = Depends(get_db)):
+    # P3: revoke this device's DB session row so the opaque token can't be reused, then drop the cookie.
+    token = request.session.get("session_token")
+    org_id = request.session.get("org_id")
+    if token and org_id:
+        try:
+            _scope_org(db, uuid.UUID(str(org_id)))
+            db.query(UserSession).filter(
+                UserSession.token_hash == hash_session_token(token),
+                UserSession.revoked_at.is_(None),
+            ).update({UserSession.revoked_at: datetime.now(timezone.utc)},
+                     synchronize_session=False)
+            db.commit()
+        except Exception:
+            db.rollback()
     request.session.clear()
     return {"status": "logged_out"}
+
+
+# ─────────────────────────── device sessions (P3) ───────────────────────
+@router.get("/v1/auth/sessions")
+def list_sessions(request: Request, user: User = Depends(require_user),
+                  db: Session = Depends(get_db)):
+    """Your active device sessions (this-device flagged). token_hash is NEVER serialized."""
+    cur = request.session.get("session_token")
+    cur_hash = hash_session_token(cur) if cur else None
+    now = datetime.now(timezone.utc)
+    rows = db.execute(
+        select(UserSession).where(
+            UserSession.user_id == user.id, UserSession.revoked_at.is_(None)
+        ).order_by(UserSession.created_at.desc())
+    ).scalars().all()
+    items = []
+    for s in rows:
+        if s.expires_at is not None and now >= s.expires_at:
+            continue                             # expired (kept in table, just not shown as active)
+        items.append({
+            "id": str(s.id), "ip": s.ip, "user_agent": s.user_agent,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,
+            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+            "current": cur_hash is not None and s.token_hash == cur_hash,
+        })
+    return {"items": items}
+
+
+@router.post("/v1/auth/sessions/{session_id}/revoke")
+def revoke_session(session_id: str, request: Request,
+                   user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Revoke one of your device sessions (active-devices list). Audited via account_actions."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="not found")
+    s = db.get(UserSession, sid)          # RLS-scoped by require_user → cross-org rows are invisible
+    if s is None or s.user_id != user.id:
+        raise HTTPException(status_code=404, detail="not found")
+    if s.revoked_at is None:
+        s.revoked_at = datetime.now(timezone.utc)
+        account_audit.record_account_action(
+            db, org_id=user.org_id, actor_email=user.email,
+            action="auth.session_revoke", target=str(s.id))
+        db.commit()
+    return {"status": "revoked", "id": str(s.id)}
+
+
+@router.post("/v1/auth/logout-all")
+def logout_all(request: Request, user: User = Depends(require_user),
+               db: Session = Depends(get_db)):
+    """Revoke ALL your device sessions (including this one) — log out everywhere. Audited."""
+    n = db.query(UserSession).filter(
+        UserSession.user_id == user.id, UserSession.revoked_at.is_(None)
+    ).update({UserSession.revoked_at: datetime.now(timezone.utc)}, synchronize_session=False)
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email,
+        action="auth.logout_all", target=str(user.id), detail={"revoked": int(n)})
+    db.commit()
+    request.session.clear()
+    return {"status": "logged_out_everywhere", "revoked": int(n)}
 
 
 # ── Desktop pet → dashboard auto-login handoff (single-use, short-TTL token) ──
@@ -250,7 +346,7 @@ def redeem_handoff(payload: HandoffRedeemRequest, request: Request,
         raise HTTPException(status_code=403, detail="This workspace has been deleted")
     row.used_at = now
     db.commit()
-    _establish_session(request, user)
+    _establish_session(request, user, db)
     login_history.record(db, request, user.email, True, user)
     return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
 

@@ -1487,6 +1487,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
     <input class="cin" id="authEmail" placeholder="you@company.com" autocomplete="username">
     <div class="flabel">password</div>
     <input class="cin" id="authPass" type="password" placeholder="••••••••" autocomplete="current-password">
+    <label style="display:flex;align-items:center;gap:9px;margin-top:13px;cursor:pointer;font-size:11.5px;color:var(--ink2);user-select:none;">
+      <input type="checkbox" id="authRemember" style="width:16px;height:16px;accent-color:var(--fox);cursor:pointer;flex-shrink:0;">
+      Keep me signed in on this device (30 days)
+    </label>
     <div id="authErr" class="fb-res bad" style="min-height:14px;margin-top:10px;"></div>
     <button class="btn pri" type="submit" style="margin-top:6px;">Sign in</button>
     <div id="googleWrap" style="display:none;margin-top:14px;">
@@ -2135,11 +2139,18 @@ async function loadLoginHistory(){
     else{ gate.style.display='flex'; }
   }
 
+  let _authRemember=false;
   $('authForm').addEventListener('submit',async e=>{
     e.preventDefault(); $('authErr').textContent='';
-    let r; try{ r=await api('/v1/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:$('authEmail').value,password:$('authPass').value})}); }
-    catch(err){ $('authErr').textContent='Could not reach the server'; return; }
-    if(!r.ok){ $('authErr').textContent='Invalid email or password'; return; }
+    const email=($('authEmail').value||'').trim(), pass=$('authPass').value||'';
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ $('authErr').textContent='Enter a valid email address'; $('authEmail').focus(); return; }
+    if(!pass){ $('authErr').textContent='Enter your password'; $('authPass').focus(); return; }
+    _authRemember=!!(($('authRemember')||{}).checked);
+    const btn=e.submitter||$('authForm').querySelector('button[type=submit]'); if(btn){ btn.disabled=true; btn.textContent='Signing in…'; }
+    let r; try{ r=await api('/v1/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email,password:pass,remember_me:_authRemember})}); }
+    catch(err){ $('authErr').textContent='Could not reach the server'; if(btn){ btn.disabled=false; btn.textContent='Sign in'; } return; }
+    if(btn){ btn.disabled=false; btn.textContent='Sign in'; }
+    if(!r.ok){ const d0=await r.json().catch(()=>({})); $('authErr').textContent=(r.status===403&&d0.detail)?d0.detail:'Invalid email or password'; return; }
     const d=await r.json().catch(()=>({}));
     if(d&&d.mfa_required){ showAuthMfa(d.email); return; }   // opt-in email-OTP → step 2
     gate.style.display='none'; loadAll();
@@ -2179,7 +2190,7 @@ async function loadLoginHistory(){
   initGoogleSignin();
   $('authMfa').addEventListener('submit',async e=>{
     e.preventDefault(); $('mfaErr').textContent='';
-    let r; try{ r=await api('/v1/auth/mfa',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:_mfaEmail,code:$('mfaCode').value.trim()})}); }
+    let r; try{ r=await api('/v1/auth/mfa',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:_mfaEmail,code:$('mfaCode').value.trim(),remember_me:_authRemember})}); }
     catch(err){ $('mfaErr').textContent='Could not reach the server'; return; }
     if(!r.ok){ const d=await r.json().catch(()=>({})); $('mfaErr').textContent=d.detail||'Invalid or expired code'; return; }
     gate.style.display='none'; loadAll();
