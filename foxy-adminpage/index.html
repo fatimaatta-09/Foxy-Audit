@@ -12,7 +12,7 @@
   var t=localStorage.getItem('foxy_admin_theme')||((window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light');
   var sk=localStorage.getItem('foxy_admin_skin')||'glass';
   r.dataset.theme=t; r.dataset.skin=sk; r.dataset.density=localStorage.getItem('foxy_admin_density')||'comfortable';
-  if(t==='dark'){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#0D0B14');}
+  if(t==='dark'){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#0D0A08');}
 }catch(e){}})();</script>
 <!-- Self-hosted fonts (embedded woff2, latin subset) — no external CDN, admin-CSP-safe.
      Poppins (display/UI/body) + JetBrains Mono (data/hashes/IDs). Regenerate: scratchpad/inject_fonts.py -->
@@ -137,46 +137,46 @@
 
 /* ══ DARK MODE — warm dark glass over a deep ember gradient ══ */
 html[data-theme="dark"]{
-  /* ══ warm-charcoal ladder — luminance-separated; depth from elevation + shadow, not blur (Phase B) ══ */
-  /* ══ SUNSET DUSK — deep indigo/violet base; orange stays the hero over it, violet is the
-     ambient/secondary. Warm/cool split gives depth so panels no longer read as dead grey. ══ */
-  --bg:      #0D0B14;
-  --bg2:     rgba(13,11,20,.55);
-  /* violet-charcoal surfaces — translucent frosted violet-glass over the sunset ambient;
-     --surf3 stays warm-orange so the brand accent surface never goes cool. */
-  --surf:    rgba(120,110,168,.38);
-  --surf-solid: rgba(40,34,60,.90);
-  --surf2:   rgba(140,128,192,.24);
-  --surf3:   rgba(255,142,78,.22);
-  --surf-elev: rgba(50,42,74,.88);
-  --surf-over: rgba(44,37,66,.96);
-  --head-bg: rgba(22,18,40,.76);
-  --line:    rgba(210,200,255,.12);
-  --line2:   rgba(210,200,255,.22);
-  --rim:     rgba(232,226,255,.15);
-  --spec:    rgba(255,255,255,.20);
-  --spec-soft:rgba(255,255,255,.10);
-  --glass-tint:rgba(200,190,255,.05);
-  --grain:   .20;
+  /* ══ BURNT ORANGE (BOLD) — owner-picked palette. Warm near-black base, burnt-orange hero:
+     bg #0D0A08 · panel #1A1410 · border #33261C · orange #D95319/#F27339 · text #FFF0E5/#8C7A6B.
+     Depth from a warm ember ambient + per-metric KPI accents (not from grey lift). ══ */
+  --bg:      #0D0A08;
+  --bg2:     rgba(13,10,8,.55);
+  /* warm-charcoal surfaces — panels read #1A1410; glass frosts them, clay/original stay opaque.
+     --surf3 is the burnt-orange accent surface (default btn / warm muted). */
+  --surf:    rgba(64,48,34,.40);
+  --surf-solid: rgba(26,20,16,.92);
+  --surf2:   rgba(80,60,42,.24);
+  --surf3:   rgba(217,83,25,.20);
+  --surf-elev: rgba(38,28,20,.90);
+  --surf-over: rgba(32,24,17,.96);
+  --head-bg: rgba(20,15,11,.80);
+  --line:    #33261C;
+  --line2:   #46351F;
+  --rim:     rgba(255,238,222,.10);
+  --spec:    rgba(255,255,255,.18);
+  --spec-soft:rgba(255,255,255,.09);
+  --glass-tint:rgba(255,214,180,.05);
+  --grain:   .18;
 
-  --ink:     #F4F0FA;
-  --ink2:    #DDD6EE;
-  --muted:   #ABA1C4;
-  --muted2:  #8E85A8;   /* ≥4.5:1 on the violet data panels */
+  --ink:     #FFF0E5;
+  --ink2:    #E9D8C8;
+  --muted:   #8C7A6B;
+  --muted2:  #A2917C;   /* lighter muted (~5:1) where labels need more contrast than #8C7A6B */
 
-  --fox:     #FF8636;
-  --fox2:    #FFAD6E;   /* text-orange role-flip — ~8.1:1 on --surf-solid */
-  --fox3:    #FFC79A;
+  --fox:     #D95319;   /* PRIMARY burnt orange (fills, active nav, focus, chart lines) */
+  --fox2:    #FF9A5E;   /* text-orange role — lighter burnt tint, ~7:1 on --surf-solid */
+  --fox3:    #FFC0A0;
   --foxdeep: #7C2D12;
-  --fox-glow:rgba(255,134,54,.50);
-  --fox-hi:  #FFA25A;
+  --fox-glow:rgba(217,83,25,.52);
+  --fox-hi:  #F27339;   /* SECONDARY orange — gradient top stop */
   --on-pri:  #241000;
   --blue:    #5AB0FF;
   --blue2:   #3AA0FF;
 
-  --accent:      #FF8636;
-  --accent-ink:  #FFC79A;
-  --accent-soft: rgba(255,138,74,.20);
+  --accent:      #D95319;
+  --accent-ink:  #FF9A5E;
+  --accent-soft: rgba(217,83,25,.20);
 
   --safe-bg:   #22C55E; --safe-tx:   #052E16; --safe-hi:   #34D77F;
   --breach-bg: #F87171; --breach-tx: #2A0505; --danger-hi: #F98A8A;
@@ -188,14 +188,14 @@ html[data-theme="dark"]{
   --warnc:#FBBF24;   --warn-soft:rgba(245,158,11,.20);
   --infoc:#93C5FD;   --info-soft:rgba(59,130,246,.20);
   --neutral:#BEAE9A; --neutral-soft:rgba(255,255,255,.07);
-  --teal:#2DD4BF; --violet:#A78BFA;   /* sunset accents — brighter cool steps that pop on the dusk base */
+  --teal:#2DD4BF; --violet:#A78BFA;   /* cool KPI/data accents — pop against the warm burnt base */
 
   --shadow:    rgba(0,0,0,.55);
   --clay:      0 1px 0 rgba(255,244,232,.06),0 14px 34px rgba(0,0,0,.55),inset 0 1px 0 var(--rim);
   --clay-sm:   0 1px 0 rgba(255,244,232,.05),0 8px 20px rgba(0,0,0,.48),inset 0 1px 0 var(--rim);
   --clay-press:inset 0 2px 8px rgba(0,0,0,.55);
   --ring:      0 0 0 3px rgba(255,134,54,.48);
-  --gate-overlay: rgba(8,6,18,.66);
+  --gate-overlay: rgba(8,5,3,.66);
   --focus:     0 0 0 3px color-mix(in srgb, var(--fox) 42%, transparent);
   --elev-hi:   0 22px 46px rgba(0,0,0,.60),inset 0 1px 0 var(--rim);
   --elev-btn:  0 10px 22px rgba(0,0,0,.48);
@@ -226,11 +226,11 @@ html[data-skin="clay"]{
   --hover-y:-2px;--press-y:1px;--press-scale:.99;
 }
 html[data-skin="clay"][data-theme="dark"]{
-  /* Sunset Dusk clay — opaque violet-charcoal ramp */
-  --bg2:#141020;--surf:#1E1930;--surf-solid:#241E38;--surf2:#2A2342;--surf3:#332A48;--head-bg:#181330;
-  --surf-elev:#282142;--surf-over:#2E2648;
-  --line:rgba(210,200,255,.09);--line2:rgba(210,200,255,.16);
-  --rim:rgba(220,210,255,.07);--grain:.10;
+  /* Burnt Orange clay — opaque warm-charcoal ramp (panels ~#1A1410) */
+  --bg2:#140F0B;--surf:#1A1410;--surf-solid:#211913;--surf2:#241B14;--surf3:#2E2318;--head-bg:#140F0B;
+  --surf-elev:#241B14;--surf-over:#2A2018;
+  --line:#33261C;--line2:#453423;
+  --rim:rgba(255,238,222,.06);--grain:.10;
   --clay:0 1px 0 rgba(255,240,225,.05),0 2px 5px rgba(0,0,0,.5),0 14px 30px rgba(0,0,0,.6),inset 0 1px 0 var(--rim),inset 0 -3px 7px rgba(0,0,0,.5);
   --clay-sm:0 1px 0 rgba(255,240,225,.04),0 8px 18px rgba(0,0,0,.5),inset 0 1px 0 var(--rim),inset 0 -2px 4px rgba(0,0,0,.4);
   --clay-press:inset 0 2px 7px rgba(0,0,0,.6),inset 0 4px 10px rgba(0,0,0,.4),inset 0 -1px 0 rgba(255,240,225,.05);
@@ -279,10 +279,10 @@ html[data-skin="original"]{
   --hover-y:-2px;--press-y:2px;--press-scale:.99;
 }
 html[data-skin="original"][data-theme="dark"]{
-  /* Sunset Dusk original — deep indigo base, hard offset shadow kept as the neobrutalist signature */
-  --bg:#08060F;--bg2:#100D1C;--surf:#181428;--surf-solid:#181428;--surf2:#201A34;--surf3:#282040;
-  --head-bg:#100D1C;--surf-elev:#201A34;--surf-over:#282040;
-  --line:#332B4A;--line2:#453A60;
+  /* Burnt Orange original — warm near-black base (#0D0A08 / panels #1A1410), hard offset shadow kept */
+  --bg:#0D0A08;--bg2:#140F0B;--surf:#1A1410;--surf-solid:#1A1410;--surf2:#221913;--surf3:#2A1F16;
+  --head-bg:#140F0B;--surf-elev:#221913;--surf-over:#2A1F16;
+  --line:#33261C;--line2:#453423;
   --rim:transparent;--grain:.13;
   --clay:6px 6px 0 rgba(0,0,0,.55);
   --clay-sm:3px 3px 0 rgba(0,0,0,.5);
@@ -317,8 +317,8 @@ body{
 }
 html[data-theme="dark"] body{
   background:
-    radial-gradient(1100px 560px at 50% -28%, rgba(255,134,54,.13), transparent 60%),
-    linear-gradient(165deg,#151026,#0A0812 74%);
+    radial-gradient(1100px 560px at 50% -28%, rgba(217,83,25,.13), transparent 60%),
+    linear-gradient(165deg,#140F0B,#0A0705 74%);
 }
 /* vivid, defined colour orbs — the light the frosted glass refracts. Kept less
    blurred + more saturated than a wash so the frost actually reads as glass. */
@@ -332,14 +332,13 @@ body::before{
   /* static — owner feedback: no ambient drift behind the glass (Liquid-Glass correction 1) */
 }
 html[data-theme="dark"] body::before{
-  /* SUNSET DUSK — orange hero glow (top-left) + violet/indigo depth + a pink dusk band so the
-     whole canvas reads like a sunset over a dark city, not flat grey. Orange stays dominant. */
+  /* BURNT ORANGE ember — warm burnt-orange glow + secondary orange + a deeper rust band + soft
+     amber wash. All warm (no cool orbs) so the bold near-black base reads, lifted by the embers. */
   background:
-    radial-gradient(800px 640px at 1% 5%, rgba(255,122,36,.62), transparent 58%),
-    radial-gradient(720px 600px at 100% 0%, rgba(139,124,246,.48), transparent 58%),
-    radial-gradient(700px 600px at 97% 108%, rgba(236,102,168,.36), transparent 60%),
-    radial-gradient(780px 660px at 42% 126%, rgba(124,108,240,.32), transparent 62%),
-    radial-gradient(1240px 900px at 52% 44%, rgba(255,140,60,.11), transparent 72%);
+    radial-gradient(820px 660px at 1% 4%, rgba(217,83,25,.46), transparent 58%),
+    radial-gradient(720px 600px at 100% 0%, rgba(242,115,57,.34), transparent 58%),
+    radial-gradient(760px 640px at 97% 110%, rgba(176,58,20,.34), transparent 60%),
+    radial-gradient(1240px 900px at 52% 44%, rgba(217,83,25,.10), transparent 72%);
 }
 /* faint film grain over the frosted surfaces — tactile "real glass" finish */
 body::after{
@@ -534,7 +533,7 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 /* no backdrop-filter support at all → make chrome surfaces opaque so panels never disappear */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   :root{--surf:rgba(255,255,255,.86);--surf2:rgba(255,255,255,.7)}
-  html[data-theme="dark"]{--surf:rgba(44,38,64,.94);--surf2:rgba(64,56,90,.55)}
+  html[data-theme="dark"]{--surf:rgba(30,23,17,.94);--surf2:rgba(52,40,28,.55)}
 }
 @media(prefers-reduced-motion:reduce){.clay:not(.kpi)::before{animation:none}}
 .pad{padding:clamp(14px,1.5vw,20px)}
@@ -2411,7 +2410,7 @@ document.addEventListener('click',function(e){ const w=$('topNotifWrap'); if(w &
 /* ──────────── settings / theme ──────────── */
 function setTheme(mode){
   document.documentElement.dataset.theme=mode;
-  document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#0D0B14':'#FEF4ED');
+  document.querySelector('meta[name="theme-color"]').setAttribute('content',mode==='dark'?'#0D0A08':'#FEF4ED');
   try{localStorage.setItem('foxy_admin_theme',mode)}catch(e){}
   const t=$('darkModeToggle'); if(t)t.checked=(mode==='dark');
 }
