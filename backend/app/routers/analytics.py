@@ -9,7 +9,7 @@ it. Timestamps are clean ISO-8601. (Phase 5 · 5A.3)
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, case, cast, func, select, text
 from sqlalchemy.orm import Session
 
 from ..auth import resolve_org
@@ -71,3 +71,48 @@ def get_threat_analytics(
         "total_threats": total_threats,
         "recent_high_risk": recent_high_risk,
     }
+
+
+@router.get("/v1/analytics/timeseries")
+def get_threat_timeseries(
+    days: int = 30,
+    org: Organization = Depends(resolve_org),
+    db: Session = Depends(get_db),
+):
+    """Breaches per day split by risk band (high ≥70 / medium 40-69 / low <40). NEW — the existing
+    /threats groups only by policy_tag. Real DB aggregation; days is clamped to [1,365] (an int, so the
+    interval literal is injection-safe). Empty list when there are no breaches in the window."""
+    d = max(1, min(365, int(days)))
+    day = func.to_char(func.date_trunc("day", AuditLog.created_at), "YYYY-MM-DD")
+    band = case((_RISK >= 70, "high"), (_RISK >= 40, "medium"), else_="low")
+    rows = db.execute(
+        select(day, band, func.count())
+        .where(AuditLog.org_id == org.id, _BREACH,
+               AuditLog.created_at >= text(f"now() - interval '{d} days'"))
+        .group_by(day, band)
+        .order_by(day)
+    ).all()
+    by_day: dict = {}
+    for dd, bnd, cnt in rows:
+        e = by_day.setdefault(dd, {"day": dd, "high": 0, "medium": 0, "low": 0, "total": 0})
+        e[bnd] = int(cnt)
+        e["total"] += int(cnt)
+    return {"days": [by_day[k] for k in sorted(by_day)]}
+
+
+@router.get("/v1/analytics/by-agent")
+def get_threats_by_agent(
+    org: Organization = Depends(resolve_org),
+    db: Session = Depends(get_db),
+):
+    """Breaches grouped by the model/agent that produced them (6B attribution) with avg risk. NEW.
+    NULL agents collapse to 'unattributed'. Real aggregation; empty list when there are no breaches."""
+    rows = db.execute(
+        select(func.coalesce(AuditLog.agent, "unattributed"),
+               func.count(), func.coalesce(func.avg(_RISK), 0))
+        .where(AuditLog.org_id == org.id, _BREACH)
+        .group_by(AuditLog.agent)
+        .order_by(func.count().desc())
+        .limit(12)
+    ).all()
+    return {"agents": [{"agent": a, "count": int(c), "avg_risk": int(r)} for a, c, r in rows]}

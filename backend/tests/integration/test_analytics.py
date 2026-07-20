@@ -108,3 +108,65 @@ def test_threats_recent_high_risk_include_agent(make_org, client, monkeypatch):
     data = client.get("/v1/analytics/threats", headers=org["auth"]).json()
     assert data["recent_high_risk"], "expected a high-risk event"
     assert data["recent_high_risk"][0]["agent"] == "gpt-4o"
+
+
+# ─────────────────── P7 · /v1/analytics/timeseries + /by-agent ────────────────
+def _ingest_agents(client, org, monkeypatch):
+    """seq1 gpt-4 risk90 · seq2 gpt-4 risk80 · seq3 claude risk40 — all breaches, two agents."""
+    from app.schemas import Verdict
+    payload = [
+        {"prompt_hash": _h("ap1"), "response_hash": _h("ar1"), "token_count": 91, "policy_tag": "hipaa", "agent": "gpt-4"},
+        {"prompt_hash": _h("ap2"), "response_hash": _h("ar2"), "token_count": 81, "policy_tag": "hipaa", "agent": "gpt-4"},
+        {"prompt_hash": _h("ap3"), "response_hash": _h("ar3"), "token_count": 41, "policy_tag": "soc2", "agent": "claude"},
+    ]
+    assert client.post("/v1/logs/batch", headers=org["auth"], json=payload).status_code == 202
+    table = {91: (True, 90), 81: (True, 80), 41: (True, 40)}
+
+    def verdict_for(meta):
+        b, r = table[meta["token_count"]]
+        return Verdict(policy_breach=b, reason="x", risk_score=r)
+    _grade(monkeypatch, verdict_for)
+
+
+def test_timeseries_buckets_by_risk_band(make_org, login, client, monkeypatch):
+    org = make_org()
+    _seed(client, org, monkeypatch)              # breaches at risk 90, 40, 80 (all today)
+    r = login(org["admin_email"], org["admin_password"]).get("/v1/analytics/timeseries?days=30")
+    assert r.status_code == 200
+    days = r.json()["days"]
+    assert len(days) == 1                         # all created today → one bucket
+    t = days[0]
+    assert t["high"] == 2 and t["medium"] == 1 and t["low"] == 0 and t["total"] == 3
+
+
+def test_timeseries_empty_when_no_breaches(make_org, login):
+    org = make_org()
+    r = login(org["admin_email"], org["admin_password"]).get("/v1/analytics/timeseries")
+    assert r.status_code == 200 and r.json()["days"] == []
+
+
+def test_timeseries_requires_auth(client):
+    assert client.get("/v1/analytics/timeseries").status_code == 401
+
+
+def test_by_agent_groups_with_avg_risk(make_org, client, monkeypatch):
+    org = make_org()
+    _ingest_agents(client, org, monkeypatch)
+    r = client.get("/v1/analytics/by-agent", headers=org["auth"])
+    assert r.status_code == 200
+    agents = {a["agent"]: a for a in r.json()["agents"]}
+    assert agents["gpt-4"]["count"] == 2 and agents["gpt-4"]["avg_risk"] == 85   # (90+80)/2
+    assert agents["claude"]["count"] == 1 and agents["claude"]["avg_risk"] == 40
+
+
+def test_by_agent_requires_auth(client):
+    assert client.get("/v1/analytics/by-agent").status_code == 401
+
+
+def test_new_analytics_org_isolation(make_org, login, client, monkeypatch):
+    a = make_org()
+    b = make_org()
+    _seed(client, a, monkeypatch)                 # only org A has breaches
+    cb = login(b["admin_email"], b["admin_password"])
+    assert cb.get("/v1/analytics/timeseries").json()["days"] == []
+    assert cb.get("/v1/analytics/by-agent").json()["agents"] == []

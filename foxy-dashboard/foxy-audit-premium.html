@@ -1083,14 +1083,44 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div class="stat"><div class="v danger" id="statActiveAlerts">0</div><div class="l">Active alerts</div></div>
         <div class="stat"><div class="v">—</div><div class="l">Clean rate</div></div>
       </div>
+      <!-- P7 · breaches over time × risk band -->
+      <div class="clay pad" style="margin-bottom:16px;">
+        <div class="stitle">
+          <div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M12 20V4M20 20v-7" stroke="#000" stroke-width="2.6" stroke-linecap="round"/></svg></span></div><div class="txt">Breaches over time <span style="color:var(--muted);font-weight:400;font-family:var(--mono);font-size:9.5px;">· by risk band</span></div></div>
+          <div class="seg" id="threatRange" role="group" aria-label="Time range">
+            <button type="button" data-days="7" aria-pressed="false" onclick="setThreatRange(7)">7d</button>
+            <button type="button" data-days="30" aria-pressed="true" onclick="setThreatRange(30)">30d</button>
+            <button type="button" data-days="90" aria-pressed="false" onclick="setThreatRange(90)">90d</button>
+          </div>
+        </div>
+        <div class="chart-host" id="threatTimeline" style="min-height:180px;"></div>
+        <div class="cx-legend" style="margin-top:4px;"><span><i style="background:var(--breach-bg)"></i>High (≥70)</span><span><i style="background:var(--warn-bg)"></i>Medium (40–69)</span><span><i style="background:var(--muted2)"></i>Low (&lt;40)</span></div>
+      </div>
       <div class="g2">
         <div class="clay pad">
-          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Active alerts</div></div></div>
-          <div id="anaAlerts"><div class="skel line" style="width:82%"></div><div class="skel line" style="width:64%;margin-top:8px"></div><div class="skel line" style="width:72%;margin-top:8px"></div></div>
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Recent high-risk</div></div></div>
+          <div style="overflow-x:auto;">
+            <table class="dtbl"><thead><tr><th>#</th><th>Policy</th><th>Agent</th><th class="num">Risk</th><th>When</th></tr></thead>
+              <tbody id="anaAlerts"><tr><td colspan="5" style="padding:8px 10px;"><div class="skel line" style="width:70%"></div></td></tr></tbody></table>
+          </div>
         </div>
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" fill="#000"/></svg></span></div><div class="txt">Activity — last 7 days</div></div></div>
           <div class="chart-host" id="ana7d" style="min-height:120px"></div>
+        </div>
+      </div>
+      <!-- P7 · breaches by agent + average risk -->
+      <div class="g2" style="margin-top:16px;">
+        <div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="#000"/><rect x="11" y="11.5" width="11" height="3" rx="1.2" fill="#000" transform="rotate(-45 11 13)"/></svg></span></div><div class="txt">Breaches by agent</div></div></div>
+          <div class="chart-host" id="threatByAgent" style="min-height:150px;"></div>
+        </div>
+        <div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2v4M12 12l6 3" stroke="#000" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="#000" stroke-width="2.2" fill="none"/></svg></span></div><div class="txt">Average risk</div></div></div>
+          <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px;">
+            <div style="flex:0 0 auto;"><div style="font-size:clamp(24px,4vw,36px);font-weight:800;letter-spacing:-1.5px;line-height:1;" id="avgRiskNum">—</div><div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">avg breach risk</div></div>
+            <div style="flex:1;min-width:160px;"><div class="chart-host" id="avgRiskGauge" style="min-height:14px;"></div><div style="font-size:10px;color:var(--muted);margin-top:6px;" id="avgRiskNote"></div></div>
+          </div>
         </div>
       </div>
       <div class="clay pad" style="margin-top:16px;">
@@ -2872,13 +2902,22 @@ async function loadLoginHistory(){
       +'<div style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-top:3px;">#'+a.seq+' · '+esc(t)+'</div>'
       +'</div></div>';
   }
+  function alertTableRow(a){
+    const t=a.timestamp?new Date(a.timestamp).toLocaleString():'';
+    const rk=a.risk_score||0, band=rk>=70?'bad':(rk>=40?'warn':'neutral');
+    return '<tr><td class="mono">#'+a.seq+'</td>'
+      +'<td>'+esc(a.policy_tag||'policy')+'</td>'
+      +'<td class="mono">'+(a.agent?esc(a.agent):'—')+'</td>'
+      +'<td class="num"><span class="badge '+band+'">'+rk+'</span></td>'
+      +'<td class="mono">'+esc(t)+'</td></tr>';
+  }
   const emptyAlerts='<div class="arow"><div class="adot" style="background:var(--safe-bg);"></div><div><div class="atxt">No active alerts</div><div style="font-size:10.5px;color:var(--muted);">every graded interaction is within policy.</div></div></div>';
   window.loadThreats=async function(){
     let d; try{ d=await (await api('/v1/analytics/threats')).json(); }catch(e){ return; }
     const alerts=Array.isArray(d.recent_high_risk)?d.recent_high_risk:[];
-    const html=alerts.length?alerts.map(alertRow).join(''):emptyAlerts;
-    const ha=$('homeAlerts'); if(ha)ha.innerHTML=html;
-    const aa=$('anaAlerts'); if(aa)aa.innerHTML=html;
+    const ha=$('homeAlerts'); if(ha)ha.innerHTML=alerts.length?alerts.map(alertRow).join(''):emptyAlerts;
+    const aa=$('anaAlerts'); if(aa)aa.innerHTML=alerts.length?alerts.map(alertTableRow).join('')
+      :'<tr><td colspan="5" style="color:var(--muted);padding:12px 10px;">No high-risk breaches — every graded interaction is within policy.</td></tr>';
     const count=(d.total_threats!=null?d.total_threats:alerts.length);
     const sa=$('statActiveAlerts'); if(sa)sa.textContent=count;
     // home KPI tile dv[1] "Open alerts" (loadStats deliberately leaves it for us)
@@ -2886,6 +2925,11 @@ async function loadLoginHistory(){
     const av=document.querySelectorAll('#page-analytics .stats .stat .v'); if(av[2])av[2].textContent=count;
     // avg risk label
     const ar=$('avgRiskLbl'); if(ar)ar.textContent=(d.avg_risk_score!=null?'avg risk '+d.avg_risk_score:'');
+    // avg-risk gauge (P7)
+    const arn=$('avgRiskNum'); if(arn)arn.textContent=(d.avg_risk_score!=null?d.avg_risk_score:'—');
+    const arisk=Number(d.avg_risk_score)||0;
+    if($('avgRiskGauge')&&window.foxChart)window.foxChart('avgRiskGauge',{type:'gauge',height:14,value:arisk,max:100,tone:(arisk>=70?'bad':(arisk>=40?'warn':'ok')),tip:'Average breach risk '+arisk});
+    const arNote=$('avgRiskNote'); if(arNote)arNote.textContent=(d.total_threats?('across '+Number(d.total_threats||0).toLocaleString()+' breach'+(d.total_threats===1?'':'es')):'no breaches yet');
     // top-policies horizontal bars (inline, CSP-safe)
     const tp=$('topPolicies');
     if(tp){
@@ -2894,6 +2938,28 @@ async function loadLoginHistory(){
       else { tp.innerHTML='<div class="empty" style="padding:14px 0;"><div class="empty-t">No flagged policies</div><div class="empty-d">Nothing has breached policy yet.</div></div>'; }
     }
   };
+  // ── P7 · threat timeline (breaches/day × risk band) + breaches-by-agent ──
+  let _threatDays=30;
+  async function loadTimeline(){
+    const host=$('threatTimeline'); if(!host||!window.foxChart)return;
+    let d; try{ d=await (await api('/v1/analytics/timeseries?days='+_threatDays)).json(); }catch(e){ d=null; }
+    const days=(d&&Array.isArray(d.days))?d.days:[];
+    if(!days.length){ window.foxChart('threatTimeline',{type:'stacked',height:180,labels:[],series:[],empty:{title:'No breaches in this window',desc:'Breaches appear here as the Judge flags interactions.'}}); return; }
+    window.foxChart('threatTimeline',{type:'stacked',height:180,labels:days.map(x=>x.day),series:[
+      {name:'High',tone:'bad',values:days.map(x=>x.high||0)},
+      {name:'Medium',tone:'warn',values:days.map(x=>x.medium||0)},
+      {name:'Low',tone:'mute',values:days.map(x=>x.low||0)}
+    ],aria:'breaches per day by risk band'});
+  }
+  async function loadByAgent(){
+    const host=$('threatByAgent'); if(!host||!window.foxChart)return;
+    let d; try{ d=await (await api('/v1/analytics/by-agent')).json(); }catch(e){ d=null; }
+    const ags=(d&&Array.isArray(d.agents))?d.agents:[];
+    if(!ags.length){ host.innerHTML='<div class="empty" style="padding:16px 0;"><div class="empty-t">No breaches by agent yet</div><div class="empty-d">Attribution appears once flagged interactions carry an agent.</div></div>'; return; }
+    window.foxChart('threatByAgent',{type:'hbar',height:Math.max(60,ags.slice(0,8).length*34),data:ags.slice(0,8).map(a=>({label:a.agent||'unattributed',value:a.count||0,tone:'bad'})),aria:'breaches by agent'});
+  }
+  window.setThreatRange=function(n){ _threatDays=n; const seg=$('threatRange'); if(seg)Array.prototype.forEach.call(seg.querySelectorAll('button'),function(b){ b.setAttribute('aria-pressed', Number(b.getAttribute('data-days'))===n?'true':'false'); }); loadTimeline(); };
+  window.loadThreatCharts=function(){ loadTimeline(); loadByAgent(); };
   // in-app breach feed: unread pip on the Threats nav, from /v1/logs/breaches vs a
   // local "last seen highest seq" cursor. Visiting Threats marks them read.
   const _SEEN_KEY='foxy_breach_seen';
@@ -2917,7 +2983,7 @@ async function loadLoginHistory(){
   if(typeof _go==='function'){
     window.go=function(page,el){ _go(page,el);
       if(page==='analytics'||page==='dashboard')window.loadThreats();
-      if(page==='analytics')window.markBreachesRead();
+      if(page==='analytics'){ window.markBreachesRead(); if(window.loadThreatCharts)window.loadThreatCharts(); }
     };
   }
   // initial paint (home is the default page on load)
