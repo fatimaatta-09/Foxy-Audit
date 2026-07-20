@@ -3,8 +3,8 @@
 Campaign codes are stored only as HMACs. Staff can create and revoke finite
 evaluation campaigns without changing deployment secrets.
 
-Revision ID: 0036
-Revises: 0035
+Revision ID: 0052
+Revises: 0051
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = "0036"
-down_revision = "0035"
+revision = "0052"
+down_revision = "0051"
 branch_labels = None
 depends_on = None
 

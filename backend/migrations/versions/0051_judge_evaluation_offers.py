@@ -4,8 +4,8 @@ The plaintext offer code intentionally remains only in deployment configuration.
 This migration stores entitlement state and an HMAC-hashed email fingerprint so
 an evaluation campaign cannot be redeemed repeatedly by the same email.
 
-Revision ID: 0035
-Revises: 0034
+Revision ID: 0051
+Revises: 0050
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = "0035"
-down_revision = "0034"
+revision = "0051"
+down_revision = "0050"
 branch_labels = None
 depends_on = None
 
