@@ -1,7 +1,7 @@
 # Client and Hackathon Readiness Plan
 
-**Assessment date:** 2026-07-20  
-**Working branch:** `feat/judge-redemption-access`  
+**Assessment date:** 2026-07-20
+**Working branch:** `feat/judge-redemption-access`
 **Scope:** honest readiness assessment for a judge or design-partner client
 
 ## Executive Verdict
