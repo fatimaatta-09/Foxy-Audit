@@ -255,6 +255,47 @@ html[data-skin="clay"] .btn:active,html[data-skin="clay"] .kpi:active,html[data-
   box-shadow:var(--clay-press);transform:translateY(var(--press-y));
 }
 
+/* ==========================================================================
+   SKIN: ORIGINAL — ported from the foxy-dashboard "original" look. Opaque solid
+   surfaces + a HARD offset drop-shadow (neobrutalist) + stronger solid borders.
+   Third skin so admin now has 3 skins × 2 themes = 6 combos. Same token contract
+   as glass/clay: overrides surface + elevation + kills frost only. ========== */
+html[data-skin="original"]{
+  --bg2:#FBF1E6;--surf:#FFFFFF;--surf-solid:#FFFFFF;--surf2:#F7EDE2;--surf3:#F4E5D5;--head-bg:#F8EEE3;
+  --surf-elev:#FFFFFF;--surf-over:#FFFFFF;
+  --line:rgba(124,74,26,.42);--line2:rgba(124,74,26,.62);
+  --rim:transparent;--grain:.05;
+  /* matte + opaque — no frost, refraction lens, or glass specular */
+  --glass:none;--glass-sm:none;--glass-data:none;--refract:none;--spec:none;--spec-soft:none;--glass-tint:transparent;
+  /* hard offset shadow — the dashboard "original" signature (crisp, not soft/blurred) */
+  --clay:5px 5px 0 rgba(124,74,26,.26);
+  --clay-sm:3px 3px 0 rgba(124,74,26,.22);
+  --clay-press:2px 2px 0 rgba(124,74,26,.24);
+  --elev-hi:8px 8px 0 rgba(124,74,26,.28);
+  --elev-btn:3px 3px 0 rgba(124,74,26,.24);
+  --hover-y:-2px;--press-y:2px;--press-scale:.99;
+}
+html[data-skin="original"][data-theme="dark"]{
+  --bg:#0E0C0A;--bg2:#161310;--surf:#1C1815;--surf-solid:#1C1815;--surf2:#221D18;--surf3:#2A241D;
+  --head-bg:#161310;--surf-elev:#221D18;--surf-over:#2A241D;
+  --line:#3A3128;--line2:#4C4136;
+  --rim:transparent;--grain:.13;
+  --clay:6px 6px 0 rgba(0,0,0,.55);
+  --clay-sm:3px 3px 0 rgba(0,0,0,.5);
+  --clay-press:2px 2px 0 rgba(0,0,0,.5);
+  --elev-hi:9px 9px 0 rgba(0,0,0,.6);
+  --elev-btn:3px 3px 0 rgba(0,0,0,.5);
+}
+/* opaque + matte — calm the frosted light orbs but keep a little warmth (not dead flat) */
+html[data-skin="original"] body::before{opacity:.5;filter:blur(60px)}
+/* neutralise the glass sheen/grain pseudos so the surface reads as flat matte */
+html[data-skin="original"] .clay:not(.kpi)::before{background:none;box-shadow:none;mix-blend-mode:normal;animation:none}
+html[data-skin="original"] .clay:not(.kpi)::after{background:none}
+/* crisp press — shove the card into its own offset shadow */
+html[data-skin="original"] .btn:active,html[data-skin="original"] .kpi:active,html[data-skin="original"] .dock-item:active{
+  box-shadow:var(--clay-press);transform:translate(2px,2px);
+}
+
 html{-webkit-font-smoothing:antialiased;text-size-adjust:100%}
 body{
   font-family:var(--body);
@@ -497,7 +538,7 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 .grid{display:grid;gap:var(--s-4)}
 .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:var(--s-5)}
 .kpi{padding:15px 17px;position:relative;overflow:hidden;transition:transform var(--dur) ease,box-shadow var(--dur) ease}
-.kpi::before{content:'';position:absolute;left:0;top:0;right:0;height:3px;background:linear-gradient(90deg,var(--fox),var(--fox3));transform:scaleX(0);transform-origin:left;transition:transform .25s ease}
+.kpi::before{content:'';position:absolute;left:0;top:0;right:0;height:3px;background:linear-gradient(90deg,var(--k,var(--fox)),var(--k2,var(--fox3)));transform:scaleX(0);transform-origin:left;transition:transform .25s ease}
 .kpi:hover{transform:translateY(-3px);box-shadow:var(--elev-hi)}
 .kpi:hover::before{transform:scaleX(1)}
 .kpi .klabel{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
@@ -508,6 +549,12 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
 .kpi.hot{background:color-mix(in srgb, var(--fox) 9%, var(--surf));border-color:color-mix(in srgb, var(--fox) 28%, var(--line))}
 .kpi.hot::before{transform:scaleX(1)}
 .kpi.hot .kval{color:var(--fox2)}
+/* ── per-metric colour accent (tasteful, not rainbow): each KPI opts into a hue via
+   inline --k; the accent bar shows always + a faint matching wash lifts the card so the
+   strip reads alive instead of all-orange. Value text stays --ink for contrast. ── */
+.kpi.tint{background:color-mix(in srgb, var(--k) 8%, var(--surf));border-color:color-mix(in srgb, var(--k) 26%, var(--line))}
+.kpi.tint::before{transform:scaleX(1)}
+html[data-theme="dark"] .kpi.tint{background:color-mix(in srgb, var(--k) 13%, var(--surf))}
 
 /* ════════ CHIPS / BADGES (glass-tinted) ════════ */
 .chip{
@@ -592,6 +639,41 @@ h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;lett
   font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.2px;
   text-transform:uppercase;color:var(--muted);margin:12px 0 6px;
 }
+
+/* ════════ NATIVE FORM CONTROLS — themed so bare <input> checkboxes / date pickers
+   stop rendering as the browser default. color-scheme flips the OS-drawn calendar,
+   spinners and native scrollbars to match light/dark. (This rule sits BEFORE
+   `.voxswitch input` so the hidden toggle inputs still win the cascade.) ════════ */
+html{color-scheme:light}
+html[data-theme="dark"]{color-scheme:dark}
+input[type="checkbox"],input[type="radio"]{
+  appearance:none;-webkit-appearance:none;box-sizing:border-box;
+  width:17px;height:17px;flex:0 0 auto;margin:0;vertical-align:-3px;position:relative;
+  border:1.5px solid var(--line2);background:var(--bg2);color:var(--fox);
+  cursor:pointer;transition:background var(--dur) ease,border-color var(--dur) ease;
+}
+input[type="checkbox"]{border-radius:5px}
+input[type="radio"]{border-radius:50%}
+input[type="checkbox"]:hover,input[type="radio"]:hover{border-color:var(--fox)}
+input[type="checkbox"]:checked,input[type="radio"]:checked{
+  background:linear-gradient(150deg,var(--fox-hi),var(--fox));border-color:transparent;
+}
+input[type="checkbox"]:checked::after{
+  content:'';position:absolute;left:4.5px;top:1px;width:4px;height:8px;
+  border:solid var(--on-pri);border-width:0 2px 2px 0;transform:rotate(45deg);
+}
+input[type="radio"]:checked::after{
+  content:'';position:absolute;inset:3px;border-radius:50%;background:var(--on-pri);
+}
+input[type="checkbox"]:focus-visible,input[type="radio"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type="checkbox"]:disabled,input[type="radio"]:disabled{opacity:.45;cursor:not-allowed}
+/* native date / time inputs — the field uses .cin; theme the OS picker trigger to match */
+input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"]{cursor:text}
+input::-webkit-calendar-picker-indicator{
+  cursor:pointer;border-radius:5px;padding:2px;opacity:.7;
+  transition:background var(--dur) ease,opacity var(--dur) ease;
+}
+input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)}
 
 /* ════════ CUSTOM DROPDOWN (native <select> popups can't be themed) ════════ */
 .fauxselect{position:relative}
@@ -1053,7 +1135,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
           <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         </button>
-        <button class="topbtn skin-toggle" type="button" data-tip="Toggle surface style (Liquid Glass / Skeuomorphism)" aria-label="Toggle surface style between Liquid Glass and Skeuomorphism" onclick="toggleSkin()">
+        <button class="topbtn skin-toggle" type="button" data-tip="Cycle surface style (Original / Liquid Glass / Skeuomorphism)" aria-label="Cycle surface style: Original, Liquid Glass, Skeuomorphism" onclick="toggleSkin()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </button>
         <div class="topuser">
@@ -1098,10 +1180,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       </div>
       <div class="grid kpis">
         <div class="clay kpi hot"><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></div>
-        <div class="clay kpi"><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></div>
-        <div class="clay kpi"><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></div>
-        <div class="clay kpi"><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></div>
-        <div class="clay kpi"><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></div>
+        <div class="clay kpi tint" style="--k:var(--blue);--k2:var(--blue2)"><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></div>
+        <div class="clay kpi tint" style="--k:var(--teal);--k2:var(--teal)"><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></div>
+        <div class="clay kpi tint" style="--k:var(--violet);--k2:var(--violet)"><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></div>
+        <div class="clay kpi tint" style="--k:var(--ok);--k2:var(--safe-bg)"><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></div>
       </div>
 
       <div class="bento">
@@ -1244,10 +1326,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         
       </div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
-        <div class="clay kpi"><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></div>
-        <div class="clay kpi"><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></div>
-        <div class="clay kpi"><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></div>
-        <div class="clay kpi"><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr">—</div></div>
+        <div class="clay kpi tint" style="--k:var(--teal);--k2:var(--teal)"><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></div>
+        <div class="clay kpi tint" style="--k:var(--blue);--k2:var(--blue2)"><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></div>
+        <div class="clay kpi tint" style="--k:var(--violet);--k2:var(--violet)"><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></div>
+        <div class="clay kpi tint" style="--k:var(--warnc);--k2:var(--warn-bg)"><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr">—</div></div>
       </div>
       <div class="clay pad">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
@@ -1346,7 +1428,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <div class="sub">audit_logs, admin_actions, chain_anchors and stripe_events are permanently read-only — editing them would break the tamper-evident chain, the audit trail, or the Stripe idempotency log. Everything else can be edited or deleted (operator role required).</div>
         </div>
       </div>
-      <div class="clay pad" style="margin-bottom:18px;">
+      <div class="clay pad" style="margin-bottom:18px;position:relative;z-index:30;">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
           <div style="flex:1;min-width:200px;">
             <div class="flabel" style="margin-top:0;">table</div>
@@ -1422,8 +1504,8 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="pagehead"><div><div class="eyebrow">P4 · finance</div><h1>Revenue</h1><div class="sub">Paid-invoice revenue across all tenants.</div></div></div>
       <div class="grid kpis">
         <div class="clay kpi hot"><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></div>
-        <div class="clay kpi"><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></div>
-        <div class="clay kpi"><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></div>
+        <div class="clay kpi tint" style="--k:var(--blue);--k2:var(--blue2)"><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></div>
+        <div class="clay kpi tint" style="--k:var(--teal);--k2:var(--teal)"><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></div>
       </div>
       <div class="split">
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">monthly</div><div class="panel-t">Revenue trend</div></div></div><div id="rvMonthly" style="min-height:200px;"></div></div>
@@ -1485,6 +1567,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <label class="voxswitch" style="margin-bottom:14px;"><input type="checkbox" id="darkModeToggle" onchange="setTheme(this.checked?'dark':'light')"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>dark mode</span></label>
           <div class="flabel">surface style</div>
           <div class="segmented" role="group" aria-label="Surface style">
+            <button type="button" class="segbtn" data-skin-opt="original" aria-pressed="false" onclick="setSkin('original')">Original</button>
             <button type="button" class="segbtn" data-skin-opt="glass" aria-pressed="true" onclick="setSkin('glass')">Liquid Glass</button>
             <button type="button" class="segbtn" data-skin-opt="clay" aria-pressed="false" onclick="setSkin('clay')">Skeuomorphism</button>
           </div>
@@ -2329,12 +2412,13 @@ function setTheme(mode){
   const t=$('darkModeToggle'); if(t)t.checked=(mode==='dark');
 }
 function setSkin(skin){
-  if(skin!=='clay')skin='glass';
+  if(skin!=='clay'&&skin!=='original')skin='glass';
   document.documentElement.dataset.skin=skin;
   try{localStorage.setItem('foxy_admin_skin',skin)}catch(e){}
   document.querySelectorAll('[data-skin-opt]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.skinOpt===skin?'true':'false'));
 }
-function toggleSkin(){setSkin(document.documentElement.dataset.skin==='clay'?'glass':'clay');}
+/* cycle the 3 surface styles: original → glass → clay → original */
+function toggleSkin(){var nx={original:'glass',glass:'clay',clay:'original'};setSkin(nx[document.documentElement.dataset.skin]||'glass');}
 function loadSettings(){
   $('setEmail').value=ME?ME.email:'';
   $('setRole').value=ME?ME.platform_role:'';
@@ -3159,7 +3243,7 @@ async function loadRevenue(){
   let r; try{ r=await api('/admin/v1/revenue'); }catch(e){ r=null; }
   if(!r||!r.ok){ toast('revenue unavailable','error'); return; }
   const d=await r.json();
-  $('rvRev30').innerHTML=sens(_cents(d.revenue_30d_cents));   /* eye toggle to hide/show revenue */
+  $('rvRev30').innerHTML=sens(_cents(d.revenue_30d_cents),{mask:true});   /* masked by default; eye reveals/hides revenue */
   const subs=d.subscriptions||{};
   $('rvActive').textContent=num(subs.active||0);
   $('rvSubFoot').textContent=Object.entries(subs).filter(([k])=>k!=='active').map(([k,v])=>k+' '+v).join(' · ')||'—';
@@ -3272,6 +3356,7 @@ window.PREFS = window.PREFS || { hide_sensitive_metadata:false };
 
 var _EYE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
 var _COPY_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+var _EYEOFF_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
 /* ---- delayed hover/focus tooltip (data-tip) ---- */
 var _tipEl=null,_tipTimer=0,_tipCur=null,_TIP_DELAY=450;
@@ -3312,9 +3397,11 @@ window.addEventListener('scroll',tipHide,true);
 function sens(value,opts){ opts=opts||{}; value=String(value==null?'':value);
   var max=opts.max||14;
   var short=opts.short || (value.length>max? value.slice(0,max)+'…' : value);
-  var masked=!!(window.PREFS&&PREFS.hide_sensitive_metadata);
+  /* opts.mask forces the dotted default regardless of the pref (e.g. revenue) */
+  var masked=!!opts.mask || !!(window.PREFS&&PREFS.hide_sensitive_metadata);
   var shown=masked?'••••••':short;
-  return '<span class="sens'+(masked?' masked':'')+'" data-v="'+esc(value)+'" data-short="'+esc(short)+'">'
+  /* data-shown = the default (hidden) display; the toggle restores it so masking survives a hide→reveal→hide cycle */
+  return '<span class="sens'+(masked?' masked':'')+'" data-v="'+esc(value)+'" data-short="'+esc(short)+'" data-shown="'+esc(shown)+'" data-masked="'+(masked?'1':'0')+'">'
     +'<span class="sens-val">'+esc(shown)+'</span>'
     +'<button type="button" class="sens-btn" data-act="reveal" data-tip="Reveal" aria-label="Reveal full value">'+_EYE_SVG+'</button>'
     +'<button type="button" class="sens-btn" data-act="copy" data-tip="Copy" aria-label="Copy to clipboard">'+_COPY_SVG+'</button>'
@@ -3333,11 +3420,19 @@ function _copyText(text,btn){
 document.addEventListener('click',function(e){
   var btn=e.target.closest?e.target.closest('.sens-btn'):null; if(!btn)return;
   var wrap=btn.closest('.sens'); if(!wrap)return; e.preventDefault(); e.stopPropagation();
-  var full=wrap.getAttribute('data-v'), short=wrap.getAttribute('data-short'), valEl=wrap.querySelector('.sens-val');
-  if(btn.getAttribute('data-act')==='copy'){ _copyText(full,btn); return; }
-  var revealed=wrap.classList.toggle('revealed'); wrap.classList.remove('masked');
-  valEl.textContent=revealed?full:short;
-  btn.setAttribute('aria-label',revealed?'Hide value':'Reveal full value'); });
+  if(btn.getAttribute('data-act')==='copy'){ _copyText(wrap.getAttribute('data-v'),btn); return; }
+  var valEl=wrap.querySelector('.sens-val');
+  var revealed=wrap.classList.toggle('revealed');   /* true → now shown, false → now hidden */
+  if(revealed){
+    wrap.classList.remove('masked');
+    valEl.textContent=wrap.getAttribute('data-v');
+    btn.innerHTML=_EYEOFF_SVG; btn.setAttribute('data-tip','Hide'); btn.setAttribute('aria-label','Hide value');
+  }else{
+    if(wrap.getAttribute('data-masked')==='1') wrap.classList.add('masked');   /* restore the •••••• default */
+    valEl.textContent=wrap.getAttribute('data-shown');
+    btn.innerHTML=_EYE_SVG; btn.setAttribute('data-tip','Reveal'); btn.setAttribute('aria-label','Reveal full value');
+  }
+  tipHide(); });
 
 /* ---- command palette (Cmd/Ctrl-K) + shortcuts help ---- */
 var CMDK=null,_cmdkItems=[],_cmdkSel=0;
