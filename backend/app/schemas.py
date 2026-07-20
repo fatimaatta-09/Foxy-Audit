@@ -65,7 +65,10 @@ class Verdict(BaseModel):
     policy_breach: bool = False
     reason: str = ""
     risk_score: int = Field(default=0, ge=0, le=100)
-    decision: str = Field(default="unknown", pattern=r"^(clean|breach|unknown)$")
+    # clean|breach|unknown are AI-judge outcomes; blocked|redacted are terminal
+    # host-side enforcement outcomes decided locally (no model response to grade).
+    decision: str = Field(default="unknown",
+                          pattern=r"^(clean|breach|unknown|blocked|redacted)$")
     rules: list[str] = Field(default_factory=list)
 
 
