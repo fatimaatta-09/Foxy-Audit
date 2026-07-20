@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import account_audit, ip_allow
-from ..auth import require_role, require_user, resolve_org
+from ..auth import require_role, require_step_up_user, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
 from ..models import (
@@ -190,7 +190,7 @@ class DeleteWorkspaceRequest(BaseModel):
     confirm_name: str
 
 
-@router.post("/v1/account/delete")
+@router.post("/v1/account/delete", dependencies=[Depends(require_step_up_user)])
 def delete_workspace(
     payload: DeleteWorkspaceRequest,
     request: Request,
@@ -217,7 +217,7 @@ class IpAllowlistRequest(BaseModel):
     allowlist: str = ""              # comma-separated IPs/CIDRs; empty clears the restriction
 
 
-@router.post("/v1/account/ip-allowlist")
+@router.post("/v1/account/ip-allowlist", dependencies=[Depends(require_step_up_user)])
 def set_ip_allowlist(
     payload: IpAllowlistRequest,
     request: Request,
@@ -254,7 +254,7 @@ def mint_badge(
     return {"token": org.public_badge_token, "url": f"/v1/badge/{org.public_badge_token}.svg"}
 
 
-@router.delete("/v1/account/badge")
+@router.delete("/v1/account/badge", dependencies=[Depends(require_step_up_user)])
 def revoke_badge(
     request: Request,
     admin: User = Depends(require_role("admin")),

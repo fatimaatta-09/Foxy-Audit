@@ -484,6 +484,27 @@ class UserSession(Base):
         DateTime(timezone=True), nullable=True)
 
 
+class VerificationCode(Base):
+    """A generic emailed-code for customer step-up re-auth (dashboard P15). Dedicated table so step-up
+    never collides with login MFA (users.mfa_code_*). Confirming a code mints a short-lived session
+    grant. Per-org (org_isolation RLS). code_hash never leaves the server."""
+    __tablename__ = "verification_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
 class ExportJob(Base):
     """History/audit of a compliance export (dashboard P11) — logs CSV/JSON or the passport. The
     server keeps NO file archive; a re-download re-runs the producer, so file_ref is reserved. Per-org

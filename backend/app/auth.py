@@ -293,6 +293,16 @@ def require_step_up_dep(request: Request, staff: StaffUser = Depends(require_sta
     return staff
 
 
+def require_step_up_user(request: Request, user: User = Depends(require_user)) -> User:
+    """Customer-side step-up gate (P15) — the SAME grant model as staff, but on the customer session.
+    Add via `dependencies=[Depends(require_step_up_user)]` to audited danger mutations. A missing or
+    expired grant raises 403 `step_up_required`, which the SPA turns into an emailed-code prompt and
+    then retries the original request."""
+    if not step_up_active(request):
+        raise HTTPException(status_code=403, detail="step_up_required")
+    return user
+
+
 def set_org_scope_for_staff(db: Session, org_id) -> None:
     """Deliberately scope RLS to ONE org for a staff drill-down query (reuses the
     same RLS path as customers instead of ad-hoc SQL). Only call when a staff

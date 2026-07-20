@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from .. import account_audit
 from .. import email as email_mod
 from .. import mfa
-from ..auth import hash_key, require_org, require_role
+from ..auth import hash_key, require_org, require_role, require_step_up_user
 from ..config import get_settings
 from ..db import get_db
 from ..models import ApiKey, Organization, User
@@ -136,7 +136,7 @@ def create_key(
     )
 
 
-@router.delete("/v1/keys/{key_id}")
+@router.delete("/v1/keys/{key_id}", dependencies=[Depends(require_step_up_user)])
 def revoke_key(
     key_id: uuid.UUID,     # FastAPI validates the path -> 422 (not 500) on a non-UUID
     admin: User = Depends(require_role("admin")),

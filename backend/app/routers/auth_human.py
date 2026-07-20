@@ -20,12 +20,14 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import account_audit, login_history, mfa, password_reset
-from ..auth import _scope_org, hash_session_token, require_role, require_user, resolve_org
+from .. import account_audit, email as email_mod, login_history, mfa, password_reset
+from ..auth import (_scope_org, grant_step_up, hash_session_token, require_role,
+                    require_step_up_user, require_user, resolve_org)
 from ..config import get_settings
 from ..db import get_db
 from ..ip_allow import client_ip
-from ..models import AuthHandoffToken, LoginEvent, Organization, User, UserSession
+from ..models import (AuthHandoffToken, LoginEvent, Organization, User, UserSession,
+                      VerificationCode)
 from .logs import limiter          # reuse the app's single Limiter instance
 
 router = APIRouter()
@@ -298,6 +300,63 @@ def logout_all(request: Request, user: User = Depends(require_user),
     return {"status": "logged_out_everywhere", "revoked": int(n)}
 
 
+# ─────────────────────────── step-up (re-auth) for danger actions (P15) ───────
+STEP_UP_CODE_TTL = timedelta(minutes=5)
+
+
+@router.post("/v1/auth/step-up/request")
+@limiter.limit("6/minute")
+def step_up_request(request: Request, user: User = Depends(require_user),
+                    db: Session = Depends(get_db)):
+    """Email a fresh 6-digit step-up code (stored hashed in verification_codes — NEVER on the login-MFA
+    columns, so step-up can't collide with email-OTP login). Invalidates prior unconsumed codes."""
+    code = mfa.new_otp()
+    now = datetime.now(timezone.utc)
+    _scope_org(db, user.org_id)
+    db.query(VerificationCode).filter(
+        VerificationCode.user_id == user.id, VerificationCode.purpose == "step_up",
+        VerificationCode.consumed_at.is_(None),
+    ).update({VerificationCode.consumed_at: now}, synchronize_session=False)
+    db.add(VerificationCode(id=uuid.uuid4(), user_id=user.id, org_id=user.org_id, purpose="step_up",
+                            code_hash=mfa.hash_code(code), expires_at=now + STEP_UP_CODE_TTL))
+    db.commit()
+    email_mod.send_email(
+        to=user.email, subject="Your Foxy Audit security code",
+        html=(f"<p>Your one-time security code is <b>{code}</b>. It expires in 5 minutes.</p>"
+              "<p>If you didn't request this, ignore this email and change your password.</p>"),
+        text=f"Your Foxy Audit security code is {code} (expires in 5 minutes).")
+    return {"status": "code_sent", "email": user.email}
+
+
+class StepUpConfirmRequest(BaseModel):
+    code: str
+
+
+@router.post("/v1/auth/step-up/confirm")
+@limiter.limit("10/minute")
+def step_up_confirm(payload: StepUpConfirmRequest, request: Request,
+                    user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Verify the emailed code and mint a ~10-min step-up grant for danger actions (a burst then needs
+    a single code, not one per click). Wrong/expired code → 400. Audited via account_actions."""
+    code = (payload.code or "").strip()
+    now = datetime.now(timezone.utc)
+    _scope_org(db, user.org_id)
+    row = db.execute(
+        select(VerificationCode).where(
+            VerificationCode.user_id == user.id, VerificationCode.purpose == "step_up",
+            VerificationCode.consumed_at.is_(None), VerificationCode.expires_at >= now,
+        ).order_by(VerificationCode.created_at.desc())
+    ).scalars().first()
+    if row is None or not code or row.code_hash != mfa.hash_code(code):
+        raise HTTPException(status_code=400, detail="invalid or expired code")
+    row.consumed_at = now
+    grant_step_up(request)
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email, action="account.step_up")
+    db.commit()
+    return {"status": "step_up_granted"}
+
+
 # ── Desktop pet → dashboard auto-login handoff (single-use, short-TTL token) ──
 HANDOFF_TTL = timedelta(seconds=120)
 
@@ -445,7 +504,7 @@ def create_user(
                               temp_password=temp)
 
 
-@router.post("/v1/auth/change-password")
+@router.post("/v1/auth/change-password", dependencies=[Depends(require_step_up_user)])
 def change_password(
     payload: ChangePasswordRequest,
     user: User = Depends(require_user),
@@ -515,7 +574,7 @@ class RoleChangeRequest(BaseModel):
     role: str
 
 
-@router.post("/v1/auth/users/{user_id}/role")
+@router.post("/v1/auth/users/{user_id}/role", dependencies=[Depends(require_step_up_user)])
 def change_role(
     user_id: str,
     payload: RoleChangeRequest,
@@ -603,7 +662,7 @@ def mfa_enable(payload: MfaCodeRequest, user: User = Depends(require_user),
     return {"status": "mfa_enabled"}
 
 
-@router.post("/v1/auth/mfa/disable")
+@router.post("/v1/auth/mfa/disable", dependencies=[Depends(require_step_up_user)])
 def mfa_disable(payload: MfaDisableRequest, user: User = Depends(require_user),
                 db: Session = Depends(get_db)):
     """Turn two-factor OFF — re-checks the account password as a step-up guard."""
