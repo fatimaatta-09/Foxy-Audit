@@ -264,6 +264,9 @@ class User(Base):
         DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+    # Dashboard onboarding checklist state (P4) — a small JSONB bag, e.g. {"dismissed": true}. The
+    # checklist COMPLETION is computed live from real data; only dismissal is persisted here.
+    onboarding_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class ApiKey(Base):

@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import ip_allow
-from ..auth import require_role, resolve_org
+from ..auth import require_role, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
 from ..models import (
@@ -394,3 +394,61 @@ def invoice_link(
     except Exception as exc:                 # noqa: BLE001
         log.warning("invoice link failed: %s", exc)
         raise HTTPException(status_code=502, detail="could not fetch invoice link")
+
+
+# ─────────────────────────── onboarding checklist (P4) ───────────────────────
+class OnboardingUpdate(BaseModel):
+    dismissed: bool | None = None
+
+
+def _onboarding_state(user: User, db: Session) -> dict:
+    """Compute the checklist live from real data (active key / first logged call / team>1) and merge
+    the persisted dismissal. Never fabricated — every step reflects the org's actual data."""
+    has_key = db.execute(
+        select(func.count()).select_from(ApiKey)
+        .where(ApiKey.org_id == user.org_id, ApiKey.status == "active")
+    ).scalar_one() > 0
+    logged = db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.org_id == user.org_id)
+    ).scalar_one() > 0
+    team = db.execute(
+        select(func.count()).select_from(User).where(User.org_id == user.org_id)
+    ).scalar_one() > 1
+    steps = [
+        {"key": "api_key", "done": has_key, "title": "Create an API key",
+         "desc": "Mint a key for your app or SDK — shown once.",
+         "page": "keys", "label": "Create key"},
+        {"key": "first_log", "done": logged, "title": "Log your first AI interaction",
+         "desc": "Wrap a call with the @foxy.audit SDK; only hashes leave your machine.",
+         "page": "keys", "label": "Get started"},
+        {"key": "invite_team", "done": team, "title": "Invite your team",
+         "desc": "Add a teammate so they can review the audit trail.",
+         "page": "settings", "label": "Invite"},
+    ]
+    state = user.onboarding_state or {}
+    return {
+        "steps": steps,
+        "done": sum(1 for s in steps if s["done"]),
+        "total": len(steps),
+        "complete": has_key and logged,          # essentials live → the checklist retires
+        "dismissed": bool(state.get("dismissed")),
+    }
+
+
+@router.get("/v1/onboarding")
+def get_onboarding(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """The onboarding checklist (live completion + persisted dismissal)."""
+    return _onboarding_state(user, db)
+
+
+@router.put("/v1/onboarding")
+def put_onboarding(body: OnboardingUpdate, user: User = Depends(require_user),
+                   db: Session = Depends(get_db)):
+    """Persist the onboarding state (currently: dismissal). Per-user UI preference."""
+    state = dict(user.onboarding_state or {})
+    if body.dismissed is not None:
+        state["dismissed"] = bool(body.dismissed)
+    user.onboarding_state = state
+    resp = _onboarding_state(user, db)   # compute BEFORE commit — require_user's RLS GUC is still set
+    db.commit()
+    return resp

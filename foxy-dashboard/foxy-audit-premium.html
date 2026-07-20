@@ -877,13 +877,23 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         </button>
       </div>
 
-      <div class="clay pad" id="firstRun" style="display:none;margin-bottom:18px;border:2px solid var(--fox);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <div style="font-weight:800;font-size:14px;">Get set up<span class="fox-dot">.</span></div>
-          <span id="firstRunPct" style="font-size:11px;color:var(--muted);font-family:var(--mono);"></span>
+      <div class="clay pad" id="firstRun" style="display:none;margin-bottom:18px;position:relative;overflow:hidden;">
+        <div aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(130% 90% at 100% 0%,rgba(255,122,46,.10),transparent 55%);"></div>
+        <div style="position:relative;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+            <div style="min-width:0;">
+              <div class="eyebrow" style="margin-bottom:6px;">Get set up</div>
+              <div id="firstRunTitle" style="font-weight:800;font-size:clamp(15px,1.7vw,19px);letter-spacing:-.3px;line-height:1.15;">Let’s get your audit trail live<span class="fox-dot">.</span></div>
+              <div id="firstRunSub" style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:5px;max-width:440px;">Three quick steps to a tamper-evident audit trail. This card retires itself once you’re rolling.</div>
+            </div>
+            <button id="firstRunDismiss" type="button" class="ann-x" aria-label="Dismiss onboarding" data-tip="Dismiss" style="width:30px;height:30px;flex-shrink:0;">&times;</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;margin:14px 0 8px;">
+            <div class="chart-host" id="firstRunBar" style="flex:1;min-height:12px;"></div>
+            <span id="firstRunPct" style="font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap;"></span>
+          </div>
+          <div id="firstRunSteps"></div>
         </div>
-        <div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-bottom:12px;">A few steps to a live, tamper-evident audit trail. This disappears once you're rolling.</div>
-        <div id="firstRunSteps"></div>
       </div>
 
       <div class="clay pad" id="captureCoverage" style="margin-bottom:18px;">
@@ -2859,22 +2869,30 @@ async function loadLoginHistory(){
   }
   window.loadFirstRun=async function(){
     const card=$('firstRun'); if(!card)return;
-    const [keys,stats,users]=await Promise.all([jget('/v1/keys'),jget('/v1/stats'),jget('/v1/auth/users')]);
-    const hasKey=Array.isArray(keys)&&keys.length>0;
-    const logged=stats&&(stats.total_logged||0)>0;
-    const team=Array.isArray(users)&&users.length>1;
-    // once the essentials (a key + a first logged call) are done, the workspace is
-    // live — retire the checklist so it never nags an active customer.
-    if(hasKey&&logged){ card.style.display='none'; return; }
-    const steps=[
-      stepRow(hasKey,'Create an API key','Mint a key for your app or SDK — shown once.','keys','Create key'),
-      stepRow(logged,'Log your first AI interaction','Wrap a call with the @foxy.audit SDK; only hashes leave your machine.','keys','Get started'),
-      stepRow(team,'Invite your team','Add a teammate so they can review the audit trail.','settings','Invite'),
-    ];
-    const done=[hasKey,logged,team].filter(Boolean).length;
-    const pct=$('firstRunPct'); if(pct)pct.textContent=done+' / 3 done';
-    const box=$('firstRunSteps'); if(box)box.innerHTML=steps.join('');
+    const d=await jget('/v1/onboarding');            // live completion + persisted dismissal (P4)
+    if(!d||d.dismissed){ card.style.display='none'; return; }
+    const steps=Array.isArray(d.steps)?d.steps:[];
+    const done=d.done||0, total=d.total||steps.length||3;
+    if(window.foxChart)window.foxChart('firstRunBar',{type:'gauge',height:12,value:done,max:total,
+      tone:(done>=total?'ok':null),tip:done+' of '+total+' done'});
+    const pct=$('firstRunPct'); if(pct)pct.textContent=done+' / '+total+' done';
+    const title=$('firstRunTitle'), sub=$('firstRunSub');
+    if(done>=total){
+      if(title)title.innerHTML='You’re all set<span class="fox-dot">.</span>';
+      if(sub)sub.textContent='Every step is done — your workspace is fully live. Dismiss this whenever you like.';
+    } else if(d.complete){
+      if(title)title.innerHTML='Your audit trail is live<span class="fox-dot">.</span>';
+      if(sub)sub.textContent='The essentials are done. One optional step remains — invite your team to review the trail.';
+    }
+    const box=$('firstRunSteps');
+    if(box)box.innerHTML=steps.map(s=>stepRow(!!s.done,s.title,s.desc,s.page,s.label)).join('');
     card.style.display='block';
+  };
+  const _frDismiss=$('firstRunDismiss');
+  if(_frDismiss)_frDismiss.onclick=async function(){
+    const c=$('firstRun'); if(c)c.style.display='none';
+    try{ await fetch('/v1/onboarding',{method:'PUT',credentials:'same-origin',
+      headers:{'content-type':'application/json'},body:JSON.stringify({dismissed:true})}); }catch(e){}
   };
   const _go=window.go;
   if(typeof _go==='function'){
