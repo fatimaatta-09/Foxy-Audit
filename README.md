@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/foxy-logo.png" alt="Foxy Audit logo" width="150"><br>
+  <img src="logo.png" alt="Foxy Audit logo" width="150"><br>
 
 # 🦊 Foxy Audit
 
@@ -12,7 +12,9 @@
 [![Built with Codex](https://img.shields.io/badge/extended%20with-Codex%20%2F%20GPT--5.6-412991?logo=openai&logoColor=white)](#how-this-was-built-with-codex--gpt-56)
 [![Status](https://img.shields.io/badge/status-active%20development-orange)]()
 
-**[Live Demo](#) · [Docs](#) · [Report a Bug](../../issues) · [Request a Feature](../../issues)**
+**[Live app](https://app.foxyaudit.tech) · [Docs](docs/) · [Report a Bug](../../issues) · [Request a Feature](../../issues)**
+
+<sub>🏆 An **OpenAI Build Week** submission — category **Developer Tools** · GPT-5.6 (Responses API) judge + Codex-assisted build</sub>
 
 </div>
 
@@ -103,12 +105,15 @@ proof of what happened, generated without ever holding what was said.
 
 **Three integration points, in order of how most people touch this product:**
 
-1. **Developer** adds one line to existing code:
+1. **Developer** adds one line to existing code (`pip install foxy-audit`):
 ```python
    from foxy_audit import FoxyClient
    foxy = FoxyClient(api_key=os.getenv("FOXY_API_KEY"))
 
-   @foxy.audit(policy="hipaa_basic", agent="gpt-4o")
+   # mode="block" runs a local policy check FIRST — PHI/PII, secrets, and
+   # prompt-injection are caught and the call is blocked before the prompt ever
+   # leaves the machine. mode="redact" scrubs them; the default just records.
+   @foxy.audit(policy="hipaa", mode="block", agent="gpt-5.6")
    def call_llm(user_prompt: str):
        return real_llm_call(user_prompt)
 ```
@@ -166,6 +171,14 @@ python verifier/foxy_verify.py foxy-audit-logs.json
 tampered — and everything chained after it as invalid too. If it still says "intact" after your
 edit, the core claim of this product is false. This is the single most important test in this repo.
 
+**No OpenAI key? Two dependency-free demos a judge can run in seconds:**
+```bash
+python demo/offline_demo.py             # build a chain, verify it, watch tamper detection fire
+python demo/mock_llm.py --scenario all  # drive the host-side guard with a mock LLM (block/redact)
+```
+For the full live GPT-5.6 path, `demo/live_openai_client.py` makes a real Responses API call wrapped
+by `@foxy.audit` — see [docs/OPENAI_BUILD_WEEK_SUBMISSION.md](docs/OPENAI_BUILD_WEEK_SUBMISSION.md).
+
 <br>
 
 ## 🤖 How this was built with Codex / GPT-5.6
@@ -175,12 +188,19 @@ built and independently verified (including the live tamper-detection test above
 submission window opened. In the interest of being precise about what's new vs. what existed, here
 is exactly what was built or meaningfully extended with Codex/GPT-5.6 during the submission period:
 
-- **`backend/app/judge.py`** — a multi-provider AI judge that runs GPT-5.6 alongside the existing
-  Gemini evaluator and combines their verdicts conservatively: if either provider flags a policy
-  breach, or the two disagree, the combined result treats it as a breach rather than silently
-  trusting a "clean" verdict. This is real, working, and reviewable in that file directly.
-- *(Add any additional feature completed during the submission window here, with the same
-  specificity — name the file, name what it does, don't generalize.)*
+- **`backend/app/judge.py`** — a multi-provider AI judge that runs GPT-5.6 (OpenAI Responses API)
+  alongside the existing Gemini evaluator and combines their verdicts conservatively: if either
+  provider flags a policy breach, or the two disagree, the combined result treats it as a breach
+  rather than silently trusting a "clean" verdict. `judge.validate()` also quarantines an empty or
+  self-contradictory model answer as `evaluator_unknown` instead of laundering it into a grade.
+- **`sdk/src/foxy_audit/policy.py` + `client.py`** — the **host-side preflight guard**. With
+  `mode="block"` / `"redact"`, the SDK runs a local policy check (PHI/PII, secrets, prompt-injection)
+  *before* the wrapped model call and blocks or scrubs the prompt on the host — the content-blind
+  `blocked`/`redacted` events are graded terminally, never sent to a judge.
+- **`backend/app/crypto_secrets.py` + `judge_routing.py`** — **per-tenant AI-judge selection**: each
+  org picks its judge/provider and can bring its own API key, encrypted at rest with a rotatable
+  Fernet key and bound to `(org_id, provider)` so a stored blob can't be replayed across tenants.
+  Keys are decrypted in memory only at grading time and never returned, logged, or chained.
 
 Every change was made by giving Codex full context of the existing codebase first, having it
 propose an approach before generating code, and reviewing every diff before accepting it.
@@ -194,29 +214,30 @@ propose an approach before generating code, and reviewing every diff before acce
 **Genuinely working, verified directly against the code:**
 - ✅ Local hashing, zero raw-text transmission
 - ✅ Sequential hash chain with confirmed tamper detection
+- ✅ **Host-side preflight guard** — block/redact PHI/PII/secrets/injection *before* the LLM call
+- ✅ Multi-provider AI judge (Gemini + GPT-5.6), per-tenant with encrypted bring-your-own keys
 - ✅ Row-Level Security enforced via a non-superuser application role
 - ✅ Real signup → API key → email flow via Stripe webhook
-- ✅ Multi-provider AI judge (Gemini + GPT-5.6)
 - ✅ Standalone, dependency-free verifier script
+- ✅ Compliance Passport with host-side enforcement counts
+- ✅ SDK published to PyPI (`pip install foxy-audit`)
 - ✅ Admin IP allow-list fails closed in production
 - ✅ Legal pages (Terms, Privacy) — real content, not placeholders
 
 **Honestly still open:**
-- ⏳ **Preflight blocking** — sensitive-data detection currently happens and is logged, but nothing
-  is blocked or redacted *before* it reaches the LLM. Top item on the roadmap, not a hidden gap.
+- ⏳ The preflight guard covers the **SDK-wrapped** path; a network-level gateway/sidecar to also
+  catch calls that bypass the SDK is future work, not a hidden gap
 - ⏳ Desktop/mobile installers (signed `.exe`, notarized `.dmg`, Linux AppImage) not yet built
-- ⏳ SDK not yet published to PyPI
 
 <br>
 
 ## 🗺 Roadmap
 
-1. **Preflight blocking** — check for PHI/PII, secrets, and injection patterns *before* the prompt
-   ever reaches the LLM.
-2. Blocked/redacted event stats surfaced in the Compliance Passport
-3. Policy versioning (each event tagged with the exact policy version + hash it was checked against)
-4. No-login auditor verification portal
-5. Evidence API so governance platforms can pull our proof directly
+1. **Network-level gateway / sidecar** — observe traffic at the model boundary so even calls that
+   bypass the SDK decorator are captured (closes the completeness gap noted above).
+2. Policy versioning (each event tagged with the exact policy version + hash it was checked against)
+3. No-login auditor verification portal
+4. Evidence API so governance platforms can pull our proof directly
 
 *(Zero-knowledge proof extensions are a genuine long-term direction, not a near-term promise.)*
 
@@ -224,7 +245,8 @@ propose an approach before generating code, and reviewing every diff before acce
 
 ## 🔒 Security
 
-Found a vulnerability? Please don't open a public issue — email [your-security-contact] directly.
+Found a vulnerability? Please don't open a public issue — open a private
+[security advisory](../../security/advisories/new), or email **support@foxyaudit.tech**.
 
 <br>
 
