@@ -478,6 +478,9 @@ body{
 .ltag.safe{background:var(--safe-bg);color:var(--safe-tx);}
 .ltag.breach{background:var(--breach-bg);color:var(--breach-tx);}
 .ltag.warn{background:var(--warn-bg);color:var(--warn-tx);}
+/* host-side enforcement — prevented egress, distinct from graded verdicts */
+.ltag.blocked{background:var(--c-2);color:#04122e;}
+.ltag.redacted{background:var(--c-4);color:#3a0620;}
 .lbody{flex:1;min-width:0;}
 .lname{font-size:12.5px;font-weight:700;}
 .lhash{font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:2px;}
@@ -493,6 +496,8 @@ body{
 .pill.safe{background:var(--safe-bg);color:var(--safe-tx);}
 .pill.breach{background:var(--breach-bg);color:var(--breach-tx);}
 .pill.warn{background:var(--warn-bg);color:var(--warn-tx);}
+.pill.blocked{background:var(--c-2);color:#04122e;}
+.pill.redacted{background:var(--c-4);color:#3a0620;}
 .pill i{width:5px;height:5px;border-radius:50%;background:currentColor;}
 
 /* ════════ ALERTS ════════ */
@@ -1187,7 +1192,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
       <div class="clay" style="margin-bottom:12px;padding:11px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <input class="cin" id="ledgerQ" placeholder="Search hash or agent…" style="margin:0;flex:1;min-width:150px;" onkeydown="if(event.key==='Enter')applyLedgerFilters()">
         <input class="cin" id="ledgerPolicy" placeholder="policy tag" style="margin:0;width:120px;" onkeydown="if(event.key==='Enter')applyLedgerFilters()">
-        <select id="ledgerVerdict" style="margin:0;width:140px;"><option value="">any verdict</option><option value="breach">breach</option><option value="clean">clean</option><option value="unknown">unknown</option><option value="pending">pending</option></select>
+        <select id="ledgerVerdict" style="margin:0;width:140px;"><option value="">any verdict</option><option value="breach">breach</option><option value="clean">clean</option><option value="unknown">unknown</option><option value="pending">pending</option><option value="blocked">blocked</option><option value="redacted">redacted</option></select>
         <button class="btn pri sm" style="margin:0;" onclick="applyLedgerFilters()">Filter</button>
         <button class="btn ghost sm" style="margin:0;" onclick="clearLedgerFilters()">Clear</button>
       </div>
@@ -1195,6 +1200,8 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <button type="button" class="seg-chip" onclick="quickLedger('')">All</button>
         <button type="button" class="seg-chip" onclick="quickLedger('breach')">Breaches</button>
         <button type="button" class="seg-chip" onclick="quickLedger('clean')">Clean</button>
+        <button type="button" class="seg-chip" onclick="quickLedger('blocked')">Blocked</button>
+        <button type="button" class="seg-chip" onclick="quickLedger('redacted')">Redacted</button>
         <button type="button" class="seg-chip" onclick="quickLedger('pending')">Pending</button>
       </div>
       <div class="clay pad" style="overflow-x:auto;">
@@ -2148,8 +2155,12 @@ async function loadLoginHistory(){
   let _ledgerPage=1; const _ledgerLimit=50; let _ledgerTotal=0;
 
   function verdictOf(it){
+    // Host-side enforcement rows are terminal & locally decided — surface them as
+    // prevented egress, distinct from graded AI-judge verdicts, not as "safe".
+    if(it.event_type==='blocked')  return {v:'blocked', cls:'blocked'};
+    if(it.event_type==='redacted') return {v:'redacted',cls:'redacted'};
     const verdict=it.gemini_verdict||{};
-    if(String(verdict.reason||'').startsWith('evaluator_unavailable') || verdict.decision==='unknown') return {v:'unknown',cls:'warn'};
+    if(String(verdict.reason||'').startsWith('evaluator_unavailable') || String(verdict.reason||'').startsWith('evaluator_unknown') || verdict.decision==='unknown') return {v:'unknown',cls:'warn'};
     if(verdict.policy_breach) return {v:'breach',cls:'breach'};
     if(it.grading_status==='graded') return {v:'safe',cls:'safe'};
     if(it.grading_status==='failed') return {v:'flag',cls:'warn'};
@@ -3492,9 +3503,16 @@ async function loadLoginHistory(){
     if($('ldgBreaches'))$('ldgBreaches').textContent=num(s.breaches);
     if($('ldgClean'))$('ldgClean').textContent=fmtPct(s.clean_rate);
     if($('ldgPending'))$('ldgPending').textContent=num((g.pending||0)+(g.in_progress||0));
-    var breaches=+s.breaches||0, graded=+g.graded||0, clean=Math.max(0,graded-breaches),
+    var breaches=+s.breaches||0, graded=+g.graded||0,
+        blocked=+s.blocked||0, redacted=+s.redacted||0, unknown=+s.evaluator_unknown||0,
+        // Blocked/redacted are prevented egress and evaluator-unknown is a non-pass —
+        // none of them are "clean", so exclude them rather than mislabel them green.
+        clean=Math.max(0,graded-breaches-blocked-redacted-unknown),
         pending=(+g.pending||0)+(+g.in_progress||0), failed=+g.failed||0;
-    var parts=[{label:'Clean',value:clean,tone:'ok'},{label:'Breach',value:breaches,tone:'bad'},{label:'Pending',value:pending,tone:'warn'},{label:'Failed',value:failed,tone:'mute'}];
+    var parts=[{label:'Clean',value:clean,tone:'ok'},{label:'Breach',value:breaches,tone:'bad'},
+      {label:'Blocked',value:blocked,tone:'blue'},{label:'Redacted',value:redacted,tone:'pink'},
+      {label:'Evaluator unknown',value:unknown,tone:'warn'},
+      {label:'Pending',value:pending,tone:'fox'},{label:'Failed',value:failed,tone:'mute'}];
     var total=parts.reduce(function(a,x){return a+x.value;},0);
     var dn=$('ledgerVerdictDonut');
     if(dn&&window.foxChart){

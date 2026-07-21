@@ -14,4 +14,10 @@ regexes = [
   # real secrets. Needed because the full-history scan re-flags an old runbook commit
   # whose value predates the inline `# gitleaks:allow` marker added later.
   '''=\s*<[^>\n]{1,64}>''',
+  # Deliberately-FAKE credentials embedded in the local secret-detector's OWN
+  # test fixtures (sdk/tests/test_policy.py) and the no-LLM demo sandbox
+  # (demo/mock_llm.py) so the detector has something to catch. Not real secrets:
+  # sk-ABCDEF... is a placeholder and AKIAIOSFODNN7EXAMPLE is AWS's public doc key.
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''sk-ABCDEF0123456789ABCDEFGH''',
 ]

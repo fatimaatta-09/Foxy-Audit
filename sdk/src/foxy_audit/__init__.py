@@ -21,11 +21,11 @@ telemetry errors out of your application. Set ``audit_required=True`` when
 the application must fail closed if evidence delivery cannot be confirmed.
 """
 
-from .client import FoxyClient
+from .client import FoxyClient, FoxyPolicyBlocked
 from .config import FoxyConfig
 
 __version__ = "1.0.1"
-__all__ = ["FoxyClient", "FoxyConfig", "audit", "__version__"]
+__all__ = ["FoxyClient", "FoxyConfig", "FoxyPolicyBlocked", "audit", "__version__"]
 
 # Module-level convenience: a lazily-created client configured from the
 # environment (FOXY_API_KEY / FOXY_BACKEND_URL), so `from foxy_audit import audit`
@@ -40,6 +40,9 @@ def _client() -> FoxyClient:
     return _default_client
 
 
-def audit(policy: str = "default"):
-    """Decorator bound to the default environment-configured client."""
-    return _client().audit(policy)
+def audit(policy: str = "default", agent: str | None = None, mode: str | None = None):
+    """Decorator bound to the default environment-configured client.
+
+    ``mode`` selects the preflight behaviour ("observe"|"block"|"redact");
+    when omitted it follows the client's configured mode (FOXY_MODE)."""
+    return _client().audit(policy, agent=agent, mode=mode)

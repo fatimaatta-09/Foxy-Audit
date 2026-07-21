@@ -165,6 +165,50 @@
         </div>
     </div>
 
+    <!-- Host-Side Enforcement -->
+    <div class="section">
+        <h2>Host-Side Enforcement</h2>
+        <p style="font-size: 13px; color: #374151; margin-bottom: 12px;">
+            Prompts prevented from leaving the host by policy — recorded as
+            tamper-evident evidence, not observations after the fact. Blocked and
+            redacted events are counted separately from model breaches: nothing
+            unsafe was allowed to egress, so they are prevented egress — never a breach.
+        </p>
+        <dl class="kv-grid">
+            <dt>Prompts Allowed to Proceed</dt><dd>{{ allowed_events }}</dd>
+            <dt>Prompts Blocked (prevented egress)</dt><dd>{{ blocked_events }}</dd>
+            <dt>Responses Redacted</dt><dd>{{ redacted_events }}</dd>
+            <dt>Evaluator Could Not Determine</dt><dd>{{ unknown_evaluator_events }}</dd>
+        </dl>
+        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">
+            "Evaluator Could Not Determine" is an honest unknown state — the AI judge
+            returned no usable verdict (unavailable, or quarantined as self-contradictory).
+            These events are <strong>never counted as a compliant pass</strong>.
+        </p>
+        {% if policies_enforced %}
+        <table style="margin-top: 14px;">
+            <thead>
+                <tr>
+                    <th>Policy Rule Enforced</th>
+                    <th>Times Fired</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in policies_enforced %}
+                <tr>
+                    <td class="mono">{{ p.rule }}</td>
+                    <td>{{ p.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="font-size: 13px; color: #6b7280; margin-top: 10px;">
+            No host-side enforcement events were recorded in this report period.
+        </p>
+        {% endif %}
+    </div>
+
     <!-- SDK Capture Coverage -->
     <div class="section">
         <h2>SDK Capture Coverage</h2>

@@ -24,6 +24,7 @@ import re
 import uuid
 
 from . import dispatch, hashing, pii, udp
+from . import policy as policy_engine
 from .adapters import response_metadata
 from .config import FoxyConfig
 from .spool import EventSpool
@@ -31,12 +32,20 @@ from .spool import EventSpool
 log = logging.getLogger("foxy_audit")
 
 _POLICY_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+_MODES = ("observe", "block", "redact")
 _PROMPT_KWARGS = ("prompt", "user_prompt", "message", "messages", "contents",
                   "text", "input", "query")
 
 
 class AuditRequiredError(RuntimeError):
     """Raised only when audit_required is enabled and durable delivery fails."""
+
+
+class FoxyPolicyBlocked(RuntimeError):
+    """Raised when the preflight guard blocks a prompt BEFORE the wrapped
+    function runs (mode="block"). The wrapped LLM call is never made; a
+    ``blocked`` audit event is emitted first. Content-blind: the message carries
+    only a policy tag and a short reason label, never the offending text."""
 
 
 def _extract_prompt(args: tuple, kwargs: dict):
@@ -49,6 +58,25 @@ def _extract_prompt(args: tuple, kwargs: dict):
         if isinstance(arg, str):
             return arg
     return ""
+
+
+def _replace_prompt(args: tuple, kwargs: dict, new_prompt: str):
+    """Return (args, kwargs) with the string prompt swapped for ``new_prompt``.
+
+    Mirrors :func:`_extract_prompt`'s search order but only substitutes into
+    string-valued slots, so structured provider messages are never clobbered by
+    a redacted string. Used only on the redact path."""
+    for key in _PROMPT_KWARGS:
+        if isinstance(kwargs.get(key), str):
+            new_kwargs = dict(kwargs)
+            new_kwargs[key] = new_prompt
+            return args, new_kwargs
+    new_args = list(args)
+    for i, arg in enumerate(new_args):
+        if isinstance(arg, str):
+            new_args[i] = new_prompt
+            return tuple(new_args), kwargs
+    return args, kwargs
 
 
 class FoxyClient:
@@ -64,6 +92,7 @@ class FoxyClient:
         spool_path: str | None = None,
         client_id: str | None = None,
         audit_required: bool | None = None,
+        mode: str | None = None,
     ) -> None:
         self.cfg = FoxyConfig.resolve(
             api_key=api_key,
@@ -76,6 +105,7 @@ class FoxyClient:
             spool_path=spool_path,
             client_id=client_id,
             audit_required=audit_required,
+            mode=mode,
         )
         if self.cfg.enabled and not self.cfg.client_id:
             spool = EventSpool(self.cfg.spool_path or None)
@@ -104,22 +134,85 @@ class FoxyClient:
         """Keep synchronous hashing and delivery waits off the event loop."""
         return await asyncio.to_thread(self.log_interaction, *args, **kwargs)
 
-    def audit(self, policy: str = "default", agent: str | None = None):
+    # ── preflight guard ───────────────────────────────────────────────────────
+    def _evaluate_preflight(self, args, kwargs, policy: str, effective_mode: str):
+        """Run policy BEFORE the wrapped fn. Pure (no side effects): returns a
+        plan dict the wrappers act on, or ``None`` for the observe path.
+
+        plan["kind"] is one of:
+          "block"  — raise after emitting a blocked event (fn must not run)
+          "redact" — call fn with plan["args"]/["kwargs"] (redacted prompt)
+          "allow"  — clean prompt seen under block/redact mode; record decision
+        """
+        if effective_mode == "observe":
+            return None
+        prompt = _extract_prompt(args, kwargs)
+        decision = policy_engine.evaluate(prompt, policy)
+        if not decision.triggered:
+            return {"kind": "allow", "hash_prompt": prompt, "args": args, "kwargs": kwargs,
+                    "decision": "allowed", "rules": list(decision.rules),
+                    "signals": None, "reason": None, "event_type": None}
+        if effective_mode == "block":
+            return {"kind": "block", "hash_prompt": prompt,
+                    "rules": list(decision.rules), "signals": list(decision.signals),
+                    "reason": decision.reason}
+        redacted = policy_engine.redact(prompt, policy)
+        new_args, new_kwargs = _replace_prompt(args, kwargs, redacted)
+        return {"kind": "redact", "hash_prompt": prompt, "args": new_args, "kwargs": new_kwargs,
+                "decision": "redacted", "rules": list(decision.rules),
+                "signals": list(decision.signals), "reason": decision.reason,
+                "event_type": "redacted"}
+
+    def _emit_block(self, plan: dict, policy: str, agent: str | None) -> None:
+        """Emit the blocked audit event and fire the desktop policy_breach ping.
+
+        prompt_hash = commitment of the ORIGINAL prompt; response_hash =
+        commitment of "" (the fn never ran, so there is no response)."""
+        self.log_interaction(plan["hash_prompt"], "", policy, agent,
+                             event_type="blocked", decision="blocked",
+                             policy_rules=plan["rules"], signals=plan["signals"],
+                             blocked_reason=plan["reason"])
+        if self.cfg.desktop_ping:
+            udp.send_ping(
+                {"event": "policy_breach", "policy": policy,
+                 "reason": plan["reason"], "rules": plan["rules"][:8],
+                 "decision": "blocked"},
+                self.cfg.udp_host, self.cfg.udp_port,
+            )
+
+    def audit(self, policy: str = "default", agent: str | None = None,
+              mode: str | None = None):
         """Return a decorator that audits the wrapped LLM-calling function.
 
         `agent` records which model/agent produced the interaction (e.g.
         "gpt-4o", "claude-3-opus"); the backend folds it into the tamper-evident
-        hash chain so it can't be altered after the fact (6B)."""
+        hash chain so it can't be altered after the fact (6B).
+
+        `mode` overrides the client's configured mode for this decorator:
+        "observe" (default — unchanged: run the fn, then hash), "block"
+        (evaluate the prompt FIRST and raise ``FoxyPolicyBlocked`` without ever
+        calling the fn on a violation) or "redact" (scrub the prompt locally,
+        then call the fn with the redacted prompt)."""
         if not _POLICY_RE.match(policy):
             log.warning("foxy-audit: invalid policy tag %r; falling back to 'default'", policy)
             policy = "default"
+        effective_mode = str(mode if mode is not None else self.cfg.mode or "observe").strip().lower()
+        if effective_mode not in _MODES:
+            log.warning("foxy-audit: invalid mode %r; falling back to 'observe'", effective_mode)
+            effective_mode = "observe"
 
         def decorator(fn):
             if inspect.iscoroutinefunction(fn):
                 @functools.wraps(fn)
                 async def awrapper(*args, **kwargs):
+                    plan = self._evaluate_preflight(args, kwargs, policy, effective_mode)
+                    if plan and plan["kind"] == "block":
+                        await asyncio.to_thread(self._emit_block, plan, policy, agent)
+                        raise FoxyPolicyBlocked(_block_message(policy, plan))
+                    call_args = plan["args"] if plan else args
+                    call_kwargs = plan["kwargs"] if plan else kwargs
                     try:
-                        response = await fn(*args, **kwargs)
+                        response = await fn(*call_args, **call_kwargs)
                     except BaseException as exc:
                         try:
                             await self._record_async(_extract_prompt(args, kwargs), exc,
@@ -128,17 +221,29 @@ class FoxyClient:
                             log.debug("foxy-audit could not capture async host exception",
                                       exc_info=True)
                         raise
-                    await self._record_async(_extract_prompt(args, kwargs), response, policy,
-                                             agent, metadata=_metadata(kwargs, response))
+                    await self._record_async(
+                        plan["hash_prompt"] if plan else _extract_prompt(args, kwargs),
+                        response, policy, agent, metadata=_metadata(kwargs, response),
+                        event_type=(plan and plan["event_type"]) or "interaction",
+                        decision=plan["decision"] if plan else None,
+                        policy_rules=plan["rules"] if plan else None,
+                        signals=plan["signals"] if plan else None,
+                        blocked_reason=plan["reason"] if plan else None)
                     return response
                 return awrapper
 
             if inspect.isasyncgenfunction(fn):
                 @functools.wraps(fn)
                 async def agen_wrapper(*args, **kwargs):
+                    plan = self._evaluate_preflight(args, kwargs, policy, effective_mode)
+                    if plan and plan["kind"] == "block":
+                        await asyncio.to_thread(self._emit_block, plan, policy, agent)
+                        raise FoxyPolicyBlocked(_block_message(policy, plan))
+                    call_args = plan["args"] if plan else args
+                    call_kwargs = plan["kwargs"] if plan else kwargs
                     chunks = []
                     try:
-                        async for chunk in fn(*args, **kwargs):
+                        async for chunk in fn(*call_args, **call_kwargs):
                             chunks.append(chunk)
                             yield chunk
                     except BaseException as exc:
@@ -150,18 +255,36 @@ class FoxyClient:
                             log.debug("foxy-audit could not capture async stream exception",
                                       exc_info=True)
                         raise
-                    await self._record_async(_extract_prompt(args, kwargs), chunks, policy,
-                                             agent, metadata=_metadata(kwargs), event_type="stream")
+                    await self._record_async(
+                        plan["hash_prompt"] if plan else _extract_prompt(args, kwargs),
+                        chunks, policy, agent, metadata=_metadata(kwargs),
+                        event_type=(plan and plan["event_type"]) or "stream",
+                        decision=plan["decision"] if plan else None,
+                        policy_rules=plan["rules"] if plan else None,
+                        signals=plan["signals"] if plan else None,
+                        blocked_reason=plan["reason"] if plan else None)
                 return agen_wrapper
 
             @functools.wraps(fn)
             def wrapper(*args, **kwargs):
+                plan = self._evaluate_preflight(args, kwargs, policy, effective_mode)
+                if plan and plan["kind"] == "block":
+                    self._emit_block(plan, policy, agent)
+                    raise FoxyPolicyBlocked(_block_message(policy, plan))
+                call_args = plan["args"] if plan else args
+                call_kwargs = plan["kwargs"] if plan else kwargs
                 try:
-                    response = fn(*args, **kwargs)
+                    response = fn(*call_args, **call_kwargs)
                 except BaseException as exc:
                     self._record_host_exception(_extract_prompt(args, kwargs), exc,
                                                 policy, agent, _metadata(kwargs))
                     raise
+                hash_prompt = plan["hash_prompt"] if plan else _extract_prompt(args, kwargs)
+                decision = plan["decision"] if plan else None
+                rules = plan["rules"] if plan else None
+                signals = plan["signals"] if plan else None
+                reason = plan["reason"] if plan else None
+                event_override = (plan and plan["event_type"]) or None
                 if inspect.isgenerator(response):
                     def generator():
                         chunks = []
@@ -173,11 +296,17 @@ class FoxyClient:
                             self._record_host_exception(_extract_prompt(args, kwargs), exc,
                                                         policy, agent, _metadata(kwargs))
                             raise
-                        self.log_interaction(_extract_prompt(args, kwargs), chunks, policy, agent,
-                                             metadata=_metadata(kwargs), event_type="stream")
+                        self.log_interaction(hash_prompt, chunks, policy, agent,
+                                             metadata=_metadata(kwargs),
+                                             event_type=event_override or "stream",
+                                             decision=decision, policy_rules=rules,
+                                             signals=signals, blocked_reason=reason)
                     return generator()
-                self.log_interaction(_extract_prompt(args, kwargs), response, policy, agent,
-                                     metadata=_metadata(kwargs, response))
+                self.log_interaction(hash_prompt, response, policy, agent,
+                                     metadata=_metadata(kwargs, response),
+                                     event_type=event_override or "interaction",
+                                     decision=decision, policy_rules=rules,
+                                     signals=signals, blocked_reason=reason)
                 return response
             return wrapper
 
@@ -185,8 +314,16 @@ class FoxyClient:
 
     # ── internal ──────────────────────────────────────────────────────────
     def log_interaction(self, prompt, response, policy: str, agent: str | None = None,
-                        metadata: dict | None = None, event_type: str = "interaction"):
-        """Perform cryptographic hashing synchronously and push to AsyncDispatcher."""
+                        metadata: dict | None = None, event_type: str = "interaction",
+                        decision: str | None = None, policy_rules=None,
+                        signals=None, blocked_reason: str | None = None):
+        """Perform cryptographic hashing synchronously and push to AsyncDispatcher.
+
+        The preflight guard passes ``decision`` ("allowed"|"blocked"|"redacted"),
+        the fired ``signals`` (used verbatim as ``pii_signals``), the matched
+        ``policy_rules`` and the dominant ``blocked_reason``. When ``decision`` is
+        None the emitted payload is byte-for-byte identical to the observe path.
+        """
         try:
             prompt_s = hashing.canonical_json(prompt)
             response_s = hashing.canonical_json(response)
@@ -212,11 +349,22 @@ class FoxyClient:
                 "response_hash": response_hash,
                 "token_count": hashing.estimate_tokens(prompt_s, response_s),
                 "policy_tag": policy,
-                "pii_signals": pii.detect_pii(prompt_s, response_s),
+                # On the guard path pii_signals carries the exact signals that
+                # fired; otherwise the historical prompt+response detection.
+                "pii_signals": signals if signals is not None else pii.detect_pii(prompt_s, response_s),
             }
             if agent:
                 payload["agent"] = agent
-            if metadata:
+            if decision is not None:
+                # Thread the preflight decision into event_metadata without
+                # disturbing the observe path (decision is None there).
+                meta = dict(metadata) if metadata else {}
+                meta["decision"] = decision
+                meta["policy_rules"] = list(policy_rules or [])
+                if blocked_reason is not None:
+                    meta["blocked_reason"] = blocked_reason
+                payload["event_metadata"] = meta
+            elif metadata:
                 payload["event_metadata"] = metadata
             # raw text goes out of scope here — never stored or transmitted
 
@@ -249,6 +397,12 @@ class FoxyClient:
             log.debug("foxy-audit observe error: %s", exc)
             if self.cfg.audit_required:
                 raise AuditRequiredError("Foxy Audit could not durably deliver the event") from exc
+
+
+def _block_message(policy: str, plan: dict) -> str:
+    """Content-blind exception message: policy tag + short reason label only."""
+    return (f"Foxy Audit blocked a prompt under policy '{policy}' "
+            f"(reason: {plan['reason']}). The wrapped function was not called.")
 
 
 def _metadata(kwargs: dict, response=None) -> dict:
