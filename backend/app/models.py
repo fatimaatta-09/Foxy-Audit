@@ -292,6 +292,18 @@ class OrgPolicy(Base):
     # back to the org's contact_email; NULL webhook = no webhook.
     notify_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     notify_webhook_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # ── Per-tenant AI Judge selection (migration 0053). Which judge grades THIS
+    #    org's events, and whose key pays for it. Deliberately NOT part of the
+    #    policy snapshot: routing/billing is operational, not evidence, and a
+    #    provider key must never reach the chain. ──
+    judge_provider: Mapped[str] = mapped_column(         # gemini | openai | both
+        String(16), nullable=False, server_default="gemini")
+    judge_key_mode: Mapped[str] = mapped_column(         # own (BYOK) | platform (Foxy's, premium only)
+        String(16), nullable=False, server_default="own")
+    # BYOK secrets — Fernet ciphertext ONLY (app/crypto_secrets.py). Never
+    # returned by an API, never logged, never copied into event metadata.
+    gemini_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    openai_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
