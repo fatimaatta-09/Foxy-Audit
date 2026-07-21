@@ -152,17 +152,26 @@ def _grade_one(db: Session, row) -> None:
         "commitment_alg": row.get("commitment_alg"),
         "event_metadata": row.get("event_metadata"),
     }
-    policy_config = _policy_config(db, row["org_id"], row.get("event_metadata"))
-    history = _org_history(db, row["org_id"])
-    verdict = gemini.evaluate(meta, policy_config, history=history)
-    settings = get_settings()
-    if settings.openai_api_key:
-        verdict = judge.combine(
-            verdict,
-            openai_judge.evaluate(meta, policy_config, history=history),
-        )
-    if verdict.decision == "unknown" and verdict.reason.startswith("evaluator_unavailable"):
-        verdict = policy_engine.evaluate(meta, policy_config)
+    if row.get("event_type") in policy_engine.ENFORCEMENT_EVENT_TYPES:
+        # Terminal & locally decided (blocked/redacted): the host already enforced
+        # policy and there is no model response to grade. Never call the judge —
+        # write a deterministic verdict from the enforcement labels instead.
+        verdict = policy_engine.evaluate_enforcement(meta)
+    else:
+        policy_config = _policy_config(db, row["org_id"], row.get("event_metadata"))
+        history = _org_history(db, row["org_id"])
+        verdict = gemini.evaluate(meta, policy_config, history=history)
+        settings = get_settings()
+        if settings.openai_api_key:
+            verdict = judge.combine(
+                verdict,
+                openai_judge.evaluate(meta, policy_config, history=history),
+            )
+        # Never persist a self-contradictory or empty judge answer as a confident
+        # grade — quarantine it as evaluator_unknown to keep the audit report honest.
+        verdict = judge.validate(verdict)
+        if verdict.decision == "unknown" and verdict.reason.startswith("evaluator_unavailable"):
+            verdict = policy_engine.evaluate(meta, policy_config)
     # Scope RLS to this row's org before the write-back (no-op under a
     # BYPASSRLS/superuser role, required under a hardened one).
     db.execute(text("SELECT set_config('app.current_org', :oid, true)"),

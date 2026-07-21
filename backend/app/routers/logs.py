@@ -282,7 +282,7 @@ def list_logs(
     policy_tag: str | None = Query(default=None, max_length=64),
     agent: str | None = Query(default=None, max_length=128),
     verdict: str | None = Query(default=None,
-                                description="clean | breach | unknown | pending"),
+                                description="clean | breach | unknown | pending | blocked | redacted"),
     since: datetime | None = Query(default=None, description="created_at >= (ISO)"),
     until: datetime | None = Query(default=None, description="created_at <= (ISO)"),
 ):
@@ -311,6 +311,10 @@ def list_logs(
     elif v == "unknown":
         conds.append(AuditLog.grading_status == "graded")
         conds.append(AuditLog.gemini_verdict["decision"].astext == "unknown")
+    elif v in ("blocked", "redacted"):
+        # Host-side enforcement rows are identified by their terminal event_type,
+        # so the ledger can surface prevented egress distinctly from graded verdicts.
+        conds.append(AuditLog.event_type == v)
     if since:
         conds.append(AuditLog.created_at >= since)
     if until:
@@ -515,6 +519,17 @@ def stats(
         )
     ).scalar_one()
 
+    # Host-side enforcement counts — prevented egress, surfaced separately so the
+    # dashboard never mislabels a blocked/redacted event as a clean pass.
+    blocked = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, AuditLog.event_type == "blocked")
+    ).scalar_one()
+    redacted = db.execute(
+        select(func.count()).select_from(AuditLog)
+        .where(AuditLog.org_id == org.id, AuditLog.event_type == "redacted")
+    ).scalar_one()
+
     gc = {"pending": 0, "in_progress": 0, "graded": 0, "failed": 0}
     for status, cnt in db.execute(
         select(AuditLog.grading_status, func.count())
@@ -558,4 +573,5 @@ def stats(
         avg_seconds_to_verdict=round(float(avg_verdict), 1) if avg_verdict is not None else None,
         grading=GradingCounts(**gc), activity_7d=activity,
         evaluator_unknown=evaluator_unknown,
+        blocked=blocked, redacted=redacted,
     )

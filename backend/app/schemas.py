@@ -39,7 +39,11 @@ class LogIngest(BaseModel):
             return value
         allowed = {"request_id", "trace_id", "session_id", "provider", "model",
                    "id", "usage", "choice_count", "tool_names", "retrieval_refs",
-                   "client_seq_gap"}
+                   "client_seq_gap",
+                   # Host-side enforcement labels (blocked/redacted events). These
+                   # are content-blind: an allowed|blocked|redacted decision, a short
+                   # blocked_reason label, and the list of policy rule ids that fired.
+                   "decision", "blocked_reason", "policy_rules"}
         unknown = set(value) - allowed
         if unknown:
             raise ValueError("event_metadata contains unsupported fields")
@@ -61,7 +65,10 @@ class Verdict(BaseModel):
     policy_breach: bool = False
     reason: str = ""
     risk_score: int = Field(default=0, ge=0, le=100)
-    decision: str = Field(default="unknown", pattern=r"^(clean|breach|unknown)$")
+    # clean|breach|unknown are AI-judge outcomes; blocked|redacted are terminal
+    # host-side enforcement outcomes decided locally (no model response to grade).
+    decision: str = Field(default="unknown",
+                          pattern=r"^(clean|breach|unknown|blocked|redacted)$")
     rules: list[str] = Field(default_factory=list)
 
 
@@ -196,4 +203,7 @@ class StatsResponse(BaseModel):
     grading: GradingCounts
     activity_7d: list[ActivityDay]
     evaluator_unknown: int = 0
+    # Host-side enforcement (prevented egress), counted separately from breaches.
+    blocked: int = 0
+    redacted: int = 0
 

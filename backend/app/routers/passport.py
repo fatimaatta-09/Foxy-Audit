@@ -120,6 +120,11 @@ def generate_passport(
     )
     policy_snapshots: dict[str, dict] = {}
     breach_events = 0
+    # ── Host-side enforcement tallies (blocked/redacted events + honest states) ──
+    blocked_events = 0
+    redacted_events = 0
+    unknown_evaluator_events = 0
+    enforced_rule_counts: dict[str, int] = defaultdict(int)
     for row in rows:
         tag = row.policy_tag
         policy_stats[tag]["count"] += 1
@@ -129,6 +134,21 @@ def generate_passport(
             policy_stats[tag]["breaches"] += 1
             breach_events += 1
         metadata = row.event_metadata or {}
+        # Host-side enforcement: blocked/redacted are prevented egress, counted
+        # separately from model breaches; the rule ids that fired are aggregated.
+        if row.event_type == "blocked":
+            blocked_events += 1
+        elif row.event_type == "redacted":
+            redacted_events += 1
+        if row.event_type in ("blocked", "redacted"):
+            for rule in (metadata.get("policy_rules") or []):
+                enforced_rule_counts[str(rule)] += 1
+        # Evaluator-unknown is an honest "could not determine", never a pass.
+        reason = str(verdict.get("reason") or "")
+        if (verdict.get("decision") == "unknown"
+                or reason.startswith("evaluator_unavailable")
+                or reason.startswith("evaluator_unknown")):
+            unknown_evaluator_events += 1
         snapshot = metadata.get("policy_snapshot")
         snapshot_hash = metadata.get("policy_snapshot_hash")
         if (isinstance(snapshot, dict) and isinstance(snapshot_hash, str)
@@ -155,6 +175,15 @@ def generate_passport(
     compliance_rate = round(
         (compliant_events / total_events * 100) if total_events else 100, 1
     )
+
+    # Host-side enforcement summary — prompts prevented from leaving the host,
+    # recorded as tamper-evident evidence, alongside the policies that fired.
+    enforced_events = blocked_events + redacted_events
+    allowed_events = total_events - enforced_events
+    policies_enforced = [
+        {"rule": rule, "count": count}
+        for rule, count in sorted(enforced_rule_counts.items())
+    ]
 
     coverage = calculate_capture_coverage(
         db,
@@ -194,6 +223,12 @@ def generate_passport(
         compliant_events=compliant_events,
         breach_events=breach_events,
         compliance_rate=compliance_rate,
+        allowed_events=allowed_events,
+        blocked_events=blocked_events,
+        redacted_events=redacted_events,
+        enforced_events=enforced_events,
+        unknown_evaluator_events=unknown_evaluator_events,
+        policies_enforced=policies_enforced,
         policies=policies,
         policy_snapshots=policy_snapshot_rows,
         chain_verification=("verified" if chain_verified is True
