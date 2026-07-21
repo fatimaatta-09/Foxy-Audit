@@ -35,6 +35,7 @@ import requests
 from . import email as email_mod, email_templates as et
 from . import gemini
 from . import judge
+from . import judge_routing
 from . import openai_judge
 from . import policy_engine
 from . import webhook_delivery
@@ -132,6 +133,37 @@ def _org_history(db: Session, org_id) -> dict:
     }
 
 
+def _judge_verdict(db: Session, org_id, meta: dict, policy_config: dict | None,
+                   history: dict):
+    """Grade with the judge(s) THIS org chose, on the key THEY pay for.
+
+    Routing comes from the org's LIVE OrgPolicy row (judge_routing), never from
+    the event's policy snapshot — a provider key must never touch the chain. A
+    chosen provider with no usable key is skipped with the provider's own
+    evaluator_unavailable verdict, so grading degrades honestly instead of
+    crashing or quietly falling back to Foxy's platform key.
+
+    Decrypted keys live only in this frame, for the duration of the call.
+    """
+    routing = judge_routing.resolve_judge_routing(db, org_id)
+    verdicts = []
+    if routing.uses_gemini:
+        verdicts.append(
+            gemini.evaluate(meta, policy_config, history=history,
+                            api_key=routing.gemini_key)
+            if routing.can_call("gemini")
+            else gemini._fallback(routing.problems.get("gemini", "no_api_key")))
+    if routing.uses_openai:
+        verdicts.append(
+            openai_judge.evaluate(meta, policy_config, history=history,
+                                  api_key=routing.openai_key)
+            if routing.can_call("openai")
+            else openai_judge._fallback(routing.problems.get("openai", "no_api_key")))
+    if len(verdicts) == 2:
+        return judge.combine(verdicts[0], verdicts[1])
+    return verdicts[0]
+
+
 def _claim_batch(db: Session, batch: int, stuck: int) -> list:
     """Claim up to `batch` rows for grading; returns their metadata mappings."""
     rows = db.execute(_CLAIM_SQL, {"batch": batch, "stuck": stuck}).mappings().all()
@@ -160,13 +192,7 @@ def _grade_one(db: Session, row) -> None:
     else:
         policy_config = _policy_config(db, row["org_id"], row.get("event_metadata"))
         history = _org_history(db, row["org_id"])
-        verdict = gemini.evaluate(meta, policy_config, history=history)
-        settings = get_settings()
-        if settings.openai_api_key:
-            verdict = judge.combine(
-                verdict,
-                openai_judge.evaluate(meta, policy_config, history=history),
-            )
+        verdict = _judge_verdict(db, row["org_id"], meta, policy_config, history)
         # Never persist a self-contradictory or empty judge answer as a confident
         # grade — quarantine it as evaluator_unknown to keep the audit report honest.
         verdict = judge.validate(verdict)

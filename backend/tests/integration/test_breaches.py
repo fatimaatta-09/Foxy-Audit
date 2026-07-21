@@ -9,6 +9,7 @@ answer is made deterministic so the test is repeatable.
 from __future__ import annotations
 
 import hashlib
+from tests.integration.judge_helpers import give_judge_key
 
 _h = lambda s: hashlib.sha256(s.encode()).hexdigest()  # noqa: E731
 
@@ -19,6 +20,7 @@ def _ingest(client, org, token_counts, tag="chat"):
          "token_count": tc, "policy_tag": tag}
         for i, tc in enumerate(token_counts)
     ]
+    give_judge_key(org["org_id"])       # per-tenant judge: this org brings its own key
     r = client.post("/v1/logs/batch", headers=org["auth"], json=payload)
     assert r.status_code == 202, r.text
 
@@ -28,7 +30,7 @@ def _grade_all(monkeypatch, breach_when):
     from app import worker as workermod
     from app.schemas import Verdict
 
-    def fake_eval(meta, policy_config=None, history=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None):
         breach = breach_when(meta)
         return Verdict(
             policy_breach=breach,

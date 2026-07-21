@@ -30,8 +30,9 @@ def test_get_defaults_and_update(make_org, client, login):
     assert client.get("/v1/policies", headers=org["auth"]).json() == updated
 
 
-def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch):
+def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch, configure_judge):
     org = make_org()
+    configure_judge(org["org_id"])      # per-tenant judge routing: this org brings its own key
     ca = login(org["admin_email"], org["admin_password"])
     assert ca.put("/v1/policies", json={
         "pii_detection": False, "prompt_injection": False,
@@ -47,7 +48,7 @@ def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch):
     from app.schemas import Verdict
     captured = {}
 
-    def fake_eval(meta, policy_config=None, history=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None):
         captured["policy_config"] = policy_config
         return Verdict(policy_breach=False, reason="stub", risk_score=0)
 
@@ -70,9 +71,10 @@ def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch):
 
 
 def test_policy_snapshot_is_bound_and_used_after_a_later_policy_change(
-    make_org, client, login, monkeypatch,
+    make_org, client, login, monkeypatch, configure_judge,
 ):
     org = make_org()
+    configure_judge(org["org_id"])
     admin = login(org["admin_email"], org["admin_password"])
     initial = {
         "pii_detection": False, "prompt_injection": True,
@@ -98,7 +100,7 @@ def test_policy_snapshot_is_bound_and_used_after_a_later_policy_change(
     from app.schemas import Verdict
     captured = {}
 
-    def fake_eval(meta, policy_config=None, history=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None):
         captured["policy_config"] = policy_config
         return Verdict(decision="clean", reason="stub", risk_score=0)
 

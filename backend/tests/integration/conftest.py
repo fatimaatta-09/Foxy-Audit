@@ -170,6 +170,18 @@ def login(step_up_user):
 
 
 @pytest.fixture
+def configure_judge():
+    """Factory: set an org's per-tenant judge routing (0053) straight in the DB.
+
+    An org with no provider key and no premium plan gets NO AI judge — that is the
+    tier matrix, not a bug — so any test that wants the judge to actually run must
+    give the org a key (BYOK) or premium + platform mode.
+    """
+    from tests.integration.judge_helpers import give_judge_key
+    return give_judge_key
+
+
+@pytest.fixture
 def add_user():
     """Factory: create an extra user in an org directly (bypassing the invite API)."""
     def _add(org_id: str, email: str, password: str, role: str = "member",

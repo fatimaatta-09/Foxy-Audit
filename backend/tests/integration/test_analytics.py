@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+from tests.integration.judge_helpers import give_judge_key
 
 _h = lambda s: hashlib.sha256(s.encode()).hexdigest()  # noqa: E731
 
@@ -23,13 +24,14 @@ def _ingest(client, org, specs):
          "token_count": tc, "policy_tag": tag}
         for i, (tc, tag) in enumerate(specs)
     ]
+    give_judge_key(org["org_id"])       # per-tenant judge: this org brings its own key
     assert client.post("/v1/logs/batch", headers=org["auth"], json=payload).status_code == 202
 
 
 def _grade(monkeypatch, verdict_for):
     from app import worker as workermod
 
-    def fake_eval(meta, policy_config=None, history=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None):
         return verdict_for(meta)
 
     monkeypatch.setattr(workermod.gemini, "evaluate", fake_eval)
@@ -103,6 +105,7 @@ def test_threats_recent_high_risk_include_agent(make_org, client, monkeypatch):
     org = make_org()
     payload = [{"prompt_hash": _h("pa"), "response_hash": _h("ra"),
                 "token_count": 77, "policy_tag": "hipaa", "agent": "gpt-4o"}]
+    give_judge_key(org["org_id"])       # per-tenant judge: this org brings its own key
     assert client.post("/v1/logs/batch", headers=org["auth"], json=payload).status_code == 202
     _grade(monkeypatch, lambda meta: Verdict(policy_breach=True, reason="tripped", risk_score=88))
     data = client.get("/v1/analytics/threats", headers=org["auth"]).json()
@@ -119,6 +122,7 @@ def _ingest_agents(client, org, monkeypatch):
         {"prompt_hash": _h("ap2"), "response_hash": _h("ar2"), "token_count": 81, "policy_tag": "hipaa", "agent": "gpt-4"},
         {"prompt_hash": _h("ap3"), "response_hash": _h("ar3"), "token_count": 41, "policy_tag": "soc2", "agent": "claude"},
     ]
+    give_judge_key(org["org_id"])       # per-tenant judge: this org brings its own key
     assert client.post("/v1/logs/batch", headers=org["auth"], json=payload).status_code == 202
     table = {91: (True, 90), 81: (True, 80), 41: (True, 40)}
 

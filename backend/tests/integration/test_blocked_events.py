@@ -90,7 +90,7 @@ def _grade_pending(monkeypatch, *, breach_when=lambda m: False, calls=None):
     from app import worker as workermod
     from app.schemas import Verdict
 
-    def fake_eval(meta, policy_config=None, history=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None):
         if calls is not None:
             calls.append(meta)
         breach = breach_when(meta)
@@ -141,10 +141,12 @@ def test_enforcement_events_skip_judge_and_grade_terminally(make_org, client, mo
     assert redacted["gemini_verdict"]["policy_breach"] is False
 
 
-def test_blocked_event_counted_as_blocked_not_breach(make_org, client, monkeypatch):
+def test_blocked_event_counted_as_blocked_not_breach(make_org, client, monkeypatch,
+                                                     configure_judge):
     """A prevented egress is counted separately from a model breach: it never
     appears in the breach feed and never inflates the breach stat."""
     org = make_org()
+    configure_judge(org["org_id"])          # a judge key, so the non-terminal row is graded
     client.post("/v1/logs/batch", headers=org["auth"],
                 json=[_blocked_event(seed="b")])                                 # seq 1 blocked
     client.post("/v1/logs/batch", headers=org["auth"], json=[{
@@ -166,7 +168,7 @@ def _grade_with_verdict(monkeypatch, verdict):
     """Grade all pending rows with a fixed (possibly malformed) judge verdict."""
     from app import worker as workermod
     monkeypatch.setattr(workermod.gemini, "evaluate",
-                        lambda meta, policy_config=None, history=None: verdict)
+                        lambda meta, policy_config=None, history=None, api_key=None: verdict)
     from app.db import SessionLocal
     db = SessionLocal()
     try:
@@ -177,17 +179,21 @@ def _grade_with_verdict(monkeypatch, verdict):
 
 
 def _one_normal_event(client, org, seed="j"):
+    """One ordinary (non-terminal) row. Its org must have a judge key configured
+    (fixture `configure_judge`) or the per-tenant router skips the judge entirely."""
     assert client.post("/v1/logs/batch", headers=org["auth"], json=[{
         "prompt_hash": _h(f"p-{seed}"), "response_hash": _h(f"r-{seed}"),
         "token_count": 10, "policy_tag": "chat"}]).status_code == 202
 
 
-def test_contradictory_judge_verdict_is_quarantined(make_org, client, monkeypatch):
+def test_contradictory_judge_verdict_is_quarantined(make_org, client, monkeypatch,
+                                                    configure_judge):
     """A judge answer that flags a breach yet decides "clean" is self-contradictory.
     It must NOT be trusted as a breach OR laundered into a clean pass — it is
     quarantined as evaluator_unknown so the audit report stays honest."""
     from app.schemas import Verdict
     org = make_org()
+    configure_judge(org["org_id"])
     _one_normal_event(client, org)
 
     bad = Verdict(policy_breach=True, reason="all good, nothing to see",
@@ -204,11 +210,13 @@ def test_contradictory_judge_verdict_is_quarantined(make_org, client, monkeypatc
     assert stats["evaluator_unknown"] == 1
 
 
-def test_empty_reason_judge_verdict_is_quarantined(make_org, client, monkeypatch):
+def test_empty_reason_judge_verdict_is_quarantined(make_org, client, monkeypatch,
+                                                   configure_judge):
     """An affirmative breach claim with no usable reason is low-confidence noise,
     not audit evidence — quarantine it as evaluator_unknown."""
     from app.schemas import Verdict
     org = make_org()
+    configure_judge(org["org_id"])
     _one_normal_event(client, org)
 
     bad = Verdict(policy_breach=True, reason="   ", risk_score=70, decision="breach")
@@ -220,11 +228,13 @@ def test_empty_reason_judge_verdict_is_quarantined(make_org, client, monkeypatch
     assert client.get("/v1/stats", headers=org["auth"]).json()["breaches"] == 0
 
 
-def test_valid_judge_verdicts_pass_validation(make_org, client, monkeypatch):
+def test_valid_judge_verdicts_pass_validation(make_org, client, monkeypatch,
+                                              configure_judge):
     """A clean, self-consistent judge verdict is persisted unchanged — validation
     only quarantines the malformed ones, it does not swallow honest grades."""
     from app.schemas import Verdict
     org = make_org()
+    configure_judge(org["org_id"])
     _one_normal_event(client, org)
 
     good = Verdict(policy_breach=True, reason="pii exfiltration risk detected",
@@ -241,8 +251,9 @@ def _grade_each(monkeypatch, verdict_for):
     """Grade all pending rows; the judge answer for a non-terminal row comes from
     verdict_for(meta). Terminal enforcement rows never reach verdict_for."""
     from app import worker as workermod
-    monkeypatch.setattr(workermod.gemini, "evaluate",
-                        lambda meta, policy_config=None, history=None: verdict_for(meta))
+    monkeypatch.setattr(
+        workermod.gemini, "evaluate",
+        lambda meta, policy_config=None, history=None, api_key=None: verdict_for(meta))
     from app.db import SessionLocal
     db = SessionLocal()
     try:
@@ -252,13 +263,15 @@ def _grade_each(monkeypatch, verdict_for):
         db.close()
 
 
-def test_passport_shows_host_side_enforcement_counts(make_org, client, monkeypatch):
+def test_passport_shows_host_side_enforcement_counts(make_org, client, monkeypatch,
+                                                     configure_judge):
     """The compliance passport carries an honest Host-Side Enforcement section:
     allowed / blocked / redacted counts, the policies actually enforced, and
     evaluator-unknown as its own honest non-pass state — never folded into a pass."""
     from app.schemas import Verdict
     monkeypatch.setitem(sys.modules, "weasyprint", None)   # force HTML fallback
     org = make_org()
+    configure_judge(org["org_id"])
 
     client.post("/v1/logs/batch", headers=org["auth"],
                 json=[_blocked_event(seed="p1", event_type="blocked")])         # seq 1

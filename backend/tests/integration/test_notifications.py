@@ -7,6 +7,7 @@ idempotent (no duplicates); mark-read; read-all; org isolation (RLS).
 from __future__ import annotations
 
 import hashlib
+from tests.integration.judge_helpers import give_judge_key
 
 _h = lambda s: hashlib.sha256(s.encode()).hexdigest()  # noqa: E731
 
@@ -15,10 +16,11 @@ def _seed_breach(client, org, monkeypatch, tc=90, tag="hipaa", risk=90):
     from app.schemas import Verdict
     rows = [{"prompt_hash": _h(f"np{tc}"), "response_hash": _h(f"nr{tc}"),
              "token_count": tc, "policy_tag": tag}]
+    give_judge_key(org["org_id"])       # per-tenant judge: this org brings its own key
     assert client.post("/v1/logs/batch", json=rows, headers=org["auth"]).status_code == 202
     from app import worker as workermod
     monkeypatch.setattr(workermod.gemini, "evaluate",
-                        lambda meta, policy_config=None, history=None:
+                        lambda meta, policy_config=None, history=None, api_key=None:
                         Verdict(policy_breach=True, reason="x", risk_score=risk))
     from app.db import SessionLocal
     db = SessionLocal()
