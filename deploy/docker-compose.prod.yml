@@ -53,6 +53,10 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:?set in deploy/.env}
       - STAFF_SESSION_SECRET=${STAFF_SESSION_SECRET:?set in deploy/.env}
       - API_KEY_PEPPER=${API_KEY_PEPPER:?set in deploy/.env}
+      # Fernet KEK that wraps tenant BYOK provider keys at rest. Optional at the
+      # compose level so a missing value degrades ONLY BYOK key storage (HTTP 503)
+      # instead of taking the service down; the app validates it loudly at startup.
+      - PROVIDER_KEY_ENCRYPTION_KEY=${PROVIDER_KEY_ENCRYPTION_KEY:-}
       - STAFF_COOKIE_DOMAIN=${STAFF_COOKIE_DOMAIN:-admin.foxyaudit.tech}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://foxyaudit.tech,https://www.foxyaudit.tech}
       - ADMIN_CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-}
@@ -137,6 +141,10 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:?}
       - STAFF_SESSION_SECRET=${STAFF_SESSION_SECRET:?}
       - API_KEY_PEPPER=${API_KEY_PEPPER:?}
+      # KEK for BYOK provider keys — the worker DECRYPTS them at grading time, so
+      # this is the most important service for it to reach. Optional here (degrades
+      # BYOK grading to evaluator_unavailable) but validated loudly at startup.
+      - PROVIDER_KEY_ENCRYPTION_KEY=${PROVIDER_KEY_ENCRYPTION_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
