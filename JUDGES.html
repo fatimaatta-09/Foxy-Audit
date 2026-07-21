@@ -54,6 +54,16 @@
   ul.checks{list-style:none;padding:0;margin:8px 0} ul.checks li{padding:5px 0 5px 30px;position:relative;font-size:15px}
   ul.checks li::before{content:"✓";position:absolute;left:2px;color:var(--ok);font-weight:800}
   footer{margin-top:46px;padding-top:20px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+
+  /* PDF / print: keep the colors, use the full page, avoid ugly breaks */
+  @page{margin:12mm 13mm}
+  @media print{
+    html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .wrap{max-width:none;margin:0;padding:6px 4px}
+    tbody tr:hover{background:transparent}
+    h2{break-after:avoid}
+    pre,table,.grid2,.box,ul.checks{break-inside:avoid}
+  }
 </style>
 
 <div class="wrap">

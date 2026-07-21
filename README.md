@@ -46,7 +46,7 @@ servers, our database, or our word for anything.
 <br>
 
 > ### 🧑‍⚖️ Judging this? Start here.
-> **[`JUDGES.html`](JUDGES.html)** (in this repo root) is a step-by-step guide to test Foxy Audit yourself —
+> **[`JUDGES.html`](JUDGES.html)** — or the **[`JUDGES.pdf`](JUDGES.pdf)** version — is a step-by-step guide to test Foxy Audit yourself —
 > install, a 2-minute no-account proof, and a full run against a live account. It includes **five ready
 > evaluation accounts** (log in at [app.foxyaudit.tech](https://app.foxyaudit.tech), 20,000 credits each).
 > Open `JUDGES.html` in any browser.
