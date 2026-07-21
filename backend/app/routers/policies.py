@@ -17,13 +17,22 @@ from sqlalchemy.orm import Session
 
 from .. import account_audit
 from ..auth import require_role, resolve_org
+from ..crypto_secrets import SecretsNotConfigured, encrypt_secret
 from ..db import get_db
+from ..judge_routing import platform_keys_allowed
 from ..models import OrgPolicy, Organization, User
 
 router = APIRouter()
 
 
 class PolicyConfig(BaseModel):
+    """The org's policy as READ (response) and WRITTEN (request).
+
+    Provider keys are write-only: they can be submitted here, but a read only
+    ever reports whether one is set. No response model in this service exposes
+    key material.
+    """
+
     pii_detection: bool = True
     prompt_injection: bool = True
     regulated_data_mode: bool = False
@@ -35,9 +44,23 @@ class PolicyConfig(BaseModel):
     # Optional destinations for the breach notifier (P2 · §F).
     notify_email: str | None = Field(default=None, max_length=320)
     notify_webhook_url: str | None = Field(default=None, max_length=1024)
+    # ── Per-tenant AI Judge selection (0053) ──
+    judge_provider: Literal["gemini", "openai", "both"] = "gemini"
+    judge_key_mode: Literal["own", "platform"] = "own"
+    # WRITE-ONLY. Submit a key to store it (encrypted); submit "" to clear it;
+    # omit to leave it untouched. Never populated on a response.
+    gemini_api_key: str | None = Field(default=None, max_length=512, exclude=True)
+    openai_api_key: str | None = Field(default=None, max_length=512, exclude=True)
+    # READ-ONLY, derived. Presence booleans + what this plan is allowed to do.
+    gemini_key_set: bool = False
+    openai_key_set: bool = False
+    plan_tier: str | None = None
+    platform_keys_allowed: bool = False
 
 
-def _to_config(row: OrgPolicy) -> "PolicyConfig":
+def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig":
+    """Project a policy row for the API — presence booleans only, never a key."""
+    tier = org.plan_tier if org is not None else None
     return PolicyConfig(
         pii_detection=row.pii_detection,
         prompt_injection=row.prompt_injection,
@@ -48,7 +71,33 @@ def _to_config(row: OrgPolicy) -> "PolicyConfig":
         notify_on_breach=row.notify_on_breach,
         notify_email=row.notify_email,
         notify_webhook_url=row.notify_webhook_url,
+        judge_provider=row.judge_provider,
+        judge_key_mode=row.judge_key_mode,
+        gemini_key_set=bool((row.gemini_key_enc or "").strip()),
+        openai_key_set=bool((row.openai_key_enc or "").strip()),
+        plan_tier=tier,
+        platform_keys_allowed=platform_keys_allowed(tier),
     )
+
+
+def _store_key(submitted: str | None, current: str | None) -> str | None:
+    """Encrypt a submitted BYOK key, clear it on "", keep it when omitted.
+
+    Fails closed (503) if the deployment cannot encrypt: a provider key is never
+    written to the database in plaintext.
+    """
+    if submitted is None:
+        return current
+    value = submitted.strip()
+    if not value:
+        return None
+    try:
+        return encrypt_secret(value)
+    except SecretsNotConfigured as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="provider key encryption is not configured on this deployment",
+        ) from exc
 
 
 def _get_or_create(org: Organization, db: Session) -> OrgPolicy:
@@ -67,9 +116,13 @@ def get_policies(
     org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
 ) -> PolicyConfig:
-    """Return the org's current compliance policy settings."""
+    """Return the org's current compliance policy settings.
+
+    Provider keys are reported as booleans (gemini_key_set / openai_key_set) and
+    never returned — not even to the org that owns them.
+    """
     row = _get_or_create(org, db)
-    return _to_config(row)
+    return _to_config(row, org)
 
 
 @router.put("/v1/policies", response_model=PolicyConfig)
@@ -105,10 +158,27 @@ def update_policies(
         raise HTTPException(status_code=422, detail="notify_webhook_url must be an http(s) URL")
     row.notify_email = email
     row.notify_webhook_url = hook
+    # ── Per-tenant AI Judge selection. Foxy's platform keys are a paid privilege:
+    #    the tier check is SERVER-SIDE and authoritative (judge_routing re-checks
+    #    it again at grading time, so a later downgrade also takes effect). ──
+    if body.judge_key_mode == "platform" and not platform_keys_allowed(org.plan_tier):
+        raise HTTPException(
+            status_code=403,
+            detail="Foxy's managed provider keys require the premium plan; "
+                   "use your own Gemini/OpenAI key on this plan")
+    row.judge_provider = body.judge_provider
+    row.judge_key_mode = body.judge_key_mode
+    row.gemini_key_enc = _store_key(body.gemini_api_key, row.gemini_key_enc)
+    row.openai_key_enc = _store_key(body.openai_api_key, row.openai_key_enc)
     account_audit.record_account_action(
         db, org_id=admin.org_id, actor_email=admin.email, action="policy.update",
+        # Records THAT a key changed, never the key itself.
         detail={"enforcement_mode": body.enforcement_mode,
-                "notify_on_breach": body.notify_on_breach})
+                "notify_on_breach": body.notify_on_breach,
+                "judge_provider": body.judge_provider,
+                "judge_key_mode": body.judge_key_mode,
+                "gemini_key_set": bool((row.gemini_key_enc or "").strip()),
+                "openai_key_set": bool((row.openai_key_enc or "").strip())})
     db.commit()
     db.refresh(row)
-    return _to_config(row)
+    return _to_config(row, org)
