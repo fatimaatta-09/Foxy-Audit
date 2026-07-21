@@ -32,6 +32,11 @@ os.environ.setdefault("ANCHOR_ENABLED", "false")     # no background worker in t
 # dedicated traffic test flips get_settings().traffic_tracking_enabled on itself.
 os.environ.setdefault("TRAFFIC_TRACKING_ENABLED", "false")
 os.environ.setdefault("STAFF_SESSION_SECRET", "test-staff-session-secret")
+# BYOK provider-key encryption (Fernet). A fixed urlsafe-b64 32-byte test key so
+# the encrypted-at-rest path is exercised; tests that need the "deployment has no
+# key" fail-closed path blank it with monkeypatch.
+os.environ.setdefault("PROVIDER_KEY_ENCRYPTION_KEY",
+                      "Zm94eS10ZXN0LXByb3ZpZGVyLWtleS0zMi1ieXRlISE=")
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, _BACKEND_DIR)

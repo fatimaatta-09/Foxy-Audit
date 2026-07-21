@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-5.6"
     openai_timeout: float = 12.0
+    # Fernet key (urlsafe-base64, 32 bytes) that encrypts customer-supplied BYOK
+    # provider keys at rest. Empty = BYOK unavailable on this deployment; every
+    # store/read of a tenant key then fails closed rather than touching plaintext.
+    provider_key_encryption_key: str = ""
     # When the judge is unreachable: False = fail-open (write row, no breach),
     # True = fail-closed (flag for human review). The chain row is always written.
     gemini_fail_closed: bool = False

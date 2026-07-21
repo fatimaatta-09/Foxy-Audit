@@ -26,3 +26,5 @@ web3==7.16.0
 # Google SSO — verify Google ID tokens server-side for "Sign in with Google".
 # (Already resolved transitively via google-generativeai; pinned explicitly here.)
 google-auth==2.55.1
+# Fernet envelope for customer-supplied (BYOK) provider API keys — app/crypto_secrets.py.
+cryptography==46.0.1
