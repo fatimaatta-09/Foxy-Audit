@@ -129,5 +129,9 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
             rules=[str(v)[:80] for v in data.get("rules", []) if isinstance(v, str)],
         )
     except Exception as exc:  # network / quota / bad-JSON / version drift
-        log.warning("gemini evaluate failed (%s): %s", type(exc).__name__, exc)
+        # Log the TYPE only. Google authenticates with the API key as a ?key=...
+        # URL query param, and several exception types in this stack embed the
+        # request URL in str(exc) — logging the message could write a tenant's BYOK
+        # key to our logs, which our public privacy policy forbids.
+        log.warning("gemini evaluate failed (%s)", type(exc).__name__)
         return _fallback(type(exc).__name__)
