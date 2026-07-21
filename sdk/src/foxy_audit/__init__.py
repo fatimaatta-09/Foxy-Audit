@@ -24,7 +24,7 @@ the application must fail closed if evidence delivery cannot be confirmed.
 from .client import FoxyClient, FoxyPolicyBlocked
 from .config import FoxyConfig
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 __all__ = ["FoxyClient", "FoxyConfig", "FoxyPolicyBlocked", "audit", "__version__"]
 
 # Module-level convenience: a lazily-created client configured from the
