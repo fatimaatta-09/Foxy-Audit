@@ -95,10 +95,17 @@ def _response_text(payload: dict[str, Any]) -> str:
 
 
 def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
-             history: dict[str, Any] | None = None) -> Verdict:
-    """Evaluate content-blind metadata with the configured OpenAI model."""
+             history: dict[str, Any] | None = None,
+             api_key: str | None = None) -> Verdict:
+    """Evaluate content-blind metadata with the configured OpenAI model.
+
+    ``api_key`` is a tenant's own (BYOK) key, decrypted by the caller for this
+    call only; without it the platform key from settings is used. The key is
+    never logged and never leaves this call.
+    """
     settings = get_settings()
-    if not settings.openai_api_key:
+    key = api_key or settings.openai_api_key
+    if not key:
         return _fallback("no_api_key")
 
     body = {
@@ -139,7 +146,7 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
             _RESPONSES_URL,
             data=json.dumps(body).encode("utf-8"),
             headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
             method="POST",

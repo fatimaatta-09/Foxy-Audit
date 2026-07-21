@@ -87,25 +87,30 @@ def _fallback(reason: str) -> Verdict:
 
 
 def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
-             history: dict[str, Any] | None = None) -> Verdict:
+             history: dict[str, Any] | None = None,
+             api_key: str | None = None) -> Verdict:
     """Grade interaction metadata against the org's active policy.
 
     Args:
         meta:          The structural metadata dict (hashes, token_count, policy_tag).
         policy_config: The org's OrgPolicy config dict; if None, uses generic rules.
+        api_key:       A tenant's own (BYOK) key, decrypted by the caller for this
+                       call only. When absent, the platform key from settings is
+                       used. Never logged, never stored.
 
     Returns:
         A Verdict — always (never raises).
     """
     settings = get_settings()
-    if not settings.gemini_api_key:
+    key = api_key or settings.gemini_api_key
+    if not key:
         return _fallback("no_api_key")
 
     try:
         import google.generativeai as genai
 
         system_prompt = _build_system_prompt(policy_config, history)
-        genai.configure(api_key=settings.gemini_api_key)
+        genai.configure(api_key=key)
         model = genai.GenerativeModel(
             settings.gemini_model, system_instruction=system_prompt
         )
