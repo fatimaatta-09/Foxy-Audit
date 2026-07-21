@@ -31,7 +31,7 @@
   </div>
 
   <div class="prose">
-    <p class="lead">For interactions captured through the SDK, a configured judge evaluates the recorded metadata and returns a verdict such as clean, flagged, or unavailable. It is an operational review signal, not a compliance certification, and its verdict remains linked to the tamper-evident audit record.</p>
+    <p class="lead">For interactions captured through the SDK, a configured judge evaluates the recorded metadata and returns a verdict such as clean, flagged, or unavailable. It is an operational review signal, not a compliance certification, and its verdict remains linked to the tamper-evident audit record. You choose which model judges your workspace and — depending on your plan — whose API key pays for those model calls.</p>
 
     <p class="subhead">What it does for you</p>
     <ul class="points">
@@ -40,6 +40,16 @@
       <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Linked evidence:</b> the verdict is linked to the captured audit record for investigation and export.</span></li>
       <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Visible operations:</b> the <a href="/desktop.html" style="color:var(--fox)">desktop app</a> and dashboard surface record and grading status as it arrives.</span></li>
     </ul>
+
+    <p class="subhead">Which judge, and whose key pays for it</p>
+    <p>You pick the model that grades your workspace — Google Gemini, OpenAI, or both (each record graded twice; a breach found by either wins). You also pick whose provider key pays for those model calls, and <b>that part depends on your plan</b>:</p>
+    <ul class="points">
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Pro and Free bring their own key.</b> Paste a Gemini or OpenAI key into the dashboard and the judge grades on it. Those model calls are billed by Google or OpenAI to your account, at your rates — not by us.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><b>Premium chooses either.</b> Keep using your own key, or switch to Foxy's managed keys and let us cover the model calls. It is a toggle in the dashboard, not a migration.</span></li>
+    </ul>
+    <p>To say the quiet part out loud: <b>audit-event credits are not model tokens.</b> Your plan buys capture, chaining, anchoring, exports and verification. Unless you are on Premium using our managed keys, the AI judge runs on your provider account and appears on your provider's bill.</p>
+    <p>A key you store is encrypted before it is written down, decrypted in memory only for the moment a verdict is produced, and never returned by our API, written into your audit chain, or included in an export — the dashboard can only tell you <em>that</em> a key is set, never show it back to you.</p>
+    <p>If no key is configured and you are not on managed keys, nothing is faked: those records fall back to deterministic metadata checks and are labelled as such, so an unavailable judge reads as an honest unknown rather than a clean pass.</p>
   </div>
 
   <div class="band">

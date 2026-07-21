@@ -54,6 +54,7 @@
     <ul>
       <li><strong>Account &amp; organization data</strong> — your name, email, organization name, and role. If you sign in with Google, we store your Google account's stable identifier and verified email (never your Google password).</li>
       <li><strong>API keys</strong> — stored only as a salted <span class="pill">HMAC-SHA256</span> hash; the plaintext key is shown to you once and never retained.</li>
+      <li><strong>Your provider (BYOK) keys</strong> — if you supply a Gemini or OpenAI key for the AI judge, it is encrypted at rest, decrypted in memory only for the moment a verdict is produced, and never returned by our API, logged, exported, or written into your audit chain.</li>
       <li><strong>Audit records</strong> — for each interaction your SDK reports: customer-keyed HMAC-SHA-256 commitments of the prompt and response, token counts, a policy tag, model/agent name, event metadata, and any available judge verdict. <strong>The raw prompt and response text are committed on your side and are never transmitted to or stored by us.</strong></li>
       <li><strong>Usage &amp; billing</strong> — daily counts of logs, tokens, and breaches, plus billing records synced from Stripe.</li>
       <li><strong>Security telemetry</strong> — request metadata for rate-limiting and abuse prevention. Client IP addresses and user-agent strings are stored only as one-way <strong>hashes</strong>, never in raw form.</li>
@@ -76,7 +77,7 @@
     <h2>Sub-processors we share data with</h2>
     <p>We use a small set of trusted providers strictly to deliver the service:</p>
     <ul>
-      <li><strong>Google (Gemini API)</strong> — grades interaction <em>metadata</em> against your policy. Raw prompts/responses are not sent.</li>
+      <li><strong>Google (Gemini API) and/or OpenAI</strong> — grade interaction <em>metadata</em> against your policy. You choose which provider judges your workspace. Raw prompts/responses are not sent. On most plans the call is made with <em>your own</em> provider key, so it is your account's relationship with that provider; Premium workspaces may instead use Foxy's managed keys.</li>
       <li><strong>Stripe</strong> — payment processing and invoices.</li>
       <li><strong>Google Identity</strong> — optional "Sign in with Google".</li>
       <li><strong>Brevo</strong> — transactional email (verification, password resets, alerts).</li>
