@@ -390,5 +390,8 @@ def anchor_all_due(db: Session, settings: Settings | None = None) -> int:
                 anchored += 1
         except Exception as exc:                    # noqa: BLE001 — one org must not stop the sweep
             db.rollback()
-            log.warning("anchor sweep skipped org %s: %s", oid, exc)
+            # Log the TYPE only: a malformed ANCHOR_EVM_PRIVATE_KEY can make web3
+            # embed the raw key in str(exc) ("invalid private key: 0x…"), which must
+            # never reach our logs.
+            log.warning("anchor sweep skipped org %s (%s)", oid, type(exc).__name__)
     return anchored
