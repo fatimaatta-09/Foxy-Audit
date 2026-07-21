@@ -9,8 +9,11 @@ developer's machine, sends only bounded metadata, and writes a sequential,
 tamper-evident audit chain. The customer can export and verify that evidence
 independently.
 
-This is an evidence and integrity layer, not a legal certification, a runtime
-firewall, or proof of complete capture when an AI call bypasses the SDK.
+This is an evidence and integrity layer. It also offers an optional host-side
+policy guard that can block or redact a prompt locally, before the SDK-wrapped
+model call runs (see [Host-Side Policy Enforcement](#host-side-policy-enforcement-preflight-guard)).
+It is not a legal certification, not a comprehensive network firewall, and not
+proof of complete capture when an AI call bypasses the SDK.
 
 ## Why It Exists
 
@@ -69,6 +72,33 @@ Raw prompts and responses do not leave the customer process through this path.
 - **Verifier:** standard-library verification of exports and known events.
 - **Admin console:** staff operations and customer/account monitoring.
 
+## Host-Side Policy Enforcement (Preflight Guard)
+
+By default the SDK observes: it runs the wrapped model call and then records
+content-blind evidence. Two optional modes let the SDK act *before* the prompt
+leaves the host:
+
+```python
+@foxy.audit(policy="hipaa", mode="block")    # or mode="redact"
+def call_model(prompt: str) -> str:
+    return customer_llm.generate(prompt)
+```
+
+- `mode="observe"` (default) — unchanged behavior; run, then hash.
+- `mode="block"` — evaluate the prompt locally first. If it matches the active
+  policy (PHI/PII under `hipaa`/`gdpr`; prompt-injection and secrets/keys
+  otherwise), the wrapped function is **never called**, a `FoxyPolicyBlocked`
+  exception is raised, and a content-blind `blocked` event is recorded.
+- `mode="redact"` — offending spans are masked locally and the wrapped function
+  receives the redacted prompt; a `redacted` event is recorded.
+
+Detection is local and pattern-based (regex plus optional Presidio NLP): a
+best-effort guard for SDK-wrapped calls, not a guarantee that every sensitive
+value is caught, and not a network-level firewall. Enforcement events carry only
+hashes and signal labels — the raw offending text is never transmitted. A
+blocked prompt is *prevented egress*: it is recorded as evidence and is never
+counted as a model breach.
+
 ## Capture Coverage: The Evidence Boundary
 
 Tamper evidence is only useful when a buyer can also see the boundary of what
@@ -106,6 +136,14 @@ Expected checks are:
 ```
 
 Use this first when no API key, database, or LLM is available.
+
+To explore the host-side preflight guard interactively without any LLM, use the
+mock-model sandbox:
+
+```powershell
+python demo/mock_llm.py --scenario phi     # blocked before the mock model runs
+python demo/mock_llm.py                     # interactive: type prompts, see the decision
+```
 
 ## Real Client-Style Test
 
@@ -201,6 +239,22 @@ Raw text is used locally to create commitments and is not included in the
 backend payload. In regulated workflows, use `audit_required=True` when the
 application must fail if a durable server receipt cannot be confirmed.
 
+To enforce policy on the host before the model call, add a `mode`:
+
+```python
+from foxy_audit import FoxyClient, FoxyPolicyBlocked
+
+@foxy.audit(policy="hipaa", mode="block")
+def call_customer_model(prompt: str) -> str:
+    return customer_llm.generate(prompt)
+
+try:
+    call_customer_model("patient SSN 123-45-6789 ...")
+except FoxyPolicyBlocked:
+    # the model was never called; a content-blind blocked event was recorded
+    ...
+```
+
 ## Supported Platforms
 
 - SDK: Python 3.9 through 3.13 on Windows, macOS, and Linux.
@@ -208,6 +262,22 @@ application must fail if a durable server receipt cannot be confirmed.
 - Dashboard, sales site, and admin console: modern desktop and mobile browsers.
 - Desktop companion: supported desktop environments and a local UDP bridge;
   production distribution still requires signed installers and OS-specific QA.
+
+## Compliance Passport
+
+`POST /v1/passport` renders a content-blind PDF (with an HTML fallback when the
+native PDF libraries are absent) that a buyer or auditor can read without any raw
+conversation data. It recomputes the organization's hash chain and reports:
+
+- report-chain integrity (verified or broken, with the first broken sequence);
+- event counts and compliance rate from graded verdicts;
+- host-side enforcement counts — allowed, blocked, redacted, and
+  evaluator-unknown — with the policies that were enforced;
+- SDK capture coverage (the evidence boundary, not a claim of total capture);
+- the optional public-chain anchor, when configured.
+
+The passport proves what was captured, what was blocked, and that the audit
+trail was not tampered with. It is evidence, not a legal certification.
 
 ## Verification and Limits
 
