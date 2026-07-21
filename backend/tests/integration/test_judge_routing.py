@@ -41,8 +41,8 @@ def _configure(org_id: str, *, provider: str = "gemini", key_mode: str = "own",
         row = db.get(OrgPolicy, oid) or OrgPolicy(org_id=oid)
         row.judge_provider = provider
         row.judge_key_mode = key_mode
-        row.gemini_key_enc = encrypt_secret(gemini_key) if gemini_key else None
-        row.openai_key_enc = encrypt_secret(openai_key) if openai_key else None
+        row.gemini_key_enc = encrypt_secret(gemini_key, oid, "gemini") if gemini_key else None
+        row.openai_key_enc = encrypt_secret(openai_key, oid, "openai") if openai_key else None
         db.add(row)
         db.get(Organization, oid).plan_tier = plan_tier
         db.commit()

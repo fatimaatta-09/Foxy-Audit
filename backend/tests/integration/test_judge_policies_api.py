@@ -110,7 +110,7 @@ def test_submitted_key_is_stored_encrypted(make_org, login):
     row = _stored(org["org_id"])
     assert row.openai_key_enc is not None
     assert TENANT_OPENAI not in row.openai_key_enc          # ciphertext, not plaintext
-    assert decrypt_secret(row.openai_key_enc) == TENANT_OPENAI
+    assert decrypt_secret(row.openai_key_enc, org["org_id"], "openai") == TENANT_OPENAI
 
 
 def test_omitting_the_key_field_keeps_the_stored_key(make_org, login):
@@ -118,7 +118,7 @@ def test_omitting_the_key_field_keeps_the_stored_key(make_org, login):
     admin = login(org["admin_email"], org["admin_password"])
     assert _put(admin, gemini_api_key=TENANT_GEMINI).status_code == 200
     assert _put(admin, judge_provider="both").status_code == 200          # no key field
-    assert decrypt_secret(_stored(org["org_id"]).gemini_key_enc) == TENANT_GEMINI
+    assert decrypt_secret(_stored(org["org_id"]).gemini_key_enc, org["org_id"], "gemini") == TENANT_GEMINI
 
 
 def test_empty_string_clears_the_stored_key(make_org, client, login):

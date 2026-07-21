@@ -80,11 +80,13 @@ def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig
     )
 
 
-def _store_key(submitted: str | None, current: str | None) -> str | None:
+def _store_key(submitted: str | None, current: str | None,
+               org_id, provider: str) -> str | None:
     """Encrypt a submitted BYOK key, clear it on "", keep it when omitted.
 
-    Fails closed (503) if the deployment cannot encrypt: a provider key is never
-    written to the database in plaintext.
+    The ciphertext is bound to ``(org_id, provider)`` so it can never be replayed
+    into another tenant's row or the other provider slot. Fails closed (503) if the
+    deployment cannot encrypt: a provider key is never written to the DB in plaintext.
     """
     if submitted is None:
         return current
@@ -92,7 +94,7 @@ def _store_key(submitted: str | None, current: str | None) -> str | None:
     if not value:
         return None
     try:
-        return encrypt_secret(value)
+        return encrypt_secret(value, org_id, provider)
     except SecretsNotConfigured as exc:
         raise HTTPException(
             status_code=503,
@@ -168,8 +170,8 @@ def update_policies(
                    "use your own Gemini/OpenAI key on this plan")
     row.judge_provider = body.judge_provider
     row.judge_key_mode = body.judge_key_mode
-    row.gemini_key_enc = _store_key(body.gemini_api_key, row.gemini_key_enc)
-    row.openai_key_enc = _store_key(body.openai_api_key, row.openai_key_enc)
+    row.gemini_key_enc = _store_key(body.gemini_api_key, row.gemini_key_enc, org.id, "gemini")
+    row.openai_key_enc = _store_key(body.openai_api_key, row.openai_key_enc, org.id, "openai")
     account_audit.record_account_action(
         db, org_id=admin.org_id, actor_email=admin.email, action="policy.update",
         # Records THAT a key changed, never the key itself.

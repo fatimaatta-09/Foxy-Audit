@@ -60,14 +60,14 @@ def test_stored_key_column_holds_ciphertext_not_the_key(make_org):
         row = db.get(OrgPolicy, uuid.UUID(org["org_id"])) or OrgPolicy(
             org_id=uuid.UUID(org["org_id"]))
         from app.crypto_secrets import encrypt_secret
-        row.gemini_key_enc = encrypt_secret(secret)
+        row.gemini_key_enc = encrypt_secret(secret, org["org_id"], "gemini")
         db.add(row)
         db.commit()
     finally:
         db.close()
     stored = _policy(org["org_id"]).gemini_key_enc
     assert secret not in stored
-    assert decrypt_secret(stored) == secret
+    assert decrypt_secret(stored, org["org_id"], "gemini") == secret
 
 
 # ── the chain must never see routing choices or keys ─────────────────────────
@@ -93,8 +93,8 @@ def test_changing_judge_routing_does_not_change_the_snapshot_hash(make_org):
         live.judge_provider = "both"
         live.judge_key_mode = "platform"
         from app.crypto_secrets import encrypt_secret
-        live.gemini_key_enc = encrypt_secret("k1")
-        live.openai_key_enc = encrypt_secret("k2")
+        live.gemini_key_enc = encrypt_secret("k1", org["org_id"], "gemini")
+        live.openai_key_enc = encrypt_secret("k2", org["org_id"], "openai")
         db.commit()
     finally:
         db.close()

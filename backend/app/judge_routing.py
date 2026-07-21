@@ -92,7 +92,7 @@ def _decrypt_optional(ciphertext: str | None, org_id, provider: str,
         problems[provider] = "no_byok_key"
         return None
     try:
-        plaintext = decrypt_secret(ciphertext).strip()
+        plaintext = decrypt_secret(ciphertext, org_id, provider).strip()
     except SecretsNotConfigured:
         # Deployment has no PROVIDER_KEY_ENCRYPTION_KEY — fail closed.
         log.warning("BYOK key for org %s unusable: encryption not configured", org_id)
