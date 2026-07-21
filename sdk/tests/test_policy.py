@@ -289,6 +289,44 @@ def test_redact_passes_redacted_input_to_fn(monkeypatch):
     assert captured[0]["event_metadata"]["decision"] == "redacted"
 
 
+def test_redact_scrubs_structured_messages_prompt(monkeypatch):
+    """Regression: a structured messages=[{...}] prompt (the normal OpenAI shape)
+    must be redacted IN SHAPE — the raw PII must never reach the wrapped fn, and
+    the event is still recorded as 'redacted'."""
+    captured = _capture(monkeypatch)
+    seen = {}
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)
+
+    @foxy.audit(policy="gdpr", mode="redact")
+    def ask(messages):
+        seen["messages"] = messages
+        return "ok"
+
+    ask(messages=[{"role": "user", "content": "email me at john.doe@acme.com"}])
+    got = seen["messages"]
+    assert isinstance(got, list) and isinstance(got[0], dict)      # shape preserved
+    assert "john.doe@acme.com" not in str(got)                     # raw PII scrubbed
+    assert "[REDACTED:email]" in got[0]["content"]
+    assert captured[0]["event_type"] == "redacted"
+
+
+def test_block_detects_structured_messages_prompt(monkeypatch):
+    """Block mode must also fire on a structured prompt (detection runs on the
+    canonicalised JSON), so the fn is never called."""
+    _capture(monkeypatch)
+    called = {"n": 0}
+    foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)
+
+    @foxy.audit(policy="hipaa", mode="block")
+    def ask(messages):
+        called["n"] += 1
+        return "ok"
+
+    with pytest.raises(FoxyPolicyBlocked):
+        ask(messages=[{"role": "user", "content": "patient SSN 123-45-6789"}])
+    assert called["n"] == 0
+
+
 def test_redact_hashes_original_prompt_and_real_response(monkeypatch):
     captured = _capture(monkeypatch)
     foxy = FoxyClient(api_key="foxy_sk_test", desktop_ping=False)

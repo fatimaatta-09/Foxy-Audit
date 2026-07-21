@@ -162,3 +162,24 @@ def redact(prompt_text, policy_tag: str = "default") -> str:
             out = regex.sub(f"[REDACTED:{rule_id.split('.', 1)[1]}]", out)
 
     return out
+
+
+def redact_value(value, policy_tag: str = "default"):
+    """Recursively redact string leaves in a prompt of ANY shape.
+
+    A plain string is redacted directly; a structured provider prompt (e.g. an
+    OpenAI ``messages=[{"role":..., "content":...}]`` list) is walked and every
+    string leaf is scrubbed, so the wrapped function receives a redacted prompt of
+    the SAME shape instead of the raw original. Non-string leaves pass through
+    unchanged. This keeps redact mode honest for structured prompts — ``redact()``
+    alone returns a string, which cannot be substituted back into a list/dict slot.
+    """
+    if isinstance(value, str):
+        return redact(value, policy_tag)
+    if isinstance(value, dict):
+        return {k: redact_value(v, policy_tag) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact_value(v, policy_tag) for v in value]
+    if isinstance(value, tuple):
+        return tuple(redact_value(v, policy_tag) for v in value)
+    return value

@@ -60,14 +60,16 @@ def _extract_prompt(args: tuple, kwargs: dict):
     return ""
 
 
-def _replace_prompt(args: tuple, kwargs: dict, new_prompt: str):
-    """Return (args, kwargs) with the string prompt swapped for ``new_prompt``.
+def _replace_prompt(args: tuple, kwargs: dict, new_prompt):
+    """Return (args, kwargs) with the prompt slot swapped for ``new_prompt``.
 
-    Mirrors :func:`_extract_prompt`'s search order but only substitutes into
-    string-valued slots, so structured provider messages are never clobbered by
-    a redacted string. Used only on the redact path."""
+    Mirrors :func:`_extract_prompt`'s search order EXACTLY so redaction lands in
+    the same slot it read from: the first present prompt kwarg (any type — a
+    redacted structured prompt keeps its shape), else the first positional string.
+    ``new_prompt`` is produced by :func:`policy.redact_value`, so it has the same
+    shape as the original and never clobbers a structured provider message."""
     for key in _PROMPT_KWARGS:
-        if isinstance(kwargs.get(key), str):
+        if kwargs.get(key) is not None:
             new_kwargs = dict(kwargs)
             new_kwargs[key] = new_prompt
             return args, new_kwargs
@@ -156,7 +158,10 @@ class FoxyClient:
             return {"kind": "block", "hash_prompt": prompt,
                     "rules": list(decision.rules), "signals": list(decision.signals),
                     "reason": decision.reason}
-        redacted = policy_engine.redact(prompt, policy)
+        # redact_value scrubs string leaves in a prompt of ANY shape (str or a
+        # structured messages= list/dict), so the wrapped fn receives a redacted
+        # prompt of the same shape — never the raw original.
+        redacted = policy_engine.redact_value(prompt, policy)
         new_args, new_kwargs = _replace_prompt(args, kwargs, redacted)
         return {"kind": "redact", "hash_prompt": prompt, "args": new_args, "kwargs": new_kwargs,
                 "decision": "redacted", "rules": list(decision.rules),
