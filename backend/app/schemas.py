@@ -203,4 +203,7 @@ class StatsResponse(BaseModel):
     grading: GradingCounts
     activity_7d: list[ActivityDay]
     evaluator_unknown: int = 0
+    # Host-side enforcement (prevented egress), counted separately from breaches.
+    blocked: int = 0
+    redacted: int = 0
 

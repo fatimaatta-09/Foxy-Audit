@@ -167,6 +167,9 @@ def _grade_one(db: Session, row) -> None:
                 verdict,
                 openai_judge.evaluate(meta, policy_config, history=history),
             )
+        # Never persist a self-contradictory or empty judge answer as a confident
+        # grade — quarantine it as evaluator_unknown to keep the audit report honest.
+        verdict = judge.validate(verdict)
         if verdict.decision == "unknown" and verdict.reason.startswith("evaluator_unavailable"):
             verdict = policy_engine.evaluate(meta, policy_config)
     # Scope RLS to this row's org before the write-back (no-op under a

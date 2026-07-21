@@ -18,6 +18,7 @@ These tests prove such an event:
 from __future__ import annotations
 
 import hashlib
+import sys
 
 from sqlalchemy import text
 
@@ -159,3 +160,168 @@ def test_blocked_event_counted_as_blocked_not_breach(make_org, client, monkeypat
 
     stats = client.get("/v1/stats", headers=org["auth"]).json()
     assert stats["breaches"] == 1
+
+
+def _grade_with_verdict(monkeypatch, verdict):
+    """Grade all pending rows with a fixed (possibly malformed) judge verdict."""
+    from app import worker as workermod
+    monkeypatch.setattr(workermod.gemini, "evaluate",
+                        lambda meta, policy_config=None, history=None: verdict)
+    from app.db import SessionLocal
+    db = SessionLocal()
+    try:
+        for row in workermod._claim_batch(db, 100, 300):
+            workermod._grade_one(db, row)
+    finally:
+        db.close()
+
+
+def _one_normal_event(client, org, seed="j"):
+    assert client.post("/v1/logs/batch", headers=org["auth"], json=[{
+        "prompt_hash": _h(f"p-{seed}"), "response_hash": _h(f"r-{seed}"),
+        "token_count": 10, "policy_tag": "chat"}]).status_code == 202
+
+
+def test_contradictory_judge_verdict_is_quarantined(make_org, client, monkeypatch):
+    """A judge answer that flags a breach yet decides "clean" is self-contradictory.
+    It must NOT be trusted as a breach OR laundered into a clean pass — it is
+    quarantined as evaluator_unknown so the audit report stays honest."""
+    from app.schemas import Verdict
+    org = make_org()
+    _one_normal_event(client, org)
+
+    bad = Verdict(policy_breach=True, reason="all good, nothing to see",
+                  risk_score=80, decision="clean")
+    _grade_with_verdict(monkeypatch, bad)
+
+    v = client.get("/v1/logs", headers=org["auth"]).json()["items"][0]["gemini_verdict"]
+    assert v["decision"] == "unknown"
+    assert v["policy_breach"] is False
+    assert v["reason"].startswith("evaluator_unknown")
+
+    stats = client.get("/v1/stats", headers=org["auth"]).json()
+    assert stats["breaches"] == 0
+    assert stats["evaluator_unknown"] == 1
+
+
+def test_empty_reason_judge_verdict_is_quarantined(make_org, client, monkeypatch):
+    """An affirmative breach claim with no usable reason is low-confidence noise,
+    not audit evidence — quarantine it as evaluator_unknown."""
+    from app.schemas import Verdict
+    org = make_org()
+    _one_normal_event(client, org)
+
+    bad = Verdict(policy_breach=True, reason="   ", risk_score=70, decision="breach")
+    _grade_with_verdict(monkeypatch, bad)
+
+    v = client.get("/v1/logs", headers=org["auth"]).json()["items"][0]["gemini_verdict"]
+    assert v["decision"] == "unknown"
+    assert v["reason"].startswith("evaluator_unknown")
+    assert client.get("/v1/stats", headers=org["auth"]).json()["breaches"] == 0
+
+
+def test_valid_judge_verdicts_pass_validation(make_org, client, monkeypatch):
+    """A clean, self-consistent judge verdict is persisted unchanged — validation
+    only quarantines the malformed ones, it does not swallow honest grades."""
+    from app.schemas import Verdict
+    org = make_org()
+    _one_normal_event(client, org)
+
+    good = Verdict(policy_breach=True, reason="pii exfiltration risk detected",
+                   risk_score=88, decision="breach", rules=["pii.exfil"])
+    _grade_with_verdict(monkeypatch, good)
+
+    v = client.get("/v1/logs", headers=org["auth"]).json()["items"][0]["gemini_verdict"]
+    assert v["decision"] == "breach"
+    assert v["policy_breach"] is True
+    assert client.get("/v1/stats", headers=org["auth"]).json()["breaches"] == 1
+
+
+def _grade_each(monkeypatch, verdict_for):
+    """Grade all pending rows; the judge answer for a non-terminal row comes from
+    verdict_for(meta). Terminal enforcement rows never reach verdict_for."""
+    from app import worker as workermod
+    monkeypatch.setattr(workermod.gemini, "evaluate",
+                        lambda meta, policy_config=None, history=None: verdict_for(meta))
+    from app.db import SessionLocal
+    db = SessionLocal()
+    try:
+        for row in workermod._claim_batch(db, 100, 300):
+            workermod._grade_one(db, row)
+    finally:
+        db.close()
+
+
+def test_passport_shows_host_side_enforcement_counts(make_org, client, monkeypatch):
+    """The compliance passport carries an honest Host-Side Enforcement section:
+    allowed / blocked / redacted counts, the policies actually enforced, and
+    evaluator-unknown as its own honest non-pass state — never folded into a pass."""
+    from app.schemas import Verdict
+    monkeypatch.setitem(sys.modules, "weasyprint", None)   # force HTML fallback
+    org = make_org()
+
+    client.post("/v1/logs/batch", headers=org["auth"],
+                json=[_blocked_event(seed="p1", event_type="blocked")])         # seq 1
+    client.post("/v1/logs/batch", headers=org["auth"],
+                json=[_blocked_event(seed="p2", event_type="redacted")])        # seq 2
+    client.post("/v1/logs/batch", headers=org["auth"], json=[{
+        "prompt_hash": _h("ok"), "response_hash": _h("okr"),
+        "token_count": 10, "policy_tag": "chat"}])                              # seq 3 clean
+    client.post("/v1/logs/batch", headers=org["auth"], json=[{
+        "prompt_hash": _h("uk"), "response_hash": _h("ukr"),
+        "token_count": 10, "policy_tag": "murky"}])                            # seq 4 -> unknown
+
+    def verdict_for(meta):
+        if meta["policy_tag"] == "murky":
+            # self-contradictory -> quarantined to evaluator_unknown by the worker
+            return Verdict(policy_breach=True, reason="unsure", risk_score=40, decision="clean")
+        return Verdict(policy_breach=False, reason="no issues found", risk_score=0, decision="clean")
+
+    _grade_each(monkeypatch, verdict_for)
+
+    r = client.post("/v1/passport", headers=org["auth"])
+    assert r.status_code == 200, r.text
+    body = r.text
+
+    assert "Host-Side Enforcement" in body
+    assert "prevented from leaving the host" in body
+    # Honest per-state counts (blocked/redacted/allowed/evaluator-unknown).
+    assert "Prompts Blocked (prevented egress)</dt><dd>1</dd>" in body
+    assert "Responses Redacted</dt><dd>1</dd>" in body
+    assert "Prompts Allowed to Proceed</dt><dd>2</dd>" in body
+    assert "Evaluator Could Not Determine</dt><dd>1</dd>" in body
+    # Policies actually enforced, aggregated from event_metadata.policy_rules.
+    assert "block.egress" in body
+    # Evaluator-unknown must read as an honest non-pass, not a silent success.
+    assert "never counted as a compliant pass" in body
+
+
+def test_ledger_filter_surfaces_enforcement_rows_distinctly(make_org, client):
+    """The ledger can be filtered to host-side enforcement rows so the record shows
+    enforcement, not just observations. Each row carries event_type so the dashboard
+    can badge blocked/redacted distinctly."""
+    org = make_org()
+    client.post("/v1/logs/batch", headers=org["auth"],
+                json=[_blocked_event(seed="f1", event_type="blocked")])         # seq 1
+    client.post("/v1/logs/batch", headers=org["auth"],
+                json=[_blocked_event(seed="f2", event_type="redacted")])        # seq 2
+    client.post("/v1/logs/batch", headers=org["auth"], json=[{
+        "prompt_hash": _h("n"), "response_hash": _h("nr"),
+        "token_count": 10, "policy_tag": "chat"}])                              # seq 3
+
+    b = client.get("/v1/logs?verdict=blocked", headers=org["auth"]).json()
+    assert [r["seq"] for r in b["items"]] == [1]
+    assert b["items"][0]["event_type"] == "blocked"
+
+    rd = client.get("/v1/logs?verdict=redacted", headers=org["auth"]).json()
+    assert [r["seq"] for r in rd["items"]] == [2]
+    assert rd["items"][0]["event_type"] == "redacted"
+
+    # The unfiltered ledger still returns every row, enforcement rows included.
+    assert client.get("/v1/logs", headers=org["auth"]).json()["total"] == 3
+
+    # /v1/stats surfaces the enforcement counts so the dashboard never mislabels a
+    # blocked/redacted event as a clean pass.
+    stats = client.get("/v1/stats", headers=org["auth"]).json()
+    assert stats["blocked"] == 1
+    assert stats["redacted"] == 1
