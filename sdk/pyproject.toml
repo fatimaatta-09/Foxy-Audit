@@ -33,8 +33,8 @@ dependencies = ["requests>=2.31,<3"]
 [project.urls]
 Homepage = "https://foxyaudit.tech"
 Documentation = "https://foxyaudit.tech/docs.html"
-Source = "https://github.com/fatimaatta-09/Foxy-Audit"
-Issues = "https://github.com/fatimaatta-09/Foxy-Audit/issues"
+Source = "https://github.com/alikamran21/Foxy-Audit"
+Issues = "https://github.com/alikamran21/Foxy-Audit/issues"
 
 [project.scripts]
 foxy = "foxy_audit.cli:main"
