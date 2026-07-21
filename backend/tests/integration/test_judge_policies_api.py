@@ -198,6 +198,31 @@ def test_storing_a_key_is_not_logged(make_org, login, caplog):
     assert TENANT_OPENAI not in caplog.text
 
 
+def test_staff_data_browser_does_not_expose_stored_key_columns(
+        make_org, login, make_staff, staff_login):
+    """The generic staff browser dumps every column of a table by default. The
+    BYOK ciphertext columns must be on its never-expose list: a tenant's provider
+    key is not staff-readable in any form, encrypted or otherwise."""
+    org = make_org()
+    admin = login(org["admin_email"], org["admin_password"])
+    assert _put(admin, judge_provider="both", gemini_api_key=TENANT_GEMINI,
+                openai_api_key=TENANT_OPENAI).status_code == 200
+
+    staff = make_staff(role="superadmin")
+    cs = staff_login(staff["email"], staff["password"])
+    response = cs.get("/admin/v1/data/org_policies")
+    assert response.status_code == 200, response.text
+    rows = response.json()["rows"]
+    assert rows, "expected the org's policy row"
+    for row in rows:
+        assert "gemini_key_enc" not in row
+        assert "openai_key_enc" not in row
+        # routing choices are fine to show — only the secrets are withheld
+        assert row["judge_provider"] == "both"
+    assert TENANT_GEMINI not in response.text
+    assert TENANT_OPENAI not in response.text
+
+
 def test_key_change_is_audited_without_the_key(make_org, login):
     """The account audit trail records THAT a key was set, never its value."""
     from sqlalchemy import text

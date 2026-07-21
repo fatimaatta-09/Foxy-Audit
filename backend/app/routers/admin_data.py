@@ -51,7 +51,11 @@ router = APIRouter()
 # Never returned by this endpoint, on ANY table, regardless of role. Viewing a
 # hash is bad hygiene even though it's one-way — there's no legitimate reason
 # for it and it costs nothing to strip.
-_NEVER_EXPOSE = {"password_hash", "key_hash", "api_key_hash"}
+# Columns this browser must never render, on any table. The *_key_enc columns hold
+# customers' BYOK provider keys: staff never read a tenant's provider key, not even
+# as ciphertext (see app/crypto_secrets.py).
+_NEVER_EXPOSE = {"password_hash", "key_hash", "api_key_hash",
+                 "gemini_key_enc", "openai_key_enc"}
 
 TABLE_REGISTRY: dict[str, dict[str, Any]] = {
     # "filterable" is a SEPARATE, explicit allowlist from "search": search is
