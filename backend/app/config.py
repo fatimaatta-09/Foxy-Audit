@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     # Fernet key (urlsafe-base64, 32 bytes) that encrypts customer-supplied BYOK
     # provider keys at rest. Empty = BYOK unavailable on this deployment; every
     # store/read of a tenant key then fails closed rather than touching plaintext.
-    provider_key_encryption_key: str = ""
+    # SecretStr so the master KEK is masked in repr()/model_dump() and never
+    # captured by an error reporter that dumps Settings. Unwrap only at point of
+    # use (crypto_secrets._load_keys via .get_secret_value()).
+    provider_key_encryption_key: SecretStr = SecretStr("")
     # When the judge is unreachable: False = fail-open (write row, no breach),
     # True = fail-closed (flag for human review). The chain row is always written.
     gemini_fail_closed: bool = False

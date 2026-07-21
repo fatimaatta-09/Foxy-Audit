@@ -27,6 +27,7 @@ Endpoints (admin, /admin/v1/*):
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from contextlib import asynccontextmanager
@@ -96,6 +97,21 @@ _ADMIN_HTML = _find_admin_html()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(get_settings().is_prod)   # structured logs + request id (5E)
+    # Validate the BYOK key-encryption key at boot (advisory — never crash, never
+    # log the value). A present-but-malformed KEK is a deploy typo that would
+    # otherwise silently 503 every BYOK save; surface it loudly instead.
+    from . import crypto_secrets
+    _kek = crypto_secrets.encryption_status()
+    if _kek == "malformed":
+        logging.getLogger("foxy.startup").error(
+            "%s is set but is NOT a valid Fernet key — BYOK key storage will fail "
+            "with 503 until this is fixed. (value not logged)",
+            crypto_secrets.ENCRYPTION_KEY_ENV)
+    elif _kek == "unset":
+        logging.getLogger("foxy.startup").info(
+            "%s is not set — BYOK provider keys are disabled on this deployment "
+            "(tenants must use Foxy's platform keys or go without an AI judge).",
+            crypto_secrets.ENCRYPTION_KEY_ENV)
     try:
         subprocess.run(["alembic", "current"], check=True, capture_output=True)
     except Exception as e:
