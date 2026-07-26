@@ -133,10 +133,14 @@ class Settings(BaseSettings):
     anchor_alert_cooldown: int = 3600
     # Per-org usage rollup + traffic-partition maintenance (worker thread, app/usage.py)
     usage_rollup_interval: int = 300
-    # Weekly digest + key-rotation reminder sweep (worker thread,
-    # app/user_notifications.py). Hourly is plenty: both jobs are date-gated
-    # and deduped by a marker row, so extra passes are no-ops.
+    # Per-user notification emails (worker thread, app/user_notifications.py):
+    # breach alerts drained off a queue on the short tick, weekly digest +
+    # key-rotation reminders swept on the long one (both date-gated and marker-
+    # deduped, so extra passes are no-ops). Set enabled=false to mute all
+    # per-user email without touching per-user preferences.
+    user_notifications_enabled: bool = True
     user_notifications_interval: int = 3600
+    breach_alert_drain_interval: int = 5
     # Durable grading queue (Postgres outbox poller — app/worker.py)
     grading_poll_interval: float = 2.0
     grading_batch_size: int = 16

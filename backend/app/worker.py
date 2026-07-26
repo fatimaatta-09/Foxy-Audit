@@ -219,10 +219,11 @@ def _grade_one(db: Session, row) -> None:
     # failure can never lose the grade. Best-effort — never raises into grading.
     if verdict.policy_breach:
         _notify_breach(db, row, verdict)
-        # Per-user breach alerts (D-S) — gated on each member's
-        # notify_breach_alerts pref and deduped against the org-level address
-        # above. Best-effort, never raises into grading.
-        user_notifications.send_breach_alerts(db, row, verdict)
+        # Per-user breach alerts (D-S): QUEUE only. The fan-out is one email per
+        # opted-in seat, so sending it here would put N synchronous provider
+        # calls inside the grading batch and starve the worker heartbeat. The
+        # notifications thread drains the queue and sends.
+        user_notifications.enqueue_breach_alert(row, verdict)
     # Outbound webhook subscriptions (P3 §F): deliver a signed 'graded' (and
     # 'breach') event to each matching subscription. Best-effort, content-blind.
     try:
@@ -383,11 +384,12 @@ def run_forever() -> None:
     threading.Thread(target=usage_loop, args=(stopping, s),
                      name="foxy-usage", daemon=True).start()
 
-    # Weekly digest + key-rotation reminders (D-S), own thread + session so a
-    # slow email sweep never stalls grading. Both jobs dedupe via marker rows.
-    from .user_notifications import user_notifications_loop
-    threading.Thread(target=user_notifications_loop, args=(stopping, s),
-                     name="foxy-user-notifications", daemon=True).start()
+    # Per-user breach alerts + weekly digest + key-rotation reminders (D-S), own
+    # thread + session so a slow mail provider never stalls grading.
+    if s.user_notifications_enabled:
+        from .user_notifications import user_notifications_loop
+        threading.Thread(target=user_notifications_loop, args=(stopping, s),
+                         name="foxy-user-notifications", daemon=True).start()
 
     # Circuit-breaker so a Gemini outage doesn't hammer the API or burn attempts:
     # when whole batches keep failing, trip open and back off (5E.2).
