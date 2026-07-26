@@ -1,6 +1,9 @@
 # Foxy Desktop — Full Dashboard Parity + Fox Companion
 
 **Plan of record** · 2026-07-26 · MAIN chat is the committer; executors build per this file.
+
+> **PROGRESS:** ✅ D0+D0.1 merged (`7b039ed`, 2026-07-27) — foxy_client/foxy_tokens/geometry/teardown/fake-data purge; 33 desktop tests. ✅ D-S merged (`9342b0f`, 2026-07-27) — 3 web toggles real end-to-end, per-user senders + queue thread, 549-test suite green, head stays 0053. **Next: D1 auth UI.**
+> **Follow-up debt (scheduled, not blockers):** (1) PRE-EXISTING `usage_daily` 48h-rolling-window rollup understates historical counts — dashboard usage charts + quota widgets read it (fix = derive from `audit_logs`, own phase); (2) PRE-EXISTING org-level `_notify_breach` still sends synchronously inside the grading batch (worker.py:221) — decouple like the per-user path; (3) `user_notifications_enabled=False` gates only the drain thread, not `enqueue_breach_alert` (worker.py:226) — one-line guard + a test; (4) per-user breach-alert queue is in-memory (≤5s email loss at deploy; in-app notification unaffected) — acceptable, revisit only if it bites.
 **Rule:** if scope changes, update THIS file first — it is the single source of truth.
 **Source-of-truth rule (owner mandate):** past plans drifted from the shipped site. This plan's inventory was read from the **live code** (`foxy-audit-premium.html`, all 4,027 lines + `backend/app/routers/*`), NOT from the old design docs. Every executor phase MUST re-read the relevant live SPA section and router file before building, and MUST verify response shapes against the running local stack — if live code disagrees with this plan, live code wins and the executor reports the delta so MAIN updates this file.
 

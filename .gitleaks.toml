@@ -4,6 +4,12 @@ useDefault = true
 
 [allowlist]
 description = "Public client-side-by-design tokens + doc placeholders that are safe to commit"
+# The Build Week judge-evaluation password in seed_judges.py is deliberately
+# committed and distributed to judges (see JUDGES.pdf). It also lives in
+# history under the frozen tag `submission-openai-buildweek`, so the
+# full-history scan will always re-find it there — a path allowlist is the
+# only fix that doesn't rewrite history. Everything else stays fully scanned.
+paths = ['''backend/scripts/seed_judges\.py''']
 regexTarget = "line"
 regexes = [
   # reCAPTCHA v2 SITE key — rendered in the browser by design. The SECRET key is
