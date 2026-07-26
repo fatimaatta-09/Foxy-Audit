@@ -1,124 +1,95 @@
-I have made some fixes yet check if those are working at your end# CLAUDE.md
+# CLAUDE.md — Foxy Audit
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repository. **Read "How Claude works here" first — it is mandatory, not advisory.**
 
-## What this repo is
+Foxy Audit is a **content-blind, tamper-evident audit-evidence platform for AI systems** in regulated industries (healthcare, finance, legal). A Python SDK creates local commitments and ships only bounded metadata to a hash-chained PostgreSQL ledger; customers export and independently verify evidence without trusting Foxy. Live at foxyaudit.tech. Deep product docs live in the Obsidian vault (see below).
 
-The PyQt6 **desktop client** for the Foxy Audit platform: an animated pixel-art fox ("compliance
-officer" mascot) that lives at the bottom of the screen, reacts to system telemetry, and exposes a
-chat copilot. The desktop app talks to the backend platform two ways: a local UDP bridge from the
-`@foxy.audit` SDK, and an HTTPS health check against `backend_url`.
+---
 
-**Branch note:** on the current **`foxy-skeleton`** branch the whole three-tier system is present, not
-just the desktop app — `backend/` (the FastAPI / PostgreSQL service, with `chain.py`, `worker.py`,
-`gemini.py`, `routers/`, `scripts/`, `docker-compose.yml`), `sdk/` (the `foxy-audit` pip package), and
-`demo/`. So backend work *can* be done here. (The older `foxy-f` / `foxy-a` branches carried only the
-desktop app — see "Repository branches" below.)
+## How Claude works here (operating model — READ FIRST)
 
-Note: the product is "Foxy Audit", but the code still uses the older "OmniAware Fox" / `omni_fox`
-naming internally (including the QSettings org/app keys `OmniAwareFox` / `DesktopPet`).
+### 1. The two-chat workflow
+All substantial work runs through a **planner ↔ executor** split:
+
+- **MAIN chat = planner + reviewer + committer.** It plans the *entire* task, writes the full plan to a **Markdown file** in `docs/plans/` (e.g. `docs/plans/<slug>.md`), and **ends its message with a paste-ready prompt** the user hands to a separate **executor** chat. The main chat then reviews and commits/merges what the executor produces.
+- **EXECUTOR chat(s) = build per the plan file.** They implement, run checks, and push feature branches (`feat/*`, `fix/*`) — never to `main`.
+- Keep the plan file the single source of truth; if scope changes, update the plan file and re-issue the prompt.
+
+### 2. The poller (toggle on / off)
+The MAIN chat can run a **background poller** that watches `origin` for executor-pushed branches, then verifies + merges them. It is **toggleable**:
+- **ON** while executor chats are actively building (poll every ~90s; on a new unmerged `feat/*`/`fix/*` branch → run the verify checklist → merge).
+- **OFF** otherwise (default). The user says "turn the poller on/off"; honor it. Never leave it running unattended past the work session.
+
+### 3. Mandatory skills / tools
+- **UI/UX work → ALWAYS invoke the `ui-ux-pro-max` skill first.** Any design, build, or review of UI (customer dashboard, admin console, sale page, transactional emails, slide decks, badges) *must* start by loading `ui-ux-pro-max`. No UI without it.
+- **`claude-mem` → always on.** Recall relevant memory at the start of a task and save decisions, facts, and gotchas as you go.
+- **`code-review` skill → run before merging** any non-trivial change (the committer's gate).
+- **`ponytail` → use for simplification, but ONLY when it does not change behavior/output.** Apply its "laziest correct / minimal" lens where it's provably output-neutral (dead flexibility, reinvented stdlib, needless deps). If simplifying could alter a result, a verdict, a hash, or the wire contract — **skip it.**
+
+### 4. Obsidian sync (mandatory after every session)
+After any work, **append a dated log entry** to the Obsidian Foxy Audit folder:
+```
+G:\My Drive\Life\03 Projects\Foxy Audit
+```
+- Log **what was done, decisions, and links**, dated (`YYYY-MM-DD`), in the vault house style: frontmatter (`type/date/tags/ai-first`), a "For future Claude" preamble, `[[wikilinks]]`, dated sources, `TBD` for unknowns — **never fabricate**.
+- If the product's state changed, also update the relevant reference note there (hub: `Foxy Audit — Full Reference`). Create new notes freely; **ask before editing** the MOC / existing notes; **never touch** `Templates/` or `.obsidian/`.
+
+### 5. Commit / merge protocol (committer)
+- Branch off **fresh `origin/main`**; never edit `main` directly. Isolate work in a `git worktree` to avoid the shared-tree lock.
+- **Verify checklist before merge:** fast-forward-safe over `origin/main` · `node --check` every inline `<script>` in changed HTML · scope grep (change stays in intended area) · **no fake/placeholder data** grep · **no secret** grep · single Alembic head for migrations · `code-review` skill.
+- Merge via **direct SHA push**: `git push origin <sha>:refs/heads/main`.
+- **Pushing to `main` = deploying to production** (GitHub Actions → VM → `docker compose up --build` → `/health/ready` smoke + auto-rollback). During a judging / XPRIZE window, keep work on branches and merge only when intended.
+
+### 6. Hard rules (never break)
+- **No fake / placeholder data** — honest empty states only, in code *and* UI.
+- **Content-blindness** — raw prompt/response text never leaves the customer process via the SDK and is never stored server-side. Only hashes + bounded metadata.
+- **Never commit secrets**; never serialize `password_hash` / `key_hash` / `*_key_enc` / session `token_hash`. API keys are shown once.
+- The **KEK** (`PROVIDER_KEY_ENCRYPTION_KEY`) is a crown jewel — lose it and every stored BYOK key is unrecoverable.
+- **Verify live state before acting** — read the actual code / schema / deployed branch before declaring a bug or writing a fix.
+
+---
+
+## What this repo is (the product)
+
+Three tiers plus the human surfaces:
+1. **SDK** (`sdk/`, `pip foxy-audit` 1.1.x) — `@foxy.audit(policy, mode, agent)`. `mode="block"|"redact"` runs a **local policy check first** (PHI/PII, secrets, prompt-injection) and blocks/redacts **before** the model call; otherwise it runs the call, then hashes prompt+response into customer-keyed HMAC-SHA-256 commitments and ships only metadata over a durable SQLite spool.
+2. **Backend** (`backend/`, FastAPI + PostgreSQL) — validates content-blind metadata, appends it to a **sequential SHA-256 hash chain** (per-org, RLS-isolated), and a durable outbox **worker** grades each event's *metadata* with the **AI judge** (Gemini and/or **GPT-5.6** via the OpenAI Responses API; per-tenant BYOK, keys encrypted at rest). Optional EVM/Sepolia anchoring of the chain head. Three-ASGI split: `customer_api` (`/v1/*`), `admin_api` (`/admin/v1/*`), root.
+3. **Verifier** (`verifier/foxy_verify.py`) — dependency-free; recomputes the chain from an export → tamper-evident proof anyone can run.
+4. **Surfaces** — customer dashboard (`foxy-dashboard/`, app.foxyaudit.tech), staff admin console (`foxy-adminpage/`, admin.foxyaudit.tech), sale page (`foxy-sale-page/`, foxyaudit.tech), Compliance Passport PDF, public trust badge, and the PyQt6 **desktop fox** companion (`desktop/`, internal name `omni_fox` / "OmniAware Fox").
+
+## Where things live
+
+| Path | What |
+|---|---|
+| `sdk/src/foxy_audit/` | SDK: `client.py` (decorator + guard), `policy.py`, `pii.py`, `dispatch.py`, `spool.py`, `hashing.py` |
+| `backend/app/` | FastAPI app: `main.py` (3-ASGI), `chain.py`, `worker.py`, `gemini.py`, `openai_judge.py`, `judge.py`, `judge_routing.py`, `crypto_secrets.py`, `routers/`, `models.py` |
+| `backend/migrations/versions/` | Alembic (linear, head **0053**) |
+| `foxy-dashboard/` · `foxy-adminpage/` · `foxy-sale-page/` | Web UIs (CSP-safe: inline SVG charts, embedded fonts, no CDN; token-driven theming) |
+| `verifier/` · `demo/` · `contracts/` | Standalone verifier · demos (`mock_llm.py`, `offline_demo.py`, `live_openai_client.py`) · `AnchorRegistry.sol` |
+| `deploy/` · `.github/workflows/` | Prod compose + `.env.example` · `ci.yml` / `deploy.yml` / `release.yml` |
+| `docs/` · `JUDGES.pdf` | In-repo docs · judge test guide |
 
 ## Running & commands
 
-No dependency manifest, test suite, or lint config exists. Python 3.13+ (compiled `.pyc` are
-cp313/cp314).
-
 ```bash
-# The desktop app lives in desktop/. Install its deps (or: pip install -r desktop/requirements.txt):
-pip install PyQt6 psutil pynput requests
-#   optional, only for window-following on non-Windows:
-#     macOS → pip install pyobjc-framework-Quartz      Linux → pip install python-xlib
-#   only for regenerating the spritesheet → pip install Pillow
+# Local full stack (from backend/): prints an API key in foxy-seed logs
+cd backend && docker compose up --build -d && docker compose logs foxy-seed
 
-# Run the app (it os.chdir()s to its own directory on startup)
-python desktop/omni_fox.py
+# SDK / guard demos (no key, no network):
+python demo/mock_llm.py --scenario all
+python demo/offline_demo.py
 
-# Most UI widget modules have a standalone __main__ preview harness with a fake fox —
-# use these to iterate on a widget without launching the whole app:
-python desktop/clay_chat_popup.py        # chat popup preview
+# Backend tests (native PG on :5433, db foxy_pytest). Full suite can hit a TRUNCATE
+# deadlock — run per-file if it trips:
+cd backend && python -m pytest tests/integration -q
+python -m pytest tests/integration/test_crypto_secrets.py -q -p no:randomly
 
-# Rebuild the sprite atlas (needs Pillow + the external ARTIFACT_DIR hardcoded in the file,
-# which won't exist on your machine — it falls back to expanding the current atlas in place):
-python desktop/build_16frame_atlas.py
+# Independent chain verification (the core proof):
+python verifier/foxy_verify.py logs.json
 ```
 
-There are no automated tests. Verify changes by running the app or a module's `__main__` preview.
+## Reference
 
-## Architecture
-
-`OmniAwareFox(QWidget)` in `omni_fox.py` is the center of everything — a frameless, always-on-top,
-translucent `Tool` window fixed to a single 192×208 sprite cell. It owns the state machine, the
-timers, the spritesheet frame cache, the background threads, the system tray, and all child overlays.
-
-**Spritesheet animation.** One atlas (`ultimate_fox_spritesheet.png`), cells 192×208, 8 columns.
-Each *action* occupies `ROWS_PER_ACTION` (3) rows = `FRAMES_PER_ACTION` (24) frames. The `ROW_*`
-constants are `action_index * 3` offsets into the atlas. `_get_frame(row, frame_idx, flip)` crops and
-caches frames. `build_16frame_atlas.py` regenerates the atlas from source 4×4 sheets.
-
-**State machine.** A `self.state` string plus `current_row`/`current_frame`. `_set_state(name, row,
-duration)` is the single transition point and is gated by `reaction_cooldown`. States in
-`_TIMED_STATES` auto-expire back to `IDLE` once `reaction_timeout` passes (checked each animation
-tick). IDLE has its own breathing/dozing sub-behavior, periodic autonomous "idle-break" poses, and
-periodic compliance-tip speech bubbles. Two `QTimer`s drive it: animation at 100 ms, roaming at
-150 ms. Roaming walks the fox along the bottom of the screen unless `_user_placed` (user dragged it)
-or the chat is open.
-
-**Background threads — all `QThread`, all communicate via Qt signals (never touch widgets directly):**
-- `GlobalSensors` — pynput keyboard/mouse listeners (`typing_signal` / `scrolling_signal`) plus a
-  psutil CPU/RAM/battery poll every 3 s (`hardware_update_signal`). High CPU/RAM → CRYING; low
-  battery → ALERTING.
-- `SDKBridgeListener` (`sdk_bridge.py`) — UDP socket on `127.0.0.1:9999`. Parses JSON datagrams the
-  `@foxy.audit` SDK decorator emits: `hash_ok` → `hash_confirmed` (green flash), `policy_breach` →
-  `policy_breach` (red alert + auto-opens chat with the breach details). This is the main live
-  integration point with the wider platform.
-- `StartupHealthWorker` — one-shot `GET {backend_url}/v1/health` with `Bearer {org_key}`; drives the
-  "connected / unreachable" reaction. Created only when both `backend_url` and `org_key` are set.
-
-`closeEvent` does explicit, ordered thread shutdown; QThread subclasses disconnect their own signals
-on finish to avoid the Qt6 leak where a finished thread stays alive via a captured lambda.
-
-**Transparent child overlays drawn on top of the sprite** (both `WA_TransparentForMouseEvents`):
-- `SecurityOverlay` (`security_overlay.py`) — radial-gradient glow rings; `flash_green/red/amber`.
-- `EyeOverlay` (`eye_tracker.py`) — paints tiny pixel pupils that drift toward the cursor, shown
-  only during calm states (`EYE_VISIBLE_STATES`).
-
-**Chat copilot.** `ChatPopup` (`clay_chat_popup.py`) is a frameless themed window. AI calls route
-through `ai_providers.call_ai()`, which dispatches by provider (anthropic / openai / ollama /
-lmstudio / custom) and is run off the UI thread on `_AICallWorker`; failures fall back to a canned
-reply so a missing key never breaks the UI. The persona is `FOX_SYSTEM_PROMPT`. `open <path>` is
-handled locally via `window_tracker.open_path` before hitting the AI. History is capped at 20 turns.
-
-**Cross-platform window tracking.** `window_tracker.py`'s `get_active_window_rect()` uses Windows
-ctypes / macOS Quartz / Linux Xlib and returns `None` if the optional dep is missing — callers treat
-`None` as "fall back to roaming" rather than crashing.
-
-## Theming — the key cross-cutting concept
-
-`fox_settings.py` defines `THEMES`, a **token-driven theme system** — design-token dicts that all
-expose the exact same keys (palette, border, radius, shadow model, fonts). It ships a single theme
-(`claymorphism`, matching the web app's clay look); add more by dropping in one fully-populated entry. `FoxSettings` wraps `QSettings` (OS-native
-persistent storage). `FoxSettings.theme_tokens()` returns the active theme merged with defaults so
-optional keys are always present.
-
-**All UI is 100% token-driven — no widget ever special-cases a particular theme.** Every themed
-widget builds its stylesheet from tokens and exposes an `apply_theme(tokens)` / `set_tokens(tokens)` /
-`apply_tokens(tokens)` method to re-skin in place; `SettingsDialog` emits `theme_changed` /
-`settings_saved`, which are wired to call those methods live. Shadows are built from the `shadow_*`
-tokens via `QGraphicsDropShadowEffect` (`shadow_blur: 0` → hard neobrutalist offset; coloured
-`shadow_color` → neon glow). **To add a theme, add one fully-populated entry to `THEMES`** and
-everything re-skins automatically — do not branch on theme names anywhere else.
-
-## Conventions when extending the UI
-
-- New themed widgets follow the token-driven pattern above and ship a standalone `if __name__ ==
-  "__main__"` preview harness with a fake fox (use `clay_chat_popup.py` as the template).
-- Use `resource_path()` (in `omni_fox.py`) for any bundled asset so paths work under PyInstaller
-  (`sys._MEIPASS`).
-- Do real work on a `QThread` and surface results via signals; keep the UI thread free.
-
-## Repository branches (currently non-obvious)
-
-The full desktop app lives on **`foxy-f`** (and on local `foxy-a`, which is `foxy-f` plus the
-Compliance Command Center dashboard, `dashboard.py`). `main` and the remote `origin/foxy-a` contain
-only `README.md`. Don't assume `main` is the source of truth — confirm with `git ls-tree -r <branch>0
---name-only` before branching or comparing.
+- **Deep product knowledge base** (architecture, security, AI judge, data model, deploy, market, build history): the Obsidian vault at `G:\My Drive\Life\03 Projects\Foxy Audit` — start at `Foxy Audit — Full Reference`.
+- In-repo: `README.md`, `docs/`, `JUDGES.pdf`.
+- Naming note: the desktop code still uses the older "OmniAware Fox" / `omni_fox` naming (QSettings keys `OmniAwareFox` / `DesktopPet`).
