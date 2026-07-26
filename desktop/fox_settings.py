@@ -1,89 +1,29 @@
 """
-Theme + persistent settings layer for the OmniAware Fox desktop pet.
+Persistent settings layer for the Foxy Audit desktop app.
 
-- FoxSettings wraps QSettings (OS-native storage: registry / plist / .ini)
-- THEMES holds the full design tokens for the app's single visual theme
-  (claymorphism, matching the web app). It's token-driven so a new theme is one
-  fully-populated entry away, but the look is intentionally constant — there is no
-  in-app theme picker.
+FoxSettings wraps QSettings (OS-native storage: registry / plist / .ini) with
+typed getters.  Design tokens / fonts / QSS live in foxy_tokens.py — the one
+design source — not here.
 
-Shadow/border model
-───────────────────
-  shadow_blur   QGraphicsDropShadowEffect blurRadius (0 = hard neobrutalist/pixel)
-  shadow_alpha  0-255 opacity of the drop-shadow colour
-  shadow_dx     horizontal shadow offset  (negative = left)
-  shadow_dy     vertical   shadow offset
-  shadow_color  (r,g,b) tuple — lets Cyberpunk use coloured glow, Neobrutalism
-                use pure black, Clay use warm brown, etc.
+Secrets (the org API key and per-provider AI keys) are stored in the OS
+keychain via foxy_client's secret store, NEVER in QSettings.  Values written
+by older builds into QSettings are migrated to the keychain on first read and
+removed from QSettings.
 
-Input/border model
-──────────────────
-  border        CSS shorthand string used in QSS (e.g. "3px solid #000")
-  radius        corner radius in px  (0 for sharp themes)
-  input_border  overrides 'border' for the text input field only if present
-  outline_focus CSS colour used for :focus outlines where applicable
-
-Typography
-──────────
-  font          primary font-family name
-  font_mono     monospace override for code-like widgets
-
-Palette
-───────
-  bg            window / panel background
-  panel         slightly-raised card surface inside the main panel
-  accent        primary interactive colour (buttons, active borders)
-  accent_dark   hover / pressed accent
-  accent_glow   glow colour for neon themes (optional; fallback = accent)
-  text          primary foreground
-  text_muted    secondary / placeholder text
-  bubble_user   user message bubble background
-  bubble_fox    fox message bubble background
-  header_bg     top-bar colour (if different from bg)
-  header_text   top-bar text colour (if different from text)
+Window geometry (pet position, console position/size, chat size) persists
+under the geometry/* keys — plain coordinates, no secrets.
 """
 
-import os
-import sys
+from __future__ import annotations
 
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QByteArray, QPoint, QSettings, QSize
+
+from foxy_client import default_secret_store
+from foxy_tokens import resource_path  # noqa: F401  (legacy import site: `from fox_settings import resource_path`)
 
 ORG = "OmniAwareFox"
 APP = "DesktopPet"
 
-
-def resource_path(relative_path: str) -> str:
-    """Resolve a bundled asset from source OR a PyInstaller onefile build (which
-    extracts data files under sys._MEIPASS). Shared by the desktop modules so
-    every asset load survives packaging — import this instead of building paths
-    from __file__."""
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, relative_path)
-
-# ──────────────────────────────────────────────────────────────────── THEMES ──
-THEMES: dict[str, dict] = {
-
-    # ── 1 · Claymorphism  ────────────────────────────────────────────────────
-    "claymorphism": {
-        "label": "🧸 Claymorphism",
-        "bg":          "#F4EFE8", "panel":        "#FBF6EE",
-        "accent":      "#FF9F66", "accent_dark":  "#E8854A",
-        "accent_glow": "#FF9F66",
-        "text":        "#5A4A3C", "text_muted":   "#A08070",
-        "bubble_user": "#FFD9B8", "bubble_fox":   "#FFFFFF",
-        "header_bg":   "#FBF6EE", "header_text":  "#5A4A3C",
-        "radius":      28,
-        "border":      "none",
-        "input_border": "none",
-        "outline_focus": "#FF9F66",
-        "font":        "Segoe UI", "font_mono":   "Consolas",
-        "shadow_blur": 24, "shadow_alpha": 70,
-        "shadow_dx": 0, "shadow_dy": 10,
-        "shadow_color": (80, 50, 20),
-    },
-}
-
-DEFAULT_THEME = "claymorphism"
 
 # ─────────────────────────────────────────────────────────── AI providers ──
 AI_PROVIDERS = ["anthropic", "openai", "ollama", "lmstudio", "custom"]
@@ -104,27 +44,32 @@ class FoxSettings:
 
     def __init__(self):
         self._s = QSettings(ORG, APP)
+        self._secrets = default_secret_store()
 
-    # ── theme ──
-    def theme(self) -> str:
-        return self._s.value("theme", DEFAULT_THEME, type=str)
+    # ── secret plumbing (keychain-first, one-time migration from QSettings) ──
+    def _get_secret(self, name: str, legacy_key: str) -> str:
+        val = self._secrets.get(name)
+        if val:
+            if self._s.contains(legacy_key):
+                self._s.remove(legacy_key)  # scrub any stale plaintext copy
+            return val
+        legacy = self._s.value(legacy_key, "", type=str)
+        if legacy:
+            if self._secrets.set(name, legacy):
+                self._s.remove(legacy_key)
+            return legacy
+        return ""
 
-    def theme_tokens(self) -> dict:
-        t = THEMES.get(self.theme(), THEMES[DEFAULT_THEME])
-        # Always guarantee the optional keys exist so callers never KeyError.
-        defaults = {
-            "accent_glow": t.get("accent", "#888888"),
-            "text_muted":  t.get("text",   "#888888"),
-            "header_bg":   t.get("bg",     "#FFFFFF"),
-            "header_text": t.get("text",   "#000000"),
-            "font_mono":   "Consolas",
-            "input_border": t.get("border", "none"),
-            "outline_focus": t.get("accent", "#888888"),
-            "shadow_color": (60, 60, 60),
-            "shadow_dx": 0,
-        }
-        merged = {**defaults, **t}
-        return merged
+    def _set_secret(self, name: str, legacy_key: str, value: str):
+        value = value or ""
+        if value:
+            if self._secrets.set(name, value):
+                self._s.remove(legacy_key)
+            # keychain write failed: the value lives only in the store's memory
+            # fallback — never written to QSettings.
+        else:
+            self._secrets.delete(name)
+            self._s.remove(legacy_key)
 
     # ── AI provider / keys ──
     def ai_provider(self) -> str:
@@ -139,10 +84,10 @@ class FoxSettings:
 
     def api_key(self, provider: str | None = None) -> str:
         provider = provider or self.ai_provider()
-        return self._s.value(f"ai/key/{provider}", "", type=str)
+        return self._get_secret(f"ai_key_{provider}", f"ai/key/{provider}")
 
     def set_api_key(self, provider: str, key: str):
-        self._s.setValue(f"ai/key/{provider}", key)
+        self._set_secret(f"ai_key_{provider}", f"ai/key/{provider}", key)
 
     def model(self, provider: str | None = None) -> str:
         provider = provider or self.ai_provider()
@@ -162,10 +107,10 @@ class FoxSettings:
 
     # ── Foxy Audit platform ──
     def org_api_key(self) -> str:
-        return self._s.value("foxy/org_key", "", type=str)
+        return self._get_secret("org_api_key", "foxy/org_key")
 
     def set_org_api_key(self, key: str):
-        self._s.setValue("foxy/org_key", key)
+        self._set_secret("org_api_key", "foxy/org_key", key)
 
     def backend_url(self) -> str:
         return self._s.value("foxy/backend_url", "https://app.foxyaudit.tech", type=str)
@@ -205,3 +150,45 @@ class FoxSettings:
 
     def set_proximity_glance_enabled(self, value: bool):
         self._s.setValue("behavior/glance", value)
+
+    # ── window geometry (no secrets — plain coordinates) ──
+    def pet_pos(self) -> QPoint | None:
+        """Where the user last placed the fox, or None if never placed."""
+        val = self._s.value("geometry/pet_pos")
+        return val if isinstance(val, QPoint) else None
+
+    def set_pet_pos(self, pos: QPoint):
+        self._s.setValue("geometry/pet_pos", pos)
+
+    def clear_pet_pos(self):
+        self._s.remove("geometry/pet_pos")
+
+    def console_geometry(self) -> QByteArray | None:
+        val = self._s.value("geometry/console")
+        return val if isinstance(val, QByteArray) and not val.isEmpty() else None
+
+    def set_console_geometry(self, geo: QByteArray):
+        self._s.setValue("geometry/console", geo)
+
+    def chat_size(self) -> QSize | None:
+        val = self._s.value("geometry/chat_size")
+        return val if isinstance(val, QSize) and val.isValid() else None
+
+    def set_chat_size(self, size: QSize):
+        self._s.setValue("geometry/chat_size", size)
+
+    # ── weekly-summary counters (previously raw QSettings pokes) ──
+    def weekly_breaches(self) -> int:
+        return self._s.value("weekly/breaches", 0, type=int)
+
+    def bump_weekly_breaches(self):
+        self._s.setValue("weekly/breaches", self.weekly_breaches() + 1)
+
+    def reset_weekly_breaches(self):
+        self._s.setValue("weekly/breaches", 0)
+
+    def weekly_last_summary(self) -> str:
+        return self._s.value("weekly/last_summary", "", type=str)
+
+    def set_weekly_last_summary(self, iso_ts: str):
+        self._s.setValue("weekly/last_summary", iso_ts)

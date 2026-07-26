@@ -7,8 +7,8 @@ Output:  dist/FoxyAudit(.exe / .app)  — onefile, windowed (no console).
 Notes:
 - PyQt6 Qt plugins (platforms, imageformats) are the thing that most often
   silently breaks a --onefile GUI build, so we collect_all("PyQt6").
-- Data files (the sprite atlas, and the optional fonts/ dir if present) are
-  bundled and resolved at runtime via fox_settings.resource_path() / sys._MEIPASS.
+- Data files (the sprite atlas, and the brand fonts/ dir) are bundled and
+  resolved at runtime via foxy_tokens.resource_path() / sys._MEIPASS.
 """
 import os
 import sys
@@ -21,9 +21,12 @@ datas = [
     (os.path.join(HERE, "ultimate_fox_spritesheet.png"), "."),
     (os.path.join(HERE, "logo.png"), "."),          # window/dialog/taskbar icon at runtime
 ]
-_fonts = os.path.join(HERE, "fonts")
-if os.path.isdir(_fonts):
-    datas.append((_fonts, "fonts"))
+# Brand fonts (Unbounded / Space Mono) live at the repo root fonts/ dir;
+# an in-desktop fonts/ dir wins if one is ever added.
+for _fonts in (os.path.join(HERE, "fonts"), os.path.join(HERE, os.pardir, "fonts")):
+    if os.path.isdir(_fonts):
+        datas.append((_fonts, "fonts"))
+        break
 
 # Icon for the built executable / .app — foxy.ico (Windows) or foxy.icns (macOS).
 _ICON = None
@@ -34,6 +37,14 @@ elif sys.platform == "darwin" and os.path.exists(os.path.join(HERE, "foxy.icns")
 
 pyqt_datas, pyqt_binaries, pyqt_hidden = collect_all("PyQt6")
 datas += pyqt_datas
+
+# keyring discovers its OS backend via entry points, which PyInstaller's
+# static analysis can miss — collect it explicitly so the keychain works
+# in the frozen build.
+kr_datas, kr_binaries, kr_hidden = collect_all("keyring")
+datas += kr_datas
+pyqt_binaries += kr_binaries
+pyqt_hidden += kr_hidden
 
 a = Analysis(
     [os.path.join(HERE, "omni_fox.py")],

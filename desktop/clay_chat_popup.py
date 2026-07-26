@@ -48,73 +48,17 @@ from PyQt6.QtCore import (
     QEasingCurve, QTimer, QParallelAnimationGroup,
 )
 from PyQt6.QtGui import (
-    QColor, QFont, QPixmap, QFontDatabase,
-    QPainter, QPen, QBrush, QLinearGradient, QPolygonF,
+    QColor, QFont, QPainter, QPen, QBrush, QLinearGradient, QPolygonF,
 )
 
-from fox_settings import FoxSettings, resource_path
+from fox_settings import FoxSettings
+from foxy_tokens import (
+    PANEL_WASH as _PANEL_WASH,
+    glass_tokens as _glass_tokens,
+    make_shadow as _make_shadow,
+)
 import ai_providers
 import window_tracker
-
-
-# ─────────────────────────── glass skin (matches the Auditor Console) ───────
-_FOX, _FOX2, _FOX3 = "#ff7a2e", "#ff9d52", "#d65a16"
-_INK, _MUTED = "#f7f1e8", "#8c8174"
-# colourful frosted backdrop the chat surfaces frost over
-# near-black frosted-glass backdrop — a calm hint of transparency, readable
-_PANEL_WASH = ("qlineargradient(x1:0, y1:0, x2:1, y2:1,"
-               " stop:0 rgba(11,11,13,240), stop:0.5 rgba(15,15,18,240),"
-               " stop:1 rgba(8,8,10,240))")
-
-_FONT_CACHE: dict[str, str] = {}
-_FONTS_REGISTERED = False
-
-
-def _register_bundled_fonts():
-    global _FONTS_REGISTERED
-    if _FONTS_REGISTERED:
-        return
-    _FONTS_REGISTERED = True
-    d = resource_path("fonts")
-    try:
-        for fn in os.listdir(d):
-            if fn.lower().endswith((".ttf", ".otf")):
-                QFontDatabase.addApplicationFont(os.path.join(d, fn))
-    except Exception:
-        pass
-
-
-def _pick_font(kind: str) -> str:
-    if kind in _FONT_CACHE:
-        return _FONT_CACHE[kind]
-    _register_bundled_fonts()
-    try:
-        fams = set(QFontDatabase.families())
-    except Exception:
-        fams = set()
-    cands = (["Unbounded", "Segoe UI Variable Display", "Segoe UI"] if kind == "disp"
-             else ["Space Mono", "Cascadia Mono", "Consolas"])
-    pick = next((c for c in cands if c in fams),
-                "Segoe UI" if kind == "disp" else "Consolas")
-    _FONT_CACHE[kind] = pick
-    return pick
-
-
-def _glass_tokens() -> dict:
-    """Fixed frosted-glass skin for the chat popup — mirrors the dashboard, so
-    any chat theme passed in is ignored (the copilot always reads as branded)."""
-    return {
-        "bg": "#11101a", "panel": "rgba(176,174,255,20)",
-        "radius": 22, "border": "1px solid rgba(190,186,255,16)",
-        "accent": "#c96a2f", "accent_dark": "#a8551f",
-        "text": _INK, "text_muted": _MUTED,
-        "font": _pick_font("disp"), "font_mono": _pick_font("mono"),
-        "bubble_user": "#c96a2f", "bubble_fox": "rgba(176,174,255,22)",
-        "header_bg": "transparent", "header_text": _INK,
-        "input_border": "1px solid rgba(190,186,255,16)", "outline_focus": "#c96a2f",
-        "shadow_blur": 30, "shadow_dx": 0, "shadow_dy": 12,
-        "shadow_color": (0, 0, 0), "shadow_alpha": 110,
-    }
 
 
 # ─────────────────────────────────────────────── background AI worker ──────
@@ -229,29 +173,7 @@ class ChatBubble(QLabel):
         """)
 
 
-def _is_dark(color_str: str) -> bool:
-    """Crude luminance check — returns True for colors darker than mid-grey."""
-    s = color_str.strip().lstrip("#")
-    if len(s) == 6:
-        try:
-            r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
-            return (r * 299 + g * 587 + b * 114) / 1000 < 128
-        except ValueError:
-            pass
-    return False  # can't tell → assume light
-
-
 # ──────────────────────────────────────────────── main panel (ClayPanel) ───
-def _make_shadow(tokens: dict) -> QGraphicsDropShadowEffect:
-    """Build a QGraphicsDropShadowEffect from theme tokens."""
-    eff = QGraphicsDropShadowEffect()
-    eff.setBlurRadius(tokens.get("shadow_blur", 20))
-    eff.setOffset(tokens.get("shadow_dx", 0), tokens.get("shadow_dy", 8))
-    r, g, b = tokens.get("shadow_color", (60, 40, 20))
-    eff.setColor(QColor(r, g, b, tokens.get("shadow_alpha", 80)))
-    return eff
-
-
 class ClayPanel(QFrame):
     """The rounded/sharp frame that acts as the popup's main surface."""
 
@@ -486,11 +408,17 @@ class ChatPopup(QWidget):
         self.setWindowTitle("Foxy Audit — Copilot")
         self.setMouseTracking(True)
         # Resizable + movable frameless window (drag the top bar to move,
-        # drag any edge/corner to resize).
+        # drag any edge/corner to resize).  The size the user resizes to is
+        # remembered (FoxSettings geometry/chat_size); position always comes
+        # from popup_near() so the chat stays anchored to the fox.
         screen_h = QApplication.primaryScreen().geometry().height()
         default_h = min(560, int(screen_h * 0.7))
         self.setMinimumSize(300, 380)
-        self.resize(360, default_h)
+        saved = self.settings.chat_size()
+        if saved is not None:
+            self.resize(max(saved.width(), 300), max(saved.height(), 380))
+        else:
+            self.resize(360, default_h)
 
         # drag / edge-resize state
         self._drag_active  = False
@@ -1235,10 +1163,12 @@ class ChatPopup(QWidget):
 
     # ─────────────────────────────────────── clean shutdown ───────
     def hideEvent(self, event):
+        self.settings.set_chat_size(self.size())
         self.popup_closed.emit()
         super().hideEvent(event)
 
     def closeEvent(self, event):
+        self.settings.set_chat_size(self.size())
         self.popup_closed.emit()
         if self._ai_worker and self._ai_worker.isRunning():
             self._ai_worker.quit()

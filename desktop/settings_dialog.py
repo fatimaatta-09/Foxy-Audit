@@ -22,77 +22,26 @@ Design rules
 
 from __future__ import annotations
 
-import os
 import sys
-import urllib.request
-import urllib.error
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QSlider, QCheckBox,
     QComboBox, QScrollArea, QFrame, QGraphicsDropShadowEffect,
-    QMessageBox, QSizePolicy, QStackedWidget,
+    QSizePolicy, QStackedWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QColor, QFont, QFontDatabase
+from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtGui import QColor, QFont
 
-from fox_settings import FoxSettings, AI_PROVIDERS, resource_path
+from fox_settings import FoxSettings, AI_PROVIDERS
+from foxy_client import FoxyClient, shutdown_workers, spawn_worker
+from foxy_tokens import is_dark, matte_tokens as _matte_tokens
 from clay_chat_popup import GradientText, _IconButton
 import window_tracker
 import ai_providers
 
-
-# ───────────────────────────── bundled fonts + fixed matte skin ─────────────
-_FONT_CACHE: dict[str, str] = {}
-_FONTS_REGISTERED = False
-
-
-def _register_bundled_fonts():
-    global _FONTS_REGISTERED
-    if _FONTS_REGISTERED:
-        return
-    _FONTS_REGISTERED = True
-    d = resource_path("fonts")
-    try:
-        for fn in os.listdir(d):
-            if fn.lower().endswith((".ttf", ".otf")):
-                QFontDatabase.addApplicationFont(os.path.join(d, fn))
-    except Exception:
-        pass
-
-
-def _pick_font(kind: str) -> str:
-    if kind in _FONT_CACHE:
-        return _FONT_CACHE[kind]
-    _register_bundled_fonts()
-    try:
-        fams = set(QFontDatabase.families())
-    except Exception:
-        fams = set()
-    cands = (["Unbounded", "Segoe UI Variable Display", "Segoe UI"] if kind == "disp"
-             else ["Space Mono", "Cascadia Mono", "Consolas"])
-    pick = next((c for c in cands if c in fams),
-                "Segoe UI" if kind == "disp" else "Consolas")
-    _FONT_CACHE[kind] = pick
-    return pick
-
-
-def _matte_tokens() -> dict:
-    """Fixed matte skin for the settings dialog — mirrors the Auditor Console
-    and chat popup so the whole app reads as one branded surface. There is no
-    theme switching any more; the look is constant."""
-    return {
-        "bg": "#0c0c0e", "radius": 16,
-        "accent": "#c96a2f", "accent_dark": "#a8551f",
-        "panel": "rgba(255,255,255,16)",
-        "text": "#f4efe8", "text_muted": "#9b9aae",
-        "font": _pick_font("disp"), "font_disp": _pick_font("disp"),
-        "header_bg": "rgba(255,255,255,10)", "header_text": "#f4efe8",
-        "border": "2px solid rgba(255,255,255,55)",
-        "input_border": "1px solid rgba(255,255,255,45)",
-        "outline_focus": "#c96a2f",
-        "shadow_blur": 34, "shadow_dx": 0, "shadow_dy": 14,
-        "shadow_color": (0, 0, 0), "shadow_alpha": 150,
-    }
+# The settings dialog has always used a slightly higher luminance threshold
+# than the console when deciding black-vs-white text on the accent.
+_IS_DARK_THRESHOLD = 140
 
 
 # ───────────────────────────────────────── background connection tester ────
@@ -122,50 +71,6 @@ class _TestConnectionWorker(QThread):
             self.failed.disconnect()
         except RuntimeError:
             pass
-
-
-class _FoxyBackendWorker(QThread):
-    succeeded = pyqtSignal()
-    failed    = pyqtSignal(str)
-
-    def __init__(self, backend_url: str, org_key: str, parent=None):
-        super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
-        self.finished.connect(self._cleanup)
-
-    def run(self):
-        url = f"{self.backend_url}/v1/health"
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.org_key}"})
-        try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    self.succeeded.emit()
-                else:
-                    self.failed.emit(f"HTTP {resp.status}")
-        except urllib.error.URLError as e:
-            self.failed.emit(str(e.reason))
-        except Exception as e:
-            self.failed.emit(str(e))
-
-    def _cleanup(self):
-        try:
-            self.succeeded.disconnect()
-            self.failed.disconnect()
-        except RuntimeError:
-            pass
-
-
-# ───────────────────────────────────────────────── helper: dark check ─────
-def _is_dark(color_str: str) -> bool:
-    s = color_str.strip().lstrip("#")
-    if len(s) == 6:
-        try:
-            r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
-            return (r * 299 + g * 587 + b * 114) / 1000 < 140
-        except ValueError:
-            pass
-    return False
 
 
 # ──────────────────────────────────────────── custom pill tab bar ──────────
@@ -215,7 +120,7 @@ class PillTabBar(QWidget):
                 }}
                 QPushButton:checked {{
                     background-color: {acc};
-                    color: {'#000' if not _is_dark(acc) else '#fff'};
+                    color: {'#000' if not is_dark(acc, _IS_DARK_THRESHOLD) else '#fff'};
                     border: 1px solid {acc_dark};
                 }}
                 QPushButton:hover:!checked {{
@@ -366,11 +271,13 @@ def _divider(tokens: dict) -> QFrame:
 class SettingsDialog(QDialog):
     settings_saved = pyqtSignal()
 
-    def __init__(self, settings: FoxSettings, parent=None):
+    def __init__(self, settings: FoxSettings, parent=None,
+                 client: FoxyClient | None = None):
         super().__init__(parent)
         self.settings = settings
+        self.client = client or FoxyClient(settings, parent=self)
         self._conn_worker: _TestConnectionWorker | None = None
-        self._foxy_worker: _FoxyBackendWorker | None = None
+        self._workers: set = set()
 
         self.setWindowTitle("Foxy — Settings")
         self.setWindowFlags(
@@ -567,7 +474,7 @@ class SettingsDialog(QDialog):
         self._save_btn.setStyleSheet(f"""
             QPushButton#saveBtn {{
                 background-color: {acc};
-                color: {'#000000' if not _is_dark(acc) else '#ffffff'};
+                color: {'#000000' if not is_dark(acc, _IS_DARK_THRESHOLD) else '#ffffff'};
                 border-radius: {min(r,18)}px;
                 font-size: 13px; font-weight: 700;
                 font-family: '{font}';
@@ -762,6 +669,8 @@ class SettingsDialog(QDialog):
         )
 
     def _test_connection(self):
+        if self._conn_worker and self._conn_worker.isRunning():
+            return  # guard BEFORE touching the button, or it sticks on "Testing…"
         provider = self._current_provider()
         self.settings.set_ai_provider(provider)
         self.settings.set_api_key(provider, self._key_field.text())
@@ -775,9 +684,6 @@ class SettingsDialog(QDialog):
             f"color: {tokens.get('text_muted', '#888')}; font-size: 12px;"
         )
         self._test_status.setText("Connecting…")
-
-        if self._conn_worker and self._conn_worker.isRunning():
-            return
 
         self._conn_worker = _TestConnectionWorker(self.settings, self)
         self._conn_worker.succeeded.connect(self._on_test_ok)
@@ -894,7 +800,7 @@ class SettingsDialog(QDialog):
         # Backend URL
         self._backend_url_field = QLineEdit()
         self._backend_url_field.setText(self.settings.backend_url())
-        self._backend_url_field.setPlaceholderText("https://api.foxyaudit.dev")
+        self._backend_url_field.setPlaceholderText("https://app.foxyaudit.tech")
         layout.addWidget(self._make_field_row("Backend URL", self._backend_url_field))
 
         # Test button + status label
@@ -934,9 +840,13 @@ class SettingsDialog(QDialog):
         return page
 
     def _test_foxy_backend(self):
+        if any(w.isRunning() for w in self._workers):
+            return  # guard BEFORE touching the button, or it sticks on "Testing…"
         org_key = self._org_key_field.text().strip()
         url = self._backend_url_field.text().strip()
-        
+
+        # Save first so the shared client (which reads FoxSettings at request
+        # time) probes exactly what's in the form.
         self.settings.set_org_api_key(org_key)
         self.settings.set_backend_url(url)
 
@@ -948,20 +858,16 @@ class SettingsDialog(QDialog):
         )
         self._foxy_test_status.setText("Connecting…")
 
-        if self._foxy_worker and self._foxy_worker.isRunning():
-            return
-
-        self._foxy_worker = _FoxyBackendWorker(url, org_key, self)
-        self._foxy_worker.succeeded.connect(self._on_foxy_ok)
-        self._foxy_worker.failed.connect(self._on_foxy_fail)
-        self._foxy_worker.finished.connect(self._reset_foxy_btn)
-        self._foxy_worker.start()
+        w = spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                         on_ok=self._on_foxy_ok, on_err=self._on_foxy_fail,
+                         track=self._workers)
+        w.finished.connect(self._reset_foxy_btn)
 
     def _reset_foxy_btn(self):
         self._foxy_test_btn.setEnabled(True)
         self._foxy_test_btn.setText("Test Backend")
 
-    def _on_foxy_ok(self):
+    def _on_foxy_ok(self, _data=None):
         tokens = _matte_tokens()
         self._foxy_test_status.setStyleSheet(
             f"color: {tokens['accent']}; font-size: 12px; font-weight: 600;"
@@ -993,11 +899,8 @@ class SettingsDialog(QDialog):
 
     def closeEvent(self, event):
         if self._conn_worker and self._conn_worker.isRunning():
-            self._conn_worker.quit()
             self._conn_worker.wait(600)
-        if self._foxy_worker and self._foxy_worker.isRunning():
-            self._foxy_worker.quit()
-            self._foxy_worker.wait(600)
+        shutdown_workers(self._workers, wait_ms=600)
         super().closeEvent(event)
 
 

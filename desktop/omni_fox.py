@@ -9,11 +9,8 @@ health, provides governance tips, and offers a chat interface.
 import sys
 import os
 import time
-import json
 import random
 
-import urllib.request
-import urllib.error
 import webbrowser
 
 import psutil
@@ -22,8 +19,10 @@ from PyQt6.QtCore import Qt, QTimer, QPoint, QRect, pyqtSignal, QThread
 from PyQt6.QtGui import QPixmap, QTransform, QCursor, QPainter, QColor, QIcon
 from pynput import keyboard, mouse
 
-from clay_chat_popup import ChatPopup, _pick_font
+from clay_chat_popup import ChatPopup
 from fox_settings import FoxSettings
+from foxy_client import FoxyClient, shutdown_workers, spawn_worker
+from foxy_tokens import matte_menu_qss as _matte_menu_qss, resource_path
 from settings_dialog import SettingsDialog
 import window_tracker
 from eye_tracker import EyeOverlay
@@ -31,42 +30,6 @@ from security_overlay import SecurityOverlay
 from sdk_bridge import SDKBridgeListener
 from dashboard import DashboardWindow
 from breach_poll import plan_reactions
-
-
-# ── Shared matte menu skin (matches the dashboard / chat / settings) ────────
-def _matte_menu_qss() -> str:
-    """Stylesheet for the tray + right-click menus, in the app's fixed matte
-    skin: dark base, lavender frost rim, matte-orange selection, and the
-    Unbounded brand display font (same wordmark used on the dashboard/chat)."""
-    disp = _pick_font("disp")
-    return f"""
-        QMenu {{
-            background-color: #17131f;
-            color: #f7f1e8;
-            border: 1px solid rgba(190,186,255,30);
-            border-radius: 16px;
-            padding: 7px;
-            font-family: '{disp}';
-            font-size: 14px;
-            font-weight: 500;
-        }}
-        QMenu::item {{
-            padding: 11px 40px 11px 20px;
-            border-radius: 11px;
-            margin: 3px 5px;
-        }}
-        QMenu::item:selected {{
-            background-color: #c96a2f;
-            color: #ffffff;
-        }}
-        QMenu::item:disabled {{ color: #6b6675; }}
-        QMenu::separator {{
-            height: 1px;
-            background: rgba(190,186,255,22);
-            margin: 6px 12px;
-        }}
-        QMenu::right-arrow {{ width: 12px; height: 12px; margin-right: 8px; }}
-    """
 
 
 # ── Spritesheet layout ─────────────────────────────────────────────────────
@@ -105,15 +68,6 @@ COMPLIANCE_TIPS = [
 ]
 
 
-def resource_path(relative_path: str) -> str:
-    """Works both from source and from a PyInstaller bundle."""
-    try:
-        base = sys._MEIPASS                      # type: ignore[attr-defined]
-    except AttributeError:
-        base = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base, relative_path)
-
-
 # ── Background sensor thread ───────────────────────────────────────────────
 class GlobalSensors(QThread):
     typing_signal          = pyqtSignal()
@@ -144,29 +98,6 @@ class GlobalSensors(QThread):
         mouse_listener.stop()
 
 
-# ── Startup health check thread ────────────────────────────────────────────
-class StartupHealthWorker(QThread):
-    succeeded = pyqtSignal()
-    failed    = pyqtSignal(str)
-
-    def __init__(self, backend_url: str, org_key: str, parent=None):
-        super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
-
-    def run(self):
-        url = f"{self.backend_url}/v1/health"
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.org_key}"})
-        try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    self.succeeded.emit()
-                else:
-                    self.failed.emit(f"HTTP {resp.status}")
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
 # ── Backend breach poller ──────────────────────────────────────────────────
 class BreachPollWorker(QThread):
     """Polls the backend so the fox reacts to a REAL, backend-detected policy
@@ -174,14 +105,16 @@ class BreachPollWorker(QThread):
     it can never push a UDP datagram to the desktop's localhost:9999 — so the
     desktop pulls: GET /v1/logs/breaches?since_seq={cursor}.  The first poll is a
     baseline (existing breaches are absorbed, not fired) so the fox never floods
-    with stale alerts on launch.  Pure cursor logic lives in breach_poll.py."""
+    with stale alerts on launch.  Pure cursor logic lives in breach_poll.py.
+
+    HTTP goes through the shared FoxyClient, which reads the backend URL and
+    org key from FoxSettings per request — a settings change applies on the
+    next poll tick without restarting this thread."""
     breach_detected = pyqtSignal(dict)
 
-    def __init__(self, backend_url: str, org_key: str,
-                 interval: float = 10.0, parent=None):
+    def __init__(self, client: FoxyClient, interval: float = 10.0, parent=None):
         super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
+        self._client = client
         self.interval = interval
         self._cursor = 0
         self._first_poll = True
@@ -195,14 +128,9 @@ class BreachPollWorker(QThread):
                 waited += 0.2
 
     def _poll_once(self):
-        url = f"{self.backend_url}/v1/logs/breaches?since_seq={self._cursor}"
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self.org_key}"})
         try:
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                if resp.status != 200:
-                    return
-                breaches = json.loads(resp.read().decode("utf-8"))
+            breaches = self._client.request(
+                "GET", f"/v1/logs/breaches?since_seq={self._cursor}", timeout=8)
         except Exception:
             return  # transient (offline / unreachable) — retry next tick
         if not isinstance(breaches, list):
@@ -240,6 +168,8 @@ class OmniAwareFox(QWidget):
     def __init__(self):
         super().__init__()
         self.settings = FoxSettings()
+        self.client = FoxyClient(self.settings, parent=self)
+        self._workers: set = set()   # live one-shot ApiWorkers (health probes)
 
         # ── Window flags ───────────────────────────────────────────────────
         self.setWindowFlags(
@@ -341,13 +271,24 @@ class OmniAwareFox(QWidget):
         # ── Screen geometry ───────────────────────────────────────────────
         self.screen_geom = QApplication.primaryScreen().geometry()
 
-        # ── Initial position: bottom-right, above taskbar ─────────────────
+        # ── Initial position: where the user last placed the fox, clamped to
+        # the current screen; default bottom-right, above the taskbar ──────
         taskbar_margin = 50
         self._bottom_y = self.screen_geom.height() - CELL_HEIGHT - taskbar_margin
-        self.move(
-            self.screen_geom.width() - CELL_WIDTH - 80,
-            self._bottom_y,
-        )
+        saved_pos = self.settings.pet_pos()
+        if saved_pos is not None:
+            self.move(
+                max(self.screen_geom.x(),
+                    min(saved_pos.x(), self.screen_geom.right() - CELL_WIDTH)),
+                max(self.screen_geom.y(),
+                    min(saved_pos.y(), self.screen_geom.bottom() - CELL_HEIGHT)),
+            )
+            self._user_placed = True   # a remembered spot counts as user-placed
+        else:
+            self.move(
+                self.screen_geom.width() - CELL_WIDTH - 80,
+                self._bottom_y,
+            )
 
         # ── Background sensors ────────────────────────────────────────────
         self.sensors = GlobalSensors()
@@ -374,13 +315,12 @@ class OmniAwareFox(QWidget):
         url = self.settings.backend_url()
         key = self.settings.org_api_key()
         if url and key:
-            self._health_worker = StartupHealthWorker(url, key, self)
-            self._health_worker.succeeded.connect(self._on_health_ok)
-            self._health_worker.failed.connect(self._on_health_fail)
-            self._health_worker.start()
+            spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                         on_ok=self._on_health_ok, on_err=self._on_health_fail,
+                         track=self._workers)
 
             # Poll the backend for real graded breaches → fox reacts (5A.1b).
-            self._breach_poller = BreachPollWorker(url, key, parent=self)
+            self._breach_poller = BreachPollWorker(self.client, parent=self)
             self._breach_poller.breach_detected.connect(self._on_policy_breach)
             self._breach_poller.start()
 
@@ -702,7 +642,7 @@ class OmniAwareFox(QWidget):
         QTimer.singleShot(4000, self._hide_speech)
 
     # ── Startup Health Check Callbacks ─────────────────────────────────────
-    def _on_health_ok(self):
+    def _on_health_ok(self, _data=None):
         if self.dashboard is not None:
             self.dashboard.set_connected(True)
         self._set_state("CHEERING", ROW_CHEERING, 2.0)
@@ -780,11 +720,7 @@ class OmniAwareFox(QWidget):
                 QSystemTrayIcon.MessageIcon.Critical, 6000)
         except Exception:
             pass
-        try:
-            _s = self.settings._s
-            _s.setValue("weekly/breaches", _s.value("weekly/breaches", 0, type=int) + 1)
-        except Exception:
-            pass
+        self.settings.bump_weekly_breaches()
 
         if self.chat_popup is None:
             self.chat_popup = ChatPopup(self, settings=self.settings)
@@ -843,6 +779,7 @@ class OmniAwareFox(QWidget):
             elif moved > 30:
                 # Significant drag — user placed the fox, stop auto-roaming
                 self._user_placed = True
+                self.settings.set_pet_pos(self.pos())   # remember for next launch
                 self.roam_target_x = None
                 if self.state == "WALKING":
                     self.state       = "IDLE"
@@ -878,6 +815,7 @@ class OmniAwareFox(QWidget):
                 self,
                 settings=self.settings,
                 sprite_sheet_path=resource_path("ultimate_fox_spritesheet.png"),
+                client=self.client,
             )
             # Live feeds (Qt signals support multiple receivers)
             self.sensors.hardware_update_signal.connect(self.dashboard.on_hardware)
@@ -901,11 +839,8 @@ class OmniAwareFox(QWidget):
         key = self.settings.org_api_key()
         if backend and key:
             try:
-                req = urllib.request.Request(
-                    f"{backend.rstrip('/')}/v1/auth/handoff", data=b"", method="POST",
-                    headers={"Authorization": f"Bearer {key}"})
-                with urllib.request.urlopen(req, timeout=6) as r:
-                    token = json.loads(r.read().decode("utf-8")).get("token")
+                data = self.client.request("POST", "/v1/auth/handoff", timeout=6)
+                token = data.get("token") if isinstance(data, dict) else None
                 if token:
                     sep = "&" if "?" in url else "?"
                     url = f"{url}{sep}handoff={token}"
@@ -926,10 +861,9 @@ class OmniAwareFox(QWidget):
             if self.dashboard is not None:
                 self.dashboard.set_connected(False)
             return
-        self._health_worker = StartupHealthWorker(url, key, self)
-        self._health_worker.succeeded.connect(self._on_health_ok)
-        self._health_worker.failed.connect(self._on_health_fail)
-        self._health_worker.start()
+        spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                     on_ok=self._on_health_ok, on_err=self._on_health_fail,
+                     track=self._workers)
 
     # ── Context menu ───────────────────────────────────────────────────────
     def contextMenuEvent(self, event):
@@ -975,7 +909,7 @@ class OmniAwareFox(QWidget):
 
         menu.addAction("⚙️ Settings",  self.open_settings)
         menu.addSeparator()
-        menu.addAction("❌ Quit", QApplication.instance().quit)
+        menu.addAction("❌ Quit", self._quit_app)
         menu.exec(event.globalPos())
 
     def _stop_roaming(self):
@@ -988,6 +922,7 @@ class OmniAwareFox(QWidget):
 
     def _resume_roaming(self):
         self._user_placed = False
+        self.settings.clear_pet_pos()   # roaming again — forget the pinned spot
         # Snap back to the bottom of the screen
         self.move(self.x(), self._bottom_y)
 
@@ -1009,8 +944,8 @@ class OmniAwareFox(QWidget):
         tray_menu.addAction("🌐 Open Web Dashboard", self.open_web_dashboard)
         tray_menu.addAction("⚙️ Settings", self.open_settings)
         tray_menu.addSeparator()
-        tray_menu.addAction("❌ Quit", QApplication.instance().quit)
-        
+        tray_menu.addAction("❌ Quit", self._quit_app)
+
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
@@ -1021,8 +956,7 @@ class OmniAwareFox(QWidget):
         """Once every 7 days, show a tray summary of the week's breach activity (5L)."""
         from datetime import datetime, timedelta
         try:
-            s = self.settings._s
-            last = s.value("weekly/last_summary", "", type=str)
+            last = self.settings.weekly_last_summary()
             now = datetime.now()
             due = True
             if last:
@@ -1033,13 +967,13 @@ class OmniAwareFox(QWidget):
             if not due:
                 return
             if last:   # skip the very first run — no full week has elapsed yet
-                breaches = s.value("weekly/breaches", 0, type=int)
+                breaches = self.settings.weekly_breaches()
                 self.tray_icon.showMessage(
                     "🦊 Foxy Audit — weekly summary",
                     f"This week: {breaches} policy breach(es) caught. Stay compliant!",
                     QSystemTrayIcon.MessageIcon.Information, 8000)
-            s.setValue("weekly/last_summary", now.isoformat())
-            s.setValue("weekly/breaches", 0)
+            self.settings.set_weekly_last_summary(now.isoformat())
+            self.settings.reset_weekly_breaches()
         except Exception:
             pass
 
@@ -1059,24 +993,30 @@ class OmniAwareFox(QWidget):
 
     # ── Settings ───────────────────────────────────────────────────────────
     def open_settings(self):
-        dlg = SettingsDialog(self.settings, self)
+        dlg = SettingsDialog(self.settings, self, client=self.client)
         dlg.settings_saved.connect(self._on_theme_changed)
         dlg.exec()
 
     def _on_theme_changed(self, *_):
-        # The dashboard + chat use a fixed matte skin (they ignore the tokens
-        # passed in); re-apply so any saved setting change re-skins them cleanly.
-        tokens = self.settings.theme_tokens()
+        # The dashboard + chat use the fixed foxy_tokens skins (the argument is
+        # ignored); re-apply so any saved setting change re-skins them cleanly.
         if self.chat_popup is not None:
-            self.chat_popup.apply_theme(tokens)
+            self.chat_popup.apply_theme(None)
         if self.dashboard is not None:
-            self.dashboard.apply_theme(tokens)
+            self.dashboard.apply_theme(None)
 
     # ── Shutdown ───────────────────────────────────────────────────────────
+    def _quit_app(self):
+        """Quit via close() so closeEvent's thread teardown actually runs —
+        QApplication.quit() alone would skip it."""
+        self.close()
+        QApplication.instance().quit()
+
     def closeEvent(self, event):
-        if hasattr(self, "_health_worker") and self._health_worker.isRunning():
-            self._health_worker.quit()
-            self._health_worker.wait(600)
+        if self._user_placed:
+            self.settings.set_pet_pos(self.pos())   # remember the fox's spot
+
+        shutdown_workers(self._workers, wait_ms=600)
 
         if hasattr(self, "_breach_poller") and self._breach_poller.isRunning():
             self._breach_poller.requestInterruption()
@@ -1087,13 +1027,13 @@ class OmniAwareFox(QWidget):
             self.dashboard.close()
 
         self.sdk_bridge.stop()
-        
+
         self.sensors.requestInterruption()
         self.sensors.quit()
         self.sensors.wait(1000)
-        
+
         self.tray_icon.hide()
-        
+
         super().closeEvent(event)
 
 

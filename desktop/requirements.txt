@@ -11,6 +11,7 @@ PyQt6>=6.6,<6.10
 psutil>=5.9,<7
 pynput>=1.7,<2
 requests>=2.31,<3
+keyring>=24,<26
 
 # ── Optional ────────────────────────────────────────────────────────────────
 # Window-following on non-Windows (import is guarded — safe to omit on Windows):

@@ -20,402 +20,52 @@ Design goals
 • Reads as professional B2B software, not a desktop toy: left nav rail,
   top bar, KPI tiles, a real data table, hairline borders, restrained
   status colour, monospaced hashes, and no emoji.
-• Still fully token-driven, so all 14 FoxSettings themes apply — but the
-  structure is flattened (small radii, 1px borders, minimal shadow) so it
-  looks clean in every palette.
+• One fixed look — the design tokens, fonts and QSS all come from
+  foxy_tokens.py (the app-wide single source); there is no theme picker.
 • Public slots are unchanged from the previous version, so the omni_fox
   wiring (on_hardware / on_hash_ok / on_policy_breach / set_connected /
   refresh_requested / show_animated) needs no edits.
 
-Note on derived figures: counts, risk, score, uptime and CPU/RAM/battery
-are real. The ledger block height + chain-hash preview are recomputed
-locally from the live hash stream so the auditor view stays self-consistent
-until the FastAPI ledger endpoints are wired in.
+All backend traffic goes through foxy_client (one FoxyClient + the generic
+ApiWorker) — no bespoke HTTP code in this file.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 import time
-import json
 import hashlib
-import urllib.error
-import urllib.request
 from datetime import datetime
-from collections import deque
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QStackedWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QApplication, QSizePolicy, QButtonGroup, QAbstractItemView,
-    QGraphicsDropShadowEffect, QTextEdit, QLineEdit,
+    QTextEdit, QLineEdit,
 )
 from PyQt6.QtCore import (
-    Qt, QPoint, QRectF, QTimer, QThread, QPropertyAnimation,
-    QParallelAnimationGroup, QEasingCurve, pyqtSignal, pyqtProperty,
+    Qt, QPoint, QRectF, QTimer, QPropertyAnimation,
+    QEasingCurve, pyqtSignal, pyqtProperty,
 )
 from PyQt6.QtGui import (
-    QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPixmap, QFontDatabase,
-    QLinearGradient,
+    QColor, QPainter, QPen, QBrush, QFont, QPixmap, QLinearGradient,
 )
 
-from fox_settings import FoxSettings, resource_path
-
-
-# ── Backend HTTP workers (run off-thread so the GUI never freezes) ───────────
-class VerifyWorker(QThread):
-    """Calls GET /v1/verify and emits the result."""
-    succeeded = pyqtSignal(dict)   # {ok, count, first_broken_seq, detail}
-    failed    = pyqtSignal(str)    # error message
-
-    def __init__(self, backend_url: str, org_key: str, parent=None):
-        super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
-
-    def run(self):
-        url = f"{self.backend_url}/v1/verify"
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self.org_key}"}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                self.succeeded.emit(data)
-        except urllib.error.HTTPError as e:
-            self.failed.emit(f"HTTP {e.code}: {e.reason}")
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class StatsWorker(QThread):
-    """Calls GET /v1/stats and emits the aggregate dashboard stats (7B)."""
-    succeeded = pyqtSignal(dict)   # {total_logged, breaches, clean_rate, judge_model, avg_seconds_to_verdict, ...}
-    failed    = pyqtSignal(str)
-
-    def __init__(self, backend_url: str, org_key: str, parent=None):
-        super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
-
-    def run(self):
-        url = f"{self.backend_url}/v1/stats"
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self.org_key}"}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                self.succeeded.emit(data)
-        except urllib.error.HTTPError as e:
-            self.failed.emit(f"HTTP {e.code}: {e.reason}")
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class RefreshWorker(QThread):
-    """Calls GET /v1/logs?page=1&limit=50 and emits the rows."""
-    succeeded = pyqtSignal(dict)   # {items, total, page, limit}
-    failed    = pyqtSignal(str)
-
-    def __init__(self, backend_url: str, org_key: str,
-                 page: int = 1, limit: int = 50, parent=None):
-        super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
-        self.page = page
-        self.limit = limit
-
-    def run(self):
-        url = f"{self.backend_url}/v1/logs?page={self.page}&limit={self.limit}"
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self.org_key}"}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                self.succeeded.emit(data)
-        except urllib.error.HTTPError as e:
-            self.failed.emit(f"HTTP {e.code}: {e.reason}")
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class ThreatAnalyticsWorker(QThread):
-    """Calls GET /v1/analytics/threats and emits the analytics data."""
-    succeeded = pyqtSignal(dict)
-    failed    = pyqtSignal(str)
-
-    def __init__(self, backend_url: str, org_key: str, parent=None):
-        super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
-
-    def run(self):
-        url = f"{self.backend_url}/v1/analytics/threats"
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self.org_key}"}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                self.succeeded.emit(data)
-        except urllib.error.HTTPError as e:
-            self.failed.emit(f"HTTP {e.code}: {e.reason}")
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
-class _SandboxFetchWorker(QThread):
-    """Fetch GET /v1/logs/{seq} and compare stored hashes to locally computed ones.
-
-    Emits result(matched: bool, detail: str).
-    """
-    result = pyqtSignal(bool, str)
-
-    def __init__(self, backend_url: str, org_key: str, seq: int,
-                 local_prompt_hash: str, local_response_hash: str, parent=None):
-        super().__init__(parent)
-        self.backend_url = backend_url.rstrip("/")
-        self.org_key = org_key
-        self.seq = seq
-        self.local_ph = local_prompt_hash
-        self.local_rh = local_response_hash
-
-    def run(self):
-        url = f"{self.backend_url}/v1/logs/{self.seq}"
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self.org_key}"}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            stored_ph = data.get("prompt_hash", "")
-            stored_rh = data.get("response_hash", "")
-            if stored_ph == self.local_ph and stored_rh == self.local_rh:
-                self.result.emit(True, "")
-            else:
-                detail = []
-                if stored_ph != self.local_ph:
-                    detail.append(f"Prompt hash: ledger={stored_ph[:16]}… local={self.local_ph[:16]}…")
-                if stored_rh != self.local_rh:
-                    detail.append(f"Response hash: ledger={stored_rh[:16]}… local={self.local_rh[:16]}…")
-                self.result.emit(False, "\n".join(detail))
-        except urllib.error.HTTPError as e:
-            self.result.emit(False, f"HTTP {e.code}: {e.reason} — seq {self.seq} not found")
-        except Exception as e:
-            self.result.emit(False, f"Error: {e}")
-
-
-# ── Colour helpers ──────────────────────────────────────────────────────────
-def _is_dark(color_str: str) -> bool:
-    s = color_str.strip().lstrip("#")
-    if len(s) == 6:
-        try:
-            r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
-            return (r * 299 + g * 587 + b * 114) / 1000 < 128
-        except ValueError:
-            pass
-    return False
-
-
-def _with_alpha(color: str, alpha: int) -> str:
-    s = color.strip()
-    if s.startswith("#") and len(s) == 7:
-        r, g, b = int(s[1:3], 16), int(s[3:5], 16), int(s[5:7], 16)
-        return f"rgba({r},{g},{b},{alpha})"
-    return s
-
-
-def _qcolor(color: str, fallback=(136, 136, 136)) -> QColor:
-    s = color.strip()
-    if s.startswith("#") and len(s) == 7:
-        return QColor(int(s[1:3], 16), int(s[3:5], 16), int(s[5:7], 16))
-    c = QColor(s)
-    return c if c.isValid() else QColor(*fallback)
-
-
-def _mix(a: str, b: str, t: float) -> str:
-    """Linear blend of two #RRGGBB colours, t in [0,1]."""
-    ca, cb = _qcolor(a), _qcolor(b)
-    r = int(ca.red() * (1 - t) + cb.red() * t)
-    g = int(ca.green() * (1 - t) + cb.green() * t)
-    bl = int(ca.blue() * (1 - t) + cb.blue() * t)
-    return f"#{r:02X}{g:02X}{bl:02X}"
-
-
-# Status palette — matches foxy-audit-premium.html :root (clay / paprika site),
-# fixed & theme-independent so danger always reads as danger.
-OK_GREEN   = "#3ddc84"
-WARN_AMBER = "#ffc83d"
-BAD_RED    = "#ff4d4d"
-INFO_BLUE  = "#5b8cff"
-DARK_TX    = "#160d08"   # near-black ink used on the coloured pills
-
-
-# ── Foxy Audit "premium" clay palette (1:1 with the website :root) ───────────
-CLAY = {
-    "bg": "#0e0c0a", "bg2": "#161310", "surf": "#1c1815", "surf2": "#221d18",
-    "surf3": "#2a241d", "line": "#322b23",
-    "ink": "#f7f1e8", "ink2": "#cdc2b3", "muted": "#8c8174", "muted2": "#5f564a",
-    "fox": "#ff7a2e", "fox2": "#ff9d52", "fox3": "#d65a16", "foxdeep": "#8a3611",
-}
-
-_FONT_CACHE: dict[str, str] = {}
-_FONTS_REGISTERED = False
-
-
-def _register_bundled_fonts():
-    """Load the bundled Unbounded / Space Mono TTFs (the site's brand fonts) so the
-    console uses them instead of a generic system fallback."""
-    global _FONTS_REGISTERED
-    if _FONTS_REGISTERED:
-        return
-    _FONTS_REGISTERED = True
-    font_dir = resource_path("fonts")
-    try:
-        for fn in os.listdir(font_dir):
-            if fn.lower().endswith((".ttf", ".otf")):
-                QFontDatabase.addApplicationFont(os.path.join(font_dir, fn))
-    except Exception:
-        pass
-
-
-def _pick_font(kind: str) -> str:
-    """Brand fonts (bundled Unbounded / Space Mono) with sane fallbacks."""
-    if kind in _FONT_CACHE:
-        return _FONT_CACHE[kind]
-    _register_bundled_fonts()
-    try:
-        fams = set(QFontDatabase.families())
-    except Exception:
-        fams = set()
-    if kind == "disp":
-        cands = ["Unbounded", "Nunito", "Poppins", "Montserrat",
-                 "Segoe UI Variable Display", "Segoe UI Semibold", "Segoe UI"]
-        default = "Segoe UI"
-    else:
-        cands = ["Space Mono", "Cascadia Mono", "JetBrains Mono",
-                 "Consolas", "Courier New"]
-        default = "Consolas"
-    pick = next((c for c in cands if c in fams), default)
-    _FONT_CACHE[kind] = pick
-    return pick
-
-
-def _clay_tokens() -> dict:
-    """The console's design tokens.  The base palette (bg / accent / status) is
-    the original clay/paprika scheme — unchanged — but the surfaces are now
-    *glassmorphic*: translucent white frosting (rgba whites), bright 1px rims and
-    soft shadows are layered over that palette.  Qt can't do CSS backdrop-filter,
-    so 'glass' here = translucency + rim-light + soft shadow over the dark base.
-
-    Alpha values are 0–255 (Qt stylesheet convention)."""
-    return {
-        "bg": CLAY["bg"], "bg2": CLAY["bg2"],
-        "panel": CLAY["surf"], "panel2": CLAY["surf2"], "panel3": CLAY["surf3"],
-        "line": CLAY["line"],
-        "text": CLAY["ink"], "text2": CLAY["ink2"],
-        "text_muted": CLAY["muted"], "text_muted2": CLAY["muted2"],
-        "accent": CLAY["fox"], "accent2": CLAY["fox2"], "accent3": CLAY["fox3"],
-        # ── glass layer (frosted-white over the dark palette) ──
-        "glass_hi":  "rgba(255,255,255,34)",   # top sheen of a panel
-        "glass_lo":  "rgba(255,255,255,10)",   # bottom of a panel
-        "glass_brd": "rgba(255,255,255,50)",   # bright 1px rim
-        "glass_brd_soft": "rgba(255,255,255,28)",
-        "glass_str_hi": "rgba(255,255,255,60)",  # raised glass (nav active / button)
-        "glass_str_lo": "rgba(255,255,255,24)",
-        "glass_fill": "rgba(255,255,255,16)",   # flat translucent fill
-        "font": _pick_font("disp"), "font_mono": _pick_font("mono"),
-    }
-
-
-def _glass_shadow(widget, dy: int = 9, blur: int = 26, alpha: int = 90):
-    """Soft ambient shadow that lifts a frosted-glass panel off the backdrop."""
-    eff = QGraphicsDropShadowEffect(widget)
-    eff.setBlurRadius(blur)
-    eff.setOffset(0, dy)
-    eff.setColor(QColor(0, 0, 0, alpha))
-    widget.setGraphicsEffect(eff)
-
-
-def _hairline(tokens: dict, alpha: int = 38) -> str:
-    return _with_alpha(tokens.get("text_muted", "#888"), alpha)
-
-
-# ── Minimal line-icon painter (replaces emoji throughout) ───────────────────
-def paint_icon(p: QPainter, rect: QRectF, name: str, color: QColor,
-               weight: float = 1.8):
-    p.save()
-    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    pen = QPen(color, weight)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    p.setPen(pen)
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
-
-    if name == "overview":      # 2x2 grid
-        s = w * 0.36
-        gap = w * 0.10
-        for cx in (x + w * 0.16, x + w * 0.16 + s + gap):
-            for cy in (y + h * 0.16, y + h * 0.16 + s + gap):
-                p.drawRoundedRect(QRectF(cx, cy, s, s), 2, 2)
-    elif name == "analytics":
-        p.drawLine(int(x + w * 0.25), int(y + h * 0.85), int(x + w * 0.25), int(y + h * 0.4))
-        p.drawLine(int(x + w * 0.5), int(y + h * 0.85), int(x + w * 0.5), int(y + h * 0.2))
-        p.drawLine(int(x + w * 0.75), int(y + h * 0.85), int(x + w * 0.75), int(y + h * 0.55))
-        p.drawLine(int(x + w * 0.1), int(y + h * 0.85), int(x + w * 0.9), int(y + h * 0.85))
-    elif name == "log":         # list rows
-        for i in range(3):
-            ly = y + h * (0.30 + i * 0.20)
-            p.setBrush(QBrush(color))
-            p.drawEllipse(QRectF(x + w * 0.14, ly - w * 0.035, w * 0.07, w * 0.07))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawLine(int(x + w * 0.32), int(ly), int(x + w * 0.84), int(ly))
-    elif name == "system":      # sliders
-        for i, knob in zip(range(3), (0.7, 0.35, 0.6)):
-            ly = y + h * (0.30 + i * 0.20)
-            p.drawLine(int(x + w * 0.14), int(ly), int(x + w * 0.84), int(ly))
-            p.setBrush(QBrush(color))
-            p.drawEllipse(QRectF(x + w * (0.14 + knob * 0.70) - w * 0.05,
-                                 ly - w * 0.05, w * 0.10, w * 0.10))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-    elif name == "shield":
-        path = QPainterPath()
-        path.moveTo(x + w * 0.5, y + h * 0.12)
-        path.lineTo(x + w * 0.84, y + h * 0.26)
-        path.lineTo(x + w * 0.84, y + h * 0.55)
-        path.cubicTo(x + w * 0.84, y + h * 0.78, x + w * 0.66, y + h * 0.86,
-                     x + w * 0.5, y + h * 0.92)
-        path.cubicTo(x + w * 0.34, y + h * 0.86, x + w * 0.16, y + h * 0.78,
-                     x + w * 0.16, y + h * 0.55)
-        path.lineTo(x + w * 0.16, y + h * 0.26)
-        path.closeSubpath()
-        p.drawPath(path)
-    elif name == "link":        # chain links
-        p.drawRoundedRect(QRectF(x + w * 0.12, y + h * 0.36, w * 0.44, h * 0.28),
-                          h * 0.14, h * 0.14)
-        p.drawRoundedRect(QRectF(x + w * 0.44, y + h * 0.36, w * 0.44, h * 0.28),
-                          h * 0.14, h * 0.14)
-    elif name == "refresh":
-        p.drawArc(QRectF(x + w * 0.22, y + h * 0.22, w * 0.56, h * 0.56),
-                  55 * 16, 250 * 16)
-        p.setBrush(QBrush(color))
-        ax, ay = x + w * 0.74, y + h * 0.26
-        p.drawPolygon(QPoint(int(ax), int(ay - h * 0.05)),
-                      QPoint(int(ax + w * 0.06), int(ay + h * 0.12)),
-                      QPoint(int(ax - w * 0.12), int(ay + h * 0.06)))
-    elif name == "close":
-        p.drawLine(int(x + w * 0.3), int(y + h * 0.3),
-                   int(x + w * 0.7), int(y + h * 0.7))
-        p.drawLine(int(x + w * 0.7), int(y + h * 0.3),
-                   int(x + w * 0.3), int(y + h * 0.7))
-    elif name == "min":
-        p.drawLine(int(x + w * 0.3), int(y + h * 0.6),
-                   int(x + w * 0.7), int(y + h * 0.6))
-    p.restore()
+from fox_settings import FoxSettings
+from foxy_client import FoxyClient, spawn_worker, shutdown_workers
+from foxy_tokens import (
+    OK_GREEN, WARN_AMBER, BAD_RED, INFO_BLUE, DARK_TX,
+    clay_tokens as _clay_tokens,
+    console_shell_qss,
+    glass_shadow as _glass_shadow,
+    hairline as _hairline,
+    is_dark as _is_dark,
+    paint_icon,
+    pick_font as _pick_font,
+    qcolor as _qcolor,
+    resource_path,
+    with_alpha as _with_alpha,
+)
 
 
 # ── Status badge (pill) ─────────────────────────────────────────────────────
@@ -494,75 +144,6 @@ class KpiTile(QFrame):
             self._accent = accent
             # re-skin so the card tint + top strip both track the new status colour
             self.restyle(getattr(self, "_tokens", _clay_tokens()))
-
-
-# ── Compliance-score ring (thin, restrained) ────────────────────────────────
-class ScoreRing(QWidget):
-    def __init__(self, tokens: dict, parent=None):
-        super().__init__(parent)
-        self.setMinimumSize(132, 132)
-        self._tokens = tokens
-        self._value = 100.0
-        self._anim = QPropertyAnimation(self, b"value", self)
-        self._anim.setDuration(800)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-    @pyqtProperty(float)
-    def value(self) -> float:
-        return self._value
-
-    @value.setter
-    def value(self, v: float):
-        self._value = v
-        self.update()
-
-    def set_value(self, v: float):
-        v = max(0.0, min(100.0, float(v)))
-        self._anim.stop()
-        self._anim.setStartValue(self._value)
-        self._anim.setEndValue(v)
-        self._anim.start()
-
-    def set_tokens(self, tokens: dict):
-        self._tokens = tokens
-        self.update()
-
-    def _color(self) -> str:
-        return OK_GREEN if self._value >= 85 else WARN_AMBER if self._value >= 60 else BAD_RED
-
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        t = self._tokens
-        side = min(self.width(), self.height())
-        thick = 12
-        m = thick / 2 + 4
-        rect = QRectF((self.width() - side) / 2 + m, (self.height() - side) / 2 + m,
-                      side - 2 * m, side - 2 * m)
-        col = self._color()
-        span = int(-self._value / 100.0 * 360 * 16)
-        track = QPen(_qcolor(t.get("panel3", _mix(t["panel"], t["text"], 0.14))), thick)
-        track.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(track)
-        p.drawArc(rect, 0, 360 * 16)
-        arc = QPen(_qcolor(col), thick)
-        arc.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(arc)
-        p.drawArc(rect, 90 * 16, span)
-
-        p.setPen(_qcolor(t["text"]))
-        f1 = QFont(t.get("font", "Segoe UI"), int(side / 5.2))
-        f1.setBold(True)
-        p.setFont(f1)
-        p.drawText(QRectF(rect.x(), rect.y() - side * 0.04, rect.width(), rect.height()),
-                   Qt.AlignmentFlag.AlignCenter, f"{self._value:.0f}")
-        p.setPen(_qcolor(t.get("text_muted", "#888")))
-        f2 = QFont(t.get("font", "Segoe UI"), max(7, int(side / 16)))
-        f2.setBold(True)
-        p.setFont(f2)
-        p.drawText(QRectF(rect.x(), rect.center().y() + side * 0.12, rect.width(), side / 5),
-                   Qt.AlignmentFlag.AlignHCenter, "COMPLIANT")
-        p.end()
 
 
 # ── Slim labelled meter (system vitals) ─────────────────────────────────────
@@ -898,10 +479,12 @@ class DashboardWindow(QWidget):
     GLASS_ACRYLIC = False
 
     def __init__(self, fox_widget=None, settings: FoxSettings | None = None,
-                 sprite_sheet_path: str | None = None, parent=None):
+                 sprite_sheet_path: str | None = None,
+                 client: FoxyClient | None = None, parent=None):
         super().__init__(parent)
         self.fox_widget = fox_widget
         self.settings = settings or FoxSettings()
+        self.client = client or FoxyClient(self.settings, parent=self)
         # sprite sheet for the little Foxy portrait on the verification card
         self._sprite_path = sprite_sheet_path or resource_path("ultimate_fox_spritesheet.png")
 
@@ -913,8 +496,12 @@ class DashboardWindow(QWidget):
         self._logs_total     = 0
         self._flagged_total  = 0
         self._connected      = None
+        self._org_name       = ""       # real org from /v1/health — never faked
         self._drag_pos       = QPoint()
-        self._recent_events: deque = deque(maxlen=7)
+        # Live ApiWorkers, tracked so replaced polls can't leak threads and
+        # closeEvent can wait on everything in flight (see foxy_client.spawn_worker).
+        self._workers: set = set()
+        self._poll_workers: set = set()
 
         # NOTE: deliberately NOT a Qt.WindowType.Tool window.  A Tool window is a
         # non-activating auxiliary palette: on Windows it refuses to come to the
@@ -957,6 +544,7 @@ class DashboardWindow(QWidget):
         self._backend_poll.timeout.connect(self._refresh_backend)
         self._backend_poll.start(15000)
         QTimer.singleShot(400, self._refresh_backend)   # initial fill shortly after open
+        QTimer.singleShot(400, self._refresh_org)       # real org name for the sidebar
 
     # ── construction ────────────────────────────────────────────────────────
     def _build(self, t: dict):
@@ -1030,7 +618,8 @@ class DashboardWindow(QWidget):
 
         self.org_lbl = QLabel("ORGANIZATION")
         self.org_lbl.setObjectName("navMeta")
-        self.org_val = QLabel("acme-health-ai")
+        # Real org name arrives from GET /v1/health; "—" until then — never faked.
+        self.org_val = QLabel("—")
         self.org_val.setObjectName("navMetaVal")
         v.addWidget(self.org_lbl)
         v.addWidget(self.org_val)
@@ -1085,7 +674,8 @@ class DashboardWindow(QWidget):
         self.ov_eyebrow.setObjectName("eyebrow")
         self.ov_h1 = QLabel("Org‑wide compliance, live.")
         self.ov_h1.setObjectName("h1Head")
-        self.ov_sub = QLabel("org-4F2A9C · synced 2 min ago · all systems foxy")
+        # Populated with the real org + real sync time once /v1/stats answers.
+        self.ov_sub = QLabel("not connected")
         self.ov_sub.setObjectName("subHead")
         htxt.addWidget(self.ov_eyebrow)
         htxt.addWidget(self.ov_h1)
@@ -1109,14 +699,14 @@ class DashboardWindow(QWidget):
         htop = QHBoxLayout()
         htag = QLabel("ORG-WIDE AI HEALTH")
         htag.setObjectName("heroTag")
-        self.live_badge = QLabel("● LIVE")
+        self.live_badge = QLabel("● —")   # LIVE/OFFLINE tracks the real connection state
         self.live_badge.setObjectName("liveBadge")
         htop.addWidget(htag)
         htop.addStretch()
         htop.addWidget(self.live_badge)
-        self.hero_num = QLabel("100")
+        self.hero_num = QLabel("—")       # real clean-rate arrives from /v1/stats
         self.hero_num.setObjectName("heroNum")
-        hfoot = QLabel("compliance score · all systems foxy")
+        hfoot = QLabel("compliance score")
         hfoot.setObjectName("heroFoot")
         hl.addLayout(htop)
         hl.addStretch()
@@ -1204,12 +794,13 @@ class DashboardWindow(QWidget):
         state_row = QHBoxLayout()
         self.chain_icon = QLabel()
         self.chain_icon.setFixedSize(16, 16)
-        self.chain_state = QLabel("VERIFIED")
+        # No verdict is claimed until /v1/verify has actually run.
+        self.chain_state = QLabel("—")
         self.chain_state.setObjectName("chainState")
         state_row.addWidget(self.chain_icon)
         state_row.addWidget(self.chain_state)
         state_row.addStretch()
-        self.chain_meta = QLabel("0 blocks · chain intact")
+        self.chain_meta = QLabel("awaiting first verification")
         self.chain_meta.setObjectName("chainMeta")
         self.chain_hash = QLabel("root —")
         self.chain_hash.setObjectName("chainHash")
@@ -1425,11 +1016,29 @@ class DashboardWindow(QWidget):
             return
         self.sb_compare_btn.setText("Fetching…")
         self.sb_compare_btn.setEnabled(False)
-        self._sb_worker = _SandboxFetchWorker(
-            url, key, int(seq_text), ph, rh, self
-        )
-        self._sb_worker.result.connect(self._sb_on_result)
-        self._sb_worker.start()
+        self._sb_seq = int(seq_text)
+        spawn_worker(self.client, "GET", f"/v1/logs/{self._sb_seq}", parent=self,
+                     on_ok=self._sb_on_fetched, on_err=self._sb_on_fetch_failed,
+                     track=self._workers)
+
+    def _sb_on_fetched(self, data: dict):
+        """Compare the ledger's stored hashes to the locally computed ones."""
+        stored_ph = data.get("prompt_hash", "")
+        stored_rh = data.get("response_hash", "")
+        local_ph = self.sb_prompt_hash.text()
+        local_rh = self.sb_response_hash.text()
+        if stored_ph == local_ph and stored_rh == local_rh:
+            self._sb_on_result(True, "")
+        else:
+            detail = []
+            if stored_ph != local_ph:
+                detail.append(f"Prompt hash: ledger={stored_ph[:16]}… local={local_ph[:16]}…")
+            if stored_rh != local_rh:
+                detail.append(f"Response hash: ledger={stored_rh[:16]}… local={local_rh[:16]}…")
+            self._sb_on_result(False, "\n".join(detail))
+
+    def _sb_on_fetch_failed(self, err: str):
+        self._sb_on_result(False, f"{err} — seq {self._sb_seq} not found")
 
     def _sb_on_result(self, matched: bool, detail: str):
         self.sb_compare_btn.setText("Compare to Ledger")
@@ -1457,126 +1066,8 @@ class DashboardWindow(QWidget):
         # The auditor console wears a fixed glassmorphic skin over the original
         # clay/paprika palette, so any chat theme passed in is ignored.
         t = _clay_tokens()
-        font = t.get("font", "Segoe UI")
-        mono = t.get("font_mono", "Consolas")
-        # When real acrylic blur is active the shell is a translucent veil so the
-        # frosted blur of the backdrop shows through; otherwise it's an opaque
-        # paprika backdrop (so the window is never see-through to the raw desktop).
-        if getattr(self, "_acrylic_on", False):
-            shell_bg = ("qradialgradient(cx:0.12, cy:0.0, radius:1.25, fx:0.12, fy:0.0,"
-                        " stop:0 rgba(42,26,17,150), stop:0.5 rgba(16,13,10,125),"
-                        " stop:1 rgba(11,10,9,125))")
-        else:
-            # colourful wash so the frosted panels have real colour to frost over
-            shell_bg = ("qlineargradient(x1:0, y1:0, x2:1, y2:1,"
-                        " stop:0 #6a3514, stop:0.30 #15100c, stop:0.52 #122a5e,"
-                        " stop:0.74 #1c0e26, stop:1 #461630)")
-        self.shell.setStyleSheet(f"""
-            QFrame#shell {{
-                background: {shell_bg};
-                border: 1px solid rgba(255,255,255,22);
-                border-radius: 22px; }}
-            QFrame#sidebar {{
-                background: rgba(190,186,255,11);
-                border: none;
-                border-right: 1px solid rgba(200,196,255,16);
-                border-top-left-radius: 22px; border-bottom-left-radius: 22px; }}
-            QFrame#topbar {{
-                background: transparent;
-                border-bottom: 1px solid rgba(255,255,255,12); }}
-            QLabel#brandName {{ color: {t['text']}; font-size: 15px; font-weight: 800;
-                background: transparent; }}
-            QLabel#brandSub {{ color: {t['text_muted']}; font-family: '{mono}';
-                font-size: 8px; font-weight: 700; letter-spacing: 1.4px;
-                background: transparent; }}
-            QLabel#logo {{ background: transparent; }}
-            QLabel#navMeta {{ color: {t['text_muted']}; font-family: '{mono}';
-                font-size: 8px; font-weight: 700; letter-spacing: 1.2px;
-                background: transparent; }}
-            QLabel#navMetaVal {{ color: {t['text']}; font-size: 12px; font-weight: 700;
-                font-family: '{mono}'; background: transparent; }}
-            QLabel#pageTitle {{ color: {t['text']}; font-size: 18px; font-weight: 800;
-                letter-spacing: -0.5px; background: transparent; }}
-            QLabel#emptyState {{ color: {t['text_muted']}; font-size: 12px;
-                padding: 16px 4px; background: transparent; }}
-            QLabel#sectionCap {{ color: {t['text_muted']}; font-family: '{mono}';
-                font-size: 9px; font-weight: 700; letter-spacing: 1.2px;
-                background: transparent; }}
-            QFrame#verifCard {{
-                background: qlineargradient(x1:0, y1:0, x2:0.55, y2:1,
-                    stop:0 #c96a2f, stop:0.6 #a4521d, stop:1 #76360f);
-                border: 1px solid rgba(255,255,255,16);
-                border-radius: 20px; }}
-            QLabel#verifFox {{ background: transparent; border: none; }}
-            QLabel#verifHint {{ color: #ffffff; background: rgba(0,0,0,170);
-                font-family: '{mono}'; font-size: 9px; font-weight: 700;
-                border-radius: 11px; padding: 4px 11px; }}
-            QLabel#verifEye {{ color: rgba(26,9,0,200); font-family: '{mono}';
-                font-size: 10px; font-weight: 700; letter-spacing: 1px;
-                background: transparent; }}
-            QLabel#verifNum {{ color: #1a0900; font-size: 27px; font-weight: 800;
-                letter-spacing: -1px; background: transparent; }}
-            QLabel#verifBottom {{ color: rgba(26,9,0,205); font-family: '{mono}';
-                font-size: 10px; font-weight: 700; letter-spacing: 1px;
-                background: transparent; }}
-            QLabel#chainState {{ color: {OK_GREEN}; font-size: 16px; font-weight: 800;
-                letter-spacing: 0.5px; background: transparent; }}
-            QLabel#chainMeta {{ color: {t['text2']}; font-size: 12px; background: transparent; }}
-            QLabel#chainHash {{ color: {t['text_muted']}; font-size: 10px;
-                font-family: '{mono}'; background: transparent; }}
-            QLabel#tableCap {{ color: {t['text']}; font-size: 12px; font-weight: 800;
-                letter-spacing: 1px; background: transparent; }}
-            QLabel#tableCount {{ color: {t['text_muted']}; font-family: '{mono}';
-                font-size: 10px; background: transparent; }}
-            QLabel#connState {{ color: {t['text']}; font-size: 14px; font-weight: 700;
-                background: transparent; }}
-            QLabel#connUrl {{ color: {t['text_muted']}; font-size: 11px;
-                font-family: '{mono}'; background: transparent; }}
-            QPushButton#verifyBtn {{
-                background: #c96a2f;
-                color: #ffffff;
-                border: 1px solid rgba(255,255,255,14);
-                border-radius: 11px; padding: 9px 0; font-size: 12px; font-weight: 800; }}
-            QPushButton#verifyBtn:hover {{ background: #d6743a; }}
-            QPushButton#verifyBtn:pressed {{ background: #a8551f; }}
-            QLabel#eyebrow {{ color: {t['accent2']}; font-family: '{mono}';
-                font-size: 9px; font-weight: 800; letter-spacing: 1.6px;
-                background: transparent; }}
-            QLabel#h1Head {{ color: {t['text']}; font-size: 26px; font-weight: 800;
-                letter-spacing: -1px; background: transparent; }}
-            QLabel#subHead {{ color: {t['text_muted']}; font-size: 12px;
-                background: transparent; }}
-            QPushButton#ctaBtn {{ background: #c96a2f; color: #ffffff;
-                border: 1px solid rgba(255,255,255,14); border-radius: 12px; padding: 9px 16px;
-                font-size: 12px; font-weight: 800; }}
-            QPushButton#ctaBtn:hover {{ background: #d6743a; }}
-            QFrame#hero {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #c96a2f, stop:0.62 #a4521d, stop:1 #6e3411);
-                border: 1px solid rgba(255,255,255,16);
-                border-radius: 24px; }}
-            QLabel#heroTag {{ color: rgba(26,9,0,210); font-family: '{mono}';
-                font-size: 10px; font-weight: 800; letter-spacing: 1px;
-                background: transparent; }}
-            QLabel#liveBadge {{ color: #ffffff; background: rgba(0,0,0,160);
-                font-family: '{mono}'; font-size: 9px; font-weight: 800;
-                border-radius: 10px; padding: 3px 10px; }}
-            QLabel#heroNum {{ color: #1a0900; font-size: 46px; font-weight: 800;
-                letter-spacing: -2px; background: transparent; }}
-            QLabel#heroFoot {{ color: rgba(26,9,0,200); font-family: '{mono}';
-                font-size: 11px; font-weight: 700; background: transparent; }}
-            QPushButton#tileBlue, QPushButton#tilePink {{
-                color: #ffffff; border: 1px solid rgba(255,255,255,15);
-                border-radius: 20px; padding: 18px; text-align: left;
-                font-size: 15px; font-weight: 800; }}
-            QPushButton#tileBlue {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #4d6cba, stop:1 #39508f); }}
-            QPushButton#tilePink {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #c25c88, stop:1 #9c3c64); }}
-            QPushButton#tileBlue:hover, QPushButton#tilePink:hover {{
-                border: 1px solid rgba(255,255,255,40); }}
-            QWidget {{ font-family: '{font}'; }}
-        """)
+        self.shell.setStyleSheet(
+            console_shell_qss(t, acrylic=getattr(self, "_acrylic_on", False)))
         self.logo.setPixmap(self._monogram(t))
         self._paint_chain_icon(True)
         self._restyle_conn(t)
@@ -1629,16 +1120,18 @@ class DashboardWindow(QWidget):
 
     def _restyle_conn(self, t: dict):
         if self._connected is True:
-            col, txt = OK_GREEN, "Connected"
+            col, txt, badge = OK_GREEN, "Connected", "● LIVE"
         elif self._connected is False:
-            col, txt = BAD_RED, "Offline"
+            col, txt, badge = BAD_RED, "Offline", "● OFFLINE"
         else:
-            col, txt = WARN_AMBER, "Connecting"
+            col, txt, badge = WARN_AMBER, "Connecting", "● —"
         # (top-bar connection badge removed; status still shown on the System page)
         if hasattr(self, "conn_state"):
             self.conn_state.setText(txt)
             self.conn_state.setStyleSheet(
                 f"color: {col}; font-size: 14px; font-weight: 700; background: transparent;")
+        if hasattr(self, "live_badge"):
+            self.live_badge.setText(badge)
 
     # ── live slots ────────────────────────────────────────────────────────────
     def on_hardware(self, hw: dict):
@@ -1697,12 +1190,28 @@ class DashboardWindow(QWidget):
         key = self.settings.org_api_key()
         if not (url and key):
             return
-        self._stats_worker = StatsWorker(url, key, self)
-        self._stats_worker.succeeded.connect(self._on_stats_success)
-        self._stats_worker.start()
-        self._stats_verify = VerifyWorker(url, key, self)
-        self._stats_verify.succeeded.connect(self._on_verify_stats)
-        self._stats_verify.start()
+        if self._poll_workers:
+            return  # previous poll still in flight — skip the tick, never stack
+        spawn_worker(self.client, "GET", "/v1/stats", parent=self,
+                     on_ok=self._on_stats_success, track=self._poll_workers)
+        spawn_worker(self.client, "GET", "/v1/verify", parent=self,
+                     on_ok=self._on_verify_stats, track=self._poll_workers)
+
+    def _refresh_org(self):
+        """Fetch the real org name from GET /v1/health (Bearer mode's only
+        org-shaped endpoint) for the sidebar + overview header."""
+        url = self.settings.backend_url()
+        key = self.settings.org_api_key()
+        if not (url and key):
+            return
+        spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                     on_ok=self._on_health_info, track=self._workers)
+
+    def _on_health_info(self, data: dict):
+        org = data.get("org") if isinstance(data, dict) else None
+        if org:
+            self._org_name = org
+            self.org_val.setText(org)
 
     def _on_stats_success(self, s: dict):
         total = int(s.get("total_logged", 0))
@@ -1717,6 +1226,11 @@ class DashboardWindow(QWidget):
             accent=OK_GREEN if (ttv is not None and float(ttv) < 5) else WARN_AMBER)
         if hasattr(self, "verif_num"):
             self.verif_num.setText(f"{total:,} events")
+        # Honest header: the real org (once /v1/health answered) + the real
+        # time this stats payload landed.
+        synced = datetime.now().strftime("%H:%M:%S")
+        self.ov_sub.setText(f"{self._org_name} · synced {synced}" if self._org_name
+                            else f"synced {synced}")
 
     def _on_verify_stats(self, v: dict):
         count = int(v.get("count", 0))
@@ -1745,10 +1259,9 @@ class DashboardWindow(QWidget):
             return
         self.verify_btn.setText("Verifying…")
         self.verify_btn.setEnabled(False)
-        self._verify_worker = VerifyWorker(url, key, self)
-        self._verify_worker.succeeded.connect(self._on_verify_success)
-        self._verify_worker.failed.connect(self._on_verify_failed)
-        self._verify_worker.start()
+        spawn_worker(self.client, "GET", "/v1/verify", parent=self,
+                     on_ok=self._on_verify_success, on_err=self._on_verify_failed,
+                     track=self._workers)
 
     def _on_verify_success(self, data: dict):
         ok: bool = data.get("ok", False)
@@ -1786,15 +1299,14 @@ class DashboardWindow(QWidget):
         key = self.settings.org_api_key()
         if not (url and key):
             return
-        self._refresh_worker = RefreshWorker(url, key, parent=self)
-        self._refresh_worker.succeeded.connect(self._on_refresh_success)
-        self._refresh_worker.failed.connect(self._on_refresh_failed)
-        self._refresh_worker.start()
+        spawn_worker(self.client, "GET", "/v1/logs?page=1&limit=50", parent=self,
+                     on_ok=self._on_refresh_success, on_err=self._on_refresh_failed,
+                     track=self._workers)
 
-        # Trigger Analytics update as well
-        self._analytics_worker = ThreatAnalyticsWorker(url, key, parent=self)
-        self._analytics_worker.succeeded.connect(self._on_analytics_success)
-        self._analytics_worker.start()
+        # Trigger Analytics + org-name updates as well
+        spawn_worker(self.client, "GET", "/v1/analytics/threats", parent=self,
+                     on_ok=self._on_analytics_success, track=self._workers)
+        self._refresh_org()
 
     def _on_analytics_success(self, data: dict):
         self.analytics_kpi_threats.set_value(str(data.get("total_threats", 0)))
@@ -1810,7 +1322,7 @@ class DashboardWindow(QWidget):
         recent = data.get("recent_high_risk", [])
         if recent:
             self.analytics_recent_empty.hide()
-            t = self.settings.theme_tokens()
+            t = _clay_tokens()
             for ev in recent:
                 row = QWidget()
                 rl = QHBoxLayout(row)
@@ -1839,7 +1351,7 @@ class DashboardWindow(QWidget):
         policies = data.get("top_policies", [])
         if policies:
             self.analytics_policies_empty.hide()
-            t = self.settings.theme_tokens()
+            t = _clay_tokens()
             for p in policies:
                 row = QWidget()
                 rl = QHBoxLayout(row)
@@ -1996,7 +1508,10 @@ class DashboardWindow(QWidget):
     def show_animated(self):
         was_minimized = self.isMinimized()
         if not self.isVisible():
-            self.center_on_screen()
+            # Reopen where the user last had the console; first run centers.
+            geo = self.settings.console_geometry()
+            if geo is None or not self.restoreGeometry(geo):
+                self.center_on_screen()
         self.setWindowOpacity(0.0)
         # show() alone does NOT restore a window the user minimized to the
         # taskbar (Qt still reports a minimized window as "visible"), so
@@ -2031,41 +1546,28 @@ class DashboardWindow(QWidget):
         self._a_out.start()
 
     def hideEvent(self, e):
+        # Remember where the console sits so it reopens in place next time.
+        self.settings.set_console_geometry(self.saveGeometry())
         self.closed.emit()
         super().hideEvent(e)
 
+    def closeEvent(self, e):
+        """Centralized teardown: stop the timers, then wait for every tracked
+        worker still in flight (nothing else quits threads any more)."""
+        self._tick.stop()
+        self._backend_poll.stop()
+        self.settings.set_console_geometry(self.saveGeometry())
+        shutdown_workers(self._workers | self._poll_workers)
+        super().closeEvent(e)
 
-# ── Standalone preview (simulated telemetry) ────────────────────────────────
+
+# ── Standalone preview ──────────────────────────────────────────────────────
 if __name__ == "__main__":
-    import random
-
+    # Launches the real console with honest empty states — no simulated
+    # telemetry (the no-fake-data rule applies to dev previews too).  Point
+    # Settings at a running backend to see live data.
     app = QApplication(sys.argv)
     d = DashboardWindow()
     d.show_animated()
-    d.set_connected(True)
-
-    def hw():
-        d.on_hardware({"cpu": random.uniform(8, 92), "ram": random.uniform(28, 78),
-                       "battery": random.uniform(20, 100), "plugged": True})
-
-    def hsh():
-        d.on_hash_ok({"policy": random.choice(
-            ["hipaa_basic", "soc2", "eu_ai_act", "pci_dss"]),
-            "tokens": random.randint(40, 900)})
-
-    def breach():
-        d.on_policy_breach({"policy": random.choice(["hipaa_basic", "soc2"]),
-                            "reason": random.choice(
-                                ["Prompt injection signature", "PII leakage detected",
-                                 "Anomalous token count", "Replay hash detected"]),
-                            "risk_score": random.randint(55, 97),
-                            "tokens": random.randint(200, 1500)})
-
-    for _ in range(9):
-        hsh()
-    breach()
-    t1 = QTimer(); t1.timeout.connect(hw); t1.start(2000)
-    t2 = QTimer(); t2.timeout.connect(hsh); t2.start(1600)
-    t3 = QTimer(); t3.timeout.connect(breach); t3.start(8000)
-    hw()
+    sys.exit(app.exec())
     sys.exit(app.exec())
