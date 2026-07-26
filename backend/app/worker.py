@@ -38,6 +38,7 @@ from . import judge
 from . import judge_routing
 from . import openai_judge
 from . import policy_engine
+from . import user_notifications
 from . import webhook_delivery
 from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_due
 from .config import get_settings
@@ -218,6 +219,10 @@ def _grade_one(db: Session, row) -> None:
     # failure can never lose the grade. Best-effort — never raises into grading.
     if verdict.policy_breach:
         _notify_breach(db, row, verdict)
+        # Per-user breach alerts (D-S) — gated on each member's
+        # notify_breach_alerts pref and deduped against the org-level address
+        # above. Best-effort, never raises into grading.
+        user_notifications.send_breach_alerts(db, row, verdict)
     # Outbound webhook subscriptions (P3 §F): deliver a signed 'graded' (and
     # 'breach') event to each matching subscription. Best-effort, content-blind.
     try:
@@ -377,6 +382,12 @@ def run_forever() -> None:
     from .usage import usage_loop
     threading.Thread(target=usage_loop, args=(stopping, s),
                      name="foxy-usage", daemon=True).start()
+
+    # Weekly digest + key-rotation reminders (D-S), own thread + session so a
+    # slow email sweep never stalls grading. Both jobs dedupe via marker rows.
+    from .user_notifications import user_notifications_loop
+    threading.Thread(target=user_notifications_loop, args=(stopping, s),
+                     name="foxy-user-notifications", daemon=True).start()
 
     # Circuit-breaker so a Gemini outage doesn't hammer the API or burn attempts:
     # when whole batches keep failing, trip open and back off (5E.2).

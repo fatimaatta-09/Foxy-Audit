@@ -1562,9 +1562,9 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
         <div>
           <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:14px;">Notifications</div>
-            <div class="prow"><div><div class="pname">Breach alerts</div><div class="pdesc">immediate notice on every breach verdict</div></div><label class="toggle"><input type="checkbox" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-            <div class="prow"><div><div class="pname">Weekly digest</div><div class="pdesc">summary of activity every Monday</div></div><label class="toggle"><input type="checkbox" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-            <div class="prow"><div><div class="pname">Key rotation reminders</div><div class="pdesc">nudge after 90 days unrotated</div></div><label class="toggle"><input type="checkbox"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
+            <div class="prow"><div><div class="pname">Breach alerts</div><div class="pdesc">immediate notice on every breach verdict</div></div><span class="toggle"><input type="checkbox" id="prefNotifyBreach" checked onchange="savePref('notify_breach_alerts',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
+            <div class="prow"><div><div class="pname">Weekly digest</div><div class="pdesc">summary of activity every Monday</div></div><span class="toggle"><input type="checkbox" id="prefNotifyDigest" checked onchange="savePref('notify_weekly_digest',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
+            <div class="prow"><div><div class="pname">Key rotation reminders</div><div class="pdesc">nudge after 90 days unrotated</div></div><span class="toggle"><input type="checkbox" id="prefNotifyRotation" onchange="savePref('notify_key_rotation_reminders',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
           </div>
           <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Access control</div>
@@ -2828,6 +2828,11 @@ async function loadLoginHistory(){
       if($('prefHideSensitive'))$('prefHideSensitive').checked=!!prefs.hide_sensitive_metadata;
       if($('prefNotifyProduct'))$('prefNotifyProduct').checked=!!prefs.notify_product_updates;
       if($('prefNotifySecurity'))$('prefNotifySecurity').checked=!!prefs.notify_security_alerts;
+      // Breach alerts + weekly digest default ON (an unset pref means deliver — same gate
+      // as app/user_notifications.py); key-rotation reminders are opt-in.
+      if($('prefNotifyBreach'))$('prefNotifyBreach').checked=prefs.notify_breach_alerts!==false;
+      if($('prefNotifyDigest'))$('prefNotifyDigest').checked=prefs.notify_weekly_digest!==false;
+      if($('prefNotifyRotation'))$('prefNotifyRotation').checked=prefs.notify_key_rotation_reminders===true;
       _isAdmin=(me.role==='admin');
       window.__meEmail=me.email||'';
       if(window.loadMfa)window.loadMfa(me);

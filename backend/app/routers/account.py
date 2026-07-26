@@ -559,7 +559,11 @@ def update_profile(body: ProfileUpdate, user: User = Depends(require_user),
     return {"full_name": user.full_name}
 
 
-_ALLOWED_PREFS = {"hide_sensitive_metadata", "notify_product_updates", "notify_security_alerts"}
+_ALLOWED_PREFS = {"hide_sensitive_metadata", "notify_product_updates", "notify_security_alerts",
+                  # Settings → Notifications (D-S). Consumed by app/user_notifications.py:
+                  # breach alerts + weekly digest default ON (absent = deliver), key-rotation
+                  # reminders are opt-in (absent = don't deliver) — matching the UI defaults.
+                  "notify_breach_alerts", "notify_weekly_digest", "notify_key_rotation_reminders"}
 
 
 class PreferencesUpdate(BaseModel):
