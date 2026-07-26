@@ -230,12 +230,13 @@ class FoxyHttp:
                 if self._store.set(_COOKIES_SECRET, raw):
                     self._last_saved = raw
 
-    def _cookie_matches(self, c: Cookie) -> bool:
-        """Does this jar cookie apply to the CURRENT base_url host and is it
-        unexpired?  The jar can hold cookies for another backend (the user can
-        repoint base_url in Settings) — those must not count as a session here,
-        and their CSRF value must never be echoed cross-host."""
-        host = urllib.parse.urlsplit(self.base_url).hostname or ""
+    def _cookie_matches(self, c: Cookie, base_url: str | None = None) -> bool:
+        """Does this jar cookie apply to the given (or current) base_url host,
+        and is it unexpired?  The jar can hold cookies for another backend (the
+        user can repoint base_url in Settings) — those must not count as a
+        session here, and their CSRF value must never be echoed cross-host."""
+        host = urllib.parse.urlsplit(
+            self.base_url if base_url is None else base_url).hostname or ""
         dom = (c.domain or "").lstrip(".")
         if "." not in host and dom.endswith(".local"):
             dom = dom[: -len(".local")]  # cookiejar stores single-label hosts as host.local
@@ -245,8 +246,9 @@ class FoxyHttp:
             return False
         return True
 
-    def has_session(self) -> bool:
-        return any(c.name == "session" and self._cookie_matches(c) for c in self._jar)
+    def has_session(self, base_url: str | None = None) -> bool:
+        return any(c.name == "session" and self._cookie_matches(c, base_url)
+                   for c in self._jar)
 
     def clear_session(self):
         """Drop all cookies (sign-out / terminal auth failure)."""
@@ -255,33 +257,39 @@ class FoxyHttp:
             self._store.delete(_COOKIES_SECRET)
         self._last_saved = None
 
-    def _csrf_token(self) -> str | None:
+    def _csrf_token(self, base_url: str | None = None) -> str | None:
         for c in self._jar:
-            if c.name == CSRF_COOKIE and self._cookie_matches(c):
+            if c.name == CSRF_COOKIE and self._cookie_matches(c, base_url):
                 return c.value
         return None
 
     # ── the request ──
     def request(self, method: str, path: str, body=None,
-                timeout: float | None = None, force_bearer: bool = False):
+                timeout: float | None = None, force_bearer: bool = False,
+                base_url: str | None = None, bearer_key: str | None = None):
         """One backend call.  Returns parsed JSON (dict/list) for JSON
         responses, raw bytes otherwise.  Raises ApiError subclasses on non-2xx.
 
         force_bearer: some endpoints (GET /v1/health) are Bearer-only on the
         backend (require_org never consults the session) — pass True so the
-        org key is sent even while a session cookie exists."""
+        org key is sent even while a session cookie exists.
+        base_url/bearer_key: a caller-supplied credential snapshot, so several
+        worker threads sharing this object can never mix one call's URL with
+        another's key (falls back to the instance attributes)."""
         method = method.upper()
-        url = self.base_url.rstrip("/") + path
+        base_url = self.base_url if base_url is None else base_url
+        bearer_key = self.bearer_key if bearer_key is None else bearer_key
+        url = base_url.rstrip("/") + path
         for attempt in (0, 1):
             headers = {}
             data = None
             if body is not None:
                 data = json.dumps(body).encode("utf-8")
                 headers["Content-Type"] = "application/json"
-            if self.bearer_key and (force_bearer or not self.has_session()):
-                headers["Authorization"] = f"Bearer {self.bearer_key}"
-            if method in _MUTATING and self.has_session():
-                token = self._csrf_token()
+            if bearer_key and (force_bearer or not self.has_session(base_url)):
+                headers["Authorization"] = f"Bearer {bearer_key}"
+            if method in _MUTATING and self.has_session(base_url):
+                token = self._csrf_token(base_url)
                 if token:
                     headers[CSRF_HEADER] = token
             req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -308,8 +316,8 @@ class FoxyHttp:
                 if e.code == 403 and detail in WORKSPACE_403_DETAILS:
                     raise WorkspaceUnavailable(e.code, e.reason, detail) from None
                 if e.code == 403 and detail == CSRF_DETAIL and attempt == 0:
-                    if self._csrf_token() is None:
-                        self._mint_csrf(timeout or self.timeout)
+                    if self._csrf_token(base_url) is None:
+                        self._mint_csrf(timeout or self.timeout, base_url)
                     continue  # single retry with the (re)minted cookie
                 raise ApiError(e.code, e.reason, detail) from None
             except urllib.error.URLError as e:
@@ -323,10 +331,11 @@ class FoxyHttp:
         except Exception:
             return ""
 
-    def _mint_csrf(self, timeout: float):
+    def _mint_csrf(self, timeout: float, base_url: str | None = None):
         """Any request mints `foxy_csrf` when the cookie is absent — a cheap GET
         (status ignored) refreshes the jar before the retry."""
-        req = urllib.request.Request(self.base_url.rstrip("/") + "/v1/auth/me")
+        base = self.base_url if base_url is None else base_url
+        req = urllib.request.Request(base.rstrip("/") + "/v1/auth/me")
         try:
             with self._opener.open(req, timeout=timeout):
                 pass
@@ -353,6 +362,7 @@ class FoxyClient(QObject):
         super().__init__(parent)
         self.settings = settings
         self.http = http or FoxyHttp(secret_store=default_secret_store())
+        self._cred_lock = threading.Lock()
 
     def _fresh_settings(self):
         """QSettings is reentrant across INSTANCES, not one instance across
@@ -364,15 +374,26 @@ class FoxyClient(QObject):
         except Exception:
             return self.settings
 
+    def _credentials(self) -> tuple[str, str]:
+        """Read (backend_url, org_key) as ONE consistent pair.
+
+        Concurrent workers share this client; without the lock two threads can
+        interleave their reads/writes and a request can go out with one org's
+        URL and another's key. The pair is returned (not stored on the shared
+        FoxyHttp) so each in-flight request keeps its own snapshot."""
+        if self.settings is None:
+            return self.http.base_url, self.http.bearer_key
+        with self._cred_lock:
+            s = self._fresh_settings()
+            return s.backend_url(), s.org_api_key()
+
     def request(self, method: str, path: str, body=None,
                 timeout: float | None = None, force_bearer: bool = False):
-        if self.settings is not None:
-            s = self._fresh_settings()
-            self.http.base_url = s.backend_url()
-            self.http.bearer_key = s.org_api_key()
+        base_url, bearer_key = self._credentials()
         try:
             return self.http.request(method, path, body=body, timeout=timeout,
-                                     force_bearer=force_bearer)
+                                     force_bearer=force_bearer,
+                                     base_url=base_url, bearer_key=bearer_key)
         except StepUpRequired as e:
             self.step_up_required.emit(e)
             raise

@@ -883,7 +883,12 @@ class SettingsDialog(QDialog):
     def _save(self):
         provider = self._current_provider()
         self.settings.set_ai_provider(provider)
-        self.settings.set_api_key(provider, self._key_field.text())
+        # Secrets go to the OS keychain — a refused write is NOT silently
+        # swallowed (and never falls back to plaintext settings), so the dialog
+        # stays open and says which key failed to store.
+        failed = []
+        if not self.settings.set_api_key(provider, self._key_field.text()):
+            failed.append("AI provider key")
         self.settings.set_model(provider, self._model_field.text())
         self.settings.set_base_url(provider, self._url_field.text())
 
@@ -892,11 +897,25 @@ class SettingsDialog(QDialog):
         self.settings.set_roaming_enabled(self._roam_check.isChecked())
         self.settings.set_proximity_glance_enabled(self._glance_check.isChecked())
 
-        self.settings.set_org_api_key(self._org_key_field.text().strip())
+        if not self.settings.set_org_api_key(self._org_key_field.text().strip()):
+            failed.append("org API key")
         self.settings.set_backend_url(self._backend_url_field.text().strip())
 
+        if failed:
+            self._show_secret_error(failed)
+            return                      # keep the dialog open — nothing to celebrate
         self.settings_saved.emit()
         self.accept()
+
+    def _show_secret_error(self, failed: list[str]):
+        """Tell the user plainly that a secret did not persist."""
+        what = " and ".join(failed)
+        self._foxy_test_status.setStyleSheet(
+            "color: #FF4C4C; font-size: 12px; font-weight: 600;")
+        self._foxy_test_status.setText(
+            f"✗ Couldn't store the {what} in the OS keychain — not saved.")
+        self._tab_bar._select(2)        # surface the Foxy Audit tab with the message
+        self._stack.setCurrentIndex(2)
 
     def done(self, result: int):
         # Every UI close path on this frameless dialog (X → reject, Cancel,

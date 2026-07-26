@@ -1046,6 +1046,11 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("Foxy Audit")
     app.setOrganizationName("FoxyAudit")
+    # Foxy lives in the tray: closing the console (or hiding the fox) must never
+    # end the process — only the explicit Quit action does. Without this, Qt
+    # quits when the last VISIBLE window closes, so "fox hidden to tray + close
+    # console" would silently kill the app and its breach polling.
+    app.setQuitOnLastWindowClosed(False)
     from PyQt6.QtGui import QIcon
     app.setWindowIcon(QIcon(resource_path("logo.png")))
 

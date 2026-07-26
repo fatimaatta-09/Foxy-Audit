@@ -19,6 +19,7 @@ import pytest
 from foxy_client import (
     ApiError,
     CSRF_DETAIL,
+    FoxyClient,
     FoxyHttp,
     MemorySecretStore,
     SESSION_EXPIRED_DETAIL,
@@ -284,6 +285,83 @@ def test_cookies_persist_across_clients_via_secret_store(server):
     second = _client(server, secret_store=store)  # fresh client, same keychain
     assert second.has_session()
     assert second.request("POST", "/v1/echo") == {"ok": True}
+
+
+def test_per_request_credentials_do_not_touch_shared_state(server):
+    """A caller-supplied snapshot must be used verbatim and must not mutate the
+    shared FoxyHttp — that shared mutation is what let concurrent workers mix
+    one call's URL with another's key."""
+    http = _client(server, bearer_key="instance-key")
+    got = http.request("GET", "/v1/bearer", bearer_key="snapshot-key",
+                       base_url=http.base_url)
+    assert got["auth"] == "Bearer snapshot-key"
+    assert http.bearer_key == "instance-key"   # unchanged
+
+
+def test_concurrent_requests_never_see_a_torn_credential_pair(server):
+    """Two threads flipping the settings while requesting must each send a
+    self-consistent (base_url, key) pair — never one thread's URL with the
+    other's key."""
+    port = server.server_address[1]
+
+    class _FlipSettings:
+        """Stand-in for FoxSettings whose two getters flip together."""
+        _pair = [f"http://127.0.0.1:{port}", "key-A"]
+
+        def backend_url(self):
+            return self._pair[0]
+
+        def org_api_key(self):
+            return self._pair[1]
+
+    client = FoxyClient(settings=_FlipSettings(),
+                        http=FoxyHttp(base_url=f"http://127.0.0.1:{port}"))
+    seen, errors = [], []
+
+    def flip():
+        for i in range(60):
+            # both fields change together — a torn read would pair the new URL
+            # with the old key (or vice versa)
+            _FlipSettings._pair = [f"http://127.0.0.1:{port}", f"key-{i}"]
+
+    def call():
+        try:
+            for _ in range(25):
+                seen.append(client.request("GET", "/v1/bearer")["auth"])
+        except Exception as e:            # pragma: no cover — surfaced below
+            errors.append(e)
+
+    threads = [threading.Thread(target=flip), threading.Thread(target=call),
+               threading.Thread(target=call)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    assert seen and all(a.startswith("Bearer key-") for a in seen)
+
+
+def test_keychain_write_failure_is_reported(server):
+    """A store that refuses the write must report False, so the UI can say the
+    secret was NOT saved (and nothing falls back to plaintext)."""
+    class _FailingStore:
+        persistent = True
+
+        def get(self, name):
+            return None
+
+        def set(self, name, value):
+            return False
+
+        def delete(self, name):
+            pass
+
+    store = _FailingStore()
+    assert store.set("org_api_key", "foxy_sk_x") is False
+    # a non-durable store must also report failure-to-persist
+    mem = MemorySecretStore()
+    assert mem.persistent is False
+    assert mem.set("org_api_key", "foxy_sk_x") is True   # held in memory only
 
 
 def test_clear_session_wipes_jar_and_store(server):

@@ -67,16 +67,21 @@ class FoxSettings:
             return legacy
         return ""
 
-    def _set_secret(self, name: str, legacy_key: str, value: str):
+    def _set_secret(self, name: str, legacy_key: str, value: str) -> bool:
+        """Store (or clear) a secret. Returns False when the keychain refused
+        the write — the caller MUST surface that, because the value is not
+        persisted and we never fall back to plaintext QSettings."""
         value = value or ""
         if value:
-            if self._secrets.set(name, value) and self._durable():
+            stored = self._secrets.set(name, value)
+            if stored and self._durable():
                 self._s.remove(legacy_key)
-            # non-durable store: the new value lives only in process memory —
-            # never written to QSettings.
-        else:
-            self._secrets.delete(name)
-            self._s.remove(legacy_key)
+            # A non-durable store (no keychain backend) holds the value only in
+            # process memory — report that as a failure to persist.
+            return bool(stored and self._durable())
+        self._secrets.delete(name)
+        self._s.remove(legacy_key)
+        return True
 
     # ── AI provider / keys ──
     def ai_provider(self) -> str:
@@ -93,8 +98,8 @@ class FoxSettings:
         provider = provider or self.ai_provider()
         return self._get_secret(f"ai_key_{provider}", f"ai/key/{provider}")
 
-    def set_api_key(self, provider: str, key: str):
-        self._set_secret(f"ai_key_{provider}", f"ai/key/{provider}", key)
+    def set_api_key(self, provider: str, key: str) -> bool:
+        return self._set_secret(f"ai_key_{provider}", f"ai/key/{provider}", key)
 
     def model(self, provider: str | None = None) -> str:
         provider = provider or self.ai_provider()
@@ -116,8 +121,8 @@ class FoxSettings:
     def org_api_key(self) -> str:
         return self._get_secret("org_api_key", "foxy/org_key")
 
-    def set_org_api_key(self, key: str):
-        self._set_secret("org_api_key", "foxy/org_key", key)
+    def set_org_api_key(self, key: str) -> bool:
+        return self._set_secret("org_api_key", "foxy/org_key", key)
 
     def backend_url(self) -> str:
         return self._s.value("foxy/backend_url", "https://app.foxyaudit.tech", type=str)

@@ -1455,6 +1455,24 @@ class DashboardWindow(QWidget):
         self.move(scr.center().x() - self.width() // 2,
                   scr.center().y() - self.height() // 2)
 
+    def _clamp_to_screen(self):
+        """Keep a restored geometry on a screen that still exists — a saved
+        position from a since-disconnected monitor would otherwise reopen the
+        console off-screen (mirrors the pet-position clamp in omni_fox)."""
+        screen = QApplication.screenAt(self.frameGeometry().center())
+        if screen is not None:
+            return                      # already on a connected screen
+        avail = (QApplication.primaryScreen().availableGeometry()
+                 if QApplication.primaryScreen() else None)
+        if avail is None:
+            return
+        w = min(self.width(), avail.width())
+        h = min(self.height(), avail.height())
+        if (w, h) != (self.width(), self.height()):
+            self.resize(w, h)
+        self.move(max(avail.x(), min(self.x(), avail.right() - w)),
+                  max(avail.y(), min(self.y(), avail.bottom() - h)))
+
     def _bring_to_front(self):
         """Reliably pull the window above the currently-active application.
 
@@ -1518,13 +1536,7 @@ class DashboardWindow(QWidget):
             geo = self.settings.console_geometry()
             if geo is None or not self.restoreGeometry(geo):
                 self.center_on_screen()
-        # A real close (Alt+F4 / taskbar) runs closeEvent, which stops the
-        # clock + poll timers; the cached window is reused, so restart them.
-        if not self._backend_poll.isActive():
-            self._tick.start(1000)
-            self._backend_poll.start(15000)
-            QTimer.singleShot(400, self._refresh_backend)
-            QTimer.singleShot(400, self._refresh_org)
+            self._clamp_to_screen()
         self.setWindowOpacity(0.0)
         # show() alone does NOT restore a window the user minimized to the
         # taskbar (Qt still reports a minimized window as "visible"), so
@@ -1551,12 +1563,28 @@ class DashboardWindow(QWidget):
         self._a_op.start()
 
     def close_animated(self):
+        # Fade out, then close() — NOT hide(). close() is what runs closeEvent,
+        # which stops the 1 s clock + 15 s poll timers and drains the workers;
+        # hiding alone would leave them polling forever behind a hidden window.
+        # The window is reused (no WA_DeleteOnClose), and show_animated restarts
+        # the timers on the way back in.
         self._a_out = QPropertyAnimation(self, b"windowOpacity", self)
         self._a_out.setDuration(140)
         self._a_out.setStartValue(1.0)
         self._a_out.setEndValue(0.0)
-        self._a_out.finished.connect(self.hide)
+        self._a_out.finished.connect(self.close)
         self._a_out.start()
+
+    def showEvent(self, e):
+        # Every close path (X, Alt+F4, taskbar) now runs closeEvent, which stops
+        # the clock + poll timers. The window instance is reused, so any show
+        # path must bring them back — idempotent via the isActive guard.
+        if not self._backend_poll.isActive():
+            self._tick.start(1000)
+            self._backend_poll.start(15000)
+            QTimer.singleShot(400, self._refresh_backend)
+            QTimer.singleShot(400, self._refresh_org)
+        super().showEvent(e)
 
     def hideEvent(self, e):
         # Remember where the console sits so it reopens in place next time.
@@ -1566,11 +1594,17 @@ class DashboardWindow(QWidget):
 
     def closeEvent(self, e):
         """Centralized teardown: stop the timers, then wait for every tracked
-        worker still in flight (nothing else quits threads any more)."""
+        worker still in flight (nothing else quits threads any more).
+
+        Reached from every close path — the in-window X (via close_animated),
+        Alt+F4, the taskbar menu, and the app quitting."""
         self._tick.stop()
         self._backend_poll.stop()
         self.settings.set_console_geometry(self.saveGeometry())
         shutdown_workers(self._workers | self._poll_workers)
+        # Restore full opacity so the next show_animated fade starts from a
+        # clean slate even though this instance is reused.
+        self.setWindowOpacity(1.0)
         super().closeEvent(e)
 
 
