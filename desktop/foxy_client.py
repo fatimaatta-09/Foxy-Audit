@@ -41,7 +41,9 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.cookiejar import Cookie, CookieJar
 
@@ -108,6 +110,8 @@ class KeyringSecretStore:
     SecretService) under one service name.  All failures degrade to None —
     callers treat a missing secret as 'not set'."""
 
+    persistent = True  # survives a restart — legacy QSettings copies may be scrubbed
+
     def __init__(self):
         import keyring  # deferred so importing this module never hard-requires it
         self._keyring = keyring
@@ -135,7 +139,10 @@ class KeyringSecretStore:
 class MemorySecretStore:
     """In-memory fallback (tests, or hosts without a keychain backend).
     Secrets are NEVER written to QSettings/JSON — if the keychain is missing
-    they simply don't survive a restart."""
+    they simply don't survive a restart.  persistent=False tells callers that
+    a legacy stored copy must NOT be destroyed after migrating into here."""
+
+    persistent = False
 
     def __init__(self):
         self._data: dict[str, str] = {}
@@ -207,22 +214,39 @@ class FoxyHttp:
     def _persist_cookies(self):
         """Re-save the jar whenever it changed.  The step-up grant and session
         rotation live inside the `session` cookie value, so every response's
-        Set-Cookie must stick — a stale persisted cookie silently loses them."""
+        Set-Cookie must stick — a stale persisted cookie silently loses them.
+        Serialization happens inside the lock so a slow thread can never
+        overwrite a newer snapshot with a stale one."""
         if self._store is None:
             return
-        cookies = [{
-            "version": c.version, "name": c.name, "value": c.value,
-            "domain": c.domain, "path": c.path, "secure": c.secure,
-            "expires": c.expires,
-        } for c in self._jar]
-        raw = json.dumps(cookies, sort_keys=True)
         with self._persist_lock:
+            cookies = [{
+                "version": c.version, "name": c.name, "value": c.value,
+                "domain": c.domain, "path": c.path, "secure": c.secure,
+                "expires": c.expires,
+            } for c in self._jar]
+            raw = json.dumps(cookies, sort_keys=True)
             if raw != self._last_saved:
                 if self._store.set(_COOKIES_SECRET, raw):
                     self._last_saved = raw
 
+    def _cookie_matches(self, c: Cookie) -> bool:
+        """Does this jar cookie apply to the CURRENT base_url host and is it
+        unexpired?  The jar can hold cookies for another backend (the user can
+        repoint base_url in Settings) — those must not count as a session here,
+        and their CSRF value must never be echoed cross-host."""
+        host = urllib.parse.urlsplit(self.base_url).hostname or ""
+        dom = (c.domain or "").lstrip(".")
+        if "." not in host and dom.endswith(".local"):
+            dom = dom[: -len(".local")]  # cookiejar stores single-label hosts as host.local
+        if not host or not dom or not (host == dom or host.endswith("." + dom)):
+            return False
+        if c.expires and c.expires < time.time():
+            return False
+        return True
+
     def has_session(self) -> bool:
-        return any(c.name == "session" for c in self._jar)
+        return any(c.name == "session" and self._cookie_matches(c) for c in self._jar)
 
     def clear_session(self):
         """Drop all cookies (sign-out / terminal auth failure)."""
@@ -233,14 +257,19 @@ class FoxyHttp:
 
     def _csrf_token(self) -> str | None:
         for c in self._jar:
-            if c.name == CSRF_COOKIE:
+            if c.name == CSRF_COOKIE and self._cookie_matches(c):
                 return c.value
         return None
 
     # ── the request ──
-    def request(self, method: str, path: str, body=None, timeout: float | None = None):
+    def request(self, method: str, path: str, body=None,
+                timeout: float | None = None, force_bearer: bool = False):
         """One backend call.  Returns parsed JSON (dict/list) for JSON
-        responses, raw bytes otherwise.  Raises ApiError subclasses on non-2xx."""
+        responses, raw bytes otherwise.  Raises ApiError subclasses on non-2xx.
+
+        force_bearer: some endpoints (GET /v1/health) are Bearer-only on the
+        backend (require_org never consults the session) — pass True so the
+        org key is sent even while a session cookie exists."""
         method = method.upper()
         url = self.base_url.rstrip("/") + path
         for attempt in (0, 1):
@@ -249,7 +278,7 @@ class FoxyHttp:
             if body is not None:
                 data = json.dumps(body).encode("utf-8")
                 headers["Content-Type"] = "application/json"
-            if self.bearer_key and not self.has_session():
+            if self.bearer_key and (force_bearer or not self.has_session()):
                 headers["Authorization"] = f"Bearer {self.bearer_key}"
             if method in _MUTATING and self.has_session():
                 token = self._csrf_token()
@@ -325,12 +354,25 @@ class FoxyClient(QObject):
         self.settings = settings
         self.http = http or FoxyHttp(secret_store=default_secret_store())
 
-    def request(self, method: str, path: str, body=None, timeout: float | None = None):
-        if self.settings is not None:
-            self.http.base_url = self.settings.backend_url()
-            self.http.bearer_key = self.settings.org_api_key()
+    def _fresh_settings(self):
+        """QSettings is reentrant across INSTANCES, not one instance across
+        threads — request() runs on worker threads, so read the current values
+        through a same-class instance made on the calling thread (FoxSettings
+        is documented cheap to construct)."""
         try:
-            return self.http.request(method, path, body=body, timeout=timeout)
+            return type(self.settings)()
+        except Exception:
+            return self.settings
+
+    def request(self, method: str, path: str, body=None,
+                timeout: float | None = None, force_bearer: bool = False):
+        if self.settings is not None:
+            s = self._fresh_settings()
+            self.http.base_url = s.backend_url()
+            self.http.bearer_key = s.org_api_key()
+        try:
+            return self.http.request(method, path, body=body, timeout=timeout,
+                                     force_bearer=force_bearer)
         except StepUpRequired as e:
             self.step_up_required.emit(e)
             raise
@@ -358,32 +400,37 @@ class ApiWorker(QThread):
     failed = pyqtSignal(str)
 
     def __init__(self, client: FoxyClient, method: str, path: str,
-                 body=None, timeout: float | None = None, parent=None):
+                 body=None, timeout: float | None = None,
+                 force_bearer: bool = False, parent=None):
         super().__init__(parent)
         self._client = client
         self._method = method
         self._path = path
         self._body = body
         self._timeout = timeout
+        self._force_bearer = force_bearer
 
     def run(self):
         try:
             self.succeeded.emit(
                 self._client.request(self._method, self._path,
-                                     body=self._body, timeout=self._timeout))
+                                     body=self._body, timeout=self._timeout,
+                                     force_bearer=self._force_bearer))
         except Exception as e:
             self.failed.emit(str(e))
 
 
 def spawn_worker(client: FoxyClient, method: str, path: str, *, body=None,
-                 timeout: float | None = None, parent=None,
-                 on_ok=None, on_err=None, track: set | None = None) -> ApiWorker:
+                 timeout: float | None = None, force_bearer: bool = False,
+                 parent=None, on_ok=None, on_err=None,
+                 track: set | None = None) -> ApiWorker:
     """Create, wire, track and start an ApiWorker.
 
     `track` is the owning window's live-worker set: the worker is added now and
     auto-removed (+ deleteLater) when it finishes, so replaced poll workers can
     no longer accumulate.  Shut the set down with shutdown_workers() on close."""
-    w = ApiWorker(client, method, path, body=body, timeout=timeout, parent=parent)
+    w = ApiWorker(client, method, path, body=body, timeout=timeout,
+                  force_bearer=force_bearer, parent=parent)
     if on_ok is not None:
         w.succeeded.connect(on_ok)
     if on_err is not None:

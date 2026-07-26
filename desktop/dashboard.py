@@ -1038,7 +1038,12 @@ class DashboardWindow(QWidget):
             self._sb_on_result(False, "\n".join(detail))
 
     def _sb_on_fetch_failed(self, err: str):
-        self._sb_on_result(False, f"{err} — seq {self._sb_seq} not found")
+        # Only an HTTP status means the ledger actually answered; a transport
+        # failure must not claim the record is missing.
+        if err.startswith("HTTP "):
+            self._sb_on_result(False, f"{err} — seq {self._sb_seq} not found")
+        else:
+            self._sb_on_result(False, f"Error: {err}")
 
     def _sb_on_result(self, matched: bool, detail: str):
         self.sb_compare_btn.setText("Compare to Ledger")
@@ -1205,6 +1210,7 @@ class DashboardWindow(QWidget):
         if not (url and key):
             return
         spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                     force_bearer=True,  # /v1/health is Bearer-only on the backend
                      on_ok=self._on_health_info, track=self._workers)
 
     def _on_health_info(self, data: dict):
@@ -1512,6 +1518,13 @@ class DashboardWindow(QWidget):
             geo = self.settings.console_geometry()
             if geo is None or not self.restoreGeometry(geo):
                 self.center_on_screen()
+        # A real close (Alt+F4 / taskbar) runs closeEvent, which stops the
+        # clock + poll timers; the cached window is reused, so restart them.
+        if not self._backend_poll.isActive():
+            self._tick.start(1000)
+            self._backend_poll.start(15000)
+            QTimer.singleShot(400, self._refresh_backend)
+            QTimer.singleShot(400, self._refresh_org)
         self.setWindowOpacity(0.0)
         # show() alone does NOT restore a window the user minimized to the
         # taskbar (Qt still reports a minimized window as "visible"), so
@@ -1569,5 +1582,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     d = DashboardWindow()
     d.show_animated()
-    sys.exit(app.exec())
     sys.exit(app.exec())

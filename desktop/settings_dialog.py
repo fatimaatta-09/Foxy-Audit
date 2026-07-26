@@ -859,6 +859,7 @@ class SettingsDialog(QDialog):
         self._foxy_test_status.setText("Connecting…")
 
         w = spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                         force_bearer=True,  # /v1/health is Bearer-only on the backend
                          on_ok=self._on_foxy_ok, on_err=self._on_foxy_fail,
                          track=self._workers)
         w.finished.connect(self._reset_foxy_btn)
@@ -897,11 +898,14 @@ class SettingsDialog(QDialog):
         self.settings_saved.emit()
         self.accept()
 
-    def closeEvent(self, event):
+    def done(self, result: int):
+        # Every UI close path on this frameless dialog (X → reject, Cancel,
+        # Save → accept, Esc) funnels through QDialog.done(), which does NOT
+        # emit closeEvent — so the worker teardown lives here.
         if self._conn_worker and self._conn_worker.isRunning():
             self._conn_worker.wait(600)
         shutdown_workers(self._workers, wait_ms=600)
-        super().closeEvent(event)
+        super().done(result)
 
 
 # ────────────────────────────────────────────────── standalone preview ─────

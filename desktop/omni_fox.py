@@ -316,6 +316,7 @@ class OmniAwareFox(QWidget):
         key = self.settings.org_api_key()
         if url and key:
             spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                         force_bearer=True,  # /v1/health is Bearer-only on the backend
                          on_ok=self._on_health_ok, on_err=self._on_health_fail,
                          track=self._workers)
 
@@ -862,6 +863,7 @@ class OmniAwareFox(QWidget):
                 self.dashboard.set_connected(False)
             return
         spawn_worker(self.client, "GET", "/v1/health", timeout=5, parent=self,
+                     force_bearer=True,  # /v1/health is Bearer-only on the backend
                      on_ok=self._on_health_ok, on_err=self._on_health_fail,
                      track=self._workers)
 

@@ -47,15 +47,22 @@ class FoxSettings:
         self._secrets = default_secret_store()
 
     # ── secret plumbing (keychain-first, one-time migration from QSettings) ──
+    # The legacy QSettings copy is removed ONLY when the secret has landed in a
+    # PERSISTENT store (the real keychain).  The in-memory fallback store also
+    # reports set()=True, but destroying the only durable copy after migrating
+    # into process memory would lose the key on the next launch.
+    def _durable(self) -> bool:
+        return getattr(self._secrets, "persistent", False)
+
     def _get_secret(self, name: str, legacy_key: str) -> str:
         val = self._secrets.get(name)
         if val:
-            if self._s.contains(legacy_key):
+            if self._durable() and self._s.contains(legacy_key):
                 self._s.remove(legacy_key)  # scrub any stale plaintext copy
             return val
         legacy = self._s.value(legacy_key, "", type=str)
         if legacy:
-            if self._secrets.set(name, legacy):
+            if self._secrets.set(name, legacy) and self._durable():
                 self._s.remove(legacy_key)
             return legacy
         return ""
@@ -63,10 +70,10 @@ class FoxSettings:
     def _set_secret(self, name: str, legacy_key: str, value: str):
         value = value or ""
         if value:
-            if self._secrets.set(name, value):
+            if self._secrets.set(name, value) and self._durable():
                 self._s.remove(legacy_key)
-            # keychain write failed: the value lives only in the store's memory
-            # fallback — never written to QSettings.
+            # non-durable store: the new value lives only in process memory —
+            # never written to QSettings.
         else:
             self._secrets.delete(name)
             self._s.remove(legacy_key)

@@ -137,13 +137,15 @@ def _client(server, **kw) -> FoxyHttp:
     return FoxyHttp(base_url=f"http://127.0.0.1:{server.server_address[1]}", **kw)
 
 
-def _inject_session(http: FoxyHttp, value: str = "sess-plain"):
+def _inject_session(http: FoxyHttp, value: str = "sess-plain",
+                    name: str = "session", domain: str = "127.0.0.1",
+                    expires=None):
     """Put ONLY a session cookie in the jar (no foxy_csrf) — the state a client
     restored from the keychain can be in."""
     http._jar.set_cookie(Cookie(
-        version=0, name="session", value=value, port=None, port_specified=False,
-        domain="127.0.0.1", domain_specified=False, domain_initial_dot=False,
-        path="/", path_specified=True, secure=False, expires=None,
+        version=0, name=name, value=value, port=None, port_specified=False,
+        domain=domain, domain_specified=False, domain_initial_dot=False,
+        path="/", path_specified=True, secure=False, expires=expires,
         discard=False, comment=None, comment_url=None, rest={}))
 
 
@@ -159,6 +161,35 @@ def test_bearer_suppressed_once_session_exists(server):
     # resolve_org prefers the Authorization header — the client must not mix
     # credentials, so no bearer header goes out alongside the session cookie.
     assert http.request("GET", "/v1/bearer")["auth"] == ""
+
+
+def test_force_bearer_wins_over_session(server):
+    # GET /v1/health is Bearer-only on the backend — force_bearer must send
+    # the key even while a session cookie exists.
+    http = _client(server, bearer_key="foxy_key_abc")
+    _inject_session(http)
+    assert http.request("GET", "/v1/bearer",
+                        force_bearer=True)["auth"] == "Bearer foxy_key_abc"
+
+
+def test_foreign_domain_session_does_not_suppress_bearer(server):
+    # A session cookie persisted for another backend (user repointed base_url)
+    # is not a session HERE: the bearer key must still be sent, and the foreign
+    # CSRF value must never be echoed to this host.
+    http = _client(server, bearer_key="foxy_key_abc")
+    _inject_session(http, domain="app.foxyaudit.tech")
+    _inject_session(http, name="foxy_csrf", value="foreign-csrf",
+                    domain="app.foxyaudit.tech")
+    assert not http.has_session()
+    assert http._csrf_token() is None
+    assert http.request("GET", "/v1/bearer")["auth"] == "Bearer foxy_key_abc"
+
+
+def test_expired_session_cookie_is_not_a_session(server):
+    http = _client(server, bearer_key="foxy_key_abc")
+    _inject_session(http, expires=1)  # epoch-second 1: long expired
+    assert not http.has_session()
+    assert http.request("GET", "/v1/bearer")["auth"] == "Bearer foxy_key_abc"
 
 
 # ── CSRF double-submit ──────────────────────────────────────────────────────
