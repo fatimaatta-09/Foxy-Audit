@@ -77,8 +77,12 @@ class ApiError(Exception):
         super().__init__(self._text())
 
     def _text(self) -> str:
+        # The SERVER's detail first — it is the actionable half ("Access from
+        # this IP is not allowed"); `reason` is only the generic HTTP phrase
+        # ("Forbidden"). Workers hand str(exc) to the UI, so preferring reason
+        # here silently threw away every message worth showing.
         if self.status:
-            return f"HTTP {self.status}: {self.reason or self.detail}"
+            return f"HTTP {self.status}: {self.detail or self.reason}"
         return self.detail or self.reason or "connection failed"
 
     def __str__(self) -> str:
@@ -398,6 +402,10 @@ class FoxyClient(QObject):
             self.step_up_required.emit(e)
             raise
         except SessionExpired as e:
+            # Drop the dead cookie: keeping it makes has_session() lie, which
+            # both fakes a signed-in state and keeps suppressing the Bearer key
+            # that would still work for the key-only endpoints.
+            self.http.clear_session()
             self.session_expired.emit(str(e))
             raise
         except WorkspaceUnavailable as e:
@@ -409,6 +417,78 @@ class FoxyClient(QObject):
 
     def post(self, path: str, body=None, timeout: float | None = None):
         return self.request("POST", path, body=body, timeout=timeout)
+
+    # ── auth (D1) ──────────────────────────────────────────────────────────
+    # Thin wrappers over the session endpoints. They return the backend's own
+    # payloads and let ApiError propagate, so the UI can show the server's
+    # wording (e.g. the 403 IP-allowlist detail) instead of inventing its own.
+    def me(self):
+        """Session probe. Raises SessionExpired/ApiError when not signed in."""
+        return self.get("/v1/auth/me", timeout=8)
+
+    def has_session(self) -> bool:
+        """True when a session cookie for the CURRENT backend is in the jar.
+        Offline and cheap — call me() to confirm the server still honours it."""
+        base_url, _ = self._credentials()
+        return self.http.has_session(base_url)
+
+    def login(self, email: str, password: str, remember_me: bool = False):
+        """POST /v1/auth/login. Returns {'mfa_required': True, 'email': …} when
+        the account has email-OTP MFA on — finish with verify_mfa()."""
+        return self.post("/v1/auth/login", {
+            "email": email, "password": password, "remember_me": bool(remember_me)},
+            timeout=15)
+
+    def verify_mfa(self, email: str, code: str, remember_me: bool = False):
+        return self.post("/v1/auth/mfa", {
+            "email": email, "code": code, "remember_me": bool(remember_me)},
+            timeout=15)
+
+    def forgot_password(self, email: str):
+        """Always 200 and silent — the backend never reveals whether the address
+        exists, so the UI must show the same message either way."""
+        return self.post("/v1/auth/forgot-password", {"email": email}, timeout=15)
+
+    def logout(self):
+        """End the server session AND drop the local jar, so a stale cookie can
+        never outlive the sign-out."""
+        try:
+            return self.post("/v1/auth/logout", timeout=10)
+        finally:
+            self.http.clear_session()
+
+    def sign_in_with_org_key(self, org_key: str | None = None):
+        """Bridge an org API key to a real session without a password:
+        POST /v1/auth/handoff (Bearer) mints a 120 s single-use token, then
+        /v1/auth/handoff/redeem exchanges it for the session cookie. This is
+        the only desktop route for Google/SSO-only accounts."""
+        base_url, stored = self._credentials()
+        key = (org_key or stored or "").strip()
+        if not key:
+            raise ApiError(0, "", "no organization API key")
+        minted = self.http.request("POST", "/v1/auth/handoff", timeout=10,
+                                   force_bearer=True, base_url=base_url,
+                                   bearer_key=key)
+        token = minted.get("token") if isinstance(minted, dict) else None
+        if not token:
+            raise ApiError(0, "", "handoff did not return a token")
+        return self.http.request("POST", "/v1/auth/handoff/redeem",
+                                 body={"token": token}, timeout=10,
+                                 base_url=base_url, bearer_key=key)
+
+    def request_step_up(self):
+        """Email a fresh 6-digit code for a step-up-gated action."""
+        return self.post("/v1/auth/step-up/request", timeout=15)
+
+    def confirm_step_up(self, code: str):
+        """Confirm the code. The ~10-minute grant rides inside the re-issued
+        session cookie, which the jar adopts and persists automatically."""
+        return self.post("/v1/auth/step-up/confirm", {"code": (code or "").strip()},
+                         timeout=15)
+
+    def retry(self, pending: StepUpRequired):
+        """Replay the request that triggered a step-up, after confirmation."""
+        return self.request(pending.method, pending.path, body=pending.body)
 
 
 # ── The one generic worker ──────────────────────────────────────────────────

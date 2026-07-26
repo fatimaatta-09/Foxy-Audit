@@ -25,8 +25,10 @@ from __future__ import annotations
 import os
 import sys
 
-from PyQt6.QtCore import Qt, QPoint, QRectF
-from PyQt6.QtGui import QBrush, QColor, QFont, QFontDatabase, QPainter, QPainterPath, QPen
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF
+from PyQt6.QtGui import (
+    QBrush, QColor, QFont, QFontDatabase, QPainter, QPainterPath, QPen, QPolygonF,
+)
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect
 
 
@@ -375,6 +377,13 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 background: transparent; }}
             QLabel#navMetaVal {{ color: {t['text']}; font-size: 12px; font-weight: 700;
                 font-family: '{mono}'; background: transparent; }}
+            QPushButton#navAuthBtn {{
+                background: rgba(255,255,255,16); color: {t['text']};
+                border: 1px solid rgba(255,255,255,40); border-radius: 10px;
+                padding: 7px 10px; font-size: 11.5px; font-weight: 700;
+                margin-top: 8px; }}
+            QPushButton#navAuthBtn:hover {{ background: rgba(255,255,255,32); }}
+            QPushButton#navAuthBtn:focus {{ border: 1px solid {t['accent']}; }}
             QLabel#pageTitle {{ color: {t['text']}; font-size: 18px; font-weight: 800;
                 letter-spacing: -0.5px; background: transparent; }}
             QLabel#emptyState {{ color: {t['text_muted']}; font-size: 12px;
@@ -530,4 +539,18 @@ def paint_icon(p: QPainter, rect: QRectF, name: str, color: QColor,
     elif name == "min":
         p.drawLine(int(x + w * 0.3), int(y + h * 0.6),
                    int(x + w * 0.7), int(y + h * 0.6))
+    elif name == "key":         # sign-in / credentials (the web gate's 🔑, as vector)
+        r = w * 0.19
+        cy = y + h * 0.5
+        p.drawEllipse(QRectF(x + w * 0.10, cy - r, r * 2, r * 2))
+        p.drawLine(int(x + w * 0.10 + r * 2), int(cy), int(x + w * 0.88), int(cy))
+        p.drawLine(int(x + w * 0.70), int(cy), int(x + w * 0.70), int(cy + h * 0.15))
+        p.drawLine(int(x + w * 0.82), int(cy), int(x + w * 0.82), int(cy + h * 0.10))
+    elif name == "mail":        # "check your email" step
+        rect = QRectF(x + w * 0.12, y + h * 0.26, w * 0.76, h * 0.48)
+        p.drawRoundedRect(rect, h * 0.07, h * 0.07)
+        p.drawPolyline(QPolygonF([
+            QPointF(rect.left() + w * 0.04, rect.top() + h * 0.04),
+            QPointF(rect.center().x(), rect.center().y() + h * 0.07),
+            QPointF(rect.right() - w * 0.04, rect.top() + h * 0.04)]))
     p.restore()

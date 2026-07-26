@@ -147,8 +147,13 @@ jobs:
         with:
           python-version: "3.13"
       - name: Byte-compile desktop modules
-        run: |
-          python -m py_compile \
-            desktop/omni_fox.py desktop/dashboard.py desktop/clay_chat_popup.py desktop/fox_settings.py \
-            desktop/settings_dialog.py desktop/sdk_bridge.py desktop/ai_providers.py \
-            desktop/window_tracker.py desktop/eye_tracker.py desktop/security_overlay.py
+        run: python -m compileall -q desktop
+      # The desktop's pure-logic tests (API client contract: CSRF, step-up,
+      # auth flows, breach cursor, settings) need PyQt6 for the signal plumbing
+      # but no display — offscreen keeps them headless-safe.
+      - name: Install desktop test deps
+        run: pip install "PyQt6>=6.6,<6.10" keyring pytest
+      - name: Desktop unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest desktop -q

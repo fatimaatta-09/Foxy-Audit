@@ -472,6 +472,8 @@ class CtrlButton(QPushButton):
 class DashboardWindow(QWidget):
     refresh_requested = pyqtSignal()
     closed           = pyqtSignal()
+    sign_in_requested  = pyqtSignal()   # D1 — the shell owns the auth windows
+    sign_out_requested = pyqtSignal()
 
     # Set True for real Windows "acrylic" backdrop blur behind the window (Win10+
     # / Win11).  Off by default: it can make dragging the frameless window laggy
@@ -497,6 +499,7 @@ class DashboardWindow(QWidget):
         self._flagged_total  = 0
         self._connected      = None
         self._org_name       = ""       # real org from /v1/health — never faked
+        self._signed_in      = False    # session state, pushed in by the shell
         self._drag_pos       = QPoint()
         # Live ApiWorkers, tracked so replaced polls can't leak threads and
         # closeEvent can wait on everything in flight (see foxy_client.spawn_worker).
@@ -623,7 +626,47 @@ class DashboardWindow(QWidget):
         self.org_val.setObjectName("navMetaVal")
         v.addWidget(self.org_lbl)
         v.addWidget(self.org_val)
+
+        # ── user area (D1): who is signed in, and the way out ──
+        self.user_lbl = QLabel("SIGNED IN")
+        self.user_lbl.setObjectName("navMeta")
+        self.user_val = QLabel("not signed in")
+        self.user_val.setObjectName("navMetaVal")
+        self.user_val.setWordWrap(True)
+        self.auth_btn = QPushButton("Sign in")
+        self.auth_btn.setObjectName("navAuthBtn")
+        self.auth_btn.setMinimumHeight(34)
+        self.auth_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auth_btn.clicked.connect(self._on_auth_clicked)
+        v.addSpacing(10)
+        v.addWidget(self.user_lbl)
+        v.addWidget(self.user_val)
+        v.addWidget(self.auth_btn)
         return self.sidebar
+
+    # ── session state, driven by omni_fox (D1) ──
+    def on_signed_in(self, me: dict):
+        who = (me or {}).get("email") or ""
+        role = (me or {}).get("role") or ""
+        self.user_val.setText(f"{who}\n{role}" if role else (who or "signed in"))
+        self.auth_btn.setText("Sign out")
+        self._signed_in = True
+
+    def on_signed_out(self):
+        self.user_val.setText("not signed in")
+        self.auth_btn.setText("Sign in")
+        self._signed_in = False
+
+    def set_signing_out(self, busy: bool):
+        """Sign-out is a network call — say so, and don't let it be fired twice."""
+        self.auth_btn.setEnabled(not busy)
+        if busy:
+            self.auth_btn.setText("Signing out…")
+        elif not self._signed_in:
+            self.auth_btn.setText("Sign in")
+
+    def _on_auth_clicked(self):
+        self.sign_out_requested.emit() if self._signed_in else self.sign_in_requested.emit()
 
     def _build_topbar(self, t: dict) -> QWidget:
         self.topbar = QFrame()

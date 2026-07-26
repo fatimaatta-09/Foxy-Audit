@@ -14,7 +14,9 @@ import random
 import webbrowser
 
 import psutil
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QMenu, QSystemTrayIcon
+from PyQt6.QtWidgets import (
+    QApplication, QDialog, QWidget, QLabel, QMenu, QSystemTrayIcon,
+)
 from PyQt6.QtCore import Qt, QTimer, QPoint, QRect, pyqtSignal, QThread
 from PyQt6.QtGui import QPixmap, QTransform, QCursor, QPainter, QColor, QIcon
 from pynput import keyboard, mouse
@@ -146,6 +148,40 @@ class BreachPollWorker(QThread):
             })
 
 
+# ── Auth helper threads (D1) ───────────────────────────────────────────────
+class _LogoutWorker(QThread):
+    """POST /v1/auth/logout off the UI thread. The local cookie jar is cleared
+    by client.logout() regardless of the server's answer, so a network failure
+    can never leave the desktop 'signed in' against a dead session."""
+    done = pyqtSignal()
+
+    def __init__(self, client, parent=None):
+        super().__init__(parent)
+        self._client = client
+
+    def run(self):
+        try:
+            self._client.logout()
+        except Exception:                   # noqa: BLE001 — jar is cleared anyway
+            pass
+        self.done.emit()
+
+
+class _RetryWorker(QThread):
+    """Replay the request that hit a step-up gate, once, after confirmation."""
+
+    def __init__(self, client, pending, parent=None):
+        super().__init__(parent)
+        self._client = client
+        self._pending = pending
+
+    def run(self):
+        try:
+            self._client.retry(self._pending)
+        except Exception as exc:            # noqa: BLE001 — surfaced, never fatal
+            print(f"[foxy] step-up retry failed: {exc}", file=sys.stderr)
+
+
 # ── Main fox widget ────────────────────────────────────────────────────────
 class OmniAwareFox(QWidget):
 
@@ -170,6 +206,10 @@ class OmniAwareFox(QWidget):
         self.settings = FoxSettings()
         self.client = FoxyClient(self.settings, parent=self)
         self._workers: set = set()   # live one-shot ApiWorkers (health probes)
+        self._login_win = None       # single-instance sign-in window (D1)
+        self._step_up_open = False   # one re-auth prompt at a time
+        self._session_ready = False  # True once /v1/auth/me confirmed a session
+        self._me: dict = {}          # last /v1/auth/me payload (identity only)
 
         # ── Window flags ───────────────────────────────────────────────────
         self.setWindowFlags(
@@ -307,9 +347,13 @@ class OmniAwareFox(QWidget):
         # ── System Tray ───────────────────────────────────────────────────
         self._setup_tray()
 
-        # ── First run: ask for the API key if none is stored yet ──────────
-        if not self.settings.org_api_key():
-            self._prompt_first_run_key()
+        # ── Auth (D1): route rejected sessions + danger actions to the UI ──
+        self.client.session_expired.connect(self._on_session_expired)
+        self.client.step_up_required.connect(self._on_step_up_required)
+        self.client.workspace_unavailable.connect(self._on_workspace_unavailable)
+        # Probe the stored session once the event loop is running — a network
+        # call inside __init__ would stall the first paint.
+        QTimer.singleShot(0, self._bootstrap_session)
 
         # ── Startup backend health check ──────────────────────────────────
         url = self.settings.backend_url()
@@ -335,80 +379,151 @@ class OmniAwareFox(QWidget):
         self.roam_tick_timer.timeout.connect(self._roaming_tick)
         self.roam_tick_timer.start(150)
 
-    # ── First-run onboarding ───────────────────────────────────────────────
-    def _prompt_first_run_key(self):
-        """First launch with no API key stored: a small BRANDED dialog (the app's
-        clay palette + the fox logo) asking for the key, instead of the plain OS
-        input box. Dismissable — the key can also be set later via tray → Settings."""
-        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                                     QLineEdit, QPushButton)
-        from PyQt6.QtGui import QPixmap, QIcon
-        from PyQt6.QtCore import Qt
+    # ── Sign-in / session (D1) ─────────────────────────────────────────────
+    def show_login(self, *, reason: str = "", ok: bool = False):
+        """Open the sign-in window.
 
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Welcome to Foxy Audit")
-        dlg.setWindowIcon(QIcon(resource_path("logo.png")))
-        dlg.setModal(True)
-        dlg.setFixedWidth(432)
-        dlg.setStyleSheet("""
-            QDialog { background:#FBF6EE; }
-            QLabel#title { color:#5A4A3C; font-size:17px; font-weight:800; }
-            QLabel#msg   { color:#8A7A6C; font-size:12px; }
-            QLineEdit { background:#FFFFFF; border:2px solid #F0E4D6; border-radius:12px;
-                        padding:11px 13px; color:#5A4A3C; font-size:13px; }
-            QLineEdit:focus { border:2px solid #FF9F66; }
-            QPushButton#primary { background:#FF9F66; color:#FFFFFF; border:none;
-                        border-radius:12px; padding:11px 22px; font-weight:700; }
-            QPushButton#primary:hover { background:#F08A4B; }
-            QPushButton#ghost { background:transparent; color:#8A7A6C; border:none;
-                        border-radius:12px; padding:11px 16px; }
-            QPushButton#ghost:hover { color:#5A4A3C; }
-        """)
-        v = QVBoxLayout(dlg)
-        v.setContentsMargins(30, 26, 30, 24)
-        v.setSpacing(13)
+        Single-instance: a burst of 401s must raise the ONE window, never stack
+        a pile of login dialogs — and a newer reason still replaces the old one
+        on the window that is already up."""
+        from auth_windows import LoginWindow
+        if self._login_win is not None:
+            if reason:
+                self._login_win._say(self._login_win.login_fb, reason, ok=ok)
+            self._login_win.raise_()
+            self._login_win.activateWindow()
+            return
+        win = LoginWindow(self.client, settings=self.settings)
+        self._login_win = win
+        if reason:
+            win._say(win.login_fb, reason, ok=ok)
+        win.signed_in.connect(self._on_signed_in)
+        win.finished.connect(self._on_login_closed)
+        win.center_on_screen()
+        win.show_animated()
 
-        logo = QLabel()
-        pm = QPixmap(resource_path("logo.png"))
-        if not pm.isNull():
-            logo.setPixmap(pm.scaledToHeight(72, Qt.TransformationMode.SmoothTransformation))
-            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            v.addWidget(logo)
+    def _on_login_closed(self, _result):
+        self._login_win = None
 
-        title = QLabel("Welcome to Foxy Audit")
-        title.setObjectName("title")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(title)
+    def _on_signed_in(self, payload: dict):
+        """A session exists now — record who, re-probe health, start the pollers
+        that a key-less user could not run, refresh the console if it is open."""
+        self._me = payload if isinstance(payload, dict) else {}
+        self._session_ready = True
+        self._set_state("CHEERING", ROW_CHEERING, 2.0)
+        self._recheck_backend()
+        self._ensure_breach_poller()
+        if self.dashboard is not None:
+            self.dashboard.on_signed_in(self._me)
 
-        msg = QLabel("Paste your API key to connect the fox to your account. It's in "
-                     "your welcome email or the dashboard — you can also set it later "
-                     "from the tray menu → Settings.")
-        msg.setObjectName("msg")
-        msg.setWordWrap(True)
-        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(msg)
+    def sign_out(self):
+        """End the server session and drop the local cookie jar, then offer the
+        sign-in window again. Runs off the UI thread — logout is a network call."""
+        if getattr(self, "_signing_out", False):
+            return                       # already in flight
+        self._signing_out = True
+        if self.dashboard is not None:
+            self.dashboard.set_signing_out(True)
+        worker = _LogoutWorker(self.client, self)
+        self._workers.add(worker)
+        worker.done.connect(self._after_sign_out)
+        worker.finished.connect(lambda: (self._workers.discard(worker),
+                                         worker.deleteLater()))
+        worker.start()
 
-        field = QLineEdit()
-        field.setPlaceholderText("foxy_sk_…")
-        v.addWidget(field)
+    def _after_sign_out(self):
+        self._signing_out = False
+        self._session_ready = False
+        self._me = {}
+        if self.dashboard is not None:
+            self.dashboard.set_signing_out(False)
+            self.dashboard.on_signed_out()
+        # Informational, not a failure — don't paint it red.
+        self.show_login(reason="Signed out.", ok=True)
 
-        row = QHBoxLayout()
-        row.addStretch(1)
-        later = QPushButton("Later")
-        later.setObjectName("ghost")
-        connect = QPushButton("Connect")
-        connect.setObjectName("primary")
-        row.addWidget(later)
-        row.addWidget(connect)
-        v.addLayout(row)
+    def _ensure_breach_poller(self):
+        """Start breach polling if it isn't already running.
 
-        later.clicked.connect(dlg.reject)
-        connect.clicked.connect(dlg.accept)
-        field.returnPressed.connect(dlg.accept)
-        field.setFocus()
+        At launch this only happens for a key holder; after a password sign-in
+        the session works just as well (/v1/logs/breaches resolves the org from
+        EITHER credential), so a session-only user gets live breach reactions
+        instead of a silent fox."""
+        poller = getattr(self, "_breach_poller", None)
+        if poller is not None and poller.isRunning():
+            return
+        if not self.settings.backend_url():
+            return
+        self._breach_poller = BreachPollWorker(self.client, parent=self)
+        self._breach_poller.breach_detected.connect(self._on_policy_breach)
+        self._breach_poller.start()
 
-        if dlg.exec() == QDialog.DialogCode.Accepted and field.text().strip():
-            self.settings.set_org_api_key(field.text().strip())
+    def _bootstrap_session(self):
+        """Probe GET /v1/auth/me once at launch.
+
+        A live cookie means we are already signed in. With no cookie we only
+        nag when there is no way in at all — an org API key alone still powers
+        the Bearer-only reads (health, breach polling), so a key-only user is
+        not dragged to a login screen they do not need."""
+        if not self.client.has_session():
+            if not self.settings.org_api_key():
+                self.show_login()
+            return
+        spawn_worker(self.client, "GET", "/v1/auth/me", timeout=8, parent=self,
+                     track=self._workers, on_ok=self._on_session_ok,
+                     on_err=self._on_session_probe_failed)
+
+    def _on_session_ok(self, data):
+        self._session_ready = True
+        self._me = data if isinstance(data, dict) else {}
+        if self.dashboard is not None:
+            self.dashboard.on_signed_in(self._me)
+
+    def _on_session_probe_failed(self, err: str):
+        """Only a REJECTED session sends the user to the login window. An
+        unreachable backend is an outage, not a sign-out — nagging then would
+        be both wrong and unfixable by the user."""
+        self._session_ready = False
+        if err.startswith("HTTP 401"):
+            self.show_login(reason="Your session expired — sign in to continue.")
+        elif err.startswith("HTTP 403"):
+            # Suspended/deleted workspace, or an IP allow-list block: the
+            # server's own wording is the only useful thing to show.
+            self.show_login(reason=err.split(": ", 1)[-1])
+
+    def _on_session_expired(self, _detail: str):
+        self._session_ready = False
+        if self.dashboard is not None:
+            self.dashboard.on_signed_out()
+        self.show_login(reason="Your session expired — sign in to continue.")
+
+    def _on_workspace_unavailable(self, detail: str):
+        """Suspended or deleted workspace — terminal. Say so plainly; there is
+        no retry that can help, and the fox should stop pretending it's fine."""
+        self._session_ready = False
+        self._set_state("CRYING", ROW_CRYING, 4.0)
+        if self.dashboard is not None:
+            self.dashboard.set_connected(False)
+        self.show_login(reason=detail)
+
+    def _on_step_up_required(self, pending):
+        """A danger action needs re-auth: confirm, then retry it exactly once.
+
+        Serialized — if a second gated call lands while the dialog is open, it
+        is dropped rather than stacking a second prompt."""
+        from auth_windows import StepUpDialog
+        if getattr(self, "_step_up_open", False):
+            return
+        self._step_up_open = True
+        try:
+            dlg = StepUpDialog(self.client, self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                worker = _RetryWorker(self.client, pending, self)
+                self._workers.add(worker)
+                worker.finished.connect(lambda: (self._workers.discard(worker),
+                                                 worker.deleteLater()))
+                worker.start()
+        finally:
+            self._step_up_open = False
 
     # ── Frame cache helper ─────────────────────────────────────────────────
     def _get_frame(self, row: int, frame_idx: int,
@@ -823,6 +938,11 @@ class OmniAwareFox(QWidget):
             self.sdk_bridge.hash_confirmed.connect(self.dashboard.on_hash_ok)
             self.sdk_bridge.policy_breach.connect(self.dashboard.on_policy_breach)
             self.dashboard.refresh_requested.connect(self._recheck_backend)
+            # D1: the console's user area asks, the shell owns the auth windows.
+            self.dashboard.sign_in_requested.connect(self.show_login)
+            self.dashboard.sign_out_requested.connect(self.sign_out)
+            if self._session_ready:
+                self.dashboard.on_signed_in(self._me)
 
         # Push the current snapshot so gauges aren't empty on first open
         self.dashboard.on_hardware(self.latest_hw)
@@ -910,9 +1030,27 @@ class OmniAwareFox(QWidget):
             menu.addAction("📌 Stay Here", self._stop_roaming)
 
         menu.addAction("⚙️ Settings",  self.open_settings)
+        menu.addAction(*self._auth_action())
         menu.addSeparator()
         menu.addAction("❌ Quit", self._quit_app)
         menu.exec(event.globalPos())
+
+    def _sync_tray_auth_action(self):
+        label, slot = self._auth_action()
+        act = self._tray_auth_action
+        act.setText(label)
+        try:
+            act.triggered.disconnect()
+        except TypeError:
+            pass
+        act.triggered.connect(lambda _checked=False, s=slot: s())
+
+    def _auth_action(self) -> tuple:
+        """Sign in / sign out, labelled for the state we're actually in."""
+        if self._session_ready:
+            who = (self._me or {}).get("email") or ""
+            return (f"🔒 Sign out{f' ({who})' if who else ''}", self.sign_out)
+        return ("🔑 Sign in", self.show_login)
 
     def _stop_roaming(self):
         self._user_placed = True
@@ -945,6 +1083,9 @@ class OmniAwareFox(QWidget):
         tray_menu.addAction("📊 Desktop Console", self.open_dashboard)
         tray_menu.addAction("🌐 Open Web Dashboard", self.open_web_dashboard)
         tray_menu.addAction("⚙️ Settings", self.open_settings)
+        self._tray_auth_action = tray_menu.addAction(*self._auth_action())
+        # Relabel on open so it always reflects the live session state.
+        tray_menu.aboutToShow.connect(self._sync_tray_auth_action)
         tray_menu.addSeparator()
         tray_menu.addAction("❌ Quit", self._quit_app)
 
@@ -1017,6 +1158,12 @@ class OmniAwareFox(QWidget):
     def closeEvent(self, event):
         if self._user_placed:
             self.settings.set_pet_pos(self.pos())   # remember the fox's spot
+
+        # Close the sign-in window first: its done() joins the auth workers, so
+        # quitting mid-login can't leave a live thread behind.
+        if self._login_win is not None:
+            self._login_win.reject()
+            self._login_win = None
 
         shutdown_workers(self._workers, wait_ms=600)
 
