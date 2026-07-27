@@ -35,7 +35,7 @@ from __future__ import annotations
 import sys
 import time
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 from PyQt6.QtWidgets import (
@@ -45,7 +45,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QLineEdit,
 )
 from PyQt6.QtCore import (
-    Qt, QPoint, QRectF, QTimer, QPropertyAnimation,
+    Qt, QAbstractAnimation, QPoint, QRectF, QTimer, QPropertyAnimation,
     QEasingCurve, pyqtSignal, pyqtProperty,
 )
 from PyQt6.QtGui import (
@@ -55,6 +55,7 @@ from PyQt6.QtGui import (
 from fox_settings import FoxSettings
 from foxy_client import FoxyClient, spawn_worker, shutdown_workers
 from console_chrome import (
+    relative_time,
     ALL_SECTIONS, BREACH_SCAN_LIMIT, EXTRA_SECTIONS, NOTIF_LIMIT, QUICK_NAV,
     QUICK_NAV_WINDOW_MS, SECTIONS, announcement, avatar_initial, badge_text,
     breach_pip, notification_target,
@@ -63,8 +64,23 @@ from chrome_widgets import (
     AnnouncementBanner, CommandPalette, LiveDot, NotificationsPanel, Pip,
     ShortcutsOverlay, Toast,
 )
+from charts import FoxChart
+import home_data as hd
+
+# What every Home surface says when the request itself failed. Deliberately
+# distinct from an empty state: "nothing yet" is a measurement, "couldn't load"
+# is the absence of one, and we never claim the first when we only know the
+# second — that is the no-fake-data rule applied to failure, not just to seeds.
+UNAVAILABLE_TEXT = ("Couldn't load this — Foxy could not reach the backend. "
+                    "Nothing is claimed about this period.")
+UNAVAILABLE = {"title": "Couldn't load", "desc": UNAVAILABLE_TEXT}
+
+from home_page import (
+    FlipCard, HomeSections, activity_row, alert_row, coverage_row, ledger_row,
+    onboarding_step_row, quick_check_face,
+)
 from foxy_tokens import (
-    OK_GREEN, WARN_AMBER, BAD_RED, INFO_BLUE, DARK_TX,
+    OK_GREEN, WARN_AMBER, BAD_RED, INFO_BLUE, DARK_TX, WEB,
     clay_tokens as _clay_tokens,
     console_shell_qss,
     glass_shadow as _glass_shadow,
@@ -564,6 +580,7 @@ class DashboardWindow(QWidget):
         tokens = _clay_tokens()
         self._build(tokens)
         self.apply_theme(tokens)
+        self._init_home()            # D4: Home's workers + activity re-tick
         self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
         self._sync_title()
 
@@ -581,6 +598,7 @@ class DashboardWindow(QWidget):
         self._backend_poll.timeout.connect(self._refresh_chrome)   # D3 signals
         QTimer.singleShot(400, self._refresh_backend)   # initial fill shortly after open
         QTimer.singleShot(400, self._refresh_org)       # real org name for the sidebar
+        QTimer.singleShot(800, self.refresh_home)       # D4 Home sections
 
     # ── construction ────────────────────────────────────────────────────────
     def _build(self, t: dict):
@@ -606,8 +624,9 @@ class DashboardWindow(QWidget):
         # Threat Analytics→Threats, Audit Log→Ledger — and sections whose real
         # pages land in later phases get an honest stub, never fake data.
         self._page_index: dict[str, int] = {}
+        self._home = HomeSections(self)
         builders = {
-            "home": self._page_overview,
+            "home": lambda t: self._home.build(self._page_overview(t)),
             "threats": self._page_analytics,
             "ledger": self._page_audit,
             "system": self._page_system,
@@ -712,6 +731,7 @@ class DashboardWindow(QWidget):
         self.auth_btn.setText("Sign out")
         self._signed_in = True
         self._apply_identity(me or {})      # D3 top-bar chip + palette org id
+        self._apply_home_identity(me or {})  # D4 greeting
         self._refresh_chrome()              # notifications only exist with a session
 
     def on_signed_out(self):
@@ -813,16 +833,24 @@ class DashboardWindow(QWidget):
         v.setSpacing(16)
 
         # ── in-page header (mirrors the website "vibe check" header) ──
-        head = QHBoxLayout()
+        # Lifted into its own widget so D4 can slot the onboarding stepper and
+        # the coverage card between it and the hero, exactly as the web does.
+        self.ov_head = QWidget()
+        head = QHBoxLayout(self.ov_head)
+        head.setContentsMargins(0, 0, 0, 0)
         htxt = QVBoxLayout()
         htxt.setSpacing(3)
-        self.ov_eyebrow = QLabel("● GOVERNANCE-AS-CODE")
+        # D4: web parity — the live page head is eyebrow "Compliance overview",
+        # "Yo <name>. here's the vibe check." and a stats subtitle (html:926-936).
+        self.ov_eyebrow = QLabel("● COMPLIANCE OVERVIEW")
         self.ov_eyebrow.setObjectName("eyebrow")
-        self.ov_h1 = QLabel("Org‑wide compliance, live.")
+        self.ov_h1 = QLabel("Yo there. here's the vibe check.")
         self.ov_h1.setObjectName("h1Head")
-        # Populated with the real org + real sync time once /v1/stats answers.
-        self.ov_sub = QLabel("not connected")
+        # Real counts once /v1/stats answers; an em dash until then, never a 0.
+        self.ov_sub = QLabel("—")
         self.ov_sub.setObjectName("subHead")
+        # D4 aliases: one head, two names, so the Home handlers read as the web.
+        self.home_greeting, self.home_sub = self.ov_h1, self.ov_sub
         htxt.addWidget(self.ov_eyebrow)
         htxt.addWidget(self.ov_h1)
         htxt.addWidget(self.ov_sub)
@@ -832,7 +860,8 @@ class DashboardWindow(QWidget):
         self.export_btn.setObjectName("ctaBtn")
         self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         head.addWidget(self.export_btn, 0, Qt.AlignmentFlag.AlignTop)
-        v.addLayout(head)
+        self.export_btn.clicked.connect(lambda: self.go("export"))
+        self.home_export_btn = self.export_btn
 
         # ── hero + feature tiles ──
         hero_row = QHBoxLayout()
@@ -858,6 +887,23 @@ class DashboardWindow(QWidget):
         hl.addStretch()
         hl.addWidget(self.hero_num)
         hl.addWidget(hfoot)
+        # D4: the web pairs the hero number with a 30-day volume sparkline and
+        # the delta against the preceding week — a score with no direction is
+        # half a signal.
+        spark_row = QHBoxLayout()
+        spark_row.setSpacing(10)
+        self.hero_spark_chart = FoxChart("sparkline", height=28)
+        self.hero_spark_chart.setMaximumWidth(210)
+        self.hero_delta_lbl = QLabel("")
+        # heroFoot's near-black ink is tuned for the light end of the hero
+        # gradient; the delta sits at the dark end, so it gets its own colour.
+        self.hero_delta_lbl.setStyleSheet(
+            f"color: rgba(255,255,255,235); font-family: '{_pick_font('mono')}';"
+            f" font-size: 10px; font-weight: 800; background: transparent;")
+        spark_row.addWidget(self.hero_spark_chart, 1)
+        spark_row.addWidget(self.hero_delta_lbl, 0,
+                            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        hl.addLayout(spark_row)
         _glass_shadow(self.hero, 10, 26, 110)
         hero_row.addWidget(self.hero, stretch=3)
 
@@ -895,10 +941,13 @@ class DashboardWindow(QWidget):
         verif_cap.setObjectName("sectionCap")
         verif_col.addWidget(verif_cap)
 
-        self.verif_card = QFrame()
+        # D4: the web card flips to a "Quick ledger check" back face, so the
+        # long-standing "tap to verify ↻" hint finally does something.
+        self.verif_card = FlipCard()
         self.verif_card.setObjectName("verifCard")
         self.verif_card.setMinimumHeight(186)
-        vc = QVBoxLayout(self.verif_card)
+        verif_front = QWidget()
+        vc = QVBoxLayout(verif_front)
         vc.setContentsMargins(22, 20, 22, 20)
         vc.setSpacing(0)
         vtop = QHBoxLayout()
@@ -932,6 +981,7 @@ class DashboardWindow(QWidget):
         vbot.addStretch()
         vbot.addWidget(vfoxy)
         vc.addLayout(vbot)
+        self.verif_card.add_faces(verif_front, quick_check_face(self))
         verif_col.addWidget(self.verif_card)
         verif_col.addStretch()
         body.addLayout(verif_col, stretch=3)
@@ -1380,11 +1430,11 @@ class DashboardWindow(QWidget):
             accent=OK_GREEN if (ttv is not None and float(ttv) < 5) else WARN_AMBER)
         if hasattr(self, "verif_num"):
             self.verif_num.setText(f"{total:,} events")
-        # Honest header: the real org (once /v1/health answered) + the real
-        # time this stats payload landed.
-        synced = datetime.now().strftime("%H:%M:%S")
-        self.ov_sub.setText(f"{self._org_name} · synced {synced}" if self._org_name
-                            else f"synced {synced}")
+        # D4: the head subtitle is now the web's ("N events logged · M pending
+        # grading"), written by _apply_home_stats. The org name lives in the D3
+        # top-bar chip and liveness in the LiveDot, so the old
+        # "org · synced HH:MM" string was saying what the chrome already says.
+        self._apply_home_stats(s)
 
     def _on_verify_stats(self, v: dict):
         count = int(v.get("count", 0))
@@ -1470,8 +1520,10 @@ class DashboardWindow(QWidget):
         # Clear existing items
         while self.analytics_recent_box.count() > 1:
             item = self.analytics_recent_box.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()          # stop painting now, not next event loop
+                widget.deleteLater()
         
         recent = data.get("recent_high_risk", [])
         if recent:
@@ -1499,8 +1551,10 @@ class DashboardWindow(QWidget):
         # Update policies list
         while self.analytics_policies_box.count() > 1:
             item = self.analytics_policies_box.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()          # stop painting now, not next event loop
+                widget.deleteLater()
                 
         policies = data.get("top_policies", [])
         if policies:
@@ -1892,6 +1946,313 @@ class DashboardWindow(QWidget):
         panel = getattr(self, "notif_panel", None)
         return panel is not None and panel.isVisible()
 
+    # ── Home page data (D4) ────────────────────────────────────────────────
+    def _init_home(self):
+        """Home's own worker set and its activity re-tick.
+
+        Its own set so the banner/chrome guards stay independent, and — per the
+        D3.2 lesson — every guard below keys off set membership, which
+        QThread.finished clears on success AND failure."""
+        self._home_workers: set = set()
+        self._home_days: list = []
+        self._trend_metric = "logs"
+        self._activity_rows: list = []
+        self._activity_at = None
+        self._activity_failed: set = set()
+        self._home_usage_ok = True
+        # Relative times go stale silently, so re-tick them like the web does.
+        self._activity_timer = QTimer(self)
+        self._activity_timer.timeout.connect(self._retick_activity)
+        self._activity_timer.start(hd.ACTIVITY_TICK_SECONDS * 1000)
+
+    def refresh_home(self):
+        """Pull everything the Home page shows. Never runs while hidden.
+
+        Every endpoint below needs a credential. Firing them anyway would 401
+        and paint six "couldn't reach the backend" panels at a signed-out user,
+        which is both wrong and alarming — so we use the same gate the breach
+        pip does and leave the page on its first-run empty states instead."""
+        if not self.isVisible() or not self.settings.backend_url():
+            return
+        if not (self.settings.org_api_key() or self.client.has_session()):
+            return
+        if self._home_workers:
+            return                      # a cycle is still in flight
+        spawn_worker(self.client, "GET", "/v1/onboarding", timeout=10, parent=self,
+                     track=self._home_workers, on_ok=self._on_onboarding,
+                     on_err=lambda _e: self._on_onboarding(None))
+        spawn_worker(self.client, "GET", "/v1/coverage", timeout=12, parent=self,
+                     track=self._home_workers, on_ok=self._on_coverage,
+                     on_err=lambda _e: self._on_coverage(None))
+        spawn_worker(self.client, "GET", "/v1/usage?days=90", timeout=12, parent=self,
+                     track=self._home_workers, on_ok=self._on_usage,
+                     on_err=lambda _e: self._on_usage(None, ok=False))
+        spawn_worker(self.client, "GET",
+                     f"/v1/logs?limit={hd.RECENT_LEDGER_LIMIT}", timeout=12,
+                     parent=self, track=self._home_workers,
+                     on_ok=self._on_recent_ledger,
+                     on_err=lambda _e: self._on_recent_ledger(None, ok=False))
+        spawn_worker(self.client, "GET", "/v1/analytics/threats", timeout=12,
+                     parent=self, track=self._home_workers, on_ok=self._on_threats,
+                     on_err=lambda _e: self._on_threats(None, ok=False))
+        self.refresh_activity()
+
+    # ── greeting + subtitle ──
+    def _apply_home_identity(self, me: dict):
+        self.home_greeting.setText(
+            f"Yo {hd.greeting_name(me)}. here's the vibe check.")
+
+    # ── onboarding ──
+    def _on_onboarding(self, data):
+        view = hd.onboarding_view(data)
+        if view is None:
+            self.onboarding_card.hide()
+            return
+        self.onboarding_title.setText(view["title"])
+        self.onboarding_sub.setText(view["sub"])
+        self.onboarding_pct.setText(view["progress_text"])
+        self.onboarding_bar.set_options(value=view["done"], max=view["total"],
+                                        height=12, tone=view["tone"])
+        while self.onboarding_steps.count():
+            item = self.onboarding_steps.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()          # stop painting now, not next event loop
+                widget.deleteLater()
+        for step in view["steps"]:
+            self.onboarding_steps.addWidget(onboarding_step_row(step, self.go))
+        self.onboarding_card.show()
+
+    def _dismiss_onboarding(self):
+        self.onboarding_card.hide()
+        spawn_worker(self.client, "PUT", "/v1/onboarding", body={"dismissed": True},
+                     timeout=10, parent=self, track=self._home_workers)
+
+    # ── capture coverage ──
+    def _on_coverage(self, data):
+        view = hd.coverage_view(data)
+        tone = {"ok": OK_GREEN, "warn": WARN_AMBER}.get(view["status_tone"], WARN_AMBER)
+        self.coverage_status.setText(f"● {view['status_label']}")
+        self.coverage_status.setStyleSheet(
+            f"color: {tone}; font-family: '{_pick_font('mono')}'; font-size: 9.5px;"
+            f" font-weight: 700; background: transparent;")
+        self.coverage_message.setText(view["message"])
+        self.coverage_pct.setText(view["pct_text"])
+        self.coverage_note.setText(view["note"])
+        self.coverage_gauge.set_options(
+            value=view["pct"] or 0, max=100, height=14, tone=view["gauge_tone"],
+            tip=view["note"] or None)
+        # A "could not be loaded" message above last cycle's numbers reads as
+        # if those numbers were just measured. Blank them with the message.
+        chips = view["chips"] or [(None, "—", False)] * len(self.coverage_chips)
+        for label, (_name, value, _danger) in zip(self.coverage_chips, chips):
+            label.setText(value)
+        while self.coverage_table.count() > self.coverage_rows_start:
+            item = self.coverage_table.takeAt(self.coverage_rows_start)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()          # stop painting now, not next event loop
+                widget.deleteLater()
+        for client in view["clients"]:
+            self.coverage_table.addWidget(coverage_row(client))
+        self.coverage_empty.setVisible(not view["clients"])
+
+    # ── usage trend + hero spark + coverage volume ──
+    def _on_usage(self, data, ok: bool = True):
+        days = (data or {}).get("days") if isinstance(data, dict) else None
+        self._home_days = days if isinstance(days, list) else []
+        self._home_usage_ok = ok
+        self._render_trend()
+        self.coverage_volume.set_options(
+            height=120, tone="blue",
+            data=[{"label": d.get("day"), "value": d.get("logs_count") or 0}
+                  for d in self._home_days],
+            empty=UNAVAILABLE if not ok else {
+                "title": "No captured events yet",
+                "desc": "Daily capture volume appears as your SDK reports "
+                        "interactions."})
+        spark = hd.hero_spark(self._home_days)
+        if hasattr(self, "hero_spark_chart"):
+            # quiet: a 28px strip has no room for a titled empty state.
+            self.hero_spark_chart.set_options(
+                height=28, data=spark, tone="rgba(26,9,0,.55)",
+                empty={"quiet": True})
+        if hasattr(self, "hero_delta_lbl"):
+            self.hero_delta_lbl.setText("" if not ok else hd.hero_delta(self._home_days))
+
+    def set_trend_metric(self, metric: str):
+        if metric not in hd.TREND_METRICS:
+            return
+        self._trend_metric = metric
+        for name, button in self.trend_buttons.items():
+            button.setChecked(name == metric)
+        self._render_trend()
+
+    def _render_trend(self):
+        rows, spec = hd.trend_rows(self._home_days, self._trend_metric)
+        self.usage_trend.set_options(
+            height=200, data=rows, name=spec["label"], tone=spec["tone"],
+            empty=UNAVAILABLE if not self._home_usage_ok else {
+                "title": "No usage yet",
+                "desc": "Daily volume appears as your SDK logs interactions."})
+
+    # ── grading donut + gauges, fed by the existing /v1/stats poll ──
+    def _apply_home_stats(self, stats: dict):
+        self.home_sub.setText(hd.head_subtitle(stats))
+        slices, total = hd.grading_slices(stats)
+        self.grading_donut.set_options(
+            height=170, legend=True,
+            center=hd.thousands(total) if total else None,
+            data=slices if total else [],
+            empty={"title": "Nothing graded yet",
+                   "desc": "Grading status appears once the Judge processes "
+                           "interactions."})
+        clean = stats.get("clean_rate")
+        self.gauge_clean_value.setText("—" if clean is None else f"{round(float(clean))}%")
+        self.gauge_clean.set_options(value=float(clean or 0), max=100, height=12,
+                                     tone="ok" if (clean or 0) >= 95 else "warn")
+        ttv = stats.get("avg_seconds_to_verdict")
+        self.gauge_verdict_value.setText("—" if ttv is None else f"{float(ttv):.1f}s")
+        # Under 5 s is the good end; the gauge fills toward "fast".
+        pace = 0 if ttv is None else max(0.0, min(100.0, (1 - min(float(ttv), 30) / 30) * 100))
+        self.gauge_verdict.set_options(value=pace, max=100, height=12,
+                                       tone="ok" if pace >= 80 else "warn")
+
+    # ── quick ledger check (verification card back face) ──
+    def quick_verify(self):
+        action, message, tone = hd.quick_verify_request(self.q_hash_input.text())
+        self._set_quick_result(message, tone)
+        if action != "check":
+            return
+        digest = hd.normalize_hash(self.q_hash_input.text())
+        spawn_worker(self.client, "GET", f"/v1/verify/hash/{digest}", timeout=15,
+                     parent=self, track=self._home_workers,
+                     on_ok=lambda d: self._set_quick_result(*hd.quick_verify_result(d)),
+                     on_err=lambda err: self._set_quick_result(
+                         "sign in to check the ledger" if getattr(err, "status", None) == 401
+                         else "could not reach the server", "bad"))
+
+    def _set_quick_result(self, message: str, tone: str):
+        colour = {"ok": OK_GREEN, "bad": BAD_RED}.get(tone, WEB["muted"])
+        self.q_result.setStyleSheet(
+            f"color: {colour}; font-family: '{_pick_font('mono')}';"
+            f" font-size: 10.5px; background: transparent;")
+        self.q_result.setText(message)
+
+    # ── recent ledger preview ──
+    def _on_recent_ledger(self, data, ok: bool = True):
+        rows = hd.recent_ledger_rows(data)
+        self.recent_ledger_empty.setText(
+            UNAVAILABLE_TEXT if not ok else
+            "No ledger records yet — rows appear as your SDK reports "
+            "interactions.")
+        while self.recent_ledger.count():
+            item = self.recent_ledger.takeAt(0)
+            widget = item.widget()
+            if widget is not None and widget is not self.recent_ledger_empty:
+                widget.hide()
+                widget.deleteLater()
+        if not rows:
+            self.recent_ledger.addWidget(self.recent_ledger_empty)
+            self.recent_ledger_empty.show()
+            return
+        self.recent_ledger_empty.hide()
+        for row in rows:
+            self.recent_ledger.addWidget(ledger_row(row))
+
+    # ── active alerts ──
+    def _on_threats(self, data, ok: bool = True):
+        rows = hd.alert_rows(data)
+        self.home_alerts_empty.setText(
+            UNAVAILABLE_TEXT if not ok else
+            "No active alerts — nothing has breached policy.")
+        while self.home_alerts.count():
+            item = self.home_alerts.takeAt(0)
+            widget = item.widget()
+            if widget is not None and widget is not self.home_alerts_empty:
+                widget.hide()
+                widget.deleteLater()
+        if not rows:
+            self.home_alerts.addWidget(self.home_alerts_empty)
+            self.home_alerts_empty.show()
+        else:
+            self.home_alerts_empty.hide()
+            for row in rows:
+                self.home_alerts.addWidget(alert_row(row))
+        # Open alerts ≠ the "Policy Breaches" KPI tile: that one counts every
+        # breach ever recorded, this counts the ones still live. It rides the
+        # section header rather than overwriting a differently-labelled tile.
+        count = hd.open_alert_count(data)
+        self.home_alerts_count.setText("" if count is None else f"{count:,} open")
+
+    # ── recent activity ──
+    def refresh_activity(self):
+        """Both endpoints are admin-only: a member simply gets fewer rows, so
+        each side degrades on its own rather than failing the whole feed."""
+        if not self.client.has_session():
+            self._render_activity([])
+            return
+        self._activity_parts = {"audit": None, "logins": None}
+        self._activity_failed: set = set()
+        for path, key in (("/v1/account/audit?limit=50", "audit"),
+                          ("/v1/auth/login-history", "logins")):
+            spawn_worker(self.client, "GET", path, timeout=12, parent=self,
+                         track=self._home_workers,
+                         on_ok=lambda d, k=key: self._on_activity_part(k, d),
+                         on_err=lambda _e, k=key: self._on_activity_part(
+                             k, [], ok=False))
+
+    def _on_activity_part(self, key: str, data, ok: bool = True):
+        parts = getattr(self, "_activity_parts", None)
+        if parts is None:
+            return
+        parts[key] = data if isinstance(data, list) else []
+        if not ok:
+            self._activity_failed.add(key)
+        if parts["audit"] is not None and parts["logins"] is not None:
+            # Both legs down is "we could not ask", not "nothing happened".
+            both_down = len(self._activity_failed) == len(parts)
+            self.activity_empty.setText(
+                UNAVAILABLE_TEXT if both_down else
+                "No account activity yet — key changes and sign-ins show up "
+                "here as they happen.")
+            self._render_activity(hd.merge_activity(parts["audit"], parts["logins"]))
+
+    def _render_activity(self, rows: list):
+        self._activity_rows = rows
+        while self.activity_list.count():
+            item = self.activity_list.takeAt(0)
+            widget = item.widget()
+            if widget is not None and widget is not self.activity_empty:
+                widget.hide()
+                widget.deleteLater()
+        if not rows:
+            self.activity_list.addWidget(self.activity_empty)
+            self.activity_empty.show()
+            self.activity_stamp.setText("")
+            return
+        self.activity_empty.hide()
+        for item in rows:
+            self.activity_list.addWidget(activity_row(item))
+        self._activity_at = datetime.now(timezone.utc)
+        self.activity_stamp.setText("updated just now")
+
+    def _retick_activity(self):
+        """Relative times must not silently rot while the page sits open."""
+        if not self.isVisible() or not self._activity_rows:
+            return
+        for i in range(self.activity_list.count()):
+            widget = self.activity_list.itemAt(i).widget()
+            if widget is None:
+                continue
+            for child in widget.findChildren(QLabel):
+                iso = child.property("iso")
+                if iso:
+                    child.setText(relative_time(iso))
+        if self._activity_at is not None:
+            self.activity_stamp.setText(
+                f"updated {relative_time(self._activity_at.isoformat())}")
+
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
 
@@ -1934,6 +2295,10 @@ class DashboardWindow(QWidget):
             btn.setChecked(True)
         if section_id == "threats":
             self._mark_breaches_read()
+        if section_id == "home":
+            # The web reloads a section's data on navigation; Home is the one
+            # page whose numbers age while you sit in the ledger.
+            self.refresh_home()
 
     def _sync_title(self):
         """Top-bar title + crumb follow the section (web setTopbarContext)."""
@@ -2094,6 +2459,8 @@ class DashboardWindow(QWidget):
             QTimer.singleShot(400, self._refresh_backend)
             QTimer.singleShot(400, self._refresh_org)
             QTimer.singleShot(600, self._refresh_chrome)
+            QTimer.singleShot(800, self.refresh_home)
+            self._activity_timer.start(hd.ACTIVITY_TICK_SECONDS * 1000)
         super().showEvent(e)
 
     def hideEvent(self, e):
@@ -2110,6 +2477,7 @@ class DashboardWindow(QWidget):
         Alt+F4, the taskbar menu, and the app quitting."""
         self._tick.stop()
         self._backend_poll.stop()
+        self._activity_timer.stop()     # D4 relative-time re-tick
         # Nothing may float or poll once the console is closed: the palette and
         # the shortcut overlay are shown non-modally, so an X-click while one is
         # open would otherwise leave it orphaned on screen.
@@ -2118,7 +2486,16 @@ class DashboardWindow(QWidget):
             if widget is not None:
                 widget.hide()
         self.settings.set_console_geometry(self.saveGeometry())
-        shutdown_workers(self._workers | self._poll_workers | self._ann_workers)
+        # Hiding a window does not deliver hide events to its children, so a
+        # chart's draw-in or a meter's sweep keeps running against Qt's
+        # animation timer while the page is being torn down. Settle the charts
+        # (so they repaint complete when reopened) and stop everything else.
+        for chart in self.findChildren(FoxChart):
+            chart.stop_animation()
+        for anim in self.findChildren(QAbstractAnimation):
+            anim.stop()
+        shutdown_workers(self._workers | self._poll_workers | self._ann_workers
+                         | self._home_workers)
         # Restore full opacity so the next show_animated fade starts from a
         # clean slate even though this instance is reused.
         self.setWindowOpacity(1.0)

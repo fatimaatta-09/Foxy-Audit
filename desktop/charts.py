@@ -164,7 +164,12 @@ class FoxChart(QWidget):
         make every chart on the page twitch in unison for no informational
         gain — motion should mean something. So: first data draws in, later
         updates just repaint."""
-        if reduced_motion() or not self._has_data() or self._animated_once:
+        if (reduced_motion() or not self._has_data() or self._animated_once
+                or not self.isVisible()):
+            # Off-screen is the fourth case: a chart on a stack page the user
+            # is not looking at has no draw-in to show, and animating it only
+            # keeps Qt's animation timer ticking on a widget that may be torn
+            # down underneath it.
             self._progress = 1.0
             self.update()
             return
@@ -176,6 +181,20 @@ class FoxChart(QWidget):
     def _on_anim(self, value):
         self._progress = float(value)
         self.update()
+
+    def stop_animation(self):
+        """Settle the draw-in immediately and release the animation timer.
+
+        Hiding a parent does not deliver a hide event to its children, so a
+        window that closes mid-animation leaves its charts ticking against Qt's
+        animation timer while they are being torn down. Owners call this in
+        their own teardown; the chart also does it for itself on hide."""
+        self._anim.stop()
+        self._progress = 1.0
+
+    def hideEvent(self, e):
+        self.stop_animation()
+        super().hideEvent(e)
 
     # ── normalisation (the web's norm()) ────────────────────────────────
     def _rows(self) -> list[dict]:
@@ -265,6 +284,11 @@ class FoxChart(QWidget):
     def _paint_empty(self, p: QPainter, r: QRectF):
         """Honest empty state — never a placeholder curve."""
         empty = self.o.get("empty") or {}
+        # An inline strip (the hero sparkline) has no room for a titled empty
+        # state — it would paint a card-sized message inside 28px. The card
+        # around it already says there is nothing yet, so draw nothing.
+        if empty.get("quiet"):
+            return
         title = empty.get("title") or "No data yet"
         desc = empty.get("desc")
         cx, cy = r.center().x(), r.center().y()
@@ -284,6 +308,11 @@ class FoxChart(QWidget):
         f.setBold(True)
         p.setFont(f)
         p.setPen(qcolor(WEB["ink2"]))
+        # A narrow card (the grading donut beside a wide trend chart) is not
+        # wide enough for the title, and drawText would spill it past both
+        # edges — "Nothing graded yet" rendering as "othing graded ye".
+        title = QFontMetrics(f).elidedText(
+            title, Qt.TextElideMode.ElideRight, int(r.width()) - 8)
         p.drawText(QRectF(r.left(), cy + 6, r.width(), 18),
                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, title)
         if desc:
@@ -430,6 +459,8 @@ class FoxChart(QWidget):
             p.setFont(self._axis_font())
             p.setPen(qcolor(WEB["muted"]))
             step = max(1, -(-len(labels) // 6))         # ceil(len/6), as the web
+            fm = QFontMetrics(self._axis_font())
+            drawn_right = None
             for i, lab in enumerate(labels):
                 if i % step and i != len(labels) - 1:
                     continue
@@ -440,7 +471,16 @@ class FoxChart(QWidget):
                     rect, flag = QRectF(x - 60, H - 16, 60, 14), Qt.AlignmentFlag.AlignRight
                 else:
                     rect, flag = QRectF(x - 30, H - 16, 60, 14), Qt.AlignmentFlag.AlignHCenter
+                # The final tick is always drawn, so on a series whose length is
+                # just past a step boundary it lands on top of its neighbour and
+                # the two dates render as one unreadable smear. Skip it instead.
+                left = rect.right() - fm.horizontalAdvance(str(lab)) if flag == \
+                    Qt.AlignmentFlag.AlignRight else rect.left()
+                if drawn_right is not None and left < drawn_right + 6:
+                    continue
                 p.drawText(rect, flag | Qt.AlignmentFlag.AlignVCenter, str(lab))
+                drawn_right = rect.left() + fm.horizontalAdvance(str(lab)) \
+                    if flag != Qt.AlignmentFlag.AlignRight else rect.right()
 
     def _paint_stacked(self, p: QPainter, r: QRectF):
         labels, series = self._norm()
