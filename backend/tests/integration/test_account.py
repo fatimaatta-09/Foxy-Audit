@@ -11,6 +11,8 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import text
+
 from app.db import SessionLocal
 from app.models import Invoice, Organization
 
@@ -212,3 +214,97 @@ def test_signup_assigns_free_quota(client, monkeypatch):
     assert q["monthly_log_quota"] == 500
     assert q["trial_active"] is True
     assert q["trial_ends_at"]
+
+
+# ───────── /v1/usage reads audit_logs, not the 48-hour rollup ────────────────
+
+def test_usage_reports_days_older_than_the_rollup_window(make_org, login, client):
+    """The defect this fixes.
+
+    `usage.rollup_recent` recomputes only today + yesterday, so any older day
+    keeps whatever partial counts were true when the worker last touched it.
+    Reading the rollup meant a 30- or 90-day chart silently understated real
+    history. Here five events are backdated a week and the rollup is run — under
+    the old code the response showed nothing for that day.
+    """
+    from app import usage
+
+    a = make_org()
+    rows = [{"prompt_hash": _h(f"old{i}"), "response_hash": _h(f"oldr{i}"),
+             "token_count": 7, "policy_tag": "test"} for i in range(5)]
+    assert client.post("/v1/logs/batch", json=rows, headers=a["auth"]).status_code == 202
+
+    db = SessionLocal()
+    try:
+        # Backdate every event a week, then run the rollup exactly as the worker
+        # does. It cannot see them, so usage_daily has no row for that day.
+        db.execute(text(
+            "UPDATE audit_logs SET created_at = now() - interval '7 days' "
+            "WHERE org_id = :oid"), {"oid": uuid.UUID(a["org_id"])})
+        db.commit()
+        usage.rollup_recent(db)
+        stale = db.execute(text(
+            "SELECT coalesce(sum(logs_count), 0) FROM usage_daily WHERE org_id = :oid"),
+            {"oid": uuid.UUID(a["org_id"])}).scalar_one()
+    finally:
+        db.close()
+
+    assert stale == 0, "precondition: the rollup must not have seen the old day"
+
+    ca = login(a["admin_email"], a["admin_password"])
+    body = ca.get("/v1/usage?days=30").json()
+    assert sum(d["logs_count"] for d in body["days"]) == 5
+    assert sum(d["tokens_sum"] for d in body["days"]) == 35
+
+
+def test_usage_respects_the_requested_window(make_org, login, client):
+    """A day outside `days` must not leak in — the aggregate is bounded the
+    same way the rollup read was."""
+    a = make_org()
+    rows = [{"prompt_hash": _h("w1"), "response_hash": _h("w1r"),
+             "token_count": 1, "policy_tag": "test"}]
+    assert client.post("/v1/logs/batch", json=rows, headers=a["auth"]).status_code == 202
+
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "UPDATE audit_logs SET created_at = now() - interval '40 days' "
+            "WHERE org_id = :oid"), {"oid": uuid.UUID(a["org_id"])})
+        db.commit()
+    finally:
+        db.close()
+
+    ca = login(a["admin_email"], a["admin_password"])
+    assert ca.get("/v1/usage?days=7").json()["days"] == []
+    assert sum(d["logs_count"]
+               for d in ca.get("/v1/usage?days=90").json()["days"]) == 1
+
+
+def test_usage_days_still_scoped_to_the_callers_org(make_org, login, client):
+    """Aggregating the raw ledger must not widen tenant visibility."""
+    a, b = make_org(), make_org()
+    rows = [{"prompt_hash": _h("bp2"), "response_hash": _h("br2"),
+             "token_count": 99, "policy_tag": "test"}]
+    assert client.post("/v1/logs/batch", json=rows, headers=b["auth"]).status_code == 202
+
+    ca = login(a["admin_email"], a["admin_password"])
+    body = ca.get("/v1/usage?days=90").json()
+    assert body["days"] == []
+    assert body["quota"]["used_this_month"] == 0
+
+
+def test_usage_day_buckets_carry_the_grading_breakdown(make_org, login, client):
+    """The per-day shape is unchanged — the same seven fields the rollup
+    returned, so the dashboard and the desktop port need no changes."""
+    a = make_org()
+    rows = [{"prompt_hash": _h("g1"), "response_hash": _h("g1r"),
+             "token_count": 3, "policy_tag": "test"}]
+    assert client.post("/v1/logs/batch", json=rows, headers=a["auth"]).status_code == 202
+
+    ca = login(a["admin_email"], a["admin_password"])
+    day = ca.get("/v1/usage?days=7").json()["days"][0]
+    assert set(day) == {"day", "logs_count", "tokens_sum", "breach_count",
+                        "graded_count", "failed_count", "pending_count"}
+    assert day["logs_count"] == 1 and day["tokens_sum"] == 3
+    # Freshly ingested rows are pending until the worker grades them.
+    assert day["pending_count"] == 1 and day["breach_count"] == 0

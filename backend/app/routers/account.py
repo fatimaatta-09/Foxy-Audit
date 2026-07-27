@@ -1,7 +1,7 @@
 """Customer-facing account reads: billing history + usage rollups (Phase 4 #2).
 
-The customer dashboard's window onto the same `invoices` / `usage_daily` tables
-the admin site reads cross-org. Auth is resolve_org (dashboard session cookie OR
+The customer dashboard's window onto the same `invoices` table the admin site
+reads cross-org, plus per-day usage aggregated from `audit_logs` itself. Auth is resolve_org (dashboard session cookie OR
 SDK Bearer key) — both paths set the RLS GUC, and every query still carries an
 explicit WHERE org_id because the app-level filter is the load-bearing tenant
 isolation (the docker superuser role bypasses RLS).
@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import Date, func, select
 from sqlalchemy.orm import Session
 
 from .. import account_audit, ip_allow
@@ -26,7 +26,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import (
     AccountAction, ApiKey, AuditLog, ChainAnchor, ExportJob, Invoice, Notification,
-    Organization, OrgPolicy, UsageDaily, User,
+    Organization, OrgPolicy, User,
 )
 
 log = logging.getLogger("foxy.account")
@@ -123,16 +123,46 @@ def get_usage(
     db: Session = Depends(get_db),
     days: int = Query(default=30, ge=1, le=90),
 ):
-    """Per-day usage from the worker-maintained usage_daily rollup (never scans
-    the raw ledger), plus quota headroom against organizations.monthly_log_quota."""
+    """Per-day usage straight from audit_logs, plus quota headroom against
+    organizations.monthly_log_quota.
+
+    This used to read the worker-maintained `usage_daily` rollup, which
+    recomputes only a rolling 48-hour window (usage.py `_ROLLUP_SQL`). That is
+    correct for the day it was designed around and wrong for everything else:
+    any day older than ~2 days keeps whatever partial counts were true when the
+    worker last touched it, so a 30- or 90-day chart understated real history —
+    silently, and always downwards. `used_this_month` below already read
+    audit_logs for exactly this reason, so the same endpoint was serving a
+    correct quota number beside an understated chart.
+
+    audit_logs is append-only and org-scoped, so aggregating it is the source of
+    truth. The weekly digest reached the same conclusion independently
+    (user_notifications.py `_WEEK_TOTALS_SQL`); this reuses that approach with
+    the rollup's own expressions, so the numbers agree by construction."""
     today = date.today()
     since = today - timedelta(days=days - 1)
+    since_dt = datetime.combine(since, datetime.min.time(), tzinfo=timezone.utc)
 
+    day_col = func.date_trunc("day", AuditLog.created_at).cast(Date).label("day")
     rows = db.execute(
-        select(UsageDaily)
-        .where(UsageDaily.org_id == org.id, UsageDaily.day >= since)
-        .order_by(UsageDaily.day.asc())
-    ).scalars().all()
+        select(
+            day_col,
+            func.count().label("logs_count"),
+            func.coalesce(func.sum(AuditLog.token_count), 0).label("tokens_sum"),
+            func.count().filter(
+                AuditLog.gemini_verdict["policy_breach"].astext == "true"
+            ).label("breach_count"),
+            func.count().filter(
+                AuditLog.grading_status == "graded").label("graded_count"),
+            func.count().filter(
+                AuditLog.grading_status == "failed").label("failed_count"),
+            func.count().filter(
+                AuditLog.grading_status == "pending").label("pending_count"),
+        )
+        .where(AuditLog.org_id == org.id, AuditLog.created_at >= since_dt)
+        .group_by(day_col)
+        .order_by(day_col.asc())
+    ).all()
 
     month_start = today.replace(day=1)
     month_start_dt = datetime.combine(month_start, datetime.min.time(), tzinfo=timezone.utc)
@@ -205,7 +235,8 @@ def get_usage(
         ),
         days=[
             UsageDay(
-                day=r.day.isoformat(), logs_count=r.logs_count, tokens_sum=r.tokens_sum,
+                day=r.day.isoformat(), logs_count=r.logs_count,
+                tokens_sum=int(r.tokens_sum),
                 breach_count=r.breach_count, graded_count=r.graded_count,
                 failed_count=r.failed_count, pending_count=r.pending_count,
             )
