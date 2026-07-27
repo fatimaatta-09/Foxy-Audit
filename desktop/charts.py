@@ -149,8 +149,8 @@ class FoxChart(QWidget):
             # Height follows the rows we actually PAINT — the web sizes from the
             # already-sliced list, so an over-long input must not reserve dead
             # space for rows that never get drawn.
-            rows = min(len(self._rows()), int(self.o.get("limit", 8))) or 1
-            h = h or rows * int(self.o.get("rowH", 32)) + 4
+            rows = min(len(self._rows()), int(self.o.get("limit") or 8)) or 1
+            h = h or rows * int(self.o.get("rowH") or 32) + 4
         else:
             h = h or _DEFAULT_HEIGHT[self.type]
         if self._wants_legend():
@@ -269,7 +269,7 @@ class FoxChart(QWidget):
         desc = empty.get("desc")
         cx, cy = r.center().x(), r.center().y()
 
-        p.setPen(QPen(qcolor(WEB["muted2"]), 1.8))
+        p.setPen(QPen(qcolor(WEB["muted"]), 1.8))
         p.setBrush(Qt.BrushStyle.NoBrush)
         s = 15.0                                  # a small layers/box mark
         top = QPolygonF([QPointF(cx, cy - 26), QPointF(cx + s, cy - 26 + s * 0.55),
@@ -329,9 +329,9 @@ class FoxChart(QWidget):
                               f"{label} · {_fmt(v)}{sub}"))
 
     def _paint_hbar(self, p: QPainter, r: QRectF):
-        rows = self._rows()[: int(self.o.get("limit", 8))]
+        rows = self._rows()[: int(self.o.get("limit") or 8)]
         W = r.width()
-        row_h = float(self.o.get("rowH", 32))
+        row_h = float(self.o.get("rowH") or 32)
         mx = max(1.0, max((_num(x.get("value")) for x in rows), default=1.0))
         name_f = QFont(pick_font("disp"), 8)
         name_f.setBold(True)
@@ -350,8 +350,8 @@ class FoxChart(QWidget):
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        _fmt(v))
             track = QRectF(0, y + 16, W, 9)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(qcolor(WEB["surf3"])))
+            p.setPen(QPen(qcolor(WEB["bc"]), 2))          # .cx-gauge-track
+            p.setBrush(QBrush(qcolor(WEB["bg"])))
             p.drawRoundedRect(track, 4.5, 4.5)
             fw = max(4.0, (v / mx) * W) * self._progress
             p.setBrush(QBrush(qcolor(tone_color(row.get("tone"), i))))
@@ -416,8 +416,11 @@ class FoxChart(QWidget):
             if not spark:
                 p.setPen(QPen(qcolor(WEB["bc"]), 1.5))
                 p.setBrush(QBrush(col))
-                for i, pt_ in enumerate(vis):
-                    p.drawEllipse(pt_, 2.6, 2.6)
+                for i, pt_ in enumerate(pts):
+                    if i < len(vis):
+                        p.drawEllipse(pt_, 2.6, 2.6)   # only the revealed dots
+                    # …but EVERY point is hoverable: the draw-in is a visual
+                    # reveal, not a reason to withhold a tooltip.
                     lab = labels[i] if i < len(labels) else str(i)
                     name = f" · {s['name']}" if s.get("name") else ""
                     self._hit.append((QRectF(pt_.x() - 7, pt_.y() - 7, 14, 14),
@@ -441,7 +444,15 @@ class FoxChart(QWidget):
 
     def _paint_stacked(self, p: QPainter, r: QRectF):
         labels, series = self._norm()
-        n = len(series[0]["values"]) if series else 0
+        # Span the LONGEST series, not series[0]. Keying off the first series
+        # (as the web does) means a stacked chart whose first band is empty —
+        # zero High-risk events in the window, exactly the D5 Threats case —
+        # draws nothing at all while the any-series _has_data() check keeps the
+        # empty state suppressed: a blank chart sitting on top of real data.
+        # Missing points count as 0, so shorter series simply contribute
+        # nothing at those indices. The web routes this case to "No data yet",
+        # which would be a FALSE empty state — worse, given the honesty rule.
+        n = max((len(s["values"]) for s in series), default=0)
         totals = [sum(_num(s["values"][i]) if i < len(s["values"]) else 0.0
                       for s in series) for i in range(n)]
         mx = max(1.0, max(totals) if totals else 1.0)
@@ -476,7 +487,9 @@ class FoxChart(QWidget):
     def _paint_donut(self, p: QPainter, r: QRectF):
         rows = [x for x in self._rows() if _num(x.get("value")) > 0]
         total = sum(_num(x.get("value")) for x in rows)
-        size = min(r.height(), r.width())
+        # The web draws a fixed o.height||150 square and lets the legend
+        # wrap beside it; the size must NOT shrink with the container.
+        size = float(self.o.get("height") or _DEFAULT_HEIGHT["donut"])
         cx, cy = r.center().x(), r.top() + size / 2
         rad = size / 2 - 6
         rin = rad * 0.58
@@ -516,11 +529,12 @@ class FoxChart(QWidget):
         W = r.width()
         H = min(r.height(), float(self.o.get("height") or _DEFAULT_HEIGHT["gauge"]))
         rad = H / 2
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(qcolor(WEB["surf3"])))
+        p.setPen(QPen(qcolor(WEB["bc"]), 2))              # .cx-gauge-track
+        p.setBrush(QBrush(qcolor(WEB["bg"])))
         p.drawRoundedRect(QRectF(1, r.top() + 1, W - 2, H - 2), rad, rad)
         fw = frac * (W - 2) * self._progress
         if fw > 0:
+            p.setPen(Qt.PenStyle.NoPen)
             tone = self.o.get("tone")
             if tone:
                 p.setBrush(QBrush(qcolor(tone_color(tone))))
@@ -555,7 +569,7 @@ class FoxChart(QWidget):
             tw = fm.horizontalAdvance(text)
             if x + tw + 18 > r.width() and x > 0:
                 break                       # one row; the rest stay in the a11y text
-            p.setPen(Qt.PenStyle.NoPen)
+            p.setPen(QPen(qcolor(WEB["bc"]), 1.5))        # .cx-legend i border
             p.setBrush(QBrush(qcolor(colour)))
             p.drawRoundedRect(QRectF(x, r.top() + 7, 8, 8), 2, 2)
             p.setPen(qcolor(WEB["muted"]))

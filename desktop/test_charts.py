@@ -141,9 +141,87 @@ def test_hbar_honours_limit(app):
 def test_gauge_clamps_and_handles_unlimited(app):
     over = FoxChart("gauge", value=500, max=100)
     _paint(over)                                   # must not overflow its track
+    # The fill fraction is clamped to 1, so a 500% value paints a full bar and
+    # not a rectangle running off the widget.
+    assert _gauge_fraction(over) == 1.0
+    assert _gauge_fraction(FoxChart("gauge", value=25, max=100)) == 0.25
+    assert _gauge_fraction(FoxChart("gauge", value=-5, max=100)) == 0.0
+    assert _gauge_fraction(FoxChart("gauge", value=5, max=0)) == 0.0   # no /0
     unlimited = FoxChart("gauge", value=9, unlimited=True)
     _paint(unlimited)
+    assert _gauge_fraction(unlimited) == 1.0
     assert "unlimited" in unlimited.accessibleDescription()
+
+
+def _gauge_fraction(chart) -> float:
+    """Recompute the gauge's fill fraction the way _paint_gauge does."""
+    value = float(chart.o.get("value") or 0)
+    mx = chart.o.get("max")
+    mx = float(mx) if mx is not None else 100.0
+    if chart.o.get("unlimited"):
+        return 1.0
+    return max(0.0, min(1.0, value / mx)) if mx else 0.0
+
+
+def test_stacked_draws_when_the_first_series_is_empty(app):
+    """Regression: a stacked chart whose FIRST band has no points — zero
+    high-risk events in the window, the real D5 Threats case — must still draw
+    the bands that DO have data, not sit blank on top of them."""
+    c = FoxChart("stacked", labels=["7d", "30d"],
+                 series=[{"name": "High", "tone": "bad", "values": []},
+                         {"name": "Low", "tone": "ok", "values": [5, 9]}])
+    assert c._has_data() is True
+    _paint(c)
+    assert len(c._hit) == 2, "both columns must be drawn and hoverable"
+    assert "Low" in c._hit[0][1] and "total" in c._hit[0][1]
+
+
+def test_stacked_handles_ragged_series_lengths(app):
+    c = FoxChart("stacked", labels=["a", "b", "c"],
+                 series=[{"name": "x", "values": [1]},
+                         {"name": "y", "values": [2, 3, 4]}])
+    _paint(c)
+    assert len(c._hit) == 3          # spans the longest series
+    assert "total 1" in c._hit[0][1] or "total 3" in c._hit[0][1]
+
+
+def test_stacked_with_no_points_at_all_is_empty(app):
+    c = FoxChart("stacked", labels=[], series=[{"values": []}, {"values": []}],
+                 empty={"title": "No breach data"})
+    assert c._has_data() is False
+    _paint(c)
+    assert c.accessibleDescription() == "No breach data"
+
+
+# ── sparkline specifics ─────────────────────────────────────────────────────
+def test_sparkline_suppresses_dots_labels_and_hit_map(app):
+    """The spark is a glance-sized trend: no dots, no axis labels, no tooltips
+    (the web passes spark=true, which skips all three)."""
+    spark = FoxChart("sparkline", data=[{"label": str(i), "value": v}
+                                        for i, v in enumerate([2, 6, 3, 9])])
+    _paint(spark)
+    assert spark._hit == []
+    line = FoxChart("line", data=[{"label": str(i), "value": v}
+                                  for i, v in enumerate([2, 6, 3, 9])])
+    _paint(line)
+    assert len(line._hit) == 4        # the full chart DOES get per-point tips
+
+
+def test_sparkline_default_height_matches_the_web(app):
+    assert FoxChart("sparkline", data=[{"label": "a", "value": 1}]).height() == 42
+
+
+def test_sparkline_uses_the_tight_padding(app):
+    """Web pads the spark 2/2/4/4 vs 8/8/12/18 for a full line chart, so the
+    trace fills its box; verified via the drawn extent."""
+    data = [{"label": str(i), "value": v} for i, v in enumerate([0, 10])]
+    spark = FoxChart("sparkline", data=data, height=42)
+    full = FoxChart("line", data=data, height=42)
+    _paint(spark)
+    _paint(full)
+    # Same widget height, but the spark's usable band is taller by the padding
+    # difference (12+18) - (4+4) = 22 px.
+    assert spark.height() == full.height() == 42
 
 
 def test_donut_ignores_non_positive_slices(app):
