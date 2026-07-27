@@ -77,9 +77,12 @@ from access_page import (
     AccessSections, CodeBox, NewKeyDialog, ShownOnceDialog, key_row,
 )
 from export_page import ExportSections, history_row
+import policy_page
+from policy_page import PolicySections
 from ledger_page import LedgerRow, LedgerSections
 from verify_page import VerifySections, anchor_row
 import access_data as ad
+import policy_data as pd
 import export_data as ed
 import verify_data as vd
 from threats_page import ThreatsSections, alert_table_row
@@ -623,6 +626,7 @@ class DashboardWindow(QWidget):
         self._init_verify()          # D6
         self._init_export()          # D8
         self._init_access()          # D9
+        self._init_policy()          # D7
         self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
         self._sync_title()
 
@@ -671,6 +675,7 @@ class DashboardWindow(QWidget):
         self._verify = VerifySections(self)
         self._export = ExportSections(self)
         self._access = AccessSections(self)
+        self._policy = PolicySections(self)
         builders = {
             "home": lambda t: self._home.build(self._page_overview(t)),
             "threats": lambda t: self._threats.build(t),
@@ -678,6 +683,7 @@ class DashboardWindow(QWidget):
             "verify": lambda t: self._verify.build(t),
             "export": lambda t: self._export.build(t),
             "access": lambda t: self._access.build(t),
+            "policy": lambda t: self._policy.build(t),
             "system": self._page_system,
             "sandbox": self._page_sandbox,
         }
@@ -1869,6 +1875,12 @@ class DashboardWindow(QWidget):
         self.user_btn.setText(avatar_initial(me))
         who = (me or {}).get("email") or ""
         role = (me or {}).get("role") or ""
+        # D7 needs this: PUT /v1/policies is admin-humans-only, and the page
+        # disables its controls rather than letting a member discover that
+        # through a 403 after filling the form in.
+        self._role = role
+        if hasattr(self, "pol_save"):
+            self._apply_policy_permission()
         self.user_btn.setToolTip(("%s · %s" % (who, role)) if role else (who or "Account"))
         self.user_btn.setAccessibleName(
             ("Account menu for %s" % who) if who else "Account menu")
@@ -2731,15 +2743,21 @@ class DashboardWindow(QWidget):
     def set_export_range(self, days: int):
         from PyQt6.QtCore import QDate
         date_from, date_to = ed.preset_range(days)
-        self.exp_all_time.setChecked(days <= 0)
         self.exp_to.setDate(QDate.fromString(date_to, "yyyy-MM-dd"))
         if date_from:
             self.exp_from.setDate(QDate.fromString(date_from, "yyyy-MM-dd"))
+        # All time has no start date, and the greyed-out FROM picker is what
+        # says so now that the separate toggle is gone.
+        self.exp_from.setDisabled(days <= 0)
         for value, button in self.exp_range_buttons.items():
             button.setChecked(value == days)
 
+    def _all_time_selected(self) -> bool:
+        button = self.exp_range_buttons.get(0)
+        return bool(button is not None and button.isChecked())
+
     def _export_dates(self) -> tuple[str, str]:
-        date_from = ("" if self.exp_all_time.isChecked()
+        date_from = ("" if self._all_time_selected()
                      else self.exp_from.date().toString("yyyy-MM-dd"))
         return date_from, self.exp_to.date().toString("yyyy-MM-dd")
 
@@ -3093,13 +3111,302 @@ class DashboardWindow(QWidget):
                      on_err=lambda err: finish(
                          False, status_of(err)))
 
+    # ── Policy ruleset (D7) ────────────────────────────────────────────────
+    def _init_policy(self):
+        self._init_verify()                 # shares the page-worker bucket
+        # Judge key state. `_pol_typed` is NOT kept here — a typed key lives in
+        # its QLineEdit and nowhere else, and is read only at the moment the
+        # save body is built. What we do keep is which providers the user asked
+        # to REMOVE, which is a decision, not a secret.
+        self._pol_judge = pd.judge_view(None)
+        self._pol_cleared: set = set()
+        self._pol_loaded = False
+        self._pol_dirty = False
+        self._role = getattr(self, "_role", "")
+        self._set_policy_panel(PanelState.LOADING)
+        self._apply_policy_permission()
+        self._render_judge_keys()
+
+    # -- permission -----------------------------------------------------
+    def _can_edit_policy(self) -> bool:
+        """PUT /v1/policies needs an admin HUMAN session (policies.py:129-133).
+
+        An org API key authenticates the SDK, not a person, so key-only mode is
+        read-only here no matter how the workspace is configured.
+        """
+        return bool(self.client.has_session()) and self._role == "admin"
+
+    def _apply_policy_permission(self):
+        editable = self._can_edit_policy()
+        for widget in (self.pol_save, self.pol_tokens, self.pol_enforcement,
+                       self.pol_confidence, self.pol_notify, self.pol_email,
+                       self.pol_webhook, self.pol_provider):
+            widget.setEnabled(editable)
+        for row in self.pol_rows.values():
+            row.toggle.setEnabled(editable)
+        for button in self.pol_mode_btns.values():
+            button.setEnabled(editable)
+        self.pol_save.setToolTip(
+            "" if editable else "Changing the ruleset needs an admin account")
+        self.pol_notice.setText(
+            pd.MEMBER_NOTICE if self.client.has_session()
+            else pd.KEY_ONLY_NOTICE)
+        self.pol_notice_card.setVisible(not editable)
+        # The search box stays live for everyone — reading what is enforced is
+        # not a privileged act, and it is the point of showing members the page.
+        self._render_judge_keys()
+
+    # -- load -----------------------------------------------------------
+    def refresh_policy(self):
+        if not self._can_fetch():
+            return
+        if not self._pol_loaded:
+            self._set_policy_panel(PanelState.LOADING)
+        spawn_worker(self.client, "GET", "/v1/policies", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_policy, on_err=self._on_policy_failed)
+        # The role decides whether this page is editable and only /v1/auth/me
+        # knows it; in key-only mode this 401s, which is itself the answer.
+        spawn_worker(self.client, "GET", "/v1/auth/me", timeout=10, parent=self,
+                     track=self._page_workers,
+                     on_ok=lambda d: self._on_policy_role(d),
+                     on_err=lambda _e: self._on_policy_role(None))
+
+    def _on_policy_role(self, data):
+        if isinstance(data, dict):
+            self._role = str(data.get("role") or "")
+        # A failed /v1/auth/me is not evidence of a demotion — keep whatever
+        # sign-in told us. Downgrading an admin's page because one request
+        # timed out would be the same "absence of an answer read as an answer"
+        # mistake the panel states exist to prevent.
+        self._apply_policy_permission()
+
+    def _on_policy(self, data):
+        view = pd.policy_view(data)
+        self._pol_judge = pd.judge_view(data)
+        self._pol_cleared.clear()
+        for key, row in self.pol_rows.items():
+            row.toggle.setChecked(bool(view[key]))
+        self.pol_tokens.setValue(view["max_token_threshold"])
+        for combo, key in ((self.pol_enforcement, "enforcement_mode"),
+                           (self.pol_confidence, "confidence_threshold"),
+                           (self.pol_notify, "notify_on_breach"),
+                           (self.pol_provider, "judge_provider")):
+            index = combo.findData(view[key])
+            if index >= 0:
+                combo.setCurrentIndex(index)
+        self.pol_email.setText(view["notify_email"])
+        self.pol_webhook.setText(view["notify_webhook_url"])
+        # Every setter above emits its change signal, so the form is "dirty"
+        # from loading it. Clearing here is what makes the indicator mean
+        # "you changed something" rather than "this page exists".
+        self._pol_loaded = True
+        self._set_policy_status("", "mute")
+        self._pol_dirty = False
+        self._set_policy_panel(PanelState.OK)
+        # `_on_policy_failed` turns Save off. Without this, a load that failed
+        # once left the button dead for the rest of the session even after a
+        # retry succeeded — found by rendering the retry, not by a test, and
+        # the test that "covered" it was calling this helper itself.
+        self._apply_policy_permission()
+        self._render_judge_keys()
+
+    def _on_policy_failed(self, err):
+        self._pol_loaded = False
+        # The FORM IS HIDDEN, not merely disabled. A greyed-out "Block PII: ON"
+        # still reads as a fact about the workspace, and we did not learn it —
+        # this is the D4 false-empty-state lesson on a page where the wrong
+        # reading is "here is what protects you".
+        status = status_of(err)
+        self._set_policy_panel(PanelState.ERROR, detail=str(err),
+                               code=f"HTTP {status}" if status else "")
+        self._set_policy_status("", "mute")
+        self.pol_save.setEnabled(False)
+
+    def _set_policy_panel(self, state, *, detail: str = "", code: str = ""):
+        # A transport error can be a paragraph of OpenSSL — the house voice
+        # says what it means, and the tooltip keeps the raw text for a report.
+        self.pol_state.set_state(
+            state, error_detail=(
+                f"Foxy couldn't read this workspace's ruleset"
+                f"{f' ({code})' if code else ''}. Nothing on this page is "
+                f"claimed about what your workspace enforces."))
+        self.pol_state.setToolTip(detail or "")
+        self.pol_state.setVisible(state is not PanelState.OK)
+        self.pol_form.setVisible(state is PanelState.OK)
+
+    # -- judge block ----------------------------------------------------
+    def on_judge_provider_changed(self):
+        self._render_judge_keys()
+        self.mark_policy_dirty()
+
+    def set_judge_key_mode(self, mode: str):
+        if mode == "platform" and not self._pol_judge.get("platform_allowed"):
+            # The button is disabled, so this is only reachable if the plan
+            # changed under us. Say what the plan allows, don't just refuse.
+            self.toast.show_message(pd.PLATFORM_LOCKED)
+            self._render_judge_keys()
+            return
+        self._pol_judge["mode"] = mode
+        self._render_judge_keys()
+        self.mark_policy_dirty()
+
+    def clear_judge_key(self, provider: str):
+        """Mark a stored key for removal. Nothing is sent until save — the web
+        says the same ("Key will be removed when you save the ruleset")."""
+        self._pol_cleared.add(provider)
+        self.pol_key_rows[provider].clear_field()
+        self._render_judge_keys()
+        self.mark_policy_dirty()
+        self.toast.show_message("Key will be removed when you save the ruleset")
+
+    def _render_judge_keys(self):
+        judge = self._pol_judge
+        provider = self.pol_provider.currentData() or "gemini"
+        editable = self._can_edit_policy()
+        for mode, button in self.pol_mode_btns.items():
+            button.setChecked(mode == judge["mode"])
+        platform = self.pol_mode_btns["platform"]
+        allowed = bool(judge.get("platform_allowed"))
+        platform.setEnabled(editable and allowed)
+        # The web puts a `.lockchip` span inside the button (html:2669). A
+        # button label is one string here, so the plan rides in the text — in
+        # real letters, because small-caps unicode is not readable text and a
+        # screen reader would spell it out.
+        platform.setText("Foxy's managed keys"
+                         + ("" if allowed else "  (Premium)"))
+        platform.setToolTip("" if allowed else "Available on the Premium plan")
+        self.pol_mode_hint.setText(pd.mode_hint(judge["mode"]))
+        for name, row in self.pol_key_rows.items():
+            row.apply(pd.key_field(name, judge_provider=provider,
+                                   mode=judge["mode"],
+                                   key_set=judge[f"{name}_key_set"],
+                                   cleared=name in self._pol_cleared),
+                      editable=editable)
+
+    # -- dirty state ----------------------------------------------------
+    def mark_policy_dirty(self):
+        if not self._pol_loaded:
+            return          # loading the form is not the user changing it
+        self._pol_dirty = True
+        self._set_policy_status(pd.DIRTY, "warn")
+
+    def _set_policy_status(self, text: str, tone: str = "mute"):
+        colour = {"ok": OK_GREEN, "bad": BAD_RED,
+                  "warn": WARN_AMBER}.get(tone, WEB["muted"])
+        self.pol_status.setStyleSheet(
+            f"color: {colour}; font-family: '{_pick_font('mono')}';"
+            f" font-size: 10px; font-weight: 800; background: transparent;")
+        self.pol_status.setText(text)
+        self.pol_status.setAccessibleName(text)
+
+    def _mark_policy_field(self, target):
+        """Put the error on the FIELD, not only in a sentence about it.
+
+        "check the highlighted field" is a promise that something is
+        highlighted; the focus ring alone is the same orange every focused
+        input gets, so it says "you are here", not "this is wrong".
+        """
+        for widget in (self.pol_email, self.pol_webhook):
+            bad = widget is target
+            widget.setProperty("invalid", bad)
+            widget.setStyleSheet(
+                policy_page._input_qss()
+                + (f"QLineEdit {{ border-color: {BAD_RED}; }}" if bad else ""))
+            widget.setAccessibleDescription(
+                self.pol_field_error.text() if bad else "")
+
+    def filter_safeguards(self):
+        query = self.pol_search.text()
+        for spec, hit in zip(pd.SAFEGUARDS, pd.search_hits(query)):
+            self.pol_rows[spec["key"]].setVisible(hit)
+        self.pol_no_match.setVisible(pd.no_match(query))
+
+    # -- save -----------------------------------------------------------
+    def _policy_form(self) -> dict:
+        form = {spec["key"]: self.pol_rows[spec["key"]].toggle.isChecked()
+                for spec in pd.SAFEGUARDS}
+        form.update({
+            "max_token_threshold": self.pol_tokens.value(),
+            "enforcement_mode": self.pol_enforcement.currentData(),
+            "confidence_threshold": self.pol_confidence.currentData(),
+            "notify_on_breach": self.pol_notify.currentData(),
+            "notify_email": self.pol_email.text(),
+            "notify_webhook_url": self.pol_webhook.text(),
+            "judge_provider": self.pol_provider.currentData(),
+        })
+        return form
+
+    def save_policy(self):
+        if not self._can_edit_policy():
+            self.toast.show_message(pd.MEMBER_NOTICE)
+            return
+        form = self._policy_form()
+        problem = pd.validate(form)
+        self._mark_policy_field(None)
+        self.pol_field_error.setVisible(bool(problem))
+        if problem:
+            field, message = problem
+            self.pol_field_error.setText(message)
+            self.pol_alerts_btn.setChecked(True)     # the field is in there
+            target = {"notify_email": self.pol_email,
+                      "notify_webhook_url": self.pol_webhook}[field]
+            self._mark_policy_field(target)
+            target.setFocus()
+            self._set_policy_status("Not saved — check the highlighted field",
+                                    "bad")
+            return
+        # The ONLY read of a typed key, and it goes straight into the request
+        # body. Nothing between here and the wire holds it.
+        typed = {name: row.typed() for name, row in self.pol_key_rows.items()
+                 if pd.key_field(name,
+                                 judge_provider=form["judge_provider"],
+                                 mode=self._pol_judge["mode"],
+                                 key_set=False)["used"]}
+        body = pd.save_body(form, self._pol_judge, typed=typed,
+                            cleared=tuple(self._pol_cleared))
+        self.pol_save.setEnabled(False)
+        self._set_policy_status(pd.SAVING, "mute")
+        spawn_worker(self.client, "PUT", "/v1/policies", body=body, timeout=20,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_policy_saved,
+                     on_err=self._on_policy_save_failed)
+
+    def _on_policy_saved(self, data):
+        self.pol_save.setEnabled(True)
+        self._pol_dirty = False
+        self._pol_cleared.clear()
+        # Re-read from the RESPONSE so the key-set chips reflect what the
+        # server actually stored, and drop the typed keys — they have been
+        # handed over and this app has no reason to still hold them.
+        self._pol_judge = pd.judge_view(data)
+        for row in self.pol_key_rows.values():
+            row.clear_field()
+        self._render_judge_keys()
+        message, tone = pd.save_result(None)
+        self._set_policy_status(message, tone)
+        self.toast.show_message(pd.save_toast(None))
+
+    def _on_policy_save_failed(self, err):
+        self.pol_save.setEnabled(True)
+        # The fields are cleared here too: the save did not happen, and a key
+        # sitting in a box across a failure is a secret we are holding for no
+        # reason. The user re-enters it, which is the safe direction to fail.
+        for row in self.pol_key_rows.values():
+            row.clear_field()
+        self._pol_cleared.clear()
+        self._render_judge_keys()
+        status = status_of(err) or 0
+        message, tone = pd.save_result(status, detail_of(err))
+        self._set_policy_status(message, tone)
+        self.toast.show_message(pd.save_toast(status))
+
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
 
         It states plainly what it is and which phase builds it — no invented
         numbers, no skeleton pretending to be data (the no-fake-data rule)."""
-        phase = {"verify": "D6", "policy": "D7", "export": "D8",
-                 "access": "D9", "billing": "D10", "settings": "D11"}.get(section_id, "")
+        phase = {"billing": "D10", "settings": "D11"}.get(section_id, "")
         page = QWidget()
         v = QVBoxLayout(page)
         v.setContentsMargins(22, 20, 22, 20)
@@ -3146,6 +3453,8 @@ class DashboardWindow(QWidget):
             self.refresh_exports()
         if section_id == "access":
             self.refresh_keys()
+        if section_id == "policy":
+            self.refresh_policy()
         if section_id == "home":
             # The web reloads a section's data on navigation; Home is the one
             # page whose numbers age while you sit in the ledger.

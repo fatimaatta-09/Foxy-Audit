@@ -90,9 +90,9 @@ def test_existing_pages_are_remapped_not_duplicated(console):
 
 def test_unbuilt_sections_are_honest_stubs(console):
     """A stub says what it is and which phase builds it — no invented data."""
-    # D6/D8/D9 built verify, export and access — what remains unbuilt shrinks
-    # each phase, and this list is the record of that.
-    for section_id in ("policy", "billing", "settings"):
+    # D6/D8/D9 built verify, export and access; D7 built policy — what remains
+    # unbuilt shrinks each phase, and this list is the record of that.
+    for section_id in ("billing", "settings"):
         page = console.stack.widget(console._page_index[section_id])
         text = " ".join(lbl.text() for lbl in page.findChildren(type(console.page_title)))
         assert "coming in phase" in text.lower()

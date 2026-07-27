@@ -474,6 +474,13 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                keeps the 1px width, so focus never shifts the layout. */
             QPushButton#ctaBtn:focus {{ border: 1px solid {WEB['ink']};
                 background: #d6743a; }}
+            /* D7: there was no :disabled rule, so a CTA the code had turned
+               OFF still rendered as a bright, inviting orange button — the
+               user finds out by clicking. Every disabled CTA in the app reads
+               as disabled now (Policy's save for members, and the export and
+               verify buttons while a request is in flight). */
+            QPushButton#ctaBtn:disabled {{ background: {WEB['surf3']};
+                color: {WEB['muted2']}; border: 1px solid {WEB['bc']}; }}
             /* The verification card is keyboard-operable (Space/Enter flips
                it) but had no focus indicator at all — a card you can reach and
                operate blind. Same 1px-for-1px swap. */
@@ -497,6 +504,25 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 color: #1a0900; }}
             QPushButton#segBtn:focus {{ border: 2px solid {WEB['fox']}; }}
             QPushButton#segBtn:disabled {{ color: {WEB['muted2']}; }}
+            /* D7: a LONE checkable button. #segBtn is transparent and
+               borderless when unchecked, which is right inside a bordered seg
+               track and wrong on its own — "OFF" and "reveal" rendered as
+               plain text with no affordance at all. This keeps a pill in both
+               states, so off still looks like something you can press. */
+            QPushButton#toggleBtn {{ background: {WEB['surf3']};
+                color: {WEB['muted']}; border: 2px solid {WEB['bc']};
+                border-radius: 22px; padding: 6px 16px;
+                font-family: '{mono}'; font-size: 10px; font-weight: 800;
+                letter-spacing: 0.8px; }}
+            QPushButton#toggleBtn:hover {{ border-color: {WEB['fox']};
+                color: {WEB['ink']}; }}
+            QPushButton#toggleBtn:checked {{ background: {WEB['fox']};
+                color: #1a0900; border-color: {WEB['fox']}; }}
+            QPushButton#toggleBtn:focus {{ border-color: {WEB['fox2']}; }}
+            QPushButton#toggleBtn:disabled {{ color: {WEB['muted2']};
+                border-color: {WEB['surf3']}; }}
+            QPushButton#toggleBtn:checked:disabled {{
+                background: {WEB['surf3']}; color: {WEB['muted']}; }}
             QFrame#hero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #c96a2f, stop:0.62 #a4521d, stop:1 #6e3411);

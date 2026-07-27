@@ -429,13 +429,20 @@ def test_no_surface_announces_tampering_for_a_check_that_never_ran(console):
 
 
 def test_export_range_presets_drive_the_pickers(console):
+    """One control, not two: the duplicate "no start date (all time)" toggle is
+    gone, so ALL TIME on the range strip is what expresses an open-ended
+    export, and the FROM picker greys out to say there is no start date."""
     console.set_export_range(30)
     assert console.exp_range_buttons[30].isChecked()
-    assert not console.exp_all_time.isChecked()
+    assert console.exp_from.isEnabled()
+    assert console._export_dates()[0] != ""
     console.set_export_range(0)
-    assert console.exp_all_time.isChecked()
+    assert console.exp_range_buttons[0].isChecked()
+    assert not console.exp_from.isEnabled()
     assert console._export_dates()[0] == ""      # no start date at all time
     console.set_export_range(90)
+    assert console.exp_from.isEnabled()
+    assert not hasattr(console, "exp_all_time")
 
 
 def test_chain_metadata_is_masked_until_revealed(console):

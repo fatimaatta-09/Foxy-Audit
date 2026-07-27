@@ -103,19 +103,12 @@ class ExportSections:
             col.addWidget(edit)
             dates.addLayout(col, 1)
         lay.addLayout(dates)
-        # "All time" has no start date; a picker cannot express that, so a
-        # checkbox-free explicit control does.
-        o.exp_all_time = QPushButton("no start date (all time)")
-        # segBtn, not ghostBtn: a checkable ghost button renders the same
-        # whether or not it is checked, so "all time" looked permanently
-        # pressed. The seg treatment makes checked mean something.
-        o.exp_all_time.setObjectName("segBtn")
-        o.exp_all_time.setCheckable(True)
-        o.exp_all_time.setMinimumHeight(44)
-        o.exp_all_time.setCursor(Qt.CursorShape.PointingHandCursor)
-        o.exp_all_time.toggled.connect(lambda on: o.exp_from.setDisabled(on))
-        lay.addWidget(o.exp_all_time)
-
+        # "All time" is the range strip's own ALL TIME option. There used to be
+        # a second control here — a checkable "no start date (all time)" button
+        # under two pickers showing real dates, which duplicated that option and
+        # read as a statement about the current range rather than an action.
+        # The FROM picker greys out instead, which says the same thing where the
+        # user is already looking (MAIN's call, 2026-07-28).
         lay.addWidget(_field_label("What to export"))
         o.exp_type = QComboBox()
         o.exp_type.setAccessibleName("Export type")
@@ -174,11 +167,11 @@ class ExportSections:
         # screen while someone shares it, so they are masked by default and
         # revealed deliberately.
         o.exp_reveal = QPushButton("reveal")
-        # Checkable → segBtn, for the same reason `exp_all_time` is one: a
-        # checkable ghostBtn has no :checked rule, so Qt falls back to the
-        # native "on" look — which rendered as a bright cyan button that
-        # belongs to no palette in this app. Caught by rendering it checked.
-        o.exp_reveal.setObjectName("segBtn")
+        # A lone checkable button: #ghostBtn has no `:checked` rule at all (Qt
+        # fell back to the native "on" look — a bright cyan button in no
+        # palette this app owns), and #segBtn is invisible when unchecked
+        # outside a seg track. #toggleBtn is the one that reads in both states.
+        o.exp_reveal.setObjectName("toggleBtn")
         o.exp_reveal.setCheckable(True)
         o.exp_reveal.setMinimumHeight(44)
         o.exp_reveal.setCursor(Qt.CursorShape.PointingHandCursor)
