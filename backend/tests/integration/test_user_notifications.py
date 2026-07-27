@@ -175,6 +175,7 @@ def test_breach_alert_not_duplicated_with_org_level_email(make_org, client, monk
     """The org-level notifier and the per-user sender must not both email the
     same address for one breach — counted across BOTH phases."""
     from app.schemas import Verdict
+    from app import org_notifications as on_
     from app import user_notifications as un
     from app import worker as workermod
 
@@ -201,6 +202,10 @@ def test_breach_alert_not_duplicated_with_org_level_email(make_org, client, monk
     try:
         for row in workermod._claim_batch(db, 100, 300):
             workermod._grade_one(db, row)
+        # Both senders are queued now — the org notice moved out of the
+        # grading batch — so both queues have to be drained for this test to
+        # see what a real deployment would actually send.
+        on_.drain_breach_notices(db)
         un.drain_breach_alerts(db)      # keep BOTH phases in `sent`
     finally:
         db.close()

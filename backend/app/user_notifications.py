@@ -119,6 +119,14 @@ def enqueue_breach_alert(row, verdict) -> None:
     """Called from worker._grade_one. Copies plain values off the grading row
     (nothing ORM- or session-bound crosses the thread boundary), never blocks
     and never raises into grading."""
+    # The kill switch has to stop the ENQUEUE, not just the drain. It gates the
+    # thread that consumes this queue (worker.py), so with the switch off,
+    # grading kept filling a queue nobody was reading: it reached its cap and
+    # then logged "queue full" for every breach from then on. Nothing was lost —
+    # the breach is in the ledger regardless — but the switch did not do what it
+    # says, and the warnings made the worker log useless.
+    if not get_settings().user_notifications_enabled:
+        return
     try:
         _BREACH_QUEUE.put_nowait({
             "org_id": str(row["org_id"]),

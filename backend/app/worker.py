@@ -30,12 +30,11 @@ import hashlib
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import requests
 
-from . import email as email_mod, email_templates as et
 from . import gemini
 from . import judge
 from . import judge_routing
+from . import org_notifications
 from . import openai_judge
 from . import policy_engine
 from . import user_notifications
@@ -43,7 +42,7 @@ from . import webhook_delivery
 from .anchor import _ANCHOR_ALERT_STATE, alert_on_anchor_problems, anchor_all_due
 from .config import get_settings
 from .db import SessionLocal
-from .models import AuditEvent, Organization, OrgPolicy
+from .models import AuditEvent, OrgPolicy
 from .policy_snapshot import judge_policy_config, policy_snapshot_hash
 
 log = logging.getLogger("foxy.worker")
@@ -218,11 +217,13 @@ def _grade_one(db: Session, row) -> None:
     # Fire the breach notifier AFTER the verdict is durably committed, so a notify
     # failure can never lose the grade. Best-effort — never raises into grading.
     if verdict.policy_breach:
-        _notify_breach(db, row, verdict)
-        # Per-user breach alerts (D-S): QUEUE only. The fan-out is one email per
-        # opted-in seat, so sending it here would put N synchronous provider
-        # calls inside the grading batch and starve the worker heartbeat. The
-        # notifications thread drains the queue and sends.
+        # BOTH breach paths QUEUE only — no provider call happens inside the
+        # grading batch. The org-level notice used to be sent inline here: a
+        # synchronous send_email plus a 5 s webhook POST in the loop that also
+        # drives the worker heartbeat, so a hanging mail provider could stall
+        # grading and take /health/ready down with it.
+        org_notifications.enqueue_breach_notice(row, verdict)
+        # Per-user fan-out (D-S): one email per opted-in seat.
         user_notifications.enqueue_breach_alert(row, verdict)
     # Outbound webhook subscriptions (P3 §F): deliver a signed 'graded' (and
     # 'breach') event to each matching subscription. Best-effort, content-blind.
@@ -234,46 +235,6 @@ def _grade_one(db: Session, row) -> None:
                      "chain_hash": row.get("chain_hash")})
     except Exception as exc:                 # noqa: BLE001 — delivery never breaks grading
         log.warning("webhook delivery error: %s", exc)
-
-
-def _notify_breach(db: Session, row, verdict) -> None:
-    """Email (and optionally webhook) the org when a breach is graded, if their
-    policy asks for immediate notice. Content-blind: seq + risk + reason only."""
-    try:
-        oid = row["org_id"] if isinstance(row["org_id"], uuid.UUID) else uuid.UUID(str(row["org_id"]))
-        policy = db.get(OrgPolicy, oid)
-        if policy is None or policy.notify_on_breach != "immediate":
-            return
-        seq = row.get("seq")
-        reason = (verdict.reason or "")[:200]
-        risk = verdict.risk_score
-        org = db.get(Organization, oid)
-        to = policy.notify_email or (org.contact_email if org else None)
-        if to:
-            html, plain = et.layout(
-                title="Policy breach flagged",
-                preheader=f"A policy breach was flagged in your audit trail (record #{seq}, risk {risk}).",
-                blocks=[
-                    et.paragraph(f"A policy breach was flagged in your audit trail "
-                                 f"(record #{seq}, risk {risk})."),
-                    et.callout(reason, tone="bad"),
-                    et.muted("Open your dashboard ledger to review. Only hashes are stored — "
-                             "never the prompt or response."),
-                ],
-                surface="customer",
-            )
-            email_mod.send_email(
-                to=to, subject="\U0001f534 Policy breach flagged — Foxy Audit",
-                html=html, text=plain)
-        if policy.notify_webhook_url:
-            try:
-                requests.post(policy.notify_webhook_url, json={
-                    "type": "policy_breach", "seq": seq, "risk_score": risk,
-                    "reason": reason, "org_id": str(oid)}, timeout=5)
-            except Exception:                       # noqa: BLE001 — webhook is best-effort
-                log.warning("breach webhook POST failed for org %s", oid)
-    except Exception as exc:                        # noqa: BLE001 — notify never breaks grading
-        log.warning("breach notify failed: %s", exc)
 
 
 def _handle_failure(db: Session, row, max_attempts: int, exc: Exception) -> None:
@@ -383,6 +344,14 @@ def run_forever() -> None:
     from .usage import usage_loop
     threading.Thread(target=usage_loop, args=(stopping, s),
                      name="foxy-usage", daemon=True).start()
+
+    # Org-policy breach notices, own thread + session. NOT gated on
+    # user_notifications_enabled: that switch governs the per-user preference
+    # fan-out, and using it to also silence a tenant's configured policy notice
+    # would disable a paid feature by accident.
+    from .org_notifications import org_notifications_loop
+    threading.Thread(target=org_notifications_loop, args=(stopping, s),
+                     name="foxy-org-notifications", daemon=True).start()
 
     # Per-user breach alerts + weekly digest + key-rotation reminders (D-S), own
     # thread + session so a slow mail provider never stalls grading.
