@@ -79,10 +79,12 @@ from access_page import (
 from export_page import ExportSections, history_row
 import policy_page
 from policy_page import PolicySections
+from billing_page import BillingSections, invoice_row, usage_row
 from ledger_page import LedgerRow, LedgerSections
 from verify_page import VerifySections, anchor_row
 import access_data as ad
 import policy_data as pd
+import billing_data as bd
 import export_data as ed
 import verify_data as vd
 from threats_page import ThreatsSections, alert_table_row
@@ -627,6 +629,7 @@ class DashboardWindow(QWidget):
         self._init_export()          # D8
         self._init_access()          # D9
         self._init_policy()          # D7
+        self._init_billing()         # D10
         self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
         self._sync_title()
 
@@ -676,6 +679,7 @@ class DashboardWindow(QWidget):
         self._export = ExportSections(self)
         self._access = AccessSections(self)
         self._policy = PolicySections(self)
+        self._billing = BillingSections(self)
         builders = {
             "home": lambda t: self._home.build(self._page_overview(t)),
             "threats": lambda t: self._threats.build(t),
@@ -684,6 +688,7 @@ class DashboardWindow(QWidget):
             "export": lambda t: self._export.build(t),
             "access": lambda t: self._access.build(t),
             "policy": lambda t: self._policy.build(t),
+            "billing": lambda t: self._billing.build(t),
             "system": self._page_system,
             "sandbox": self._page_sandbox,
         }
@@ -2594,7 +2599,18 @@ class DashboardWindow(QWidget):
         if state is PanelState.OK:
             strip.hide()
             for row in rows:
-                layout.addWidget(build(row))
+                widget = build(row)
+                layout.addWidget(widget)
+                # `addWidget` does NOT show a child: Qt leaves it hidden until
+                # the layout next activates. Usually the next event-loop pass
+                # does that and nobody notices — but a refill followed closely
+                # by a repaint painted a table of 28 rows as an empty card,
+                # every row present with default 640×480 geometry and
+                # isHidden() true. Found by rendering the billing page; every
+                # list in the console goes through here, so it was latent on
+                # all of them.
+                widget.show()
+            layout.activate()
         else:
             strip.set_state(state, empty_title=empty_title,
                             empty_body=empty_body)
@@ -3468,12 +3484,177 @@ class DashboardWindow(QWidget):
         self._set_policy_status(message, tone, secrets=secrets)
         self.toast.show_message(pd.save_toast(status))
 
+    # ── Usage & billing (D10) ──────────────────────────────────────────────
+    def _init_billing(self):
+        self._init_verify()                 # shares the page-worker bucket
+        self._bil_plan = bd.plan_view(None)
+
+    def refresh_billing(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET", "/v1/usage?days=30", timeout=15,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_billing_usage,
+                     on_err=lambda _e: self._on_billing_usage(None, ok=False))
+        spawn_worker(self.client, "GET", "/v1/invoices", timeout=15,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_invoices,
+                     on_err=lambda _e: self._on_invoices(None, ok=False))
+        spawn_worker(self.client, "GET", "/v1/billing/plan", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_billing_plan,
+                     on_err=lambda _e: self._on_billing_plan(None, ok=False))
+
+    def _on_billing_usage(self, data, ok: bool = True):
+        payload = data if isinstance(data, dict) else {}
+        quota = payload.get("quota") if ok else None
+        days = payload.get("days") if ok else None
+        for tile, (label, value, _tone) in zip(self.bil_tiles,
+                                               bd.stat_row(quota, days)):
+            _frame, value_lbl, caption = tile
+            value_lbl.setText(value)
+            caption.setText(label.upper())
+        tier = (quota or {}).get("plan_tier") if isinstance(quota, dict) else None
+        self.bil_eyebrow.setText(
+            f"● PLAN & CONSUMPTION · {str(tier).upper()}" if tier
+            else "● PLAN & CONSUMPTION")
+
+        text = bd.entitlements(quota)
+        self.bil_entitlements.setText(text)
+        self.bil_ent_card.setVisible(bool(text))
+        warning = bd.over_quota_banner(quota)
+        self.bil_warning.setText(warning)
+        self.bil_warn_card.setVisible(bool(warning))
+
+        pct, label, tone = bd.headroom(quota)
+        self.bil_gauge_lbl.setText(label)
+        self.bil_gauge.set_options(
+            type="gauge", height=14, value=pct, max=100,
+            unlimited=bd.unlimited(quota), tone=tone,
+            aria=f"Quota headroom — {label}")
+        points = bd.trend_points(days)
+        state = resolve(ok, bool(points))
+        self.bil_trend.set_options(
+            type="area", height=130, tone="fox", data=points,
+            aria="Audited interactions per day, last 30 days",
+            empty=chart_empty(state, empty_title=bd.USAGE_EMPTY[0],
+                              empty_body=bd.USAGE_EMPTY[1]))
+        rows = bd.usage_rows(days)
+        self._fill_rows(self.bil_usage_rows, 0, self.bil_usage_empty, rows,
+                        usage_row, resolve(ok, bool(rows)),
+                        empty_title=bd.USAGE_EMPTY[0],
+                        empty_body=bd.USAGE_EMPTY[1])
+
+    def _on_invoices(self, data, ok: bool = True):
+        rows = bd.invoice_rows(data) if ok else []
+        # The PDF link is admin-only (account.py:423-427), so a member gets
+        # the row without a control that would answer 403.
+        opener = self.open_invoice if self._is_billing_admin() else None
+        self._fill_rows(self.bil_inv_rows, 0, self.bil_inv_empty, rows,
+                        lambda row: invoice_row(row, opener),
+                        resolve(ok, bool(rows)),
+                        empty_title=bd.INVOICE_EMPTY[0],
+                        empty_body=bd.INVOICE_EMPTY[1])
+        points = bd.invoice_points(data) if ok else []
+        self.bil_inv_chart.set_options(
+            type="bar", height=130, tone="blue", data=points,
+            aria="Invoice totals over time",
+            empty=chart_empty(resolve(ok, bool(points)),
+                              empty_title=bd.INVOICE_EMPTY[0],
+                              empty_body=bd.INVOICE_EMPTY[1]))
+
+    def _on_billing_plan(self, data, ok: bool = True):
+        view = bd.plan_view(data) if ok else bd.plan_view(None)
+        self._bil_plan = view
+        for key, (holder, value) in self.bil_plan_rows.items():
+            value.setText(view[key] or bd.MISSING)
+            # The row keeps the width it computed for the previous text until
+            # its layout re-activates, and a repaint in between drew "1,000"
+            # as "1,0". A half-drawn number on a billing page is a wrong one.
+            value.updateGeometry()
+            holder.layout().activate()
+        # Only when a trial exists (web html:1517) — an empty "trial ends" row
+        # invites the reading that one is running.
+        self.bil_plan_rows["trial_ends"][0].setVisible(bool(view["trial_ends"]))
+        known = bool(ok and view["known"])
+        self.bil_plan_state.set_state(
+            PanelState.OK if known else
+            PanelState.ERROR if not ok else PanelState.EMPTY,
+            empty_title="No plan on file",
+            empty_body="This workspace has no subscription record yet.")
+        self.bil_plan_state.setVisible(not known)
+        self._apply_billing_buttons()
+
+    def _is_billing_admin(self) -> bool:
+        """Both billing side-doors are admin-only: POST /v1/billing/portal
+        (billing.py:583) and GET /v1/invoices/{id}/link (account.py:426)."""
+        return bool(self.client.has_session()) and self._role == "admin"
+
+    def _apply_billing_buttons(self):
+        """Show a button only where it leads somewhere.
+
+        The web keys both buttons off `has_billing_account` alone, so a member
+        sees "Manage billing" and gets a 403 for pressing it. A control that
+        cannot work is worse than no control, so this also requires the role
+        the endpoint requires. Deliberate divergence from the web.
+        """
+        admin = self._is_billing_admin()
+        has_account = bool(self._bil_plan["has_billing_account"])
+        self.bil_manage.setVisible(admin and has_account)
+        # Upgrade goes to the public pricing page — no account, no role needed.
+        self.bil_upgrade.setVisible(bool(self._bil_plan["known"])
+                                    and not has_account)
+
+    def open_billing_portal(self):
+        self.bil_manage.setEnabled(False)
+        self.bil_manage.setText("opening…")
+
+        def restore():
+            self.bil_manage.setEnabled(True)
+            self.bil_manage.setText("Manage billing ↗")
+
+        def opened(data):
+            restore()
+            url = (data or {}).get("portal_url") if isinstance(data, dict) else ""
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+                self.toast.show_message(
+                    "Opening the billing portal in your browser")
+            else:
+                self.toast.show_message(bd.portal_result(None))
+
+        def failed(err):
+            restore()
+            self.toast.show_message(bd.portal_result(status_of(err) or 0))
+
+        spawn_worker(self.client, "POST", "/v1/billing/portal", timeout=20,
+                     parent=self, track=self._page_workers, on_ok=opened,
+                     on_err=failed)
+
+    def open_invoice(self, invoice_id: str):
+        def opened(data):
+            url = (data or {}).get("url") if isinstance(data, dict) else ""
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+            else:
+                self.toast.show_message(bd.invoice_link_result(404))
+
+        spawn_worker(self.client, "GET",
+                     f"/v1/invoices/{quote(str(invoice_id), safe='')}/link",
+                     timeout=20, parent=self, track=self._page_workers,
+                     on_ok=opened,
+                     on_err=lambda err: self.toast.show_message(
+                         bd.invoice_link_result(status_of(err) or 0)))
+
+    def open_pricing(self):
+        QDesktopServices.openUrl(QUrl(bd.PRICING_URL))
+
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
 
         It states plainly what it is and which phase builds it — no invented
         numbers, no skeleton pretending to be data (the no-fake-data rule)."""
-        phase = {"billing": "D10", "settings": "D11"}.get(section_id, "")
+        phase = {"settings": "D11"}.get(section_id, "")
         page = QWidget()
         v = QVBoxLayout(page)
         v.setContentsMargins(22, 20, 22, 20)
@@ -3522,6 +3703,8 @@ class DashboardWindow(QWidget):
             self.refresh_keys()
         if section_id == "policy":
             self.refresh_policy()
+        if section_id == "billing":
+            self.refresh_billing()
         if section_id == "home":
             # The web reloads a section's data on navigation; Home is the one
             # page whose numbers age while you sit in the ledger.

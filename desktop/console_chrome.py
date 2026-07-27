@@ -24,7 +24,13 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from datetime import datetime, timezone
+
+#: strftime's no-pad flag differs by platform: glibc/BSD take "%-d", the MSVC
+#: runtime takes "%#d" and raises on the other. CI runs on Linux, the app ships
+#: on Windows, so both have to be right.
+_WINDOWS = sys.platform.startswith("win")
 
 # ── The nine web sections, in the web's order, with its exact copy ──────────
 # (id, sidebar label, top-bar title, crumb tail, icon) — CTX at html:3480-3484.
@@ -252,6 +258,21 @@ def _local(iso: str | None) -> datetime | None:
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
     return when.astimezone()
+
+
+def local_date(iso: str | None, *, short: bool = False) -> str:
+    """Calendar date, the web's `toLocaleDateString()` (html:3128-3129).
+
+    Billing rows are dated, not timed: an invoice belongs to a day, and the
+    daily rollups are days by construction. `short` is the web's `day()`
+    form ("Mar 4") used for the 30 columns of the usage table, where the full
+    date would not fit and the year is never in question.
+    """
+    when = _local(iso)
+    if when is None:
+        return ""
+    return when.strftime("%b %#d" if _WINDOWS else "%b %-d") if short \
+        else when.strftime("%x")
 
 
 def local_time(iso: str | None) -> str:
