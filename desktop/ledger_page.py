@@ -306,6 +306,9 @@ class LedgerRow(QFrame):
         super().__init__(parent)
         self.row = row
         self._on_verify = on_verify
+        # Named so `QFrame#ledgerRow:focus` can reach it: StrongFocus without
+        # a focus rule is a cursor the user cannot see.
+        self.setObjectName("ledgerRow")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         lay = QVBoxLayout(self)

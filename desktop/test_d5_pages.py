@@ -398,3 +398,67 @@ def test_neither_page_fetches_without_a_credential(console):
     finally:
         console.settings.set_backend_url("")
         console.close()
+
+
+# ── the cascade bug, pinned (TASK 007 advisory) ─────────────────────────────
+#
+# The flagship D5 fix shipped without a test: reverting all three
+# `QWidget#pageBody` selectors to a bare `background: transparent;` left every
+# relevant test passing. That exact bug had already shipped silently once in
+# D4, where the Home trend switcher never showed which metric was selected.
+
+def test_no_page_body_sets_a_selectorless_background():
+    """A stylesheet with no selector applies to the widget AND every
+    descendant, and as the closest ancestor sheet it outranks the shell's
+    `QPushButton#segBtn:checked { background: fox }`. Every page body must
+    scope its rule."""
+    import re
+    for module in ("home_page.py", "threats_page.py", "ledger_page.py"):
+        with open(module, encoding="utf-8") as fh:
+            source = fh.read()
+        for call in re.findall(r"setStyleSheet\(\s*([\"'].*?[\"'])\s*\)", source):
+            assert "{" in call, (
+                f"{module}: selector-less stylesheet {call} — it will cascade "
+                f"to every child widget")
+
+
+@pytest.mark.parametrize("page,attr", [("threats", "threat_range_buttons"),
+                                       ("home", "trend_buttons")])
+def test_the_checked_segment_actually_paints_its_pill(console, page, attr):
+    """The behavioural half: the selected option must be visibly selected.
+
+    Measured rather than asserted structurally — this is what the eye sees,
+    and the structural version of this bug passed review twice.
+    """
+    from collections import Counter
+    from foxy_tokens import WEB
+
+    console.show()
+    console.go(page)
+    app_ = QApplication.instance()
+    app_.processEvents()
+    buttons = getattr(console, attr)
+    seg = next(iter(buttons.values())).parentWidget()
+    try:
+        image = seg.grab().toImage()
+        counts = Counter(image.pixelColor(x, y).name()
+                         for x in range(seg.width())
+                         for y in range(seg.height()))
+        assert counts.get(WEB["fox"].lower(), 0) > 100, (
+            f"{page}: the checked segment painted "
+            f"{counts.get(WEB['fox'].lower(), 0)} accent pixels — the pill is "
+            f"missing, so nothing shows which option is active")
+    finally:
+        console.close()
+
+
+def test_ledger_rows_show_a_focus_ring(console):
+    """StrongFocus without a focus rule is a cursor the user cannot see."""
+    from foxy_tokens import clay_tokens, console_shell_qss
+    from ledger_page import LedgerRow
+
+    console._on_ledger_rows(LOGS)
+    rows = console.ledger_scroll.widget().findChildren(LedgerRow)
+    assert rows, "expected a ledger row"
+    assert rows[0].objectName() == "ledgerRow"
+    assert "QFrame#ledgerRow:focus" in console_shell_qss(clay_tokens())

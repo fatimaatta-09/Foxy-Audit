@@ -450,3 +450,137 @@ def test_the_backing_survives_the_empty_and_error_states(app):
     chart.set_options(height=28, backing={"color": "#ffffff", "alpha": 0.26},
                       empty=chart_empty(PanelState.ERROR, quiet=True), data=[])
     assert not _paint(chart, 200, 28).isNull()
+
+
+
+# ── axis ticks must name the right bar (TASK 007 blocker 1) ─────────────────
+#
+# Asserted against `tick_layout`, the pure geometry function, rather than by
+# intercepting QPainter.drawText — patching an unbound PyQt method catches
+# every overload and took the interpreter down with exit 127.
+_ADV = len                       # 1px per character: deterministic, no font
+
+
+def _laid_out(n, *, anchor, width=600.0, x_of=None):
+    from charts import bar_metrics, tick_layout
+    labels = [f"2026-07-{i:03d}" for i in range(n)]
+    if x_of is None:
+        bw, gap = bar_metrics(width, n)
+        def x_of(i, _bw=bw, _gap=gap):        # bar CENTRES, as _paint_stacked does
+            return i * (_bw + _gap) + _bw / 2.0
+    return labels, tick_layout(labels, x_of, _ADV, anchor=anchor, width=width)
+
+
+@pytest.mark.parametrize("n", [7, 30, 90])
+def test_stacked_ticks_land_on_the_bar_they_name(n):
+    """A chart that prints the wrong date is worse than one that clips.
+
+    `tick_layout` was written for line/area, where x_of(0) is the plot's LEFT
+    EDGE. `_paint_stacked` passes bar CENTRES, so reusing edge alignment
+    shifted every label by half the 60px box — a fixed ±30px at any width. At
+    the Threats page's default 30-day range that put bar 0's date more than a
+    bar-pitch away, over a different day.
+    """
+    from charts import bar_metrics, tick_glyph_bounds
+    labels, laid = _laid_out(n, anchor="center")
+    bw, gap = bar_metrics(600.0, n)
+    assert laid, "expected some ticks"
+    for i, text, left, flag in laid:
+        g_left, g_right = tick_glyph_bounds(left, flag, _ADV(text))
+        bar_left, bar_right = i * (bw + gap), i * (bw + gap) + bw
+        assert g_left <= bar_right + 1 and g_right >= bar_left - 1, (
+            f"n={n} {text}: glyphs [{g_left:.1f},{g_right:.1f}] miss their bar "
+            f"[{bar_left:.1f},{bar_right:.1f}]")
+
+
+def test_centre_anchored_ticks_are_exactly_centred_when_not_clamped():
+    """The precise property: an interior label's box centre IS its bar's
+    centre. Only the first and last can be clamped, and only because a 60px
+    date cannot be centred on a bar whose centre is half a bar from the edge."""
+    from charts import _TICK_BOX, bar_metrics
+    _labels, laid = _laid_out(30, anchor="center")
+    bw, gap = bar_metrics(600.0, 30)
+    interior = [t for t in laid if 0 < t[0] < 29]
+    assert interior, "expected interior ticks"
+    for i, _text, left, _flag in interior:
+        box_centre = left + _TICK_BOX / 2
+        bar_centre = i * (bw + gap) + bw / 2.0
+        assert abs(box_centre - bar_centre) < 0.01, f"tick {i} off by "             f"{box_centre - bar_centre:.2f}px"
+
+
+def test_the_regression_itself_edge_alignment_shifts_by_half_a_box():
+    """Pin the reported defect exactly: edge alignment applied to a CENTRE
+    coordinate displaces the drawn box by a fixed half-box, at any width. The
+    reviewer measured bar 0's centre at 1.30px with the label box centred at
+    31.30px — more than a bar-pitch away, printed under another day."""
+    from charts import _TICK_BOX, bar_metrics
+    bw, gap = bar_metrics(600.0, 30)
+    _labels, wrong = _laid_out(30, anchor="edge")     # the old, wrong mode
+    _labels, right = _laid_out(30, anchor="center")
+    i, _text, wrong_left, _f = wrong[0]
+    bar_centre = i * (bw + gap) + bw / 2.0
+    assert abs((wrong_left + _TICK_BOX / 2) - bar_centre) > _TICK_BOX / 2 - 0.01
+    # ...and the fix pulls it back inside one bar-pitch of where it belongs.
+    _i, _t, fixed_left, _f2 = right[0]
+    assert abs((fixed_left + _TICK_BOX / 2) - bar_centre) < abs(
+        (wrong_left + _TICK_BOX / 2) - bar_centre)
+
+
+@pytest.mark.parametrize("n", [7, 30, 90])
+def test_stacked_ticks_stay_inside_the_plot(n):
+    from charts import tick_glyph_bounds
+    _labels, laid = _laid_out(n, anchor="center")
+    for _i, text, left, flag in laid:
+        g_left, g_right = tick_glyph_bounds(left, flag, _ADV(text))
+        assert g_left >= -0.5 and g_right <= 600.5, f"{text} spills outside"
+
+
+def test_edge_mode_is_unchanged_for_line_and_area():
+    """x_of(0) really is the left edge there, so the first label starts at 0."""
+    labels, laid = _laid_out(20, anchor="edge",
+                             x_of=lambda i: i * (600.0 / 19))
+    assert laid[0][2] == 0.0                       # box starts at the plot edge
+    assert laid[-1][0] == len(labels) - 1          # last label always drawn
+
+
+def test_ticks_are_thinned_not_all_drawn():
+    _labels, laid = _laid_out(90, anchor="center")
+    assert 2 <= len(laid) <= 10, f"drew {len(laid)} of 90"
+
+
+# ── bars must stay drawable (TASK 007 blocker 2) ────────────────────────────
+@pytest.mark.parametrize("n", [7, 30, 90])
+@pytest.mark.parametrize("width", [200.0, 600.0, 1400.0])
+def test_bars_never_go_negative_or_sub_pixel(n, width):
+    """`gap = max(4, W*0.03)` is constant regardless of bar count, so it ate
+    the row as n grew: at W=600 the web's formula gives 2.60px per bar at n=30
+    and -11.13px at n=90 — and D5's range control offers 90 in one click."""
+    from charts import bar_metrics
+    bw, gap = bar_metrics(width, n)
+    assert bw >= 1.0, f"n={n} W={width} -> {bw}"
+    assert gap >= 0.0
+    assert bw * n + gap * (n - 1) <= width + 0.01      # still fits the row
+
+
+def test_bar_metrics_match_the_web_until_the_cap_binds():
+    """Below the crowding threshold this is byte-identical to
+    foxy-audit-premium.html:2111 — the cap engages only where the web breaks."""
+    from charts import bar_metrics
+    for n in (1, 2, 3, 7, 11):
+        bw, _gap = bar_metrics(600.0, n)
+        web_gap = max(4.0, 600.0 * 0.03)
+        web_bw = (600.0 - web_gap * (n - 1)) / n
+        assert abs(bw - web_bw) < 0.01, f"n={n}: {bw} != web {web_bw}"
+
+
+def test_the_ninety_day_range_is_legible_and_renders(app):
+    """The exact case the Threats range control ships as one click."""
+    from charts import FoxChart, bar_metrics
+    bw, _gap = bar_metrics(600.0, 90)
+    assert bw > 3.0, f"90-day bars are {bw}px"
+    chart = FoxChart("stacked", height=180)
+    chart.resize(600, 180)
+    chart.set_options(height=180, labels=[str(i) for i in range(90)],
+                      series=[{"name": "High", "tone": "bad",
+                               "values": [1] * 90}])
+    assert not _paint(chart, 600, 180).isNull()

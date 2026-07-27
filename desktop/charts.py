@@ -77,6 +77,115 @@ _LEGEND_H = 22
 _TICK_GAP = 6           # minimum clear space between two axis labels, px
 
 
+#: Never draw a bar thinner than this. A sub-pixel bar is not a smaller
+#: reading of the data, it is an absent one.
+_MIN_BAR = 1.0
+
+
+def bar_metrics(W: float, n: int) -> tuple[float, float]:
+    """(bar width, gap) for `n` bars across `W` pixels.
+
+    The web computes `gap = max(4, W*0.03)` and then takes whatever width is
+    left (foxy-audit-premium.html:2111). That gap is a constant regardless of
+    how many bars share the row, so it eats the whole width as `n` grows: at
+    W=600 it leaves 2.60px per bar at n=30 and **-11.13px at n=90** — and D5's
+    Threats range control offers 90 days as a one-click option, so the desktop
+    reaches it in a way the web's charts had not.
+
+    So the gap is additionally capped at a third of the per-bar pitch. The cap
+    binds only once the bars get crowded — at W=600 that is n>=12, and the
+    threshold moves with width — so every chart below it is byte-identical to
+    the web. Above it the gap shrinks instead of the bars vanishing. Verified
+    at W=600: n=7 -> 70.29px (same as the web), n=30 -> 13.56px (was 2.60),
+    n=90 -> 4.47px (was -11.13). The web has the same defect and is
+    deliberately NOT changed here — see OWNER_DECISIONS.
+    """
+    if n <= 0:
+        return W, 0.0
+    if n == 1:
+        return max(_MIN_BAR, W), 0.0
+    pitch = W / n
+    gap = min(max(4.0, W * 0.03), pitch / 3.0)
+    gap = max(0.0, min(gap, (W - n * _MIN_BAR) / (n - 1)))
+    return max(_MIN_BAR, (W - gap * (n - 1)) / n), gap
+
+
+#: Every axis label is laid out into a box this wide, whatever the text.
+_TICK_BOX = 60.0
+
+
+def tick_layout(labels, x_of, advance_of, *, anchor: str = "edge",
+                width: float | None = None) -> list:
+    """Decide which axis labels to draw and where. Pure — no painter.
+
+    Returns [(index, text, box_left, alignment)] for the labels that survive
+    thinning, in draw order.
+
+    `anchor` says what `x_of(i)` MEANS, and it decides which bar a date is
+    printed under:
+
+    "edge" (line/area) — x_of(0) IS the plot's left edge and x_of(n-1) its
+    right edge, so the first label is left-aligned from x and the last is
+    right-aligned to x. Both grow inward and stay inside the plot.
+
+    "center" (stacked) — x_of(i) is the CENTRE of bar i, so labels are centred
+    on x. Reusing edge alignment here shifted the drawn text by half the label
+    box, a fixed ±30px at any chart width: at the Threats page's default
+    30-day range bar 0's centre is 1.30px and its label landed at 31.30px,
+    more than a bar-pitch away, printed under a different day. A chart that
+    states the wrong date is worse than one that clips.
+    """
+    labels = list(labels)
+    if not labels:
+        return []
+    step = max(1, -(-len(labels) // 6))          # ceil(len/6), as the web
+    out, drawn_right = [], None
+    for i, text in enumerate(labels):
+        if i % step and i != len(labels) - 1:
+            continue
+        x = x_of(i)
+        if anchor == "center":
+            left = x - _TICK_BOX / 2
+            flag = Qt.AlignmentFlag.AlignHCenter
+            if width is not None:
+                # A bar near either end cannot have its label centred on it
+                # without leaving the plot — bar 0's centre is only half a bar
+                # in. Clamp the box, and when it clamps align the GLYPHS to
+                # that edge: a date flush with the axis start reads as "the
+                # axis begins here", where centring it in a shoved box would
+                # print it over a neighbouring bar — the very defect this mode
+                # exists to fix.
+                if left < 0:
+                    left, flag = 0.0, Qt.AlignmentFlag.AlignLeft
+                elif left + _TICK_BOX > width:
+                    left, flag = width - _TICK_BOX, Qt.AlignmentFlag.AlignRight
+        elif i == 0:
+            left, flag = x, Qt.AlignmentFlag.AlignLeft
+        elif i == len(labels) - 1:
+            left, flag = x - _TICK_BOX, Qt.AlignmentFlag.AlignRight
+        else:
+            left, flag = x - _TICK_BOX / 2, Qt.AlignmentFlag.AlignHCenter
+
+        # The last tick is always drawn, so on a series just past a step
+        # boundary it lands on its neighbour and the two render as one smear.
+        # Skip it instead. The GLYPHS collide, not the boxes: every box is 60px
+        # but a label rarely fills it, and a centred one is inset by half the
+        # slack on each side.
+        box = QRectF(left, 0.0, _TICK_BOX, 1.0)
+        g_left, g_right = _text_bounds(box, flag, advance_of(text))
+        if drawn_right is not None and g_left < drawn_right + _TICK_GAP:
+            continue
+        out.append((i, text, left, flag))
+        drawn_right = g_right
+    return out
+
+
+def tick_glyph_bounds(left: float, flag, advance: float) -> tuple[float, float]:
+    """Where a laid-out label's glyphs actually land. For tests and callers
+    that need to reason about overlap without a painter."""
+    return _text_bounds(QRectF(left, 0.0, _TICK_BOX, 1.0), flag, advance)
+
+
 def _text_bounds(rect: QRectF, flag, advance: float) -> tuple[float, float]:
     """Where the glyphs of a label actually land inside its layout rect.
 
@@ -418,8 +527,7 @@ class FoxChart(QWidget):
         vals = [_num(x.get("value")) for x in rows]
         mx = max(1.0, max(vals) if vals else 1.0)
         n = len(rows)
-        gap = max(4.0, W * 0.03)
-        bw = (W - gap * (n - 1)) / n if n else W
+        bw, gap = bar_metrics(W, n)
         p.setFont(self._axis_font())
         for i, row in enumerate(rows):
             v = vals[i]
@@ -541,44 +649,18 @@ class FoxChart(QWidget):
         if not spark and labels:
             self._paint_ticks(p, labels, X, H)
 
-    def _paint_ticks(self, p: QPainter, labels: list, x_of, H: float):
-        """Draw the x-axis labels, thinned so they cannot overlap.
-
-        Shared by the line/area and stacked painters. Stacked used to draw
-        EVERY label into its own bar-width rect: at 28 days that is ~20px for a
-        10-character date, so the axis rendered as a row of clipped fragments
-        rather than dates. Same series in the line chart read fine, because
-        only this path thinned them.
-        """
-        p.setFont(self._axis_font())
+    def _paint_ticks(self, p: QPainter, labels: list, x_of, H: float, *,
+                     anchor: str = "edge", width: float | None = None):
+        """Draw the x-axis labels. All the geometry lives in `tick_layout`."""
+        font = self._axis_font()
+        p.setFont(font)
         p.setPen(qcolor(WEB["muted"]))
-        step = max(1, -(-len(labels) // 6))         # ceil(len/6), as the web
-        fm = QFontMetrics(self._axis_font())
-        drawn_right = None
-        for i, lab in enumerate(labels):
-            if i % step and i != len(labels) - 1:
-                continue
-            x = x_of(i)
-            if i == 0:
-                rect, flag = QRectF(x, H - 16, 60, 14), Qt.AlignmentFlag.AlignLeft
-            elif i == len(labels) - 1:
-                rect, flag = QRectF(x - 60, H - 16, 60, 14), Qt.AlignmentFlag.AlignRight
-            else:
-                rect, flag = QRectF(x - 30, H - 16, 60, 14), Qt.AlignmentFlag.AlignHCenter
-            # The final tick is always drawn, so on a series whose length is
-            # just past a step boundary it lands on top of its neighbour and
-            # the two dates render as one unreadable smear. Skip it instead.
-            #
-            # The glyphs, not the layout rect, are what collide: every rect here
-            # is 60px wide but a label rarely fills it, and a CENTRED label sits
-            # inset by half the slack on each side. Measuring the rect edges
-            # overstates the box on the left and understates it on the right, so
-            # a genuine overlap could still slip through.
-            left, right = _text_bounds(rect, flag, fm.horizontalAdvance(str(lab)))
-            if drawn_right is not None and left < drawn_right + _TICK_GAP:
-                continue
-            p.drawText(rect, flag | Qt.AlignmentFlag.AlignVCenter, str(lab))
-            drawn_right = right
+        fm = QFontMetrics(font)
+        for _i, text, left, flag in tick_layout(
+                [str(l) for l in labels], x_of, fm.horizontalAdvance,
+                anchor=anchor, width=width):
+            p.drawText(QRectF(left, H - 16, _TICK_BOX, 14),
+                       flag | Qt.AlignmentFlag.AlignVCenter, text)
 
     def _paint_stacked(self, p: QPainter, r: QRectF):
         labels, series = self._norm()
@@ -596,8 +678,7 @@ class FoxChart(QWidget):
         mx = max(1.0, max(totals) if totals else 1.0)
         W, H = r.width(), r.height()
         pb, pt = 20.0, 12.0
-        gap = max(4.0, W * 0.03)
-        bw = (W - gap * (n - 1)) / n if n else W
+        bw, gap = bar_metrics(W, n)
         p.setFont(self._axis_font())
         for i in range(n):
             yb = H - pb
@@ -618,7 +699,9 @@ class FoxChart(QWidget):
             self._hit.append((QRectF(bx, r.top(), bw, H),
                               f"{tip}\ntotal {_fmt(totals[i])}"))
         if labels:
-            self._paint_ticks(p, labels, lambda i: i * (bw + gap) + bw / 2.0, H)
+            # Bar CENTRES, so the ticks must be centre-anchored.
+            self._paint_ticks(p, labels, lambda i: i * (bw + gap) + bw / 2.0, H,
+                              anchor="center", width=W)
 
     def _paint_donut(self, p: QPainter, r: QRectF):
         rows = [x for x in self._rows() if _num(x.get("value")) > 0]

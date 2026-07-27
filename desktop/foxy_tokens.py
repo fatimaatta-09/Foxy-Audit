@@ -478,6 +478,11 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                it) but had no focus indicator at all — a card you can reach and
                operate blind. Same 1px-for-1px swap. */
             QFrame#verifCard:focus {{ border: 1px solid {WEB['ink']}; }}
+            /* D5: ledger rows are keyboard-operable (Space/Enter expands the
+               evidence panel) but had no focus indicator, so tabbing the table
+               moved an invisible cursor. Same house pattern. */
+            QFrame#ledgerRow:focus {{ border-left: 3px solid {WEB['fox']};
+                background: {WEB['surf2']}; }}
             /* D5-P2: the trend metric switcher. The web's `.seg` (html:186-192)
                rendered as bare native OS buttons here, with the checked state
                invisible — the active metric was not indicated at all. */
