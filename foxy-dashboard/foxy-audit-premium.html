@@ -2049,11 +2049,37 @@ async function loadLoginHistory(){
     m.addEventListener('mouseleave',hideTip); }); }
   function svgWrap(W,H,inner,aria){ return S('svg',{viewBox:'0 0 '+W+' '+H,role:'img','aria-label':aria||'chart'}, inner); }
 
+  // (bar width, gap) for n bars across W px — the desktop's bar_metrics().
+  // The old formula fixed the gap at max(4, W*0.03) whatever the bar count, so
+  // the gaps ate the whole row as n grew: at W=600 that is 2.60px per bar at
+  // n=30 (the Threats page's own default range) and **-11.13px at n=90**,
+  // which draws nothing at all. Capping the gap at a third of the per-bar
+  // pitch makes the gap shrink instead of the bars vanishing.
+  //
+  // The cap only binds once bars are crowded — at W=600 that is n>=12, and the
+  // threshold moves with the width — so every chart below it is byte-identical
+  // to before this change. MIN_BAR keeps a bar drawable at any count.
+  var MIN_BAR=1;
+  function barMetrics(W,n){
+    if(n<=0)return {bw:W,gap:0};
+    if(n===1)return {bw:Math.max(MIN_BAR,W),gap:0};
+    // Past n > W there is no room for a 1px bar each; fill the row exactly
+    // with sub-pixel bars rather than overflowing it. Unreachable from the UI
+    // (the range controls stop at 90) but it keeps the row's width honest at
+    // any n. NOTE: the desktop's bar_metrics() lacks this guard and would
+    // overflow there — same two lines, logged for a follow-up.
+    if(W/n < MIN_BAR)return {bw:W/n,gap:0};
+    var pitch=W/n, gap=Math.min(Math.max(4,W*0.03),pitch/3);
+    gap=Math.max(0,Math.min(gap,(W-n*MIN_BAR)/(n-1)));
+    return {bw:Math.max(MIN_BAR,(W-gap*(n-1))/n),gap:gap};
+  }
+
   function drawBar(host,o){
     var d=o.data||[]; if(!d.length){host.innerHTML=emptyMarkup(o);return;}
     var W=cw(host,200), H=o.height||140, pb=20, pt=12;
     var vals=d.map(function(x){return +x.value||0;}), max=Math.max(1,Math.max.apply(null,vals));
-    var n=d.length, gap=Math.max(4,W*0.03), bw=(W-gap*(n-1))/n, marks='', labs='', tips=[];
+    var n=d.length, _m=barMetrics(W,n), gap=_m.gap, bw=_m.bw,
+        marks='', labs='', tips=[];
     d.forEach(function(x,i){ var v=+x.value||0, bh=Math.max(1,(v/max)*(H-pb-pt)), bx=i*(bw+gap), by=H-pb-bh;
       marks+=S('rect',{x:bx.toFixed(1),y:by.toFixed(1),width:bw.toFixed(1),height:bh.toFixed(1),rx:Math.min(6,bw/3).toFixed(1),class:'cx-bar','data-cxi':i,style:'fill:'+toneColor(x.tone,i)+';stroke:var(--bc);stroke-width:2'});
       labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(H-6).toFixed(1),'text-anchor':'middle',class:'cx-axis'},esc(String(x.label!=null?x.label:'')));
@@ -2113,7 +2139,8 @@ async function loadLoginHistory(){
     var n=Math.max.apply(null,series.map(function(s){return s.values.length;}));
     var totals=[]; for(var i=0;i<n;i++){ var t=0; series.forEach(function(s){t+=(+s.values[i]||0);}); totals.push(t); }
     var max=Math.max(1,Math.max.apply(null,totals));
-    var W=cw(host,200), H=o.height||150, pb=20, pt=12, gap=Math.max(4,W*0.03), bw=(W-gap*(n-1))/n;
+    var W=cw(host,200), H=o.height||150, pb=20, pt=12,
+        _m=barMetrics(W,n), gap=_m.gap, bw=_m.bw;
     var marks='', labs='', tips=[];
     for(i=0;i<n;i++){ var yb=H-pb, bx=i*(bw+gap), parts=[];
       series.forEach(function(s,si){ var v=+s.values[i]||0; if(v>0){ var seg=(v/max)*(H-pb-pt); yb-=seg;
