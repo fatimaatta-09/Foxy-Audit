@@ -18,6 +18,12 @@ the network work with no DB transaction held open across it.
 
 Content-blind, like everything else here: seq, risk score and a truncated
 reason — never prompt or response text.
+
+Scope note, because the original version of this docstring overstated it: this
+module decoupled the EMAIL. Outbound webhook subscriptions kept POSTing inline
+from the grading batch until `webhook_delivery` was given the same treatment —
+and since those fire on every graded row rather than only on breaches, they
+were the larger heartbeat risk of the two.
 """
 
 from __future__ import annotations

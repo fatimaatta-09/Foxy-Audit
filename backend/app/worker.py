@@ -116,13 +116,25 @@ def _policy_config(db: Session, org_id, event_metadata: dict | None = None) -> d
 
 def _org_history(db: Session, org_id) -> dict:
     """Compact last-7-day activity summary for the org, fed to the judge for
-    temporal reasoning (5J). Cheap aggregate over the usage_daily rollup."""
+    temporal reasoning (5J). Aggregated from audit_logs, the append-only source
+    of truth.
+
+    This used to read the `usage_daily` rollup, which recomputes only a rolling
+    48-hour window — so five of the seven days it summed held whatever partial
+    counts were true when the worker last touched them. Of everywhere that
+    staleness lived, this was the worst: not a chart a human can sanity-check,
+    but a number handed to the AI judge as evidence, understating both the
+    recent breach count and the breach rate it reasons about.
+
+    Index `ix_audit_logs_org_created` (migration 0054) covers this predicate
+    exactly, so the aggregate stays cheap enough to run per graded row."""
     oid = org_id if isinstance(org_id, uuid.UUID) else uuid.UUID(str(org_id))
     row = db.execute(text(
-        "SELECT COALESCE(SUM(breach_count),0) AS breaches, "
-        "       COALESCE(SUM(graded_count),0) AS graded "
-        "FROM usage_daily "
-        "WHERE org_id = :oid AND day >= CURRENT_DATE - INTERVAL '7 days'"),
+        "SELECT COUNT(*) FILTER "
+        "         (WHERE gemini_verdict->>'policy_breach' = 'true') AS breaches, "
+        "       COUNT(*) FILTER (WHERE grading_status = 'graded') AS graded "
+        "FROM audit_logs "
+        "WHERE org_id = :oid AND created_at >= now() - INTERVAL '7 days'"),
         {"oid": oid}).mappings().first()
     breaches, graded = int(row["breaches"]), int(row["graded"])
     return {
@@ -217,24 +229,25 @@ def _grade_one(db: Session, row) -> None:
     # Fire the breach notifier AFTER the verdict is durably committed, so a notify
     # failure can never lose the grade. Best-effort — never raises into grading.
     if verdict.policy_breach:
-        # BOTH breach paths QUEUE only — no provider call happens inside the
-        # grading batch. The org-level notice used to be sent inline here: a
-        # synchronous send_email plus a 5 s webhook POST in the loop that also
-        # drives the worker heartbeat, so a hanging mail provider could stall
-        # grading and take /health/ready down with it.
+        # Both breach notifications are queued, never sent here.
         org_notifications.enqueue_breach_notice(row, verdict)
         # Per-user fan-out (D-S): one email per opted-in seat.
         user_notifications.enqueue_breach_alert(row, verdict)
-    # Outbound webhook subscriptions (P3 §F): deliver a signed 'graded' (and
-    # 'breach') event to each matching subscription. Best-effort, content-blind.
-    try:
-        webhook_delivery.deliver_grading(
-            db, row["org_id"], is_breach=bool(verdict.policy_breach),
-            payload={"seq": row.get("seq"), "policy_tag": row.get("policy_tag"),
-                     "decision": verdict.decision, "risk_score": verdict.risk_score,
-                     "chain_hash": row.get("chain_hash")})
-    except Exception as exc:                 # noqa: BLE001 — delivery never breaks grading
-        log.warning("webhook delivery error: %s", exc)
+    # Outbound webhook subscriptions (P3 §F): a signed 'graded' (and 'breach')
+    # event per matching subscription. QUEUED, not delivered here — this fires
+    # on EVERY graded row, and one synchronous POST per subscription inside the
+    # batch was the largest remaining way for a slow third party to stall the
+    # worker heartbeat and trip /health/ready.
+    #
+    # With this, NO outbound provider call happens inside the grading batch:
+    # the two emails and the webhooks all cross a queue to their own threads.
+    # (That claim was previously written above the emails alone, while this
+    # call was still POSTing inline — the claim is now true of the whole path.)
+    webhook_delivery.enqueue_grading(
+        row["org_id"], is_breach=bool(verdict.policy_breach),
+        payload={"seq": row.get("seq"), "policy_tag": row.get("policy_tag"),
+                 "decision": verdict.decision, "risk_score": verdict.risk_score,
+                 "chain_hash": row.get("chain_hash")})
 
 
 def _handle_failure(db: Session, row, max_attempts: int, exc: Exception) -> None:
@@ -352,6 +365,12 @@ def run_forever() -> None:
     from .org_notifications import org_notifications_loop
     threading.Thread(target=org_notifications_loop, args=(stopping, s),
                      name="foxy-org-notifications", daemon=True).start()
+
+    # Outbound webhook subscriptions, same shape and same reason: this fires on
+    # every graded row, so it must never POST from the grading batch.
+    from .webhook_delivery import webhook_delivery_loop
+    threading.Thread(target=webhook_delivery_loop, args=(stopping, s),
+                     name="foxy-webhooks", daemon=True).start()
 
     # Per-user breach alerts + weekly digest + key-rotation reminders (D-S), own
     # thread + session so a slow mail provider never stalls grading.

@@ -35,10 +35,17 @@ def _clean_event():
 
 
 def _grade_all():
+    """Grade everything pending, then drain the delivery queue.
+
+    Grading only QUEUES deliveries now — one synchronous POST per subscription
+    inside the batch was stalling the worker heartbeat, and it fires on every
+    graded row. The drain thread does the POSTing in production; here the test
+    does it explicitly."""
     db = SessionLocal()
     try:
         for row in worker._claim_batch(db, 50, 300):
             worker._grade_one(db, row)
+        webhook_delivery.drain_deliveries(db)
     finally:
         db.close()
 
