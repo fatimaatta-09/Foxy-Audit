@@ -344,6 +344,26 @@ def test_me_probe_raises_session_expired_when_signed_out(server):
     assert len(seen) == 1                   # the UI gets routed to the login screen
 
 
+def test_late_401_does_not_wipe_a_newer_session(server):
+    """A slow request can 401 long after the user signed in again on another
+    thread — clearing unconditionally would throw away the fresh session."""
+    c = _client(server)
+    c.login(GOOD_EMAIL, GOOD_PW)
+    stale = c.http.session_value(c.http.base_url)
+    # the user signs in again meanwhile: the jar now holds a different cookie
+    c.http._jar.clear()
+    c.login(MFA_EMAIL, GOOD_PW)
+    c.verify_mfa(MFA_EMAIL, OTP)
+    fresh = c.http.session_value(c.http.base_url)
+    assert fresh and fresh != stale
+    # the OLD request's 401 lands now
+    assert c.http.clear_session_if_current(stale, c.http.base_url) is False
+    assert c.has_session(), "the newer session must survive a stale 401"
+    # a 401 for the CURRENT session does clear it
+    assert c.http.clear_session_if_current(fresh, c.http.base_url) is True
+    assert not c.has_session()
+
+
 def test_logout_clears_the_local_jar(server):
     c = _client(server)
     c.login(GOOD_EMAIL, GOOD_PW)

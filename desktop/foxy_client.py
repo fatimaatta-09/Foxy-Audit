@@ -261,6 +261,33 @@ class FoxyHttp:
             self._store.delete(_COOKIES_SECRET)
         self._last_saved = None
 
+    def session_value(self, base_url: str | None = None) -> str | None:
+        """The session cookie currently in play for this host, if any."""
+        for c in self._jar:
+            if c.name == "session" and self._cookie_matches(c, base_url):
+                return c.value
+        return None
+
+    def clear_session_if_current(self, token: str | None,
+                                 base_url: str | None = None) -> bool:
+        """Drop the jar only if `token` is STILL the live session cookie.
+
+        A slow request can 401 long after the user has signed in again on
+        another thread; clearing unconditionally would then throw away the
+        fresh, working session. Returns True if the jar was cleared."""
+        if token is None:
+            return False
+        with self._persist_lock:
+            current = None
+            for c in self._jar:
+                if c.name == "session" and self._cookie_matches(c, base_url):
+                    current = c.value
+                    break
+            if current is not None and current != token:
+                return False        # rotated under us — the newer session wins
+        self.clear_session()
+        return True
+
     def _csrf_token(self, base_url: str | None = None) -> str | None:
         for c in self._jar:
             if c.name == CSRF_COOKIE and self._cookie_matches(c, base_url):
@@ -394,6 +421,9 @@ class FoxyClient(QObject):
     def request(self, method: str, path: str, body=None,
                 timeout: float | None = None, force_bearer: bool = False):
         base_url, bearer_key = self._credentials()
+        # Remember WHICH session this call rode on, so a late 401 can only
+        # invalidate that one (see clear_session_if_current).
+        sent_with = self.http.session_value(base_url)
         try:
             return self.http.request(method, path, body=body, timeout=timeout,
                                      force_bearer=force_bearer,
@@ -404,8 +434,9 @@ class FoxyClient(QObject):
         except SessionExpired as e:
             # Drop the dead cookie: keeping it makes has_session() lie, which
             # both fakes a signed-in state and keeps suppressing the Bearer key
-            # that would still work for the key-only endpoints.
-            self.http.clear_session()
+            # that would still work for the key-only endpoints. Guarded so a
+            # slow 401 cannot wipe a session the user established meanwhile.
+            self.http.clear_session_if_current(sent_with, base_url)
             self.session_expired.emit(str(e))
             raise
         except WorkspaceUnavailable as e:
@@ -461,7 +492,12 @@ class FoxyClient(QObject):
         """Bridge an org API key to a real session without a password:
         POST /v1/auth/handoff (Bearer) mints a 120 s single-use token, then
         /v1/auth/handoff/redeem exchanges it for the session cookie. This is
-        the only desktop route for Google/SSO-only accounts."""
+        the only desktop route for Google/SSO-only accounts.
+
+        Unlike the other helpers this talks to FoxyHttp directly and therefore
+        raises ApiError WITHOUT emitting session_expired / step_up_required:
+        the caller is signing in, so there is no session to expire and no
+        gated action to re-auth — the login window shows the error inline."""
         base_url, stored = self._credentials()
         key = (org_key or stored or "").strip()
         if not key:

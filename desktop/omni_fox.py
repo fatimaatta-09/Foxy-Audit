@@ -168,7 +168,15 @@ class _LogoutWorker(QThread):
 
 
 class _RetryWorker(QThread):
-    """Replay the request that hit a step-up gate, once, after confirmation."""
+    """Replay the request that hit a step-up gate, once, after confirmation.
+
+    The outcome is a real signal, not a print: the danger actions D9/D11 add
+    (revoke a key, change a role, delete the workspace) are exactly the calls
+    that land here, and "it silently did nothing" is the worst possible answer
+    for them."""
+
+    succeeded = pyqtSignal(object)
+    failed = pyqtSignal(str)
 
     def __init__(self, client, pending, parent=None):
         super().__init__(parent)
@@ -177,9 +185,9 @@ class _RetryWorker(QThread):
 
     def run(self):
         try:
-            self._client.retry(self._pending)
+            self.succeeded.emit(self._client.retry(self._pending))
         except Exception as exc:            # noqa: BLE001 — surfaced, never fatal
-            print(f"[foxy] step-up retry failed: {exc}", file=sys.stderr)
+            self.failed.emit(str(exc))
 
 
 # ── Main fox widget ────────────────────────────────────────────────────────
@@ -205,7 +213,9 @@ class OmniAwareFox(QWidget):
         super().__init__()
         self.settings = FoxSettings()
         self.client = FoxyClient(self.settings, parent=self)
-        self._workers: set = set()   # live one-shot ApiWorkers (health probes)
+        # Live one-shot threads: health probes, plus the D1 sign-out and
+        # step-up-retry workers. Joined in closeEvent.
+        self._workers: set = set()
         self._login_win = None       # single-instance sign-in window (D1)
         self._step_up_open = False   # one re-auth prompt at a time
         self._session_ready = False  # True once /v1/auth/me confirmed a session
@@ -475,6 +485,10 @@ class OmniAwareFox(QWidget):
     def _on_session_ok(self, data):
         self._session_ready = True
         self._me = data if isinstance(data, dict) else {}
+        # Same as the fresh-sign-in path: a RESTORED session is just as good a
+        # credential for /v1/logs/breaches, and without this a returning
+        # password-only user (no org key) gets a silent fox every launch.
+        self._ensure_breach_poller()
         if self.dashboard is not None:
             self.dashboard.on_signed_in(self._me)
 
@@ -519,11 +533,31 @@ class OmniAwareFox(QWidget):
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 worker = _RetryWorker(self.client, pending, self)
                 self._workers.add(worker)
+                worker.succeeded.connect(self._on_retry_ok)
+                worker.failed.connect(self._on_retry_failed)
                 worker.finished.connect(lambda: (self._workers.discard(worker),
                                                  worker.deleteLater()))
                 worker.start()
         finally:
             self._step_up_open = False
+
+    def _notify(self, title: str, body: str, icon=None):
+        """Small tray notification — the desktop's toast."""
+        try:
+            self.tray_icon.showMessage(
+                title, body,
+                icon or QSystemTrayIcon.MessageIcon.Information, 5000)
+        except Exception:                   # noqa: BLE001 — never break a flow
+            pass
+
+    def _on_retry_ok(self, _result):
+        self._notify("Foxy Audit", "Verified — your change went through.")
+        if self.dashboard is not None:
+            self.dashboard._on_refresh_clicked()
+
+    def _on_retry_failed(self, err: str):
+        self._notify("Foxy Audit", f"That change didn't go through: {err}",
+                     QSystemTrayIcon.MessageIcon.Warning)
 
     # ── Frame cache helper ─────────────────────────────────────────────────
     def _get_frame(self, row: int, frame_idx: int,

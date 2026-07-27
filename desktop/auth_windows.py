@@ -37,7 +37,7 @@ from PyQt6.QtCore import (
     Qt, QEasingCurve, QPropertyAnimation, QRectF, QSize, QThread, QTimer, pyqtSignal,
 )
 from PyQt6.QtGui import (
-    QColor, QFont, QGuiApplication, QPainter, QPalette, QPixmap,
+    QColor, QFont, QGuiApplication, QIcon, QPainter, QPalette, QPixmap,
 )
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
@@ -110,10 +110,11 @@ class _Field(QWidget):
         self.input.setObjectName("codeInput" if code else "cin")
         self.input.setMinimumHeight(44)          # 44 px minimum hit target
         self.input.setPlaceholderText(placeholder)
-        # Qt has no ::placeholder selector — the colour is a palette role
-        # (the web sets .cin::placeholder to --muted2).
+        # Qt has no ::placeholder selector — the colour is a palette role.
+        # The web uses --muted2, which is only ~2.7:1 on the field background;
+        # --muted clears 4.5:1 and is the one deliberate contrast upgrade here.
         pal = self.input.palette()
-        pal.setColor(QPalette.ColorRole.PlaceholderText, qcolor(WEB["muted2"]))
+        pal.setColor(QPalette.ColorRole.PlaceholderText, qcolor(WEB["muted"]))
         self.input.setPalette(pal)
         self.input.setAccessibleName(label)
         if password:
@@ -143,6 +144,11 @@ class _AuthCard(QDialog):
         super().__init__(parent)
         self._drag_pos = None
         self.setWindowTitle(window_title)
+        # Frameless windows still show in the taskbar/alt-tab — use the product
+        # mark there rather than Qt's default.
+        icon = QIcon(resource_path("logo.png"))
+        if not icon.isNull():
+            self.setWindowIcon(icon)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -165,6 +171,7 @@ class _AuthCard(QDialog):
         chip = QLabel()
         chip.setFixedSize(36, 36)
         chip.setPixmap(_glyph(icon, 36))
+        self.header_chip = chip
         row.addWidget(chip, 0, Qt.AlignmentFlag.AlignTop)
 
         col = QVBoxLayout()
@@ -230,7 +237,7 @@ class _AuthCard(QDialog):
             QPushButton#link {{
                 background: transparent; color: {WEB['ink2']}; border: none;
                 font-family: '{mono}'; font-size: 10px; text-align: left;
-                padding: 12px 4px;
+                padding: 12px 4px; min-height: 44px;
             }}
             QPushButton#link:hover {{ color: {WEB['fox2']}; }}
             QPushButton#link:focus {{ color: {WEB['fox2']};
@@ -243,8 +250,11 @@ class _AuthCard(QDialog):
                          font-family: '{disp}'; spacing: 9px; }}
             QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px;
                 border: 2px solid {WEB['line']}; background: {WEB['bg']}; }}
+            QCheckBox {{ min-height: 44px; }}
             QCheckBox::indicator:checked {{ background: {WEB['fox']};
                 border-color: {WEB['fox']}; }}
+            /* the checkbox is reachable by keyboard, so its box must show it */
+            QCheckBox::indicator:focus {{ border: 2px solid {WEB['fox']}; }}
             QCheckBox:focus {{ color: {WEB['fox2']}; }}
         """)
 
@@ -396,7 +406,7 @@ class StepUpDialog(_AuthCard):
             return
         code = self.code.text()
         if len(code) != 6 or not code.isdigit():
-            self._mark(self.code, True)
+            self._mark(self.code, True, "Enter the 6-digit code from your email")
             self._say(self.fb, "Enter the 6-digit code from your email")
             self.code.focus()
             return
@@ -417,9 +427,10 @@ class StepUpDialog(_AuthCard):
 
     def _on_err(self, err: str):
         self._reset_button()
-        self._mark(self.code, True)
         # Server wording + the recovery path next to it.
-        self._say(self.fb, f"{self._detail(err)} — resend to get a fresh one")
+        msg = f"{self._detail(err)} — resend to get a fresh one"
+        self._mark(self.code, True, msg)
+        self._say(self.fb, msg)
         self.code.focus()
 
     def done(self, result: int):
@@ -476,7 +487,7 @@ class LoginWindow(_AuthCard):
         # Unchecked by default, matching the web gate's #authRemember — a 30-day
         # session is opt-in, not something a shared machine gets by surprise.
         self.remember.setChecked(False)
-        self.remember.setMinimumHeight(28)
+        self.remember.setMinimumHeight(44)
         v.addSpacing(13)
         v.addWidget(self.remember)
 
@@ -641,10 +652,15 @@ class LoginWindow(_AuthCard):
             current.adjustSize()
         self.stack.adjustSize()
 
+    # The two "we emailed you something" steps say so with the mail glyph;
+    # the credential steps keep the key.
+    _PAGE_GLYPH = {0: "key", 1: "mail", 2: "mail", 3: "key"}
+
     def _go(self, page: int, title: str, eyebrow: str):
         self.stack.setCurrentIndex(page)
         self.title_lbl.setText(title)
         self.eyebrow_lbl.setText(eyebrow.upper())
+        self.header_chip.setPixmap(_glyph(self._PAGE_GLYPH.get(page, "key"), 36))
         self._fit_stack()
         {self.PAGE_LOGIN: self.email, self.PAGE_MFA: self.mfa_code,
          self.PAGE_FORGOT: self.forgot_email, self.PAGE_KEY: self.key}[page].focus()
@@ -712,9 +728,13 @@ class LoginWindow(_AuthCard):
         # shown verbatim; anything else stays deliberately vague so the form
         # never becomes an account-enumeration oracle.
         if err.startswith("HTTP 403"):
-            self._say(self.login_fb, self._detail(err))
+            msg = self._detail(err)
+            self._say(self.login_fb, msg)
+            self._mark(self.email, True, msg)
         elif err.startswith("HTTP "):
-            self._say(self.login_fb, "Invalid email or password")
+            msg = "Invalid email or password"
+            self._say(self.login_fb, msg)
+            self._mark(self.password, True, msg)
             self.password.focus()
         else:
             self._say(self.login_fb, "Could not reach the server")
@@ -748,9 +768,10 @@ class LoginWindow(_AuthCard):
     def _on_mfa_err(self, err: str):
         self.mfa_btn.setText("Verify & sign in")
         self.mfa_btn.setEnabled(True)
-        self._mark(self.mfa_code, True)
-        self._say(self.mfa_fb, self._detail(err) if err.startswith("HTTP ")
-                  else "Could not reach the server")
+        msg = (self._detail(err) if err.startswith("HTTP ")
+               else "Could not reach the server")
+        self._mark(self.mfa_code, True, msg)
+        self._say(self.mfa_fb, msg)
         self.mfa_code.focus()
 
     # ── forgot password ──
@@ -841,10 +862,26 @@ class LoginWindow(_AuthCard):
 
     def _on_key_err(self, err: str):
         self._reset_key_button()
-        self._mark(self.key, True)
-        self._say(self.key_fb, f"{self._detail(err)} — check the key and the "
-                               f"backend URL in Settings")
+        detail = self._detail(err)
+        terminal = ("workspace" in detail.lower()
+                    or "suspended" in detail.lower()
+                    or "deleted" in detail.lower())
+        msg = detail if terminal else (
+            f"{detail} — check the key and the backend URL in Settings")
+        self._mark(self.key, True, msg)
+        self._say(self.key_fb, msg)
         self.key.focus()
+
+    def keyPressEvent(self, event):
+        """Esc backs OUT of a sub-step rather than abandoning sign-in entirely —
+        losing a half-entered MFA code because you wanted to fix your email is
+        the kind of thing that makes people give up."""
+        if (event.key() == Qt.Key.Key_Escape
+                and self.stack.currentIndex() != self.PAGE_LOGIN):
+            self._back_to_login()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def done(self, result: int):
         shutdown_workers(self._workers, wait_ms=800)
