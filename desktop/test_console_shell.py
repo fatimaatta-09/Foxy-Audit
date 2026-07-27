@@ -96,6 +96,60 @@ def test_desktop_extras_are_last(console):
     assert ids[-2:] == [s[0] for s in EXTRA_SECTIONS]
 
 
+def test_home_quick_tiles_land_on_the_right_sections(console, app):
+    """Regression: the tiles routed by literal stack index, and D3 reordered
+    the stack — so "Blind Audit Log" opened Threats and "System Health" opened
+    Ledger. They must route by section id."""
+    console.tile_threats.click()
+    app.processEvents()
+    assert console.stack.currentIndex() == console._page_index["ledger"]
+    assert console.page_title.text() == "Audit ledger"
+
+    console.go("home")
+    console.tile_system.click()
+    app.processEvents()
+    assert console.stack.currentIndex() == console._page_index["system"]
+    assert console.page_title.text() == "System health"
+
+
+def test_navigation_closes_the_notifications_dropdown(console, app):
+    console._on_notifications({"unread": 1, "items": [
+        {"id": "1", "kind": "breach", "title": "x", "level": "info",
+         "created_at": None, "read": False}]})
+    console.notif_panel.show()
+    app.processEvents()
+    console.go("ledger")
+    app.processEvents()
+    assert not console.notif_panel.isVisible()
+
+
+def test_quick_nav_is_suppressed_while_the_dropdown_owns_the_keyboard(console, app):
+    # The console must be shown: a child of a hidden window is not "visible",
+    # and a dropdown nobody can see isn't taking the keyboard either.
+    console.show()
+    console.notif_panel.show()
+    app.processEvents()
+    assert console._is_typing() is True
+    console.notif_panel.hide()
+    app.processEvents()
+    assert console._is_typing() is False
+
+
+def test_announcement_refresh_skips_while_a_cycle_is_in_flight(console):
+    """A second set of three calls can interleave and repaint stale state."""
+    console._ann_pending = 3
+    before = len(console._workers)
+    console._refresh_announcement()
+    assert len(console._workers) == before
+
+
+def test_breach_chip_shares_the_99_plus_cap(console, app):
+    console._set_breach_count(150)
+    app.processEvents()
+    assert "99+" in console.top_breach_btn.text()
+    assert console.threat_pip.text() == "99+"
+
+
 # ── breach pip ──────────────────────────────────────────────────────────────
 def test_visiting_threats_marks_breaches_read(console, app):
     console._on_breach_rows([{"seq": 4}, {"seq": 11}])
@@ -216,12 +270,14 @@ def test_user_chip_shows_the_identity_initial(console, app):
 
 # ── teardown discipline (D0.1's rule) ───────────────────────────────────────
 def test_closing_stops_every_poller(console, app):
+    """One cadence drives everything: the 15 s console poll also refreshes the
+    chrome (see console_chrome.CHROME_REFRESH_SECONDS), so there is no separate
+    health timer to leak."""
     console.show()
     app.processEvents()
-    assert console._health_timer.isActive()
+    assert console._backend_poll.isActive()
     console.close()
     app.processEvents()
-    assert not console._health_timer.isActive()
     assert not console._backend_poll.isActive()
     assert not console._tick.isActive()
 
@@ -233,8 +289,8 @@ def test_reopening_restarts_them(console, app):
     app.processEvents()
     console.show()
     app.processEvents()
-    assert console._health_timer.isActive()
     assert console._backend_poll.isActive()
+    assert console._tick.isActive()
 
 
 def test_chrome_refresh_is_a_noop_while_hidden(console, app):

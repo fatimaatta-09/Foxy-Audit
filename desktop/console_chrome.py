@@ -56,7 +56,15 @@ QUICK_NAV = {
 }
 QUICK_NAV_WINDOW_MS = 1200          # the web's gTimer
 
-HEALTH_PING_SECONDS = 60            # setInterval(pingHealth, 60000)
+# DELIBERATE DIVERGENCE from the web (owner's call, logged in the relay's
+# OWNER_DECISIONS.md #1): the web pings health every 60 s and only refreshes
+# the rest of its chrome when you interact with it. The desktop refreshes ALL
+# chrome — live dot, notifications, breach pip, banner — on the console's
+# existing 15 s poll, because a companion app that sits on screen all day
+# should be more current than a browser tab you occasionally look at. There is
+# no separate health timer: one cadence, one place to reason about.
+CHROME_REFRESH_SECONDS = 15
+WEB_HEALTH_PING_SECONDS = 60        # what the web does (html:4025), for reference
 NOTIF_LIMIT = 30                    # /v1/notifications?limit=30
 BREACH_SCAN_LIMIT = 500             # /v1/logs/breaches?limit=500
 TOAST_MS = 2700

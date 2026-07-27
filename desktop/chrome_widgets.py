@@ -12,7 +12,9 @@ is a short fade that is skipped under OS reduced-motion.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import (
+    QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QTimer, pyqtSignal,
+)
 from PyQt6.QtGui import QFont, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -148,12 +150,12 @@ class AnnouncementBanner(QFrame):
         self.text.setWordWrap(True)
         self.act = QPushButton()
         self.act.setObjectName("annAct")
-        self.act.setMinimumHeight(30)
+        self.act.setMinimumHeight(44)
         self.act.setCursor(Qt.CursorShape.PointingHandCursor)
         self.act.clicked.connect(self._on_act)
         self.close_btn = QPushButton("✕")
         self.close_btn.setObjectName("annX")
-        self.close_btn.setFixedSize(30, 30)
+        self.close_btn.setFixedSize(44, 44)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.setAccessibleName("Dismiss announcement")
         self.close_btn.clicked.connect(self._on_dismiss)
@@ -188,7 +190,11 @@ class AnnouncementBanner(QFrame):
             f"QPushButton#annX:hover {{ background: {WEB['surf3']};"
             f" color: {WEB['ink']}; }}"
             f"QPushButton#annX:focus {{ border: 1px solid {WEB['fox']}; }}")
-        pm = QPixmap(18, 18)
+        # Paint at the screen's device pixel ratio: a fixed 18×18 pixmap is
+        # visibly soft on a HiDPI display.
+        ratio = self.devicePixelRatioF() or 1.0
+        pm = QPixmap(int(18 * ratio), int(18 * ratio))
+        pm.setDevicePixelRatio(ratio)
         pm.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -233,7 +239,7 @@ class NotificationsPanel(QFrame):
         title.setStyleSheet(f"color: {WEB['ink']}; background: transparent;")
         self.read_all = QPushButton("Mark all read")
         self.read_all.setObjectName("readAll")
-        self.read_all.setMinimumHeight(30)
+        self.read_all.setMinimumHeight(44)
         self.read_all.setCursor(Qt.CursorShape.PointingHandCursor)
         self.read_all.setStyleSheet(
             f"QPushButton#readAll {{ background: transparent; color: {WEB['fox2']};"
@@ -315,7 +321,7 @@ class NotificationsPanel(QFrame):
         dot.setFixedSize(8, 8)
         dot.setStyleSheet(
             f"background: {tone if unread else 'transparent'};"
-            f" border: 1.5px solid {tone if unread else WEB['muted2']};"
+            f" border: 1.5px solid {tone if unread else WEB['muted']};"
             f" border-radius: 4px;")
         col = QVBoxLayout()
         col.setSpacing(1)
@@ -332,7 +338,7 @@ class NotificationsPanel(QFrame):
             col.addWidget(sub)
         when = QLabel(relative_time(n.get("created_at")))
         when.setFont(_mono(7))
-        when.setStyleSheet(f"color: {WEB['muted2']}; background: transparent;")
+        when.setStyleSheet(f"color: {WEB['muted']}; background: transparent;")
         col.addWidget(when)
         lay.addWidget(dot, 0, Qt.AlignmentFlag.AlignTop)
         lay.addLayout(col, 1)
@@ -409,12 +415,26 @@ class CommandPalette(QDialog):
         self._entries = palette_entries(query, org_id=self._org_id)
         self.list.clear()
         for entry in self._entries:
-            self.list.addItem(QListWidgetItem(entry["label"]))
+            item = QListWidgetItem(entry["label"])
+            item.setSizeHint(QSize(0, 44))          # 44 px minimum hit target
+            self.list.addItem(item)
         if self._entries:
             self.list.setCurrentRow(0)
+            self.list.setAccessibleDescription(
+                "%d result%s" % (len(self._entries),
+                                 "" if len(self._entries) == 1 else "s"))
+        else:
+            empty = QListWidgetItem(
+                'No matches — try a page name, a ledger hash, or "copy org".')
+            empty.setFlags(Qt.ItemFlag.NoItemFlags)
+            empty.setSizeHint(QSize(0, 44))
+            self.list.addItem(empty)
+            self.list.setAccessibleDescription("No results")
 
     def _accept_current(self):
         row = self.list.currentRow()
+        if not self._entries:
+            return                       # the empty-state row isn't selectable
         if 0 <= row < len(self._entries):
             self.chosen.emit(self._entries[row])
             self.accept()
@@ -463,10 +483,25 @@ class ShortcutsOverlay(QDialog):
         body.setContentsMargins(20, 18, 20, 18)
         body.setSpacing(7)
 
+        head = QHBoxLayout()
         title = QLabel("Keyboard shortcuts")
         title.setFont(_disp(13))
         title.setStyleSheet(f"color: {WEB['ink']}; background: transparent;")
-        body.addWidget(title)
+        head.addWidget(title)
+        head.addStretch()
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(44, 44)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setAccessibleName("Close shortcuts")
+        close_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {WEB['muted']};"
+            f" border: none; border-radius: 10px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background: {WEB['surf3']};"
+            f" color: {WEB['ink']}; }}"
+            f"QPushButton:focus {{ border: 1px solid {WEB['fox']}; }}")
+        close_btn.clicked.connect(self.close)
+        head.addWidget(close_btn)
+        body.addLayout(head)
         body.addSpacing(4)
 
         for keys, what in SHORTCUT_PAIRS:
@@ -485,9 +520,9 @@ class ShortcutsOverlay(QDialog):
             row.addWidget(d, 1)
             body.addLayout(row)
 
-        hint = QLabel("Esc closes")
+        hint = QLabel("Esc or ✕ closes")
         hint.setFont(_mono(7))
-        hint.setStyleSheet(f"color: {WEB['muted2']}; background: transparent;")
+        hint.setStyleSheet(f"color: {WEB['muted']}; background: transparent;")
         body.addSpacing(4)
         body.addWidget(hint)
 

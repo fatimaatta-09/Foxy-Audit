@@ -100,6 +100,8 @@ def test_copy_org_carries_the_org_id_when_known():
 
 
 def test_nonsense_query_returns_nothing_rather_than_everything():
+    """No rows at all — the widget renders the web's "No matches" copy for it,
+    rather than the palette silently listing every page."""
     assert palette_entries("zzzzqqq") == []
 
 

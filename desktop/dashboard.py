@@ -36,6 +36,7 @@ import sys
 import time
 import hashlib
 from datetime import datetime
+from urllib.parse import quote
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -54,9 +55,9 @@ from PyQt6.QtGui import (
 from fox_settings import FoxSettings
 from foxy_client import FoxyClient, spawn_worker, shutdown_workers
 from console_chrome import (
-    ALL_SECTIONS, BREACH_SCAN_LIMIT, EXTRA_SECTIONS, HEALTH_PING_SECONDS,
-    NOTIF_LIMIT, QUICK_NAV, QUICK_NAV_WINDOW_MS, SECTIONS, announcement,
-    avatar_initial, breach_pip, notification_target,
+    ALL_SECTIONS, BREACH_SCAN_LIMIT, EXTRA_SECTIONS, NOTIF_LIMIT, QUICK_NAV,
+    QUICK_NAV_WINDOW_MS, SECTIONS, announcement, avatar_initial, badge_text,
+    breach_pip, notification_target,
 )
 from chrome_widgets import (
     AnnouncementBanner, CommandPalette, LiveDot, NotificationsPanel, Pip,
@@ -451,8 +452,12 @@ class CtrlButton(QPushButton):
         self.icon_name = icon
         self._tokens = tokens
         self._danger = danger
-        self.setFixedSize(30, 26)
+        # 44×44 minimum hit target. The glyph stays its old size and is simply
+        # centred in a bigger button, so the top bar looks the same while being
+        # reachable by an imprecise pointer.
+        self.setFixedSize(44, 44)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def set_tokens(self, tokens):
         self._tokens = tokens
@@ -465,16 +470,32 @@ class CtrlButton(QPushButton):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         t = self._tokens
+        box = QRectF(2, 2, self.width() - 4, self.height() - 4)
         if self.underMouse():
             p.setPen(Qt.PenStyle.NoPen)
             hl = BAD_RED if self._danger else t.get("panel3", t.get("panel"))
             p.setBrush(QBrush(_qcolor(hl)))
-            p.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 7, 7)
+            p.drawRoundedRect(box, 9, 9)
             col = _qcolor("#FFFFFF" if self._danger else t["text"])
         else:
             col = _qcolor(t.get("text_muted", "#888"))
-        paint_icon(p, QRectF(7, 4, 16, 18), self.icon_name, col, 1.6)
+        if self.hasFocus():
+            # Keyboard users need to see where they are, not just hover users.
+            p.setPen(QPen(_qcolor(t.get("accent", "#ff7a2e")), 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(box, 9, 9)
+            col = _qcolor(t["text"])
+        cx, cy = self.width() / 2, self.height() / 2
+        paint_icon(p, QRectF(cx - 8, cy - 9, 16, 18), self.icon_name, col, 1.6)
         p.end()
+
+    def focusInEvent(self, e):
+        self.update()
+        super().focusInEvent(e)
+
+    def focusOutEvent(self, e):
+        self.update()
+        super().focusOutEvent(e)
 
 
 # ── The console window ──────────────────────────────────────────────────────
@@ -741,7 +762,6 @@ class DashboardWindow(QWidget):
         self.notif_btn.setToolTip("Notifications")
         self.notif_btn.clicked.connect(self._toggle_notifications)
         self.notif_pip = Pip(parent=self.notif_btn)
-        self.notif_pip.move(15, -2)
         h.addWidget(self.notif_btn)
 
         # The breach indicator is a control of its own, LEFT of the bell: two
@@ -749,7 +769,7 @@ class DashboardWindow(QWidget):
         # what it counts, and clicking it goes where the breaches are.
         self.top_breach_btn = QPushButton()
         self.top_breach_btn.setObjectName("breachChip")
-        self.top_breach_btn.setMinimumHeight(30)
+        self.top_breach_btn.setMinimumHeight(44)
         self.top_breach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.top_breach_btn.clicked.connect(lambda: self.go("threats"))
         self.top_breach_btn.hide()
@@ -757,7 +777,7 @@ class DashboardWindow(QWidget):
 
         self.user_btn = QPushButton("?")
         self.user_btn.setObjectName("userChip")
-        self.user_btn.setFixedSize(46, 34)
+        self.user_btn.setFixedSize(46, 44)
         self.user_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.user_btn.setAccessibleName("Account menu")
         self.user_btn.setToolTip("Account")
@@ -843,10 +863,12 @@ class DashboardWindow(QWidget):
 
         tiles = QVBoxLayout()
         tiles.setSpacing(14)
+        # Route by SECTION ID, never by stack index: D3 reordered the stack, so
+        # the old literal 1/2 silently sent these tiles to the wrong pages.
         self.tile_threats = self._feature_tile(
-            "Blind Audit\nLog", "tileBlue", lambda: self.stack.setCurrentIndex(1))
+            "Blind Audit\nLog", "tileBlue", lambda: self.go("ledger"))
         self.tile_system = self._feature_tile(
-            "System\nHealth", "tilePink", lambda: self.stack.setCurrentIndex(2))
+            "System\nHealth", "tilePink", lambda: self.go("system"))
         tiles.addWidget(self.tile_threats)
         tiles.addWidget(self.tile_system)
         hero_row.addLayout(tiles, stretch=2)
@@ -1587,10 +1609,10 @@ class DashboardWindow(QWidget):
         self._g_timer.setInterval(QUICK_NAV_WINDOW_MS)
         self._g_timer.timeout.connect(self._clear_quick_nav)
 
-        # 60 s live-dot ping — the web's setInterval(pingHealth, 60000).
-        self._health_timer = QTimer(self)
-        self._health_timer.timeout.connect(self._ping_health)
-        self._health_timer.start(HEALTH_PING_SECONDS * 1000)
+        # No separate health timer: _refresh_chrome (on the console's 15 s
+        # poll) pings health as part of one chrome refresh — see
+        # console_chrome.CHROME_REFRESH_SECONDS for why the desktop is more
+        # live than the web here.
         QTimer.singleShot(600, self._refresh_chrome)
 
     def _clear_quick_nav(self):
@@ -1639,11 +1661,19 @@ class DashboardWindow(QWidget):
                      timeout=10, parent=self, track=self._workers,
                      on_ok=self._on_notifications)
 
+    def _place_notif_pip(self):
+        """Anchor inside the bell's own box — a hand-picked offset clipped once
+        the button grew to its 44 px hit target."""
+        pip, host = self.notif_pip, self.notif_btn
+        pip.move(max(0, host.width() - pip.width() - 3), 2)
+        pip.raise_()
+
     def _on_notifications(self, data):
         if not isinstance(data, dict):
             return
         items = data.get("items")
         self.notif_pip.set_count(int(data.get("unread") or 0))
+        self._place_notif_pip()
         self.notif_panel.set_items(items if isinstance(items, list) else [])
 
     def _toggle_notifications(self):
@@ -1663,7 +1693,8 @@ class DashboardWindow(QWidget):
     def _on_notification_clicked(self, notif_id: str, kind: str):
         if notif_id:
             spawn_worker(self.client, "POST",
-                         "/v1/notifications/%s/read" % notif_id, timeout=8,
+                         "/v1/notifications/%s/read" % quote(str(notif_id), safe=""),
+                         timeout=8,
                          parent=self, track=self._workers,
                          on_ok=self._on_notif_marked)
         self.notif_panel.hide()
@@ -1703,7 +1734,7 @@ class DashboardWindow(QWidget):
         self.threat_pip.raise_()
         if unread:
             word = "breach" if unread == 1 else "breaches"
-            self.top_breach_btn.setText(f"⚠ {unread} {word}")
+            self.top_breach_btn.setText(f"⚠ {badge_text(unread)} {word}")
             self.top_breach_btn.setToolTip(
                 f"{unread} unreviewed policy {word} — open Threats")
             self.top_breach_btn.setAccessibleName(
@@ -1719,10 +1750,17 @@ class DashboardWindow(QWidget):
 
     # ── announcement banner ──
     def _refresh_announcement(self):
-        """Three real signals, resolved in the web's priority order."""
-        self._ann_inputs = {"breaches": None, "plan": None, "usage": None}
+        """Three real signals, resolved in the web's priority order.
+
+        Guarded like _refresh_backend: if the previous cycle's three calls are
+        still in flight, skip rather than start a second set whose replies can
+        interleave and repaint stale banner state."""
         if not self.settings.backend_url():
             return
+        if getattr(self, "_ann_pending", 0) > 0:
+            return
+        self._ann_inputs = {"breaches": None, "plan": None, "usage": None}
+        self._ann_pending = 3
         spawn_worker(self.client, "GET", "/v1/logs/breaches?limit=1", timeout=10,
                      parent=self, track=self._workers,
                      on_ok=self._on_ann_breaches)
@@ -1741,6 +1779,7 @@ class DashboardWindow(QWidget):
         self._ann_part("usage", data)
 
     def _ann_part(self, key: str, data):
+        self._ann_pending = max(0, getattr(self, "_ann_pending", 1) - 1)
         self._ann_inputs[key] = data
         self.banner.show_message(announcement(
             breaches=self._ann_inputs.get("breaches"),
@@ -1840,8 +1879,12 @@ class DashboardWindow(QWidget):
         super().keyPressEvent(event)
 
     def _is_typing(self) -> bool:
-        """Quick-nav must never steal a keystroke from an input (web isTyping)."""
-        return isinstance(QApplication.focusWidget(), (QLineEdit, QTextEdit))
+        """Quick-nav must never steal a keystroke from an input (web isTyping),
+        nor from an open dropdown that is currently taking the keyboard."""
+        if isinstance(QApplication.focusWidget(), (QLineEdit, QTextEdit)):
+            return True
+        panel = getattr(self, "notif_panel", None)
+        return panel is not None and panel.isVisible()
 
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
@@ -1878,6 +1921,8 @@ class DashboardWindow(QWidget):
         if index is None:
             return
         self.stack.setCurrentIndex(index)
+        if hasattr(self, "notif_panel"):
+            self.notif_panel.hide()      # a dropdown must not outlive its page
         btn = self._nav_by_id.get(section_id)
         if btn is not None and not btn.isChecked():
             btn.setChecked(True)
@@ -2040,7 +2085,6 @@ class DashboardWindow(QWidget):
         if not self._backend_poll.isActive():
             self._tick.start(1000)
             self._backend_poll.start(15000)
-            self._health_timer.start(HEALTH_PING_SECONDS * 1000)
             QTimer.singleShot(400, self._refresh_backend)
             QTimer.singleShot(400, self._refresh_org)
             QTimer.singleShot(600, self._refresh_chrome)
@@ -2060,9 +2104,13 @@ class DashboardWindow(QWidget):
         Alt+F4, the taskbar menu, and the app quitting."""
         self._tick.stop()
         self._backend_poll.stop()
-        self._health_timer.stop()        # D3 live-dot ping — nothing polls while closed
-        if hasattr(self, "notif_panel"):
-            self.notif_panel.hide()
+        # Nothing may float or poll once the console is closed: the palette and
+        # the shortcut overlay are shown non-modally, so an X-click while one is
+        # open would otherwise leave it orphaned on screen.
+        for floating in ("notif_panel", "palette", "shortcuts"):
+            widget = getattr(self, floating, None)
+            if widget is not None:
+                widget.hide()
         self.settings.set_console_geometry(self.saveGeometry())
         shutdown_workers(self._workers | self._poll_workers)
         # Restore full opacity so the next show_animated fade starts from a
