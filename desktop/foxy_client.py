@@ -39,6 +39,7 @@ the one generic QThread that replaces the per-endpoint worker classes.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 import time
@@ -303,9 +304,16 @@ class FoxyHttp:
     # ── the request ──
     def request(self, method: str, path: str, body=None,
                 timeout: float | None = None, force_bearer: bool = False,
-                base_url: str | None = None, bearer_key: str | None = None):
+                base_url: str | None = None, bearer_key: str | None = None,
+                raw: bool = False):
         """One backend call.  Returns parsed JSON (dict/list) for JSON
         responses, raw bytes otherwise.  Raises ApiError subclasses on non-2xx.
+
+        raw=True returns {"body": bytes, "content_type": str} instead, keeping
+        the Content-Type. The passport endpoint answers with a PDF *or* HTML
+        depending on whether the renderer is available server-side, and saving
+        HTML under a .pdf name produces a file the OS opens into an error — so
+        the caller has to be able to sniff it.
 
         force_bearer: some endpoints (GET /v1/health) are Bearer-only on the
         backend (require_org never consults the session) — pass True so the
@@ -332,14 +340,16 @@ class FoxyHttp:
             req = urllib.request.Request(url, data=data, headers=headers, method=method)
             try:
                 with self._opener.open(req, timeout=timeout or self.timeout) as resp:
-                    raw = resp.read()
+                    body_bytes = resp.read()
                     ctype = resp.headers.get("Content-Type", "")
                 self._persist_cookies()
-                if not raw:
+                if raw:
+                    return {"body": body_bytes, "content_type": ctype}
+                if not body_bytes:
                     return {}
                 if "json" in ctype:
-                    return json.loads(raw.decode("utf-8"))
-                return raw
+                    return json.loads(body_bytes.decode("utf-8"))
+                return body_bytes
             except urllib.error.HTTPError as e:
                 # The cookie processor already extracted Set-Cookie from the
                 # error response (e.g. the CSRF middleware mints foxy_csrf on
@@ -425,7 +435,8 @@ class FoxyClient(QObject):
             return s.backend_url(), s.org_api_key()
 
     def request(self, method: str, path: str, body=None,
-                timeout: float | None = None, force_bearer: bool = False):
+                timeout: float | None = None, force_bearer: bool = False,
+                raw: bool = False):
         base_url, bearer_key = self._credentials()
         # Remember WHICH session this call rode on, so a late 401 can only
         # invalidate that one (see clear_session_if_current).
@@ -534,17 +545,26 @@ class FoxyClient(QObject):
 
 
 # ── The one generic worker ──────────────────────────────────────────────────
+
 class ApiWorker(QThread):
     """Runs a single client request off the GUI thread.
     succeeded carries the parsed JSON (dict or list); failed carries a short
-    human-readable error string ("HTTP 404: Not Found", "timed out", …)."""
+    human-readable error string ("HTTP 404: Not Found", "timed out", …).
+
+    It is a STRING on purpose. A handler that needs the status code should
+    parse it (see `status_of`) rather than reaching for the exception: emitting
+    the exception, or any custom object, from the worker thread crashes the
+    interpreter — exit 127 with no Python-level error, reproducibly ~600 ms
+    after the window is shown. Both were tried here and both crash; only a str
+    is stable across this boundary. Worth a proper investigation, but not by
+    changing this contract speculatively."""
 
     succeeded = pyqtSignal(object)
     failed = pyqtSignal(str)
 
     def __init__(self, client: FoxyClient, method: str, path: str,
                  body=None, timeout: float | None = None,
-                 force_bearer: bool = False, parent=None):
+                 force_bearer: bool = False, parent=None, raw: bool = False):
         super().__init__(parent)
         self._client = client
         self._method = method
@@ -552,28 +572,45 @@ class ApiWorker(QThread):
         self._body = body
         self._timeout = timeout
         self._force_bearer = force_bearer
+        self._raw = raw
 
     def run(self):
         try:
             self.succeeded.emit(
                 self._client.request(self._method, self._path,
                                      body=self._body, timeout=self._timeout,
-                                     force_bearer=self._force_bearer))
+                                     force_bearer=self._force_bearer,
+                                     raw=self._raw))
         except Exception as e:
             self.failed.emit(str(e))
+
+
+_STATUS_RE = re.compile(r"^HTTP (\d{3})")
+
+
+def status_of(error) -> int | None:
+    """The HTTP status inside a worker's error string, if it has one.
+
+    `ApiWorker.failed` carries a string (see that class for why it cannot carry
+    anything richer), and `ApiError.__str__` is "HTTP <code>: <detail>" — so
+    this is how a handler tells a 403 "you are not an admin" apart from a 500,
+    without anything but a str crossing the thread boundary.
+    """
+    match = _STATUS_RE.match(str(error or ""))
+    return int(match.group(1)) if match else None
 
 
 def spawn_worker(client: FoxyClient, method: str, path: str, *, body=None,
                  timeout: float | None = None, force_bearer: bool = False,
                  parent=None, on_ok=None, on_err=None,
-                 track: set | None = None) -> ApiWorker:
+                 track: set | None = None, raw: bool = False) -> ApiWorker:
     """Create, wire, track and start an ApiWorker.
 
     `track` is the owning window's live-worker set: the worker is added now and
     auto-removed (+ deleteLater) when it finishes, so replaced poll workers can
     no longer accumulate.  Shut the set down with shutdown_workers() on close."""
     w = ApiWorker(client, method, path, body=body, timeout=timeout,
-                  force_bearer=force_bearer, parent=parent)
+                  force_bearer=force_bearer, parent=parent, raw=raw)
     if on_ok is not None:
         w.succeeded.connect(on_ok)
     if on_err is not None:

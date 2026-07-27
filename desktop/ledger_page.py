@@ -364,8 +364,11 @@ class LedgerRow(QFrame):
     def _detail(self) -> QWidget:
         d = self.row["detail"]
         frame = QFrame()
+        # Named for the same reason as ResultPanel: an unscoped QFrame rule
+        # matches the QLabels inside it and boxed every line of the detail.
+        frame.setObjectName("rowDetail")
         frame.setStyleSheet(
-            f"QFrame {{ border: 2px dashed {WEB['bc']};"
+            f"QFrame#rowDetail {{ border: 2px dashed {WEB['bc']};"
             f" border-radius: 10px; background: transparent; }}")
         lay = QVBoxLayout(frame)
         lay.setContentsMargins(13, 11, 13, 11)

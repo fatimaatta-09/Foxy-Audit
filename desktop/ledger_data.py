@@ -218,3 +218,22 @@ def verify_result(data: dict | None) -> tuple[str, str]:
     if data.get("verified"):
         return "✓ verified — untampered", "ok"
     return "⚠ mismatch — altered", "bad"
+
+
+def verify_quick(data: dict | None) -> tuple[str, str]:
+    """(message, tone) for the one-line quick check (web lookupLedgerHash).
+
+    Same six-way decision as the full panel, said in one line — and the same
+    refusal to collapse "intact but the Judge flagged it" into a failure.
+    """
+    if not isinstance(data, dict):
+        return "could not reach the server", "bad"
+    if not data.get("found"):
+        return "not in this ledger", "bad"
+    if not data.get("verified"):
+        return f"tampering detected at seq {data.get('seq')}", "bad"
+    status = data.get("status") or "clean"
+    intact = "record intact"
+    if status == "breach":
+        return f"{intact}; policy breach - seq {data.get('seq')} - {status}", "bad"
+    return f"{intact} - seq {data.get('seq')} - {status}", "ok"

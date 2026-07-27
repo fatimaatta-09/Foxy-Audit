@@ -53,7 +53,9 @@ from PyQt6.QtGui import (
 )
 
 from fox_settings import FoxSettings
-from foxy_client import FoxyClient, spawn_worker, shutdown_workers
+from foxy_client import (
+    FoxyClient, spawn_worker, shutdown_workers, status_of,
+)
 from console_chrome import (
     relative_time,
     ALL_SECTIONS, BREACH_SCAN_LIMIT, EXTRA_SECTIONS, HEALTH_PING_SECONDS,
@@ -71,7 +73,15 @@ import home_data as hd
 import panel_state
 from panel_state import PanelState, chart_empty, resolve
 
+from access_page import (
+    AccessSections, CodeBox, NewKeyDialog, ShownOnceDialog, key_row,
+)
+from export_page import ExportSections, history_row
 from ledger_page import LedgerRow, LedgerSections
+from verify_page import VerifySections, anchor_row
+import access_data as ad
+import export_data as ed
+import verify_data as vd
 from threats_page import ThreatsSections, alert_table_row
 import ledger_data as ld
 import threats_data as td
@@ -610,6 +620,9 @@ class DashboardWindow(QWidget):
         self._init_home()            # D4: Home's workers + activity re-tick
         self._init_threats()         # D5: Threats page state
         self._init_ledger()          # D5: Ledger page state
+        self._init_verify()          # D6
+        self._init_export()          # D8
+        self._init_access()          # D9
         self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
         self._sync_title()
 
@@ -655,10 +668,16 @@ class DashboardWindow(QWidget):
         self._home = HomeSections(self)
         self._threats = ThreatsSections(self)
         self._ledger = LedgerSections(self)
+        self._verify = VerifySections(self)
+        self._export = ExportSections(self)
+        self._access = AccessSections(self)
         builders = {
             "home": lambda t: self._home.build(self._page_overview(t)),
             "threats": lambda t: self._threats.build(t),
             "ledger": lambda t: self._ledger.build(t, self._live_capture(t)),
+            "verify": lambda t: self._verify.build(t),
+            "export": lambda t: self._export.build(t),
+            "access": lambda t: self._access.build(t),
             "system": self._page_system,
             "sandbox": self._page_sandbox,
         }
@@ -2144,7 +2163,7 @@ class DashboardWindow(QWidget):
                      parent=self, track=self._oneoff_workers,
                      on_ok=lambda d: self._set_quick_result(*hd.quick_verify_result(d)),
                      on_err=lambda err: self._set_quick_result(
-                         "sign in to check the ledger" if getattr(err, "status", None) == 401
+                         "sign in to check the ledger" if status_of(err) == 401
                          else "could not reach the server", "bad"))
 
     def _set_quick_result(self, message: str, tone: str):
@@ -2554,6 +2573,479 @@ class DashboardWindow(QWidget):
             strip.show()
             layout.addWidget(strip)
 
+    # ── Verify + Anchors (D6) ──────────────────────────────────────────────
+    def _init_verify(self):
+        """One worker bucket for all three late pages. None of them is a
+        periodic cycle, so none of them gates anything — the C1 rule."""
+        if not hasattr(self, "_page_workers"):
+            self._page_workers: set = set()
+
+    def on_verify_hash_changed(self, text: str):
+        hint, tone = vd.hash_hint(text)
+        colour = {"ok": OK_GREEN, "bad": BAD_RED}.get(tone, WEB["muted"])
+        self.v_hint.setStyleSheet(
+            f"color: {colour}; font-family: '{_pick_font('mono')}';"
+            f" font-size: 10px; background: transparent;")
+        self.v_hint.setText(hint)
+
+    def clear_verify(self):
+        self.v_hash.clear()
+        self.v_hint.setText("")
+        self.v_result.clear()
+        self.v_hash.setFocus()
+
+    def run_verify(self):
+        precheck = vd.verify_precheck(self.v_hash.text())
+        if precheck:
+            self.v_result.show_result(*precheck)
+            return
+        digest = vd.normalize_hash(self.v_hash.text())
+        self.v_result.show_result(*vd.CHECKING)
+        spawn_worker(
+            self.client, "GET", f"/v1/verify/hash/{quote(digest, safe='')}",
+            timeout=20, parent=self, track=self._page_workers,
+            on_ok=lambda d: self.v_result.show_result(*vd.record_result(d)),
+            on_err=lambda err: self.v_result.show_result(
+                *vd.record_result(None, status=status_of(err))))
+
+    def run_quick_verify(self):
+        digest = vd.normalize_hash(self.v_quick_hash.text())
+        if len(digest) != vd.HASH_LENGTH:
+            self._set_quick_verify("enter a 64-character chain hash", "bad")
+            return
+        self._set_quick_verify("checking ledger…", "muted")
+        spawn_worker(
+            self.client, "GET", f"/v1/verify/hash/{quote(digest, safe='')}",
+            timeout=20, parent=self, track=self._page_workers,
+            on_ok=lambda d: self._set_quick_verify(*ld.verify_quick(d)),
+            on_err=lambda _e: self._set_quick_verify(
+                "could not reach the server", "bad"))
+
+    def _set_quick_verify(self, message: str, tone: str):
+        colour = {"ok": OK_GREEN, "bad": BAD_RED}.get(tone, WEB["muted"])
+        self.v_quick_result.setStyleSheet(
+            f"color: {colour}; font-family: '{_pick_font('mono')}';"
+            f" font-size: 10.5px; background: transparent;")
+        self.v_quick_result.setText(message)
+
+    def run_chain_check(self):
+        """The whole-ledger check. Says so when it only covered a window."""
+        self.v_chain_result.show_result(
+            "checking", "Checking the chain…",
+            "Re-deriving every record from its predecessor.")
+        spawn_worker(
+            self.client, "GET", "/v1/verify", timeout=45, parent=self,
+            track=self._page_workers,
+            on_ok=lambda d: self.v_chain_result.show_result(*vd.chain_result(d)),
+            on_err=lambda _e: self.v_chain_result.show_result(
+                *vd.chain_result(None)))
+
+    def anchor_now(self):
+        self.v_anchor_btn.setEnabled(False)
+        self.v_anchor_link.hide()
+        self.v_chain_result.show_result(
+            "checking", "⚓ anchoring the current chain head to Sepolia…", "")
+
+        def finish(tone, title, tx_hash):
+            self.v_anchor_btn.setEnabled(True)
+            self.v_chain_result.show_result(tone, title, "")
+            url = vd.tx_url(tx_hash)
+            if url:
+                self.v_anchor_link.setText(
+                    f'<a href="{url}" style="color:{WEB["fox2"]};">'
+                    f'view tx on Etherscan ↗</a>')
+                self.v_anchor_link.show()
+            if tone == "ok":
+                self.refresh_anchors()
+
+        spawn_worker(
+            self.client, "POST", "/v1/anchors", body={}, timeout=30, parent=self,
+            track=self._page_workers,
+            on_ok=lambda d: finish(*vd.anchor_now_result(d)),
+            on_err=lambda err: finish(*vd.anchor_now_result(
+                None, status=status_of(err))))
+
+    def refresh_anchors(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET", "/v1/anchors/sla", timeout=10,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_anchor_sla,
+                     on_err=lambda _e: self._on_anchor_sla(None))
+        spawn_worker(self.client, "GET", "/v1/anchors", timeout=12, parent=self,
+                     track=self._page_workers, on_ok=self._on_anchors,
+                     on_err=lambda _e: self._on_anchors(None, ok=False))
+
+    def _on_anchor_sla(self, data):
+        text = vd.sla_text(data)
+        base = ("Each receipt records your ledger head on a public blockchain "
+                "— independent, third-party proof no one (not even us) can "
+                "alter.")
+        self.v_anchor_sla.setText(f"{base} {text}".strip())
+
+    def _on_anchors(self, data, ok: bool = True):
+        rows = vd.receipt_rows(data) if ok else []
+        self.v_anchor_fresh.setText(vd.freshness(data) if ok else "")
+        self._fill_rows(
+            self.v_anchor_list, 0, self.v_anchor_empty, rows, anchor_row,
+            resolve(ok, bool(rows)),
+            empty_title="No anchors yet",
+            empty_body="Your chain head is anchored automatically on your "
+                       "plan's cadence, or use “anchor now” above to publish "
+                       "it immediately.")
+
+    # ── Export (D8) ────────────────────────────────────────────────────────
+    def _init_export(self):
+        self._init_verify()                 # shares the bucket
+        self._export_head = ""
+        self._export_org = ""
+        self.set_export_range(90)
+
+    def set_export_range(self, days: int):
+        from PyQt6.QtCore import QDate
+        date_from, date_to = ed.preset_range(days)
+        self.exp_all_time.setChecked(days <= 0)
+        self.exp_to.setDate(QDate.fromString(date_to, "yyyy-MM-dd"))
+        if date_from:
+            self.exp_from.setDate(QDate.fromString(date_from, "yyyy-MM-dd"))
+        for value, button in self.exp_range_buttons.items():
+            button.setChecked(value == days)
+
+    def _export_dates(self) -> tuple[str, str]:
+        date_from = ("" if self.exp_all_time.isChecked()
+                     else self.exp_from.date().toString("yyyy-MM-dd"))
+        return date_from, self.exp_to.date().toString("yyyy-MM-dd")
+
+    def run_export(self):
+        """Fetch the bytes, ask where to save, then open with the system
+        handler. The web downloads to the browser's folder; a desktop app that
+        did the equivalent silently would be worse, not more native."""
+        if not self._can_fetch():
+            self.exp_progress.fail("Sign in to export.")
+            return
+        export_type = self.exp_type.currentData() or "passport"
+        date_from, date_to = self._export_dates()
+        self.exp_run.setEnabled(False)
+        self.exp_progress.set_stage("requesting")
+
+        # Record the request in history/audit. Fire-and-forget, exactly as the
+        # web does — it must never delay or block the bytes.
+        spawn_worker(self.client, "POST", "/v1/exports",
+                     body={"type": export_type,
+                           "params": ed.export_params(date_from, date_to)},
+                     timeout=10, parent=self, track=self._page_workers,
+                     on_ok=lambda _d: self.refresh_exports())
+
+        if export_type == "passport":
+            path = f"/v1/passport{ed.passport_query(date_from, date_to)}"
+            method = "POST"
+        else:
+            path, _fmt = ed.logs_endpoint(export_type)
+            method = "GET"
+        spawn_worker(self.client, method, path, timeout=120, parent=self,
+                     track=self._page_workers, raw=True,
+                     on_ok=lambda payload: self._on_export_bytes(
+                         export_type, payload),
+                     on_err=lambda err: self._on_export_failed(err))
+
+    def _on_export_failed(self, err):
+        self.exp_run.setEnabled(True)
+        self.exp_progress.fail(f"Export failed — {err}")
+
+    def _on_export_bytes(self, export_type: str, payload):
+        from PyQt6.QtWidgets import QFileDialog
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+
+        self.exp_progress.set_stage("received")
+        data = payload.get("body") if isinstance(payload, dict) else payload
+        content_type = (payload.get("content_type")
+                        if isinstance(payload, dict) else None)
+        if not data:
+            self._on_export_failed("the server returned an empty file")
+            return
+        suggested = ed.suggested_filename(export_type, content_type)
+        target, _sel = QFileDialog.getSaveFileName(
+            self, "Save export", suggested,
+            ed.file_filter(export_type, content_type))
+        if not target:
+            self.exp_run.setEnabled(True)
+            self.exp_progress.hide()
+            return
+        self.exp_progress.set_stage("saving")
+        try:
+            with open(target, "wb") as fh:
+                fh.write(data if isinstance(data, (bytes, bytearray))
+                         else str(data).encode("utf-8"))
+        except OSError as exc:
+            self._on_export_failed(f"could not write the file — {exc}")
+            return
+        self.exp_run.setEnabled(True)
+        self.exp_progress.finish(f"saved to {target}")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(target))
+
+    def refresh_export_meta(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET", "/v1/verify", timeout=30, parent=self,
+                     track=self._page_workers, on_ok=self._on_export_verify,
+                     on_err=lambda _e: self._on_export_verify(None))
+        spawn_worker(self.client, "GET", "/v1/logs?limit=1", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_export_head,
+                     on_err=lambda _e: self._on_export_head(None))
+        spawn_worker(self.client, "GET", "/v1/auth/me", timeout=10, parent=self,
+                     track=self._page_workers, on_ok=self._on_export_org,
+                     on_err=lambda _e: self._on_export_org(None))
+        spawn_worker(self.client, "GET", "/v1/anchors/sla", timeout=10,
+                     parent=self, track=self._page_workers,
+                     on_ok=lambda d: self.exp_meta["sla"].setText(
+                         vd.sla_text(d) or "—"),
+                     on_err=lambda _e: self.exp_meta["sla"].setText("—"))
+
+    def _on_export_verify(self, data):
+        self.exp_meta["records"].setText(ed.records_text(data))
+        text, tone = ed.integrity_text(data)
+        colour = {"ok": OK_GREEN, "bad": BAD_RED}.get(tone, WEB["muted"])
+        self.exp_meta["integrity"].setStyleSheet(
+            f"color: {colour}; font-family: '{_pick_font('disp')}';"
+            f" font-size: 11px; font-weight: 800; background: transparent;")
+        self.exp_meta["integrity"].setText(text)
+
+    def _on_export_head(self, data):
+        items = hd.dict_rows((data or {}).get("items")
+                             if isinstance(data, dict) else None)
+        self._export_head = str(items[0].get("chain_hash") or "") if items else ""
+        self._render_export_metadata()
+
+    def _on_export_org(self, data):
+        self._export_org = str((data or {}).get("org_id") or "") \
+            if isinstance(data, dict) else ""
+        self._render_export_metadata()
+
+    def on_reveal_metadata(self, revealed: bool):
+        self.exp_reveal.setText("hide" if revealed else "reveal")
+        self._render_export_metadata()
+
+    def _render_export_metadata(self):
+        revealed = self.exp_reveal.isChecked()
+        for key, value in (("head", self._export_head), ("org", self._export_org)):
+            self.exp_meta[key].setText(
+                (value or "—") if revealed else ed.mask(value))
+
+    def copy_chain_head(self):
+        from PyQt6.QtWidgets import QApplication
+        if not self._export_head:
+            self.toast.show_message("No chain head yet")
+            return
+        QApplication.clipboard().setText(self._export_head)
+        self.toast.show_message("Chain head copied")
+
+    def refresh_exports(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET", "/v1/exports", timeout=12, parent=self,
+                     track=self._page_workers, on_ok=self._on_exports,
+                     on_err=lambda _e: self._on_exports(None, ok=False))
+
+    def _on_exports(self, data, ok: bool = True):
+        rows = ed.history_rows(data) if ok else []
+        self._fill_rows(
+            self.exp_history, 0, self.exp_history_empty, rows, history_row,
+            resolve(ok, bool(rows)),
+            empty_title="No exports yet",
+            empty_body="Generated exports are recorded here with who asked "
+                       "for them and over what range.")
+
+    # ── Access / keys (D9) ─────────────────────────────────────────────────
+    def _init_access(self):
+        self._init_verify()                 # shares the bucket
+        self._key_quota = None
+
+    def refresh_keys(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET", "/v1/keys", timeout=12, parent=self,
+                     track=self._page_workers, on_ok=self._on_keys,
+                     on_err=lambda err: self._on_keys(
+                         None, ok=False, status=status_of(err)))
+        # The key limit rides on /v1/usage's `quota` block (account.py:231),
+        # not a quota endpoint of its own — days=1 keeps the payload small.
+        spawn_worker(self.client, "GET", "/v1/usage?days=1", timeout=10,
+                     parent=self, track=self._page_workers,
+                     on_ok=lambda d: self._on_key_quota(
+                         (d or {}).get("quota") if isinstance(d, dict) else None),
+                     on_err=lambda _e: self._on_key_quota(None))
+
+    def _on_key_quota(self, data):
+        self._key_quota = data if isinstance(data, dict) else None
+        self._apply_key_stats(getattr(self, "_key_payload", None))
+
+    def _apply_key_stats(self, payload):
+        for label, (_name, value, _tone) in zip(
+                self.key_stats, ad.stat_row(payload, self._key_quota)):
+            label.setText(value)
+
+    def _on_keys(self, data, ok: bool = True, status: int | None = None):
+        # 403 is not a failure: a member simply may not manage keys, and the
+        # page says so rather than showing them an error they cannot act on.
+        member = status == 403
+        self.key_member_notice.setVisible(member)
+        for button in (self.key_new_btn, self.key_regen_btn):
+            button.setEnabled(not member)
+
+        self._key_payload = data if ok else None
+        self._apply_key_stats(self._key_payload)
+        rows = ad.key_rows(data) if ok else []
+        if member:
+            state, title, body = (PanelState.EMPTY, "Managed by an admin",
+                                  ad.MEMBER_NOTICE)
+        else:
+            state = resolve(ok, bool(rows))
+            title, body = ("No API keys yet",
+                           "Create one to start reporting interactions from "
+                           "your SDK.")
+        self._fill_rows(self.key_rows, 0, self.key_empty, rows,
+                        lambda row: key_row(row, self.confirm_revoke_key),
+                        state, empty_title=title, empty_body=body)
+
+    def create_key(self):
+        dialog = NewKeyDialog(self)
+        if dialog.exec() != NewKeyDialog.DialogCode.Accepted:
+            return
+        name, days = dialog.values()
+        spawn_worker(self.client, "POST", "/v1/keys",
+                     body=ad.create_body(name, days), timeout=15, parent=self,
+                     track=self._page_workers,
+                     on_ok=lambda d: self._show_new_key("New API key", d),
+                     on_err=self._on_key_create_failed)
+
+    def _on_key_create_failed(self, err):
+        # The 402 body is not reachable through the worker's error string, so
+        # the status is what identifies it; the wording comes from access_data.
+        if status_of(err) == 402:
+            self.toast.show_message(ad.LIMIT_REACHED_FALLBACK)
+            return
+        self.toast.show_message(f"Create failed — {err}")
+
+    def _show_new_key(self, title: str, data):
+        """The ONE place a plaintext key is displayed.
+
+        The value goes straight from the response into the dialog and is never
+        stored on this window, never logged, never written to QSettings or a
+        file. The dialog blanks its own field on close.
+        """
+        key = (data or {}).get("api_key") if isinstance(data, dict) else None
+        if not key:
+            self.toast.show_message("The server did not return a key")
+            return
+        name = (data or {}).get("name") or ""
+        dialog = ShownOnceDialog(f"{title}{f' · {name}' if name else ''}",
+                                 key, self)
+        del key                      # no plaintext lingering in this frame
+        dialog.exec()
+        self.toast.show_message("API key created")
+        self.refresh_keys()
+
+    def confirm_revoke_key(self, row: dict):
+        """Irreversible and it breaks whatever is using the key, so it is
+        confirmed first — and then step-up gated by the server."""
+        from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setWindowTitle(ad.REVOKE_CONFIRM_TITLE)
+        box.setText(ad.REVOKE_CONFIRM_TITLE)
+        box.setInformativeText(ad.revoke_confirm_body(row["name"]))
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setStandardButtons(QMessageBox.StandardButton.Cancel
+                               | QMessageBox.StandardButton.Yes)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        box.button(QMessageBox.StandardButton.Yes).setText("Revoke key")
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+        self._revoke_key(row, retry=True)
+
+    def _revoke_key(self, row: dict, *, retry: bool):
+        spawn_worker(
+            self.client, "DELETE", f"/v1/keys/{quote(row['id'], safe='')}",
+            timeout=15, parent=self, track=self._page_workers,
+            on_ok=lambda _d: self._after_revoke(),
+            on_err=lambda err: self._on_revoke_error(row, err, retry))
+
+    def _after_revoke(self):
+        self.toast.show_message("Access revoked")
+        self.refresh_keys()
+
+    def _on_revoke_error(self, row: dict, err, _retry: bool):
+        """A 403 step_up_required is the server asking to re-authenticate, not
+        a failure.
+
+        The client already emits `step_up_required` for it and the app's
+        existing handler (omni_fox._on_step_up_required) runs the D1 dialog and
+        replays the request — so this must NOT open a second dialog. It says
+        what is happening and re-reads the list once the replay has had time to
+        land."""
+        # 403 + the step-up detail. The client emits `step_up_required` for
+        # it and the app's existing handler runs the D1 dialog and replays the
+        # request — so this must NOT open a second one.
+        if status_of(err) == 403 and "step_up" in str(err):
+            self.toast.show_message("Confirm your identity to revoke this key")
+            QTimer.singleShot(6000, self.refresh_keys)
+            return
+        self.toast.show_message(f"Revoke failed — {err}")
+
+    def regenerate_key(self):
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        if QMessageBox.question(
+                self, "Regenerate the API key?", ad.REGENERATE_CONFIRM,
+                QMessageBox.StandardButton.Cancel
+                | QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.Cancel
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        def code_step(_data):
+            code, ok = QInputDialog.getText(
+                self, "Check your email",
+                "Enter the 6-digit code we just emailed you:")
+            if not ok or not code.strip():
+                return
+            spawn_worker(
+                self.client, "POST", "/v1/keys/regenerate/confirm",
+                body={"code": code.strip()}, timeout=15, parent=self,
+                track=self._page_workers,
+                on_ok=lambda d: self._show_new_key("Regenerated API key", d),
+                on_err=lambda err: self.toast.show_message(f"Regenerate failed — {err}"))
+
+        spawn_worker(self.client, "POST", "/v1/keys/regenerate/request",
+                     body={}, timeout=15, parent=self,
+                     track=self._page_workers, on_ok=code_step,
+                     on_err=lambda err: self.toast.show_message(f"Could not send a code — {err}"))
+
+    def test_sdk_connection(self):
+        """Uses the stored org key against /v1/health, which is Bearer-only."""
+        self.sdk_test_out.setText("testing…")
+        self.sdk_test_out.setStyleSheet(
+            f"color: {WEB['muted']}; font-family: '{_pick_font('mono')}';"
+            f" font-size: 11px; background: transparent;")
+
+        def finish(ok, status=None):
+            message, tone = ad.connection_result(ok, status=status)
+            colour = OK_GREEN if tone == "ok" else BAD_RED
+            self.sdk_test_out.setStyleSheet(
+                f"color: {colour}; font-family: '{_pick_font('mono')}';"
+                f" font-size: 11px; font-weight: 800; background: transparent;")
+            self.sdk_test_out.setText(message)
+
+        if not self.settings.org_api_key():
+            finish(False)
+            self.sdk_test_out.setText("no org key saved on this machine")
+            return
+        spawn_worker(self.client, "GET", "/v1/health", timeout=10, parent=self,
+                     track=self._page_workers, force_bearer=True,
+                     on_ok=lambda _d: finish(True),
+                     on_err=lambda err: finish(
+                         False, status_of(err)))
+
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
 
@@ -2600,6 +3092,13 @@ class DashboardWindow(QWidget):
             self.refresh_threats()
         if section_id == "ledger":
             self.refresh_ledger()
+        if section_id == "verify":
+            self.refresh_anchors()
+        if section_id == "export":
+            self.refresh_export_meta()
+            self.refresh_exports()
+        if section_id == "access":
+            self.refresh_keys()
         if section_id == "home":
             # The web reloads a section's data on navigation; Home is the one
             # page whose numbers age while you sit in the ledger.
@@ -2807,7 +3306,8 @@ class DashboardWindow(QWidget):
             anim.stop()
         shutdown_workers(self._workers | self._poll_workers | self._ann_workers
                          | self._home_workers | self._oneoff_workers
-                         | self._threat_workers | self._ledger_workers)
+                         | self._threat_workers | self._ledger_workers
+                         | self._page_workers)
         # Restore full opacity so the next show_animated fade starts from a
         # clean slate even though this instance is reused.
         self.setWindowOpacity(1.0)
