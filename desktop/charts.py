@@ -144,7 +144,22 @@ class FoxChart(QWidget):
 
     # ── options / data ──────────────────────────────────────────────────
     def set_options(self, **options):
-        """Replace the option bag and repaint (the web re-calls foxChart)."""
+        """REPLACE the option bag and repaint — this does not merge.
+
+        Every option not passed here is GONE, including ones that feel like
+        properties of the widget rather than of the data: `aria`, `tone`,
+        `height`, `empty`. A caller that sets `aria=` once at construction and
+        then refreshes with `set_options(data=…)` silently loses its accessible
+        name, and nothing fails — the chart just stops announcing itself. Pass
+        the full bag every time, or use `update_options()`.
+
+        Replace is deliberate, not an oversight: the web's `foxChart(host, o)`
+        rebuilds the host's innerHTML from the options it was handed and takes
+        its aria from `o.aria||'<type> chart'` on every call, so it loses
+        unsupplied options too. Merging here would be a divergence, and a
+        sticky `tone` or `empty` from three refreshes ago is its own class of
+        bug. `test_set_options_replaces_it_does_not_merge` pins this.
+        """
         if "type" in options:
             t = options.pop("type")
             self.type = t if t in self.TYPES else "bar"
@@ -152,6 +167,12 @@ class FoxChart(QWidget):
         self._apply_height()
         self._describe()
         self._replay()
+
+    def update_options(self, **options):
+        """Merge into the current bag — for callers who want to change one
+        thing without restating the rest. `set_options` is the parity path;
+        this is the safe one."""
+        self.set_options(**{**self.o, "type": self.type, **options})
 
     def set_data(self, data, **options):
         """Convenience for the single-series shape."""
@@ -293,6 +314,7 @@ class FoxChart(QWidget):
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         self._hit = []
         w, h = float(self.width()), float(self.height())
+        self._paint_backing(p, QRectF(0, 0, w, float(self.height())))
         if self._wants_legend():
             h -= _LEGEND_H
         if not self._has_data():
@@ -309,6 +331,30 @@ class FoxChart(QWidget):
         if self._wants_legend():
             self._paint_legend(p, QRectF(0, h, w, _LEGEND_H))
         p.end()
+
+    def _paint_backing(self, p: QPainter, r: QRectF):
+        """Optional scrim behind the marks, for a chart drawn over artwork.
+
+        The hero sparkline sits on the hero's warm gradient, which runs from
+        #c96a2f down to #6e3411. The site strokes it in near-black, which is
+        legible at the light end and 2:1 at the dark end — under the 3:1 floor
+        for meaningful graphics. Rather than changing the ink away from the
+        site's, a faint light scrim raises the local background so one ink
+        clears the bar across the whole run.
+
+        Options: `backing={"color": "#ffffff", "alpha": 0.26, "radius": 6}`.
+        A stylesheet background cannot do this job — this class overrides
+        paintEvent and never calls super(), so QSS backgrounds are not drawn.
+        """
+        spec = self.o.get("backing")
+        if not spec:
+            return
+        colour = qcolor(spec.get("color") or "#ffffff")
+        colour.setAlphaF(float(spec.get("alpha", 0.26)))
+        radius = float(spec.get("radius", 6))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(colour))
+        p.drawRoundedRect(r, radius, radius)
 
     def _paint_empty(self, p: QPainter, r: QRectF):
         """Honest empty state — never a placeholder curve."""

@@ -104,6 +104,13 @@ _STAT_ACCENT = {"fox": None, "bad": BAD_RED, "ok": OK_GREEN, "warn": WARN_AMBER}
 #: tone degrades silently to mid-grey rather than raising.
 HERO_SPARK_INK = "#1a0900"
 
+#: ...and a faint scrim under it. The ink alone is 5.16:1 at the gradient's
+#: light end but 2.00:1 at its dark end, under the 3:1 floor for meaningful
+#: graphics. A 26% white backing lifts the local background enough that the
+#: SAME ink clears the bar across the whole run — 7.50:1 light, 4.06:1 dark —
+#: so the stroke stays the colour the website uses instead of being recoloured.
+HERO_SPARK_BACKING = {"color": "#ffffff", "alpha": 0.26, "radius": 6}
+
 #: The web caps the time-to-verdict gauge at 10 seconds (html:2236); anything
 #: slower pins the bar full while the label still states the true figure.
 VERDICT_GAUGE_MAX = 10
@@ -2060,7 +2067,7 @@ class DashboardWindow(QWidget):
         spawn_worker(self.client, "GET", "/v1/analytics/threats", timeout=12,
                      parent=self, track=self._home_workers, on_ok=self._on_threats,
                      on_err=lambda _e: self._on_threats(None, ok=False))
-        self.refresh_activity()
+        self.refresh_activity(cycle=True)
 
     # ── greeting + subtitle ──
     def _apply_home_identity(self, me: dict):
@@ -2154,6 +2161,7 @@ class DashboardWindow(QWidget):
             # for a titled empty state.
             self.hero_spark_chart.set_options(
                 height=28, data=spark, tone=HERO_SPARK_INK,
+                backing=HERO_SPARK_BACKING,
                 aria="interactions per day, last 30 days",
                 empty=chart_empty(
                     panel_state.resolve(ok, bool(spark)), quiet=True))
@@ -2283,9 +2291,21 @@ class DashboardWindow(QWidget):
         self.kpi_alerts.set_value(hd.stat_row(None, count)[1][1])
 
     # ── recent activity ──
-    def refresh_activity(self):
+    def refresh_activity(self, *, cycle: bool = False):
         """Both endpoints are admin-only: a member simply gets fewer rows, so
-        each side degrades on its own rather than failing the whole feed."""
+        each side degrades on its own rather than failing the whole feed.
+
+        `cycle` says who is asking, and it decides which worker set the two
+        requests join. THE RULE: only the periodic refresh cycle uses
+        `_home_workers`, because that set's emptiness is the "no cycle in
+        flight" gate. This method is reachable two ways — as a leg of
+        `refresh_home()`, and directly from the Activity card's ↻ button and
+        its retry — and the user-triggered paths must not be able to gate
+        anything. D5-P3 moved the other one-offs across but missed this one, so
+        pressing ↻ still put two 12-second requests in the gating set and any
+        Home refresh in that window returned early without loading anything.
+        """
+        track = self._home_workers if cycle else self._oneoff_workers
         if not self.client.has_session():
             # An org-key session cannot read these admin endpoints. That is a
             # permission boundary, not a failure and not an empty result.
@@ -2300,7 +2320,7 @@ class DashboardWindow(QWidget):
         for path, key in (("/v1/account/audit?limit=50", "audit"),
                           ("/v1/auth/login-history", "logins")):
             spawn_worker(self.client, "GET", path, timeout=12, parent=self,
-                         track=self._home_workers,
+                         track=track,
                          on_ok=lambda d, k=key: self._on_activity_part(k, d),
                          on_err=lambda _e, k=key: self._on_activity_part(
                              k, [], ok=False))

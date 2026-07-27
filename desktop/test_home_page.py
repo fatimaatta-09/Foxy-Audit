@@ -361,3 +361,140 @@ def test_navigating_home_refreshes_it(console):
     import inspect
     source = inspect.getsource(dashboard.DashboardWindow.go)
     assert "refresh_home" in source
+
+
+# ── the worker-set rule (C1) ────────────────────────────────────────────────
+def test_pressing_activity_refresh_cannot_cancel_a_home_refresh(console):
+    """D5-P3 moved the one-offs off the gating set but missed this one.
+
+    `refresh_activity` is reachable two ways — as a leg of the refresh cycle,
+    and directly from the Activity card's ↻ button and its retry. The button
+    path was still putting two 12-second requests into `_home_workers`, so any
+    Home refresh in that window returned early and loaded nothing, with no
+    error and no retry. Same failure as the quick-hash-check case, different
+    trigger.
+    """
+    from foxy_client import shutdown_workers
+    console.show()
+    console.settings.set_backend_url("http://127.0.0.1:9")
+    console.settings.set_org_api_key("placeholder-not-a-key")
+    # Both activity endpoints are session-only; an org key returns early.
+    console.client.has_session = lambda: True
+    # The console fixture is module-scoped and show() schedules a cycle, so
+    # start from a known-empty pair rather than from whatever ran before.
+    shutdown_workers(console._home_workers | console._oneoff_workers)
+    console._home_workers.clear()
+    console._oneoff_workers.clear()
+    try:
+        console.refresh_activity()                      # the ↻ button path
+        assert console._oneoff_workers, "a button press must be a one-off"
+        assert not console._home_workers, "...and must not touch the gate"
+
+        console.refresh_home()
+        assert console._home_workers, "the cycle must still run"
+    finally:
+        shutdown_workers(console._home_workers | console._oneoff_workers)
+        console._home_workers.clear()
+        console._oneoff_workers.clear()
+        del console.client.has_session          # back to the real method
+        console.settings.set_org_api_key("")
+        console.settings.set_backend_url("")
+        console.close()
+
+
+def test_the_cycle_leg_of_refresh_activity_still_joins_the_gate(console):
+    """...but when the cycle calls it, its requests belong to the cycle, or a
+    second refresh could stack a duplicate pair on top of the first."""
+    from foxy_client import shutdown_workers
+    console.show()
+    console.settings.set_backend_url("http://127.0.0.1:9")
+    console.settings.set_org_api_key("placeholder-not-a-key")
+    console.client.has_session = lambda: True
+    shutdown_workers(console._home_workers | console._oneoff_workers)
+    console._home_workers.clear()
+    console._oneoff_workers.clear()
+    try:
+        console.refresh_activity(cycle=True)
+        assert console._home_workers
+        assert not console._oneoff_workers
+    finally:
+        shutdown_workers(console._home_workers | console._oneoff_workers)
+        console._home_workers.clear()
+        console._oneoff_workers.clear()
+        del console.client.has_session          # back to the real method
+        console.settings.set_org_api_key("")
+        console.settings.set_backend_url("")
+        console.close()
+
+
+def test_only_the_periodic_cycle_uses_the_gating_set(console):
+    """The rule itself, enforced.
+
+    `_home_workers` is a gate, not a bucket: anything tracked in it can stop a
+    refresh. Only requests spawned by `refresh_home` may use it. This walks the
+    real call sites rather than trusting a grep, so a future one-off added with
+    the wrong set fails here."""
+    import ast
+    import inspect
+    import textwrap
+    import dashboard
+
+    gating = []
+    for name, fn in inspect.getmembers(dashboard.DashboardWindow,
+                                       predicate=inspect.isfunction):
+        try:
+            tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and getattr(node.func, "id", "") == "spawn_worker"):
+                continue
+            for kw in node.keywords:
+                if kw.arg != "track":
+                    continue
+                # track=self._home_workers  →  the gating set, by name
+                if (isinstance(kw.value, ast.Attribute)
+                        and kw.value.attr == "_home_workers"):
+                    gating.append(name)
+    assert sorted(set(gating)) == ["refresh_home"], (
+        "only refresh_home may spawn into the gating set; found: "
+        f"{sorted(set(gating))}")
+
+
+# ── the unmeasured zero (C2) ────────────────────────────────────────────────
+def test_breaches_and_hero_stay_blank_until_something_is_measured(console):
+    """A live counter of 0 at startup is not a measurement of zero.
+
+    `_refresh_stats` runs on construction, when both UDP counters are 0 and no
+    /v1/stats answer has arrived. Writing them then put "0 breaches stopped"
+    and "0 interactions logged today" on screen as facts."""
+    assert console._stats_answered is False
+    console._logs_total = 0
+    console._flagged_total = 0
+    console._refresh_stats()
+    assert console.kpi_breaches.value_lbl.text() == "—"
+    assert console.hero_num.text() == "—"
+
+
+def test_a_live_event_is_enough_to_start_reporting(console):
+    """A UDP breach IS a measurement, even before the backend answers."""
+    console._stats_answered = False
+    console._flagged_total = 2
+    console._logs_total = 5
+    console._refresh_stats()
+    assert console.kpi_breaches.value_lbl.text() == "2"
+    assert console.hero_num.text() == "5"
+
+
+def test_a_real_zero_from_the_backend_is_reported_as_zero(console):
+    """Once /v1/stats has answered, zero is a fact and must be shown."""
+    console._on_stats_success({"total_logged": 0, "breaches": 0,
+                               "clean_rate": None,
+                               "avg_seconds_to_verdict": None})
+    assert console._stats_answered is True
+    console._logs_total = 0
+    console._flagged_total = 0
+    console._refresh_stats()
+    assert console.kpi_breaches.value_lbl.text() == "0"
+    assert console.hero_num.text() == "0"

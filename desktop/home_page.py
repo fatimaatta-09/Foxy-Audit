@@ -562,14 +562,18 @@ class HomeSections:
             f"QPushButton#linkAct:hover {{ color: {WEB['fox']}; }}"
             f"QPushButton#linkAct:focus {{ border: 1px solid {WEB['fox']};"
             f" border-radius: 6px; }}")
-        o.activity_refresh.clicked.connect(o.refresh_activity)
+        # Lambdas, not the bound method: QPushButton.clicked passes its
+        # `checked` bool positionally, and both of these are user-triggered —
+        # they must never join the refresh-cycle gating set (see the RULE in
+        # DashboardWindow.refresh_activity).
+        o.activity_refresh.clicked.connect(lambda: o.refresh_activity())
         head.addWidget(o.activity_refresh)
         lay.addLayout(head)
 
         o.activity_list = QVBoxLayout()
         o.activity_list.setSpacing(0)
         o.activity_empty = StatusStrip(compact=True)
-        o.activity_empty.retry.connect(o.refresh_activity)
+        o.activity_empty.retry.connect(lambda: o.refresh_activity())
         o.activity_list.addWidget(o.activity_empty)
         lay.addLayout(o.activity_list)
         o.activity_stamp = _label("", size=9, colour=WEB["muted"], mono=True)

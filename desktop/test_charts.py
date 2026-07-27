@@ -376,3 +376,77 @@ def test_an_ok_state_still_paints_its_data(app):
     chart.set_options(value=42, max=100, height=12,
                       empty={"state": "empty", "title": "Nothing yet"})
     assert chart._has_data() is True
+
+
+# ── set_options replaces, deliberately (C3) ─────────────────────────────────
+def test_set_options_replaces_it_does_not_merge(app):
+    """Pinned because it is a trap, not because it is wrong.
+
+    The web's foxChart rebuilds from the options it was handed on every call
+    and takes its aria from `o.aria||'<type> chart'`, so it loses unsupplied
+    options too — merging here would diverge, and a sticky tone from three
+    refreshes ago is its own class of bug. The hazard is real though: a caller
+    that sets aria once at construction loses it silently on the first refresh.
+    """
+    from charts import FoxChart
+    chart = FoxChart("bar", height=100)
+    chart.set_options(height=100, tone="bad", aria="breaches per day",
+                      data=[{"label": "a", "value": 1}])
+    assert chart.accessibleName() == "breaches per day"
+
+    chart.set_options(height=100, data=[{"label": "a", "value": 2}])
+    assert "tone" not in chart.o                 # gone, as designed
+    assert chart.accessibleName() == "bar chart"  # and so is the name
+
+
+def test_update_options_merges_for_callers_who_want_that(app):
+    from charts import FoxChart
+    chart = FoxChart("bar", height=100)
+    chart.set_options(height=100, tone="bad", aria="breaches per day",
+                      data=[{"label": "a", "value": 1}])
+    chart.update_options(data=[{"label": "a", "value": 2}])
+    assert chart.o["tone"] == "bad"
+    assert chart.accessibleName() == "breaches per day"
+    assert chart.o["data"][0]["value"] == 2
+
+
+def test_update_options_keeps_the_chart_type(app):
+    from charts import FoxChart
+    chart = FoxChart("donut", height=100)
+    chart.set_options(height=100, data=[{"label": "a", "value": 1}])
+    chart.update_options(data=[{"label": "a", "value": 3}])
+    assert chart.type == "donut"
+
+
+# ── backing scrim (C4) ──────────────────────────────────────────────────────
+def test_a_backing_is_painted_under_the_marks(app):
+    """The hero sparkline is drawn over the hero's gradient, whose dark end
+    leaves the site's near-black ink at 2:1. A faint scrim lifts the local
+    background so the same ink clears 3:1 across the whole run."""
+    from charts import FoxChart
+    chart = FoxChart("sparkline", height=28)
+    chart.resize(200, 28)
+    chart.set_options(height=28, tone="#1a0900",
+                      backing={"color": "#ffffff", "alpha": 0.26, "radius": 6},
+                      data=[{"label": "a", "value": 1}, {"label": "b", "value": 4}])
+    assert not _paint(chart, 200, 28).isNull()
+
+
+def test_no_backing_by_default(app):
+    """Every other chart sits on a card and must not gain a scrim."""
+    from charts import FoxChart
+    chart = FoxChart("bar", height=100)
+    chart.set_options(height=100, data=[{"label": "a", "value": 1}])
+    assert chart.o.get("backing") is None
+    assert not _paint(chart, 200, 100).isNull()
+
+
+def test_the_backing_survives_the_empty_and_error_states(app):
+    """It is the widget's background, not part of the data drawing."""
+    from charts import FoxChart
+    from panel_state import PanelState, chart_empty
+    chart = FoxChart("sparkline", height=28)
+    chart.resize(200, 28)
+    chart.set_options(height=28, backing={"color": "#ffffff", "alpha": 0.26},
+                      empty=chart_empty(PanelState.ERROR, quiet=True), data=[])
+    assert not _paint(chart, 200, 28).isNull()
