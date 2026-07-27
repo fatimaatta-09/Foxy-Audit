@@ -56,7 +56,8 @@ from fox_settings import FoxSettings
 from foxy_client import FoxyClient, spawn_worker, shutdown_workers
 from console_chrome import (
     relative_time,
-    ALL_SECTIONS, BREACH_SCAN_LIMIT, EXTRA_SECTIONS, NOTIF_LIMIT, QUICK_NAV,
+    ALL_SECTIONS, BREACH_SCAN_LIMIT, EXTRA_SECTIONS, HEALTH_PING_SECONDS,
+    NOTIF_LIMIT, QUICK_NAV,
     QUICK_NAV_WINDOW_MS, SECTIONS, announcement, avatar_initial, badge_text,
     breach_pip, notification_target,
 )
@@ -67,13 +68,8 @@ from chrome_widgets import (
 from charts import FoxChart
 import home_data as hd
 
-# What every Home surface says when the request itself failed. Deliberately
-# distinct from an empty state: "nothing yet" is a measurement, "couldn't load"
-# is the absence of one, and we never claim the first when we only know the
-# second — that is the no-fake-data rule applied to failure, not just to seeds.
-UNAVAILABLE_TEXT = ("Couldn't load this — Foxy could not reach the backend. "
-                    "Nothing is claimed about this period.")
-UNAVAILABLE = {"title": "Couldn't load", "desc": UNAVAILABLE_TEXT}
+import panel_state
+from panel_state import PanelState, chart_empty
 
 from home_page import (
     FlipCard, HomeSections, activity_row, alert_row, coverage_row, ledger_row,
@@ -92,6 +88,25 @@ from foxy_tokens import (
     resource_path,
     with_alpha as _with_alpha,
 )
+
+# Kept as module names because the tests and the page both read them. The
+# wording now lives in panel_state, so every page from D5 on fails in one voice.
+UNAVAILABLE_TEXT = panel_state.ERROR_BODY
+UNAVAILABLE = chart_empty(PanelState.ERROR)
+
+#: Tone → tile accent for the web's Home stat row (html:1030-1033: `.v fox`,
+#: `.v danger`, then two unmodified, which take the theme accent).
+_STAT_ACCENT = {"fox": None, "bad": BAD_RED, "ok": OK_GREEN, "warn": WARN_AMBER}
+
+#: The hero sparkline's ink. The hero is a warm gradient (#c96a2f → #6e3411)
+#: and the site draws over it in near-black — the same ink as QLabel#heroNum.
+#: It must stay 7-char hex: qcolor() cannot parse rgba(), and an unparseable
+#: tone degrades silently to mid-grey rather than raising.
+HERO_SPARK_INK = "#1a0900"
+
+#: The web caps the time-to-verdict gauge at 10 seconds (html:2236); anything
+#: slower pins the bar full while the label still states the true figure.
+VERDICT_GAUGE_MAX = 10
 
 
 # ── Status badge (pill) ─────────────────────────────────────────────────────
@@ -541,6 +556,7 @@ class DashboardWindow(QWidget):
         # authoritative from the backend (/v1/stats + /v1/verify), polled below.
         # No local score/block-height/hash synthesis — those are the real chain's.
         self._start_ts       = time.time()
+        self._stats_answered = False   # has /v1/stats ever replied?
         self._logs_total     = 0
         self._flagged_total  = 0
         self._connected      = None
@@ -595,7 +611,6 @@ class DashboardWindow(QWidget):
         self._backend_poll = QTimer(self)
         self._backend_poll.timeout.connect(self._refresh_backend)
         self._backend_poll.start(15000)
-        self._backend_poll.timeout.connect(self._refresh_chrome)   # D3 signals
         QTimer.singleShot(400, self._refresh_backend)   # initial fill shortly after open
         QTimer.singleShot(400, self._refresh_org)       # real org name for the sidebar
         QTimer.singleShot(800, self.refresh_home)       # D4 Home sections
@@ -784,15 +799,17 @@ class DashboardWindow(QWidget):
         self.notif_pip = Pip(parent=self.notif_btn)
         h.addWidget(self.notif_btn)
 
-        # The breach indicator is a control of its own, LEFT of the bell: two
-        # identical red count-badges on one icon is unreadable — this one says
-        # what it counts, and clicking it goes where the breaches are.
-        self.top_breach_btn = QPushButton()
-        self.top_breach_btn.setObjectName("breachChip")
-        self.top_breach_btn.setMinimumHeight(44)
-        self.top_breach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # D5-P10: the web's topBreachBtn — a shield icon carrying a bare count
+        # pip (html:885-888), not a labelled "⚠ N breaches" chip. D3 spelled
+        # the count out to tell it apart from the bell's badge; the site simply
+        # gives the two buttons different icons, which is enough. The button
+        # itself is always present (the site only hides the PIP), so the top
+        # bar does not reflow the moment a breach lands.
+        self.top_breach_btn = CtrlButton("shield", t)
+        self.top_breach_btn.setAccessibleName("Open threats")
+        self.top_breach_btn.setToolTip("Threats")
         self.top_breach_btn.clicked.connect(lambda: self.go("threats"))
-        self.top_breach_btn.hide()
+        self.breach_pip_widget = Pip(parent=self.top_breach_btn)
         h.insertWidget(h.count() - 1, self.top_breach_btn)
 
         self.user_btn = QPushButton("?")
@@ -879,9 +896,12 @@ class DashboardWindow(QWidget):
         htop.addWidget(htag)
         htop.addStretch()
         htop.addWidget(self.live_badge)
-        self.hero_num = QLabel("—")       # real clean-rate arrives from /v1/stats
+        self.hero_num = QLabel("—")       # real total_logged arrives from /v1/stats
         self.hero_num.setObjectName("heroNum")
-        hfoot = QLabel("compliance score")
+        # D5-P8: the headline is total_logged now, so the caption is the
+        # web's (html:1011). "compliance score" over a count was the
+        # mismatch this phase set out to remove.
+        hfoot = QLabel("interactions logged today")
         hfoot.setObjectName("heroFoot")
         hl.addLayout(htop)
         hl.addStretch()
@@ -923,12 +943,20 @@ class DashboardWindow(QWidget):
         # ── stats row (4 KPIs) ──
         kpis = QHBoxLayout()
         kpis.setSpacing(14)
-        self.kpi_logs = KpiTile(t, "Interactions", "0", "logged to ledger", INFO_BLUE)
-        self.kpi_flagged = KpiTile(t, "Policy Breaches", "0", "flagged by AI judge", BAD_RED)
-        self.kpi_risk = KpiTile(t, "Time to Verdict", "—", "ingest → judged", WARN_AMBER)
-        self.kpi_chain = KpiTile(t, "Ledger Blocks", "0", "hash-chained", OK_GREEN)
-        for wgt in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
-            kpis.addWidget(wgt)
+        # D5-P1: the web's four Home tiles, in its order and wording
+        # (html:1029-1034). The pre-D4 row ("Interactions / Policy Breaches /
+        # Time to Verdict / Ledger Blocks") diverged on three of four, and
+        # "Ledger Blocks" had no counterpart on the site at all — the ledger
+        # count still shows on the verification card, which is where the web
+        # puts it. Values come from home_data.stat_row().
+        self.kpi_tiles = []
+        for label, value, tone in hd.stat_row(None, None):
+            tile = KpiTile(t, label, value, "", _STAT_ACCENT.get(tone))
+            self.kpi_tiles.append(tile)
+            kpis.addWidget(tile)
+        # Named handles for the two tiles other code writes through.
+        self.kpi_breaches, self.kpi_alerts = self.kpi_tiles[0], self.kpi_tiles[1]
+        self.kpi_clean, self.kpi_verdict = self.kpi_tiles[2], self.kpi_tiles[3]
         v.addLayout(kpis)
 
         # ── verification card (website credit-card style) + ledger integrity ──
@@ -1279,7 +1307,7 @@ class DashboardWindow(QWidget):
             b.set_tokens(t)
         for c in (self.refresh_btn, self.min_btn, self.close_btn):
             c.set_tokens(t)
-        for k in (self.kpi_logs, self.kpi_flagged, self.kpi_risk, self.kpi_chain):
+        for k in self.kpi_tiles:
             k.restyle(t)
         for card in (self.chain_card,
                      self.table_card, self.vitals_card, self.conn_card):
@@ -1381,10 +1409,19 @@ class DashboardWindow(QWidget):
 
     # ── session-live counters (backend poll is authoritative for everything else) ──
     def _refresh_stats(self):
-        # Immediate feedback from live UDP events; /v1/stats + /v1/verify overwrite
-        # these with the real ledger-wide numbers on the next poll.
-        self.kpi_logs.set_value(f"{self._logs_total:,}")
-        self.kpi_flagged.set_value(f"{self._flagged_total:,}")
+        # Immediate feedback from live UDP events; /v1/stats overwrites this with
+        # the real ledger-wide number on the next poll. Only "Breaches stopped"
+        # has a live counter — the other three tiles are backend-only
+        # measurements and must not be guessed at from the local event stream.
+        # ...but only once there is something to report. At startup both
+        # counters are 0 and nothing has been measured, so writing them would
+        # put "0 breaches stopped" and "0 interactions logged today" on screen
+        # as if we had asked. An em dash until a real event or a real answer
+        # arrives (owner decision: never show a value we aren't sure about).
+        if self._flagged_total or self._stats_answered:
+            self.kpi_breaches.set_value(f"{self._flagged_total:,}")
+        if self._logs_total or self._stats_answered:
+            self.hero_num.setText(f"{self._logs_total:,}")
 
     # ── real backend tiles (7B) ──
     def _refresh_backend(self):
@@ -1418,16 +1455,22 @@ class DashboardWindow(QWidget):
             self.org_val.setText(org)
 
     def _on_stats_success(self, s: dict):
+        self._stats_answered = True
         total = int(s.get("total_logged", 0))
-        self.kpi_logs.set_value(f"{total:,}")
-        self.kpi_flagged.set_value(f"{int(s.get('breaches', 0)):,}")
-        clean = float(s.get("clean_rate", 100.0))
+        # Tiles 0/2/3 only. Tile 1 ("Open alerts") is deliberately left to
+        # _on_threats, exactly as the site leaves dv[1] to loadThreats
+        # (html:2228) — open alerts and all-time breaches are different
+        # measurements and neither may stand in for the other.
+        rows = hd.stat_row(s, None)
+        for index in (0, 2, 3):
+            self.kpi_tiles[index].set_value(rows[index][1])
+        # D5-P8: the hero headline is the web's `money(s.total_logged)` under
+        # "interactions logged today" (html:1010-1011). It used to show
+        # clean_rate under "compliance score" while the sparkline beneath it
+        # plotted logs_count — a percentage headline over a count trend, which
+        # implied a relationship that did not exist. Now both are the count.
         if hasattr(self, "hero_num"):
-            self.hero_num.setText(f"{clean:.0f}")          # real compliance score
-        ttv = s.get("avg_seconds_to_verdict")
-        self.kpi_risk.set_value(
-            "—" if ttv is None else f"{float(ttv):.1f}s",
-            accent=OK_GREEN if (ttv is not None and float(ttv) < 5) else WARN_AMBER)
+            self.hero_num.setText(hd.thousands(total))
         if hasattr(self, "verif_num"):
             self.verif_num.setText(f"{total:,} events")
         # D4: the head subtitle is now the web's ("N events logged · M pending
@@ -1437,11 +1480,10 @@ class DashboardWindow(QWidget):
         self._apply_home_stats(s)
 
     def _on_verify_stats(self, v: dict):
-        count = int(v.get("count", 0))
+        count = int(v.get("count", 0))     # ledger blocks live on the verify card
         intact = bool(v.get("ok", False))
         anchor = v.get("last_anchor") or {}
         root = anchor.get("root_hash")
-        self.kpi_chain.set_value(f"{count:,}")
         self.chain_meta.setText(f"{count:,} blocks · "
                                 + ("chain intact" if intact else "review required"))
         self.chain_hash.setText(f"root {root[:28]}…" if root else "root — (not yet anchored)")
@@ -1666,10 +1708,16 @@ class DashboardWindow(QWidget):
         self._g_timer.setInterval(QUICK_NAV_WINDOW_MS)
         self._g_timer.timeout.connect(self._clear_quick_nav)
 
-        # No separate health timer: _refresh_chrome (on the console's 15 s
-        # poll) pings health as part of one chrome refresh — see
-        # console_chrome.CHROME_REFRESH_SECONDS for why the desktop is more
-        # live than the web here.
+        # D5-P9: the live dot gets the web's own 60 s ping (html:4025) and
+        # that is the ONLY chrome timer. Notifications, the breach pip and the
+        # announcement banner now refresh when the console opens and when you
+        # navigate — exactly as the site does. D3 polled all four on the 15 s
+        # backend timer: three requests per cycle the web never makes. Live
+        # breach alerts do not depend on this — the fox companion keeps its
+        # own 10 s breach poller.
+        self._health_timer = QTimer(self)
+        self._health_timer.timeout.connect(self._ping_health)
+        self._health_timer.start(HEALTH_PING_SECONDS * 1000)
         QTimer.singleShot(600, self._refresh_chrome)
 
     def _clear_quick_nav(self):
@@ -1722,6 +1770,13 @@ class DashboardWindow(QWidget):
         """Anchor inside the bell's own box — a hand-picked offset clipped once
         the button grew to its 44 px hit target."""
         pip, host = self.notif_pip, self.notif_btn
+        pip.move(max(0, host.width() - pip.width() - 3), 2)
+        pip.raise_()
+
+    def _place_breach_pip(self):
+        """Same anchoring rule as the bell's pip: inside the button's own box,
+        measured, never a hand-picked offset."""
+        pip, host = self.breach_pip_widget, self.top_breach_btn
         pip.move(max(0, host.width() - pip.width() - 3), 2)
         pip.raise_()
 
@@ -1789,16 +1844,20 @@ class DashboardWindow(QWidget):
         self.threat_pip.move(max(8, nav.width() - self.threat_pip.width() - 12),
                              (nav.height() - self.threat_pip.height()) // 2)
         self.threat_pip.raise_()
+        # The pip carries the number; the button carries the meaning. A count
+        # with no words is unreadable to a screen reader, so the accessible
+        # name still spells it out even though the label does not.
+        self.breach_pip_widget.set_count(unread)
+        self._place_breach_pip()
         if unread:
             word = "breach" if unread == 1 else "breaches"
-            self.top_breach_btn.setText(f"⚠ {badge_text(unread)} {word}")
             self.top_breach_btn.setToolTip(
                 f"{unread} unreviewed policy {word} — open Threats")
             self.top_breach_btn.setAccessibleName(
-                f"{unread} unreviewed policy {word}")
-            self.top_breach_btn.show()
+                f"Open threats — {unread} unreviewed policy {word}")
         else:
-            self.top_breach_btn.hide()
+            self.top_breach_btn.setToolTip("Threats")
+            self.top_breach_btn.setAccessibleName("Open threats")
 
     def _mark_breaches_read(self):
         if self._breach_max_seq:
@@ -1953,7 +2012,13 @@ class DashboardWindow(QWidget):
         Its own set so the banner/chrome guards stay independent, and — per the
         D3.2 lesson — every guard below keys off set membership, which
         QThread.finished clears on success AND failure."""
+        # Two buckets on purpose. `_home_workers` is the refresh CYCLE — its
+        # emptiness is the "no cycle in flight" gate. One-off calls (dismiss,
+        # quick hash check, the ↻ activity button) go in `_oneoff_workers`, or
+        # a 15 s hash lookup would silently make the next Home refresh return
+        # early and skip everything, with no retry.
         self._home_workers: set = set()
+        self._oneoff_workers: set = set()
         self._home_days: list = []
         self._trend_metric = "logs"
         self._activity_rows: list = []
@@ -2011,8 +2076,10 @@ class DashboardWindow(QWidget):
         self.onboarding_title.setText(view["title"])
         self.onboarding_sub.setText(view["sub"])
         self.onboarding_pct.setText(view["progress_text"])
-        self.onboarding_bar.set_options(value=view["done"], max=view["total"],
-                                        height=12, tone=view["tone"])
+        self.onboarding_bar.set_options(
+            value=view["done"], max=view["total"], height=12, tone=view["tone"],
+            aria=f"onboarding progress, {view['progress_text']}",
+            tip=view["progress_text"])
         while self.onboarding_steps.count():
             item = self.onboarding_steps.takeAt(0)
             widget = item.widget()
@@ -2026,7 +2093,7 @@ class DashboardWindow(QWidget):
     def _dismiss_onboarding(self):
         self.onboarding_card.hide()
         spawn_worker(self.client, "PUT", "/v1/onboarding", body={"dismissed": True},
-                     timeout=10, parent=self, track=self._home_workers)
+                     timeout=10, parent=self, track=self._oneoff_workers)
 
     # ── capture coverage ──
     def _on_coverage(self, data):
@@ -2041,6 +2108,7 @@ class DashboardWindow(QWidget):
         self.coverage_note.setText(view["note"])
         self.coverage_gauge.set_options(
             value=view["pct"] or 0, max=100, height=14, tone=view["gauge_tone"],
+            aria=f"observed capture {view['pct_text']}",
             tip=view["note"] or None)
         # A "could not be loaded" message above last cycle's numbers reads as
         # if those numbers were just measured. Blank them with the message.
@@ -2055,6 +2123,10 @@ class DashboardWindow(QWidget):
                 widget.deleteLater()
         for client in view["clients"]:
             self.coverage_table.addWidget(coverage_row(client))
+        self.coverage_empty.set_state(
+            panel_state.resolve(view["ok"], bool(view["clients"])),
+            empty_title="No identified SDK clients yet",
+            empty_body="Clients appear once the SDK reports a client id.")
         self.coverage_empty.setVisible(not view["clients"])
 
     # ── usage trend + hero spark + coverage volume ──
@@ -2067,16 +2139,24 @@ class DashboardWindow(QWidget):
             height=120, tone="blue",
             data=[{"label": d.get("day"), "value": d.get("logs_count") or 0}
                   for d in self._home_days],
-            empty=UNAVAILABLE if not ok else {
-                "title": "No captured events yet",
-                "desc": "Daily capture volume appears as your SDK reports "
-                        "interactions."})
+            aria="capture volume per day, last 90 days",
+            empty=chart_empty(
+                panel_state.resolve(ok, bool(self._home_days)),
+                empty_title="No captured events yet",
+                empty_body="Daily capture volume appears as your SDK reports "
+                           "interactions."))
         spark = hd.hero_spark(self._home_days)
         if hasattr(self, "hero_spark_chart"):
-            # quiet: a 28px strip has no room for a titled empty state.
+            # HERO_SPARK_INK, not an rgba() string: qcolor() only parses
+            # #RRGGBB and Qt colour names, so "rgba(26,9,0,.55)" silently fell
+            # back to mid-grey #888888 — 1.06:1 against the light end of the
+            # hero gradient, i.e. invisible. quiet: a 28px strip has no room
+            # for a titled empty state.
             self.hero_spark_chart.set_options(
-                height=28, data=spark, tone="rgba(26,9,0,.55)",
-                empty={"quiet": True})
+                height=28, data=spark, tone=HERO_SPARK_INK,
+                aria="interactions per day, last 30 days",
+                empty=chart_empty(
+                    panel_state.resolve(ok, bool(spark)), quiet=True))
         if hasattr(self, "hero_delta_lbl"):
             self.hero_delta_lbl.setText("" if not ok else hd.hero_delta(self._home_days))
 
@@ -2092,9 +2172,12 @@ class DashboardWindow(QWidget):
         rows, spec = hd.trend_rows(self._home_days, self._trend_metric)
         self.usage_trend.set_options(
             height=200, data=rows, name=spec["label"], tone=spec["tone"],
-            empty=UNAVAILABLE if not self._home_usage_ok else {
-                "title": "No usage yet",
-                "desc": "Daily volume appears as your SDK logs interactions."})
+            aria=f"{spec['label'].lower()} per day, last 90 days",
+            empty=chart_empty(
+                panel_state.resolve(self._home_usage_ok, bool(rows)),
+                empty_title="No usage yet",
+                empty_body="Daily volume appears as your SDK logs "
+                           "interactions."))
 
     # ── grading donut + gauges, fed by the existing /v1/stats poll ──
     def _apply_home_stats(self, stats: dict):
@@ -2104,19 +2187,30 @@ class DashboardWindow(QWidget):
             height=170, legend=True,
             center=hd.thousands(total) if total else None,
             data=slices if total else [],
-            empty={"title": "Nothing graded yet",
-                   "desc": "Grading status appears once the Judge processes "
-                           "interactions."})
+            aria="grading status breakdown",
+            empty=chart_empty(
+                panel_state.resolve(True, bool(total)),
+                empty_title="Nothing graded yet",
+                empty_body="Grading status appears once the Judge processes "
+                           "interactions."))
+        # Both gauges match the site exactly (html:2231, 2236): same labels,
+        # same scales, same untoned fox fill. The desktop previously showed a
+        # rounded percent, and inverted the verdict gauge so it emptied as
+        # latency rose, capped at 30 s with ok/warn tones — three silent
+        # disagreements with the website about the same two numbers.
         clean = stats.get("clean_rate")
-        self.gauge_clean_value.setText("—" if clean is None else f"{round(float(clean))}%")
-        self.gauge_clean.set_options(value=float(clean or 0), max=100, height=12,
-                                     tone="ok" if (clean or 0) >= 95 else "warn")
+        self.gauge_clean_value.setText(hd.fmt_pct(clean))
+        self.gauge_clean.set_options(
+            value=hd._num(clean), max=100, height=12,
+            aria=f"clean rate {hd.fmt_pct(clean)}",
+            tip=f"Clean rate — {hd.fmt_pct(clean)}")
         ttv = stats.get("avg_seconds_to_verdict")
-        self.gauge_verdict_value.setText("—" if ttv is None else f"{float(ttv):.1f}s")
-        # Under 5 s is the good end; the gauge fills toward "fast".
-        pace = 0 if ttv is None else max(0.0, min(100.0, (1 - min(float(ttv), 30) / 30) * 100))
-        self.gauge_verdict.set_options(value=pace, max=100, height=12,
-                                       tone="ok" if pace >= 80 else "warn")
+        self.gauge_verdict_value.setText(hd.fmt_verdict(ttv))
+        self.gauge_verdict.set_options(
+            value=0 if ttv is None else min(VERDICT_GAUGE_MAX, hd._num(ttv)),
+            max=VERDICT_GAUGE_MAX, height=12,
+            aria=f"average time to verdict {hd.fmt_verdict(ttv)}",
+            tip=f"Avg time to verdict — {hd.fmt_verdict(ttv)}")
 
     # ── quick ledger check (verification card back face) ──
     def quick_verify(self):
@@ -2126,7 +2220,7 @@ class DashboardWindow(QWidget):
             return
         digest = hd.normalize_hash(self.q_hash_input.text())
         spawn_worker(self.client, "GET", f"/v1/verify/hash/{digest}", timeout=15,
-                     parent=self, track=self._home_workers,
+                     parent=self, track=self._oneoff_workers,
                      on_ok=lambda d: self._set_quick_result(*hd.quick_verify_result(d)),
                      on_err=lambda err: self._set_quick_result(
                          "sign in to check the ledger" if getattr(err, "status", None) == 401
@@ -2142,10 +2236,10 @@ class DashboardWindow(QWidget):
     # ── recent ledger preview ──
     def _on_recent_ledger(self, data, ok: bool = True):
         rows = hd.recent_ledger_rows(data)
-        self.recent_ledger_empty.setText(
-            UNAVAILABLE_TEXT if not ok else
-            "No ledger records yet — rows appear as your SDK reports "
-            "interactions.")
+        state = panel_state.resolve(ok, bool(rows))
+        self.recent_ledger_empty.set_state(
+            state, empty_title="No ledger records yet",
+            empty_body="Rows appear as your SDK reports interactions.")
         while self.recent_ledger.count():
             item = self.recent_ledger.takeAt(0)
             widget = item.widget()
@@ -2163,9 +2257,10 @@ class DashboardWindow(QWidget):
     # ── active alerts ──
     def _on_threats(self, data, ok: bool = True):
         rows = hd.alert_rows(data)
-        self.home_alerts_empty.setText(
-            UNAVAILABLE_TEXT if not ok else
-            "No active alerts — nothing has breached policy.")
+        self.home_alerts_empty.set_state(
+            panel_state.resolve(ok, bool(rows)),
+            empty_title="No active alerts",
+            empty_body="Every graded interaction is within policy.")
         while self.home_alerts.count():
             item = self.home_alerts.takeAt(0)
             widget = item.widget()
@@ -2184,12 +2279,20 @@ class DashboardWindow(QWidget):
         # section header rather than overwriting a differently-labelled tile.
         count = hd.open_alert_count(data)
         self.home_alerts_count.setText("" if count is None else f"{count:,} open")
+        # The web's dv[1] (html:3350): the live count, not the all-time total.
+        self.kpi_alerts.set_value(hd.stat_row(None, count)[1][1])
 
     # ── recent activity ──
     def refresh_activity(self):
         """Both endpoints are admin-only: a member simply gets fewer rows, so
         each side degrades on its own rather than failing the whole feed."""
         if not self.client.has_session():
+            # An org-key session cannot read these admin endpoints. That is a
+            # permission boundary, not a failure and not an empty result.
+            self.activity_empty.set_state(
+                PanelState.EMPTY, empty_title="Sign in to see account activity",
+                empty_body="Key changes and sign-ins are visible to signed-in "
+                           "members.")
             self._render_activity([])
             return
         self._activity_parts = {"audit": None, "logins": None}
@@ -2212,11 +2315,13 @@ class DashboardWindow(QWidget):
         if parts["audit"] is not None and parts["logins"] is not None:
             # Both legs down is "we could not ask", not "nothing happened".
             both_down = len(self._activity_failed) == len(parts)
-            self.activity_empty.setText(
-                UNAVAILABLE_TEXT if both_down else
-                "No account activity yet — key changes and sign-ins show up "
-                "here as they happen.")
-            self._render_activity(hd.merge_activity(parts["audit"], parts["logins"]))
+            rows = hd.merge_activity(parts["audit"], parts["logins"])
+            self.activity_empty.set_state(
+                panel_state.resolve(not both_down, bool(rows)),
+                empty_title="No account activity yet",
+                empty_body="Key changes and sign-ins show up here as they "
+                           "happen.")
+            self._render_activity(rows)
 
     def _render_activity(self, rows: list):
         self._activity_rows = rows
@@ -2299,6 +2404,10 @@ class DashboardWindow(QWidget):
             # The web reloads a section's data on navigation; Home is the one
             # page whose numbers age while you sit in the ledger.
             self.refresh_home()
+        # D5-P9: with the 15 s chrome poll gone, navigation is what keeps the
+        # bell, the breach pip and the banner current — which is exactly when
+        # the site refreshes them.
+        self._refresh_chrome()
 
     def _sync_title(self):
         """Top-bar title + crumb follow the section (web setTopbarContext)."""
@@ -2461,6 +2570,7 @@ class DashboardWindow(QWidget):
             QTimer.singleShot(600, self._refresh_chrome)
             QTimer.singleShot(800, self.refresh_home)
             self._activity_timer.start(hd.ACTIVITY_TICK_SECONDS * 1000)
+            self._health_timer.start(HEALTH_PING_SECONDS * 1000)   # D5-P9
         super().showEvent(e)
 
     def hideEvent(self, e):
@@ -2478,6 +2588,7 @@ class DashboardWindow(QWidget):
         self._tick.stop()
         self._backend_poll.stop()
         self._activity_timer.stop()     # D4 relative-time re-tick
+        self._health_timer.stop()       # D5-P9 live-dot ping
         # Nothing may float or poll once the console is closed: the palette and
         # the shortcut overlay are shown non-modally, so an X-click while one is
         # open would otherwise leave it orphaned on screen.
@@ -2495,7 +2606,7 @@ class DashboardWindow(QWidget):
         for anim in self.findChildren(QAbstractAnimation):
             anim.stop()
         shutdown_workers(self._workers | self._poll_workers | self._ann_workers
-                         | self._home_workers)
+                         | self._home_workers | self._oneoff_workers)
         # Restore full opacity so the next show_animated fade starts from a
         # clean slate even though this instance is reused.
         self.setWindowOpacity(1.0)

@@ -45,7 +45,31 @@ def test_empty_query_lists_every_section():
     rows = palette_entries("")
     pages = [r for r in rows if r["kind"] == "page"]
     assert len(pages) == len(ALL_SECTIONS)
-    assert pages[0]["label"] == "Go to Overview"
+    # The site's own palette wording (its PAGES array, html:1723), not the
+    # sidebar title — the two products offer the same rows for the same keys.
+    assert pages[0]["label"] == "Go to Home / overview"
+
+
+def test_palette_uses_the_web_page_labels():
+    from console_chrome import PALETTE_LABELS
+    labels = {r["arg"]: r["label"] for r in palette_entries("")
+              if r["kind"] == "page"}
+    for section_id, expected in PALETTE_LABELS.items():
+        assert labels[section_id] == f"Go to {expected}"
+    assert labels["threats"] == "Go to Threat analytics"
+
+
+def test_palette_matches_on_the_web_wording():
+    """"overview" is only in the palette label, not in the sidebar title."""
+    hits = [r["arg"] for r in palette_entries("overview") if r["kind"] == "page"]
+    assert hits == ["home"]
+
+
+def test_desktop_only_sections_fall_back_to_their_title():
+    labels = {r["arg"]: r["label"] for r in palette_entries("")
+              if r["kind"] == "page"}
+    # No PAGES entry exists for these — the site has no such pages.
+    assert labels["system"] == "Go to System health"
 
 
 def test_query_filters_by_title_and_id():

@@ -184,11 +184,25 @@ def test_announcement_guard_cannot_latch_on_a_failed_leg(console, monkeypatch):
     assert len(calls) == 6
 
 
-def test_breach_chip_shares_the_99_plus_cap(console, app):
+def test_breach_pip_shares_the_99_plus_cap(console, app):
+    """D5-P10: the top-bar indicator is the web's shield + bare pip
+    (html:885-888), so the COUNT lives on the pip, not in a button label."""
     console._set_breach_count(150)
     app.processEvents()
-    assert "99+" in console.top_breach_btn.text()
+    assert console.breach_pip_widget.text() == "99+"
     assert console.threat_pip.text() == "99+"
+    assert console.top_breach_btn.text() == ""          # icon only, like the web
+    # A bare number is nothing to a screen reader; the button still says it.
+    assert "150" in console.top_breach_btn.accessibleName()
+
+
+def test_breach_button_is_always_present(console, app):
+    """The site hides the PIP, never the button — a control that appears and
+    disappears reflows the top bar every time a breach lands."""
+    console._set_breach_count(0)
+    app.processEvents()
+    assert console.breach_pip_widget.text() == ""
+    assert console.top_breach_btn.accessibleName() == "Open threats"
 
 
 # ── breach pip ──────────────────────────────────────────────────────────────
@@ -311,9 +325,9 @@ def test_user_chip_shows_the_identity_initial(console, app):
 
 # ── teardown discipline (D0.1's rule) ───────────────────────────────────────
 def test_closing_stops_every_poller(console, app):
-    """One cadence drives everything: the 15 s console poll also refreshes the
-    chrome (see console_chrome.CHROME_REFRESH_SECONDS), so there is no separate
-    health timer to leak."""
+    """Every timer the console owns stops with it. Since D5-P9 that is the
+    15 s backend poll, the 30 s activity re-tick and the 60 s health ping —
+    the chrome no longer has a poller of its own."""
     console.show()
     app.processEvents()
     assert console._backend_poll.isActive()
@@ -340,3 +354,40 @@ def test_chrome_refresh_is_a_noop_while_hidden(console, app):
     before = len(console._workers)
     console._refresh_chrome()
     assert len(console._workers) == before
+
+
+# ── chrome cadence (D5-P9) ──────────────────────────────────────────────────
+def test_chrome_is_not_polled_in_the_background(console):
+    """The site has exactly two intervals — tickAgo (30 s) and pingHealth
+    (60 s), html:3878/4025. D3 additionally polled notifications, the breach
+    pip and the announcement banner on the 15 s backend timer: three requests
+    per cycle the web never makes. Live alerts do not depend on it — the fox
+    companion keeps its own 10 s breach poller."""
+    import dashboard
+    import inspect
+    source = inspect.getsource(dashboard.DashboardWindow)
+    assert "_backend_poll.timeout.connect(self._refresh_chrome)" not in source
+    assert "CHROME_REFRESH_SECONDS" not in source
+
+
+def test_the_live_dot_keeps_the_webs_own_60_second_ping(console):
+    from console_chrome import HEALTH_PING_SECONDS
+    assert HEALTH_PING_SECONDS == 60
+    assert console._health_timer.interval() == 60_000
+
+
+def test_navigation_refreshes_the_chrome(console):
+    """With the poll gone, navigating is what keeps the bell and pip current —
+    which is when the site refreshes them too."""
+    import dashboard
+    import inspect
+    assert "_refresh_chrome" in inspect.getsource(dashboard.DashboardWindow.go)
+
+
+def test_chrome_timers_stop_when_the_console_closes(console, app):
+    console.show()
+    app.processEvents()
+    assert console._health_timer.isActive()
+    console.close()
+    app.processEvents()
+    assert not console._health_timer.isActive()

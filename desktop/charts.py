@@ -74,6 +74,23 @@ _DEFAULT_HEIGHT = {
 
 _ANIM_MS = 220          # inside the 150-300 ms band
 _LEGEND_H = 22
+_TICK_GAP = 6           # minimum clear space between two axis labels, px
+
+
+def _text_bounds(rect: QRectF, flag, advance: float) -> tuple[float, float]:
+    """Where the glyphs of a label actually land inside its layout rect.
+
+    Axis labels are drawn into fixed 60px rects that the text rarely fills, so
+    the rect edges are not the text edges: a right-aligned label hugs the right
+    edge, a left-aligned one the left, and a CENTRED one sits inset by half the
+    leftover width on both sides. Collision detection has to compare glyphs.
+    """
+    if flag == Qt.AlignmentFlag.AlignRight:
+        return rect.right() - advance, rect.right()
+    if flag == Qt.AlignmentFlag.AlignHCenter:
+        inset = max(0.0, (rect.width() - advance) / 2.0)
+        return rect.left() + inset, rect.right() - inset
+    return rect.left(), rect.left() + advance
 
 
 def tone_color(tone: str | None, index: int = 0) -> str:
@@ -213,7 +230,19 @@ class FoxChart(QWidget):
                 [{"name": self.o.get("name"), "tone": self.o.get("tone"),
                   "values": [_num(r.get("value")) for r in rows]}])
 
+    def _state(self) -> str | None:
+        """The panel state its owner declared, if any (see panel_state.py).
+
+        Charts that predate the state pattern pass no state and keep inferring
+        emptiness from their data, so D2's callers are unaffected."""
+        return (self.o.get("empty") or {}).get("state")
+
     def _has_data(self) -> bool:
+        # A declared "loading" or "error" outranks whatever data is present: a
+        # gauge in particular always claims to have a value, and would
+        # otherwise paint a confident 0 over a request that never answered.
+        if self._state() in ("loading", "error"):
+            return False
         if self.type == "gauge":
             return True                       # a gauge always has a value
         if self.type == "donut":
@@ -307,7 +336,9 @@ class FoxChart(QWidget):
         f = QFont(pick_font("disp"), 9)
         f.setBold(True)
         p.setFont(f)
-        p.setPen(qcolor(WEB["ink2"]))
+        # "Couldn't load" is not the same news as "nothing yet" and must not
+        # read like it — an error states itself in the failure colour.
+        p.setPen(qcolor(BAD_RED if self._state() == "error" else WEB["ink2"]))
         # A narrow card (the grading donut beside a wide trend chart) is not
         # wide enough for the title, and drawText would spill it past both
         # edges — "Nothing graded yet" rendering as "othing graded ye".
@@ -474,13 +505,18 @@ class FoxChart(QWidget):
                 # The final tick is always drawn, so on a series whose length is
                 # just past a step boundary it lands on top of its neighbour and
                 # the two dates render as one unreadable smear. Skip it instead.
-                left = rect.right() - fm.horizontalAdvance(str(lab)) if flag == \
-                    Qt.AlignmentFlag.AlignRight else rect.left()
-                if drawn_right is not None and left < drawn_right + 6:
+                #
+                # The glyphs, not the layout rect, are what collide: every rect
+                # here is 60px wide but a label rarely fills it, and a CENTRED
+                # label sits inset by half the slack on each side. Measuring the
+                # rect edges (as the first cut did) overstates the box on the
+                # left and understates it on the right, so a genuine overlap
+                # could still slip through.
+                left, right = _text_bounds(rect, flag, fm.horizontalAdvance(str(lab)))
+                if drawn_right is not None and left < drawn_right + _TICK_GAP:
                     continue
                 p.drawText(rect, flag | Qt.AlignmentFlag.AlignVCenter, str(lab))
-                drawn_right = rect.left() + fm.horizontalAdvance(str(lab)) \
-                    if flag != Qt.AlignmentFlag.AlignRight else rect.right()
+                drawn_right = right
 
     def _paint_stacked(self, p: QPainter, r: QRectF):
         labels, series = self._norm()

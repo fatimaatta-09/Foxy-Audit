@@ -40,6 +40,23 @@ SECTIONS: list[tuple[str, str, str, str, str]] = [
     ("settings", "Settings", "Settings",             "Settings", "system"),
 ]
 
+#: The command palette's own wording, from the site's PAGES array
+#: (html:1723). It differs from the sidebar titles on purpose — "Home /
+#: overview" reads as a destination in a search list where "Overview" alone
+#: does not — and the two products must offer the same rows for the same keys.
+#: The desktop-only sections have no PAGES entry and fall back to their title.
+PALETTE_LABELS: dict[str, str] = {
+    "home":     "Home / overview",
+    "threats":  "Threat analytics",
+    "ledger":   "Audit ledger",
+    "verify":   "Verify a record",
+    "policy":   "Policy ruleset",
+    "export":   "Compliance passport",
+    "access":   "API keys & SDK",
+    "billing":  "Usage & billing",
+    "settings": "Settings",
+}
+
 # Desktop-only extras, kept at the bottom of the sidebar (plan §7).
 EXTRA_SECTIONS: list[tuple[str, str, str, str, str]] = [
     ("system",  "System",  "System health",        "System",  "system"),
@@ -56,15 +73,15 @@ QUICK_NAV = {
 }
 QUICK_NAV_WINDOW_MS = 1200          # the web's gTimer
 
-# DELIBERATE DIVERGENCE from the web (owner's call, logged in the relay's
-# OWNER_DECISIONS.md #1): the web pings health every 60 s and only refreshes
-# the rest of its chrome when you interact with it. The desktop refreshes ALL
-# chrome — live dot, notifications, breach pip, banner — on the console's
-# existing 15 s poll, because a companion app that sits on screen all day
-# should be more current than a browser tab you occasionally look at. There is
-# no separate health timer: one cadence, one place to reason about.
-CHROME_REFRESH_SECONDS = 15
-WEB_HEALTH_PING_SECONDS = 60        # what the web does (html:4025), for reference
+# The website's cadence, exactly. It has two intervals and no more:
+# tickAgo every 30 s (relative timestamps) and pingHealth every 60 s (the live
+# dot) — html:3878 and html:4025. Notifications, the breach pip and the
+# announcement banner are never polled there; they load when you open the
+# console and when you navigate. D3 polled all of them on a 15 s timer, which
+# meant three extra requests every 15 s for the whole time the window was open.
+# Live breach alerts do not depend on this: the fox companion keeps its own
+# 10 s breach poller.
+HEALTH_PING_SECONDS = 60            # html:4025 — the only chrome timer
 NOTIF_LIMIT = 30                    # /v1/notifications?limit=30
 BREACH_SCAN_LIMIT = 500             # /v1/logs/breaches?limit=500
 TOAST_MS = 2700
@@ -90,8 +107,12 @@ def palette_entries(query: str, *, org_id: str | None = None) -> list[dict]:
     out: list[dict] = []
 
     for sid, _label, title, _crumb, _icon in ALL_SECTIONS:
-        if not norm or lc in title.lower() or lc in sid:
-            out.append({"kind": "page", "label": f"Go to {title}", "arg": sid})
+        # PALETTE_LABELS, not the sidebar title: the site's palette has its own
+        # wording (its PAGES array, html:1723) and the two products should read
+        # identically here.
+        label = PALETTE_LABELS.get(sid, title)
+        if not norm or lc in label.lower() or lc in sid:
+            out.append({"kind": "page", "label": f"Go to {label}", "arg": sid})
 
     hexed = _HEX_RE.sub("", lc)
     if len(hexed) >= 8:
@@ -218,6 +239,37 @@ def relative_time(iso: str | None, *, now: datetime | None = None) -> str:
     if delta < 86400:
         return f"{int(delta // 3600)}h ago"
     return f"{int(delta // 86400)}d ago"
+
+
+def _local(iso: str | None) -> datetime | None:
+    """Parse an API timestamp into local time, or None if it isn't one."""
+    if not iso:
+        return None
+    try:
+        when = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone()
+
+
+def local_time(iso: str | None) -> str:
+    """Wall-clock time, the web's `toLocaleTimeString()` (html:2278, 2322).
+
+    Ledger rows carry this rather than a relative stamp: a row is evidence,
+    and "3h ago" is not something you can put next to a chain hash."""
+    when = _local(iso)
+    return "" if when is None else when.strftime("%X")
+
+
+def local_datetime(iso: str | None) -> str:
+    """Date and time, the web's `toLocaleString()` (html:3323, 3332).
+
+    Alerts use the fuller form because a breach two days ago and one two
+    minutes ago need to be told apart at a glance."""
+    when = _local(iso)
+    return "" if when is None else when.strftime("%x %X")
 
 
 # ── Shortcut cheat sheet (html:3999 NAV, rendered by ShortcutsOverlay) ──────

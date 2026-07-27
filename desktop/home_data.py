@@ -49,6 +49,22 @@ ACTIVITY_LIMIT = 30            # renderFeed slices to 30
 ACTIVITY_TICK_SECONDS = 30     # the web re-ticks [data-ago] every 30 s
 
 
+def dict_rows(value) -> list[dict]:
+    """The dict items of `value`, skipping anything else.
+
+    Most list payloads come back through a Pydantic `response_model`, so their
+    items are guaranteed dicts. `/v1/analytics/threats` is the exception — it
+    has no response_model at all (backend/app/routers/analytics.py:25) and
+    hand-builds its rows — and the Threats page is built entirely on it. A
+    single stray non-dict row there would take the page down with an
+    AttributeError, so the shaping skips what it cannot read rather than
+    trusting the wire.
+    """
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def _num(value) -> float:
     """The web's `+v||0`: unparseable is zero, never an exception."""
     try:
@@ -61,6 +77,33 @@ def _num(value) -> float:
 def thousands(value) -> str:
     """The web's money() — 1234 → '1,234'."""
     return f"{int(_num(value)):,}"
+
+
+def fmt_pct(value) -> str:
+    """The web's fmtPct (html:2220): `v==null?'—':v+'%'`.
+
+    Note it does NOT round — a clean rate of 97.4 reads "97.4%", and the
+    backend already rounds to one decimal. Rounding here would quietly
+    disagree with the website about the same number."""
+    if value is None:
+        return "—"
+    text = f"{float(value):g}" if isinstance(value, (int, float)) else str(value)
+    return f"{text}%"
+
+
+def fmt_verdict(seconds) -> str:
+    """The web's fmtVerdict (html:2217):
+    `sec==null?'—':(sec<1?Math.round(sec*1000)+'ms':sec.toFixed(1)+'s')`.
+
+    Sub-second latency is the good case and the one people care about, so it
+    is shown in whole milliseconds rather than as "0.4s". Zero is not null —
+    it renders "0ms", because a measured zero is a measurement."""
+    if seconds is None:
+        return "—"
+    value = _num(seconds)
+    if value < 1:
+        return f"{round(value * 1000)}ms"
+    return f"{value:.1f}s"
 
 
 def greeting_name(me: dict | None) -> str:
@@ -135,7 +178,7 @@ def coverage_view(data: dict | None) -> dict:
             ("No client identity",
              thousands(data.get("events_without_client_identity")), False),
         ],
-        "clients": [coverage_client_row(c) for c in (data.get("clients") or [])],
+        "clients": [coverage_client_row(c) for c in dict_rows(data.get("clients"))],
         "ok": True,
     }
 
@@ -206,16 +249,35 @@ def grading_slices(stats: dict | None) -> tuple[list[dict], int]:
     return slices, int(sum(s["value"] for s in slices))
 
 
+#: The web's Home stat row, in order (html:1029-1034). Tones follow the site:
+#: tile 0 is `.v fox`, tile 1 is `.v danger`, tiles 2 and 3 are unmodified.
+STAT_LABELS = ("Breaches stopped", "Open alerts", "Clean rate",
+               "Time to verdict")
+
+
 def stat_row(stats: dict | None, open_alerts: int | None = None) -> list[tuple]:
-    """The four home KPIs: (label, value, tone)."""
+    """The four home KPIs: (label, value, tone) — the web's row, in its order.
+
+    Tiles 0/2/3 come from GET /v1/stats and tile 1 from
+    GET /v1/analytics/threats, which is exactly how the site splits them: its
+    loadStats leaves dv[1] alone and loadThreats fills it (html:2228, 3350).
+    Open alerts (live) and breaches (all-time) are different measurements, so
+    one is never used to stand in for the other.
+
+    Every tile is an em dash until its own source answers. The site ships "0"
+    in the markup for tiles 0 and 1; here an unmeasured count is not shown as
+    zero.
+    """
     stats = stats if isinstance(stats, dict) else {}
+    breaches = stats.get("breaches")
     clean = stats.get("clean_rate")
     ttv = stats.get("avg_seconds_to_verdict")
     return [
-        ("Breaches stopped", thousands(stats.get("breaches")), "fox"),
-        ("Open alerts", "—" if open_alerts is None else thousands(open_alerts), "bad"),
-        ("Clean rate", "—" if clean is None else f"{round(_num(clean))}%", "ok"),
-        ("Time to verdict", "—" if ttv is None else f"{_num(ttv):.1f}s", "warn"),
+        (STAT_LABELS[0], "—" if breaches is None else thousands(breaches), "fox"),
+        (STAT_LABELS[1],
+         "—" if open_alerts is None else thousands(open_alerts), "bad"),
+        (STAT_LABELS[2], fmt_pct(clean), None),
+        (STAT_LABELS[3], fmt_verdict(ttv), None),
     ]
 
 
@@ -224,7 +286,7 @@ def onboarding_view(data: dict | None) -> dict | None:
     """None means "show nothing" — no data, or the user dismissed it."""
     if not isinstance(data, dict) or data.get("dismissed"):
         return None
-    steps = data.get("steps") if isinstance(data.get("steps"), list) else []
+    steps = dict_rows(data.get("steps"))
     # The server always sends `done`, but if it ever stops, counting the ticked
     # steps beats printing "0 / 3 done" above three green checkmarks.
     done = (int(_num(data.get("done"))) if data.get("done") is not None
@@ -278,7 +340,7 @@ def merge_activity(audit: list | None, logins: list | None) -> list[dict]:
     Each side degrades on its own: both endpoints are admin-only, so a member
     simply gets fewer rows rather than an error."""
     out: list[dict] = []
-    for entry in (audit if isinstance(audit, list) else []):
+    for entry in dict_rows(audit):
         kind = activity_kind(entry.get("action"))
         target = entry.get("target")
         actor = entry.get("actor_email") or ""
@@ -289,7 +351,7 @@ def merge_activity(audit: list | None, logins: list | None) -> list[dict]:
                      or entry.get("action") or "Account change",
             "sub": (f"{target} · " if target else "") + actor,
         })
-    for entry in (logins if isinstance(logins, list) else []):
+    for entry in dict_rows(logins):
         ok = bool(entry.get("success"))
         ip = entry.get("ip")
         out.append({
@@ -378,7 +440,7 @@ def recent_ledger_rows(data: dict | None) -> list[dict]:
     """Newest few /v1/logs rows, shaped for the Home preview card."""
     items = (data or {}).get("items") if isinstance(data, dict) else None
     rows = []
-    for item in (items or [])[:RECENT_LEDGER_LIMIT]:
+    for item in dict_rows(items)[:RECENT_LEDGER_LIMIT]:
         label, tone = verdict_of(item)
         rows.append({
             "seq": item.get("seq"),
@@ -404,7 +466,9 @@ def alert_rows(data: dict | None) -> list[dict]:
     """Shape /v1/analytics/threats.recent_high_risk for the Home alerts card."""
     raw = (data or {}).get("recent_high_risk") if isinstance(data, dict) else None
     rows = []
-    for alert in (raw or [])[:ALERT_LIMIT]:
+    # dict_rows, not `raw or []`: /v1/analytics/threats has no response_model,
+    # so nothing upstream guarantees these items are dicts.
+    for alert in dict_rows(raw)[:ALERT_LIMIT]:
         risk = int(_num(alert.get("risk_score")))
         reason = (alert.get("reason") or "").strip()
         rows.append({
@@ -429,4 +493,4 @@ def open_alert_count(data: dict | None) -> int | None:
     if total is not None:
         return int(_num(total))
     raw = data.get("recent_high_risk")
-    return len(raw) if isinstance(raw, list) else None
+    return len(dict_rows(raw)) if isinstance(raw, list) else None

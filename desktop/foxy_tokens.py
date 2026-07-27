@@ -405,13 +405,9 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 margin-top: 8px; }}
             QPushButton#navAuthBtn:hover {{ background: rgba(255,255,255,32); }}
             QPushButton#navAuthBtn:focus {{ border: 1px solid {t['accent']}; }}
-            QPushButton#breachChip {{
-                background: {BAD_RED}; color: #2a0303;
-                border: 1.5px solid rgba(0,0,0,120); border-radius: 9px;
-                padding: 5px 10px; font-family: '{mono}'; font-size: 9.5px;
-                font-weight: 800; letter-spacing: 0.4px; }}
-            QPushButton#breachChip:hover {{ background: #ff6b6b; }}
-            QPushButton#breachChip:focus {{ border: 1.5px solid {t['text']}; }}
+            /* D5-P10: #breachChip is gone — the top-bar breach indicator is
+               now the web's shield icon with a bare count pip, painted by
+               CtrlButton + Pip rather than styled as a labelled chip. */
             QPushButton#userChip {{
                 background: rgba(255,255,255,16); color: {t['text']};
                 border: 1px solid rgba(255,255,255,40); border-radius: 11px;
@@ -473,6 +469,29 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 border: 1px solid rgba(255,255,255,14); border-radius: 12px; padding: 9px 16px;
                 font-size: 12px; font-weight: 800; }}
             QPushButton#ctaBtn:hover {{ background: #d6743a; }}
+            /* D5-P7: both #ctaBtn widgets (Export passport, Check ledger) were
+               Tab-reachable with no visible focus. Swapping the border colour
+               keeps the 1px width, so focus never shifts the layout. */
+            QPushButton#ctaBtn:focus {{ border: 1px solid {WEB['ink']};
+                background: #d6743a; }}
+            /* The verification card is keyboard-operable (Space/Enter flips
+               it) but had no focus indicator at all — a card you can reach and
+               operate blind. Same 1px-for-1px swap. */
+            QFrame#verifCard:focus {{ border: 1px solid {WEB['ink']}; }}
+            /* D5-P2: the trend metric switcher. The web's `.seg` (html:186-192)
+               rendered as bare native OS buttons here, with the checked state
+               invisible — the active metric was not indicated at all. */
+            QWidget#seg {{ background: {WEB['surf2']};
+                border: 2px solid {WEB['bc']}; border-radius: 20px; }}
+            QPushButton#segBtn {{ border: none; background: transparent;
+                color: {WEB['muted']}; font-family: '{mono}'; font-size: 9.5px;
+                font-weight: 700; padding: 5px 11px; border-radius: 16px;
+                letter-spacing: 0.3px; }}
+            QPushButton#segBtn:hover {{ color: {WEB['ink']}; }}
+            QPushButton#segBtn:checked {{ background: {WEB['fox']};
+                color: #1a0900; }}
+            QPushButton#segBtn:focus {{ border: 2px solid {WEB['fox']}; }}
+            QPushButton#segBtn:disabled {{ color: {WEB['muted2']}; }}
             QFrame#hero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #c96a2f, stop:0.62 #a4521d, stop:1 #6e3411);

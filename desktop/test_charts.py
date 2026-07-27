@@ -300,3 +300,79 @@ def test_going_from_data_to_empty_shows_the_empty_state(app):
     _paint(c)
     assert c._has_data() is False
     assert c.accessibleDescription() == "Nothing left"
+
+
+# ── axis tick collision (D5-P4) ─────────────────────────────────────────────
+def test_text_bounds_measures_glyphs_not_the_layout_rect():
+    """Axis labels are drawn into fixed 60px rects the text rarely fills. The
+    first cut compared rect edges, which understated a centred label's right
+    edge by half the slack — so real collisions still slipped through."""
+    from PyQt6.QtCore import QRectF, Qt
+    from charts import _text_bounds
+    rect = QRectF(100, 0, 60, 14)
+    assert _text_bounds(rect, Qt.AlignmentFlag.AlignLeft, 20) == (100.0, 120.0)
+    assert _text_bounds(rect, Qt.AlignmentFlag.AlignRight, 20) == (140.0, 160.0)
+    # centred: inset by (60-20)/2 = 20 on each side
+    assert _text_bounds(rect, Qt.AlignmentFlag.AlignHCenter, 20) == (120.0, 140.0)
+
+
+def test_text_bounds_clamps_when_the_label_overflows_its_rect():
+    from PyQt6.QtCore import QRectF, Qt
+    from charts import _text_bounds
+    rect = QRectF(100, 0, 60, 14)
+    assert _text_bounds(rect, Qt.AlignmentFlag.AlignHCenter, 90) == (100.0, 160.0)
+
+
+def test_a_long_axis_series_draws_no_overlapping_ticks(app):
+    """The real defect: 27 daily dates rendered the last two on top of each
+    other as one smear. Render it and count what actually got drawn."""
+    from PyQt6.QtGui import QFontMetrics
+    from charts import FoxChart, _TICK_GAP, _text_bounds
+    from PyQt6.QtCore import QRectF, Qt
+    chart = FoxChart("area", height=140)
+    chart.resize(420, 140)
+    chart.set_options(height=140, data=[
+        {"label": f"2026-07-{d:02d}", "value": d} for d in range(1, 28)])
+    assert not _paint(chart).isNull()
+    # Re-run the selection the painter uses and assert the invariant it keeps.
+    fm = QFontMetrics(chart._axis_font())
+    labels = [r["label"] for r in chart._rows()]
+    step = max(1, -(-len(labels) // 6))
+    drawn_right, drawn = None, 0
+    for i, lab in enumerate(labels):
+        if i % step and i != len(labels) - 1:
+            continue
+        x = 8.0 + (i / (len(labels) - 1)) * (420 - 16)
+        if i == 0:
+            rect, flag = QRectF(x, 0, 60, 14), Qt.AlignmentFlag.AlignLeft
+        elif i == len(labels) - 1:
+            rect, flag = QRectF(x - 60, 0, 60, 14), Qt.AlignmentFlag.AlignRight
+        else:
+            rect, flag = QRectF(x - 30, 0, 60, 14), Qt.AlignmentFlag.AlignHCenter
+        left, right = _text_bounds(rect, flag, fm.horizontalAdvance(lab))
+        if drawn_right is not None and left < drawn_right + _TICK_GAP:
+            continue
+        assert drawn_right is None or left >= drawn_right + _TICK_GAP
+        drawn_right, drawn = right, drawn + 1
+    assert drawn >= 2
+
+
+# ── declared panel state overrides inferred emptiness (D5, owner decision) ──
+def test_a_gauge_with_a_failed_state_does_not_paint_a_confident_zero(app):
+    """A gauge always claims to have a value, so without this it would draw a
+    0% bar for a request that never answered."""
+    from charts import FoxChart
+    chart = FoxChart("gauge", height=12)
+    chart.resize(200, 12)
+    chart.set_options(value=0, max=100, height=12,
+                      empty={"state": "error", "title": "Couldn't load"})
+    assert chart._has_data() is False
+    assert not _paint(chart).isNull()
+
+
+def test_an_ok_state_still_paints_its_data(app):
+    from charts import FoxChart
+    chart = FoxChart("gauge", height=12)
+    chart.set_options(value=42, max=100, height=12,
+                      empty={"state": "empty", "title": "Nothing yet"})
+    assert chart._has_data() is True

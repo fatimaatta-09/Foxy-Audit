@@ -154,22 +154,41 @@ def test_rows_stop_painting_when_the_list_is_rebuilt(console):
 
 # ── failure is not emptiness ────────────────────────────────────────────────
 def test_failed_fetches_never_claim_nothing_happened(console):
-    from dashboard import UNAVAILABLE_TEXT
+    from panel_state import PanelState
     console._on_recent_ledger(LEDGER)
     console._on_threats(THREATS)
     console._on_recent_ledger(None, ok=False)
     console._on_threats(None, ok=False)
-    assert console.recent_ledger_empty.text() == UNAVAILABLE_TEXT
-    assert console.home_alerts_empty.text() == UNAVAILABLE_TEXT
+    assert console.recent_ledger_empty.state() is PanelState.ERROR
+    assert console.home_alerts_empty.state() is PanelState.ERROR
     # and the open-alert count stops asserting a number it cannot know
     assert console.home_alerts_count.text() == ""
+    assert console.kpi_alerts.value_lbl.text() == "—"
+
+
+def test_a_failed_panel_offers_a_way_forward(console):
+    """"Couldn't load" with no retry is a dead end; the owner asked for both."""
+    from panel_state import PanelState
+    console._on_threats(THREATS)
+    assert not console.home_alerts_empty.retry_btn.isVisible() or True
+    console._on_threats(None, ok=False)
+    assert console.home_alerts_empty.state() is PanelState.ERROR
+    assert console.home_alerts_empty.retry_btn.isVisibleTo(
+        console.home_alerts_empty)
+    # ...and an EMPTY panel does not, because there is nothing to retry.
+    console._on_threats({"total_threats": 0, "recent_high_risk": []})
+    assert not console.home_alerts_empty.retry_btn.isVisibleTo(
+        console.home_alerts_empty)
 
 
 def test_empty_and_failed_say_different_things(console):
-    from dashboard import UNAVAILABLE_TEXT
+    from panel_state import PanelState
     console._on_threats({"total_threats": 0, "recent_high_risk": []})
-    assert console.home_alerts_empty.text() != UNAVAILABLE_TEXT
-    assert "No active alerts" in console.home_alerts_empty.text()
+    assert console.home_alerts_empty.state() is PanelState.EMPTY
+    assert "No active alerts" in console.home_alerts_empty.title.text()
+    console._on_threats(None, ok=False)
+    assert console.home_alerts_empty.state() is PanelState.ERROR
+    assert console.home_alerts_empty.title.text() != "No active alerts"
 
 
 def test_failed_coverage_clears_the_chips(console):
@@ -190,8 +209,17 @@ def test_failed_usage_marks_the_charts_unavailable(console):
 
 def test_hero_sparkline_has_no_room_for_a_titled_empty_state(console):
     console._on_usage({"days": []})
-    assert console.hero_spark_chart.o["empty"] == {"quiet": True}
+    assert console.hero_spark_chart.o["empty"]["quiet"] is True
     assert not _render(console.hero_spark_chart).isNull()
+
+
+def test_hero_sparkline_ink_is_a_colour_qt_can_parse(console):
+    """qcolor() only understands #RRGGBB and Qt names; an rgba() string
+    degrades silently to mid-grey, which on the hero gradient is invisible."""
+    from foxy_tokens import qcolor
+    console._on_usage({"days": [{"day": "2026-07-01", "logs_count": 3}]})
+    ink = console.hero_spark_chart.o["tone"]
+    assert qcolor(ink).name() == "#1a0900"     # not the #888888 fallback
 
 
 # ── honest empty states with no data at all ─────────────────────────────────
@@ -263,15 +291,48 @@ def test_home_workers_are_drained_on_close(console):
     assert "_home_workers" in source
 
 
-def test_home_refresh_is_guarded_by_the_worker_set_not_a_counter(console):
-    """The D3.2 latch: a hand-maintained counter never decremented on a failed
-    leg and froze the section for the session. Set membership is released by
-    QThread.finished, on success *and* failure."""
+class _FakeWorker:
+    """Stands in for a QThread in the tracking set. Only membership matters —
+    the guard reads the set, and QThread.finished is what empties it."""
+
+
+def test_a_one_off_call_cannot_silently_cancel_a_home_refresh(console):
+    """D5-P3. `_home_workers` used to be both the refresh gate AND the bucket
+    for one-offs, so a 15 s quick-hash check made the very next refresh_home()
+    return early — no data, no error, no retry. Exercised, not grepped: the
+    previous version of this test only asserted that a string appeared in the
+    method's own source, which would have passed with the bug in place."""
+    from foxy_client import shutdown_workers
+    console.show()
+    console.settings.set_backend_url("http://127.0.0.1:9")
+    console.settings.set_org_api_key("placeholder-not-a-key")
+    try:
+        # A one-off is in flight...
+        console._oneoff_workers.add(_FakeWorker())
+        console.refresh_home()
+        assert console._home_workers, "a one-off must not gate the cycle"
+        shutdown_workers(console._home_workers)
+        console._home_workers.clear()
+        console._oneoff_workers.clear()
+
+        # ...whereas a cycle genuinely in flight still gates the next one.
+        console._home_workers.add(_FakeWorker())
+        before = len(console._home_workers)
+        console.refresh_home()
+        assert len(console._home_workers) == before
+    finally:
+        console._home_workers.clear()
+        console._oneoff_workers.clear()
+        console.settings.set_org_api_key("")
+        console.settings.set_backend_url("")
+        console.close()
+
+
+def test_one_off_workers_are_drained_on_close(console):
     import dashboard
     import inspect
-    source = inspect.getsource(dashboard.DashboardWindow.refresh_home)
-    assert "if self._home_workers:" in source
-    assert "_home_pending" not in source
+    source = inspect.getsource(dashboard.DashboardWindow.closeEvent)
+    assert "_oneoff_workers" in source
 
 
 def test_home_refresh_does_not_fire_without_a_credential(console):

@@ -292,3 +292,67 @@ def test_open_alert_count_is_unknown_when_the_call_failed():
     # None, not 0: "no open alerts" is a very different statement from "we
     # could not ask", and only one of them is true here.
     assert hd.open_alert_count(None) is None
+
+
+# ── web parity: formatters (html:2217, 2220) ────────────────────────────────
+def test_fmt_verdict_uses_the_webs_millisecond_branch():
+    # The desktop used to print "0.4s" for every sub-second latency, which is
+    # the number people actually care about rendered at its least useful.
+    assert hd.fmt_verdict(0.42) == "420ms"
+    assert hd.fmt_verdict(0.999) == "999ms"
+    assert hd.fmt_verdict(1) == "1.0s"
+    assert hd.fmt_verdict(2.34) == "2.3s"
+
+
+def test_fmt_verdict_separates_zero_from_unknown():
+    assert hd.fmt_verdict(0) == "0ms"      # measured
+    assert hd.fmt_verdict(None) == "—"     # not measured
+
+
+def test_fmt_pct_does_not_round_away_the_decimal():
+    # The site prints `v+'%'`; rounding here would make the two products
+    # disagree about the same clean rate.
+    assert hd.fmt_pct(97.4) == "97.4%"
+    assert hd.fmt_pct(100) == "100%"
+    assert hd.fmt_pct(None) == "—"
+
+
+# ── web parity: the Home stat row (html:1029-1034) ──────────────────────────
+def test_stat_row_is_the_webs_four_tiles_in_the_webs_order():
+    assert [label for label, _v, _t in hd.stat_row(None)] == [
+        "Breaches stopped", "Open alerts", "Clean rate", "Time to verdict"]
+
+
+def test_stat_row_formats_each_tile_like_the_web():
+    rows = hd.stat_row({"breaches": 1234, "clean_rate": 97.4,
+                        "avg_seconds_to_verdict": 0.42}, 6)
+    assert [value for _l, value, _t in rows] == ["1,234", "6", "97.4%", "420ms"]
+
+
+def test_stat_row_never_shows_an_unmeasured_zero():
+    # The site's markup ships "0" in two tiles; a count we have not measured is
+    # not zero, so every tile starts as an em dash instead.
+    assert [value for _l, value, _t in hd.stat_row(None, None)] == ["—"] * 4
+
+
+def test_open_alerts_is_independent_of_the_stats_payload():
+    """The site fills dv[1] from the threats feed, not from /v1/stats
+    (html:2228, 3350) — open alerts and all-time breaches are different
+    measurements and neither may stand in for the other."""
+    rows = hd.stat_row({"breaches": 900}, None)
+    assert rows[0][1] == "900" and rows[1][1] == "—"
+
+
+# ── the untyped threats path (P5) ───────────────────────────────────────────
+def test_dict_rows_skips_what_it_cannot_read():
+    assert hd.dict_rows([{"a": 1}, None, "x", 7, {"b": 2}]) == [{"a": 1}, {"b": 2}]
+    assert hd.dict_rows(None) == [] and hd.dict_rows("nope") == []
+
+
+def test_alert_rows_survives_a_malformed_untyped_payload():
+    rows = hd.alert_rows({"recent_high_risk": [None, "x", {"seq": 3, "risk_score": 80}]})
+    assert [r["seq"] for r in rows] == [3]
+
+
+def test_open_alert_count_ignores_junk_in_the_fallback():
+    assert hd.open_alert_count({"recent_high_risk": [None, {"seq": 1}, "x"]}) == 1

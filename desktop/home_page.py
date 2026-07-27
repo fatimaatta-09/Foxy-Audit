@@ -16,15 +16,17 @@ ledger · active alerts + gauges + quick actions · recent activity.
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QFontMetrics
 from PyQt6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton,
     QScrollArea, QSizePolicy, QStackedLayout, QVBoxLayout, QWidget,
 )
 
 from charts import FoxChart
-from console_chrome import relative_time
-from foxy_tokens import BAD_RED, OK_GREEN, RADIUS, WARN_AMBER, WEB, pick_font, qcolor
+from console_chrome import local_datetime, local_time, relative_time
+from foxy_tokens import BAD_RED, OK_GREEN, RADIUS, WARN_AMBER, WEB, pick_font
+from panel_state import PanelState, StatusStrip
 import home_data as hd
 
 
@@ -41,6 +43,28 @@ def _label(text: str, *, size: float = 12.0, bold: bool = False,
         f" font-size: {size}px; font-weight: {weight};{track}"
         f" background: transparent;")
     return lbl
+
+
+def _elide_to_width(label: QLabel, text: str):
+    """Keep `text` readable in a narrow, stretch-sized column.
+
+    An `Ignored` size policy lets QLabel shrink below its hint, but it then
+    hard-clips mid-character with no ellipsis and no way to read the rest.
+    Eliding marks the truncation; the tooltip recovers the full value."""
+    def _apply(width: int):
+        if width > 0:
+            label.setText(QFontMetrics(label.font()).elidedText(
+                text, Qt.TextElideMode.ElideRight, width))
+
+    label.setText(text)
+    label.setToolTip(text)
+    original_resize = label.resizeEvent
+
+    def _on_resize(event):
+        original_resize(event)
+        _apply(event.size().width())
+
+    label.resizeEvent = _on_resize
 
 
 def _card(*, padded: bool = True) -> tuple[QFrame, QVBoxLayout]:
@@ -93,7 +117,11 @@ def _stat_tile(label: str, value: str = "—", tone: str | None = None) -> tuple
               "warn": WARN_AMBER}.get(tone or "", WEB["ink"])
     value_lbl = _label(value, size=20, bold=True, colour=colour)
     lay.addWidget(value_lbl)
-    lay.addWidget(_label(label.upper(), size=8.5, bold=True, colour=WEB["muted"],
+    # ink2, not muted: muted #8c8174 on the #221d18 tile is 4.38:1, under the
+    # 4.5:1 floor at 8.5px. ink2 #cdc2b3 is 9.52:1 on the same surface. The WEB
+    # dict is a byte-for-byte port of the site's :root and must not drift, so
+    # the fix is which token this picks — not what the token holds.
+    lay.addWidget(_label(label.upper(), size=8.5, bold=True, colour=WEB["ink2"],
                          mono=True, spacing=0.5))
     return frame, value_lbl
 
@@ -355,8 +383,8 @@ class HomeSections:
         o.coverage_table.addLayout(header)
         o.coverage_rows_start = o.coverage_table.count()
         lay.addLayout(o.coverage_table)
-        o.coverage_empty = _label("No identified SDK clients yet.",
-                                  size=11, colour=WEB["muted"])
+        o.coverage_empty = StatusStrip(compact=True)
+        o.coverage_empty.retry.connect(o.refresh_home)
         lay.addWidget(o.coverage_empty)
 
         lay.addWidget(_label(
@@ -375,17 +403,32 @@ class HomeSections:
         head = QHBoxLayout()
         head.addWidget(_label("Usage — last 90 days", size=12, bold=True))
         head.addStretch()
+        # A real segmented control (web `.seg`, html:186-192 / 1041-1045): one
+        # pill-shaped container holding the three buttons, exclusive selection,
+        # styled by #seg / #segBtn in console_shell_qss.
+        o.trend_seg = QWidget()
+        o.trend_seg.setObjectName("seg")
+        seg_lay = QHBoxLayout(o.trend_seg)
+        seg_lay.setContentsMargins(3, 3, 3, 3)
+        seg_lay.setSpacing(2)
+        o.trend_group = QButtonGroup(o.trend_seg)
+        o.trend_group.setExclusive(True)
         o.trend_buttons = {}
         for metric, spec in hd.TREND_METRICS.items():
-            btn = QPushButton(spec["label"])
+            btn = QPushButton(spec["label"].upper())   # .seg uppercases in CSS
             btn.setObjectName("segBtn")
             btn.setCheckable(True)
-            btn.setMinimumHeight(44)
+            btn.setMinimumHeight(30)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setChecked(metric == "logs")
+            # The checked pill is the only selection cue, so it has to be
+            # spelled out for anything not looking at pixels.
+            btn.setAccessibleName(f"Show {spec['label'].lower()}")
             btn.clicked.connect(lambda _c=False, m=metric: o.set_trend_metric(m))
+            o.trend_group.addButton(btn)
             o.trend_buttons[metric] = btn
-            head.addWidget(btn)
+            seg_lay.addWidget(btn)
+        head.addWidget(o.trend_seg)
         lay.addLayout(head)
         o.usage_trend = FoxChart(
             "area", height=200,
@@ -418,9 +461,10 @@ class HomeSections:
         card, lay = _card()
         o.recent_ledger = QVBoxLayout()
         o.recent_ledger.setSpacing(0)
-        o.recent_ledger_empty = _label(
-            "No ledger records yet — rows appear as your SDK reports "
-            "interactions.", size=11.5, colour=WEB["muted"], wrap=True)
+        # A StatusStrip rather than a label: it distinguishes "nothing yet"
+        # from "couldn't load", and carries the retry the second case needs.
+        o.recent_ledger_empty = StatusStrip(compact=True)
+        o.recent_ledger_empty.retry.connect(o.refresh_home)
         o.recent_ledger.addWidget(o.recent_ledger_empty)
         lay.addLayout(o.recent_ledger)
         col.addWidget(card)
@@ -445,9 +489,8 @@ class HomeSections:
         card, lay = _card()
         o.home_alerts = QVBoxLayout()
         o.home_alerts.setSpacing(6)
-        o.home_alerts_empty = _label(
-            "No active alerts — nothing has breached policy.",
-            size=11.5, colour=WEB["muted"], wrap=True)
+        o.home_alerts_empty = StatusStrip(compact=True)
+        o.home_alerts_empty.retry.connect(o.refresh_home)
         o.home_alerts.addWidget(o.home_alerts_empty)
         lay.addLayout(o.home_alerts)
 
@@ -525,10 +568,8 @@ class HomeSections:
 
         o.activity_list = QVBoxLayout()
         o.activity_list.setSpacing(0)
-        o.activity_empty = _label(
-            "No account activity yet — key changes and sign-ins show up here "
-            "as they happen.", size=11.5, colour=WEB["muted"], wrap=True)
-        o.activity_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        o.activity_empty = StatusStrip(compact=True)
+        o.activity_empty.retry.connect(o.refresh_activity)
         o.activity_list.addWidget(o.activity_empty)
         lay.addLayout(o.activity_list)
         o.activity_stamp = _label("", size=9, colour=WEB["muted"], mono=True)
@@ -588,8 +629,12 @@ def coverage_row(client: dict) -> QWidget:
     lay = QHBoxLayout(row)
     lay.setContentsMargins(0, 7, 0, 7)
     lay.setSpacing(8)
-    ident = _label(client["client_id"], size=10.5, mono=True, colour=WEB["ink2"])
+    # A client id can be long and the column is narrow. Ignored size policy
+    # alone let QLabel hard-clip mid-character with no ellipsis and no way to
+    # read the rest; elide marks the truncation and the tooltip recovers it.
+    ident = _label("", size=10.5, mono=True, colour=WEB["ink2"])
     ident.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    _elide_to_width(ident, client["client_id"])
     lay.addWidget(ident, 3)
     lay.addWidget(_label(client["events"], size=10.5, mono=True), 1)
     seq_text = client["seq"] + (f" ({client['gap_text']})" if client["gap_text"] else "")
@@ -652,10 +697,11 @@ def ledger_row(row: dict) -> QWidget:
     right.setSpacing(2)
     verdict = _label(row["verdict"], size=9.5, bold=True, colour=tone, mono=True)
     verdict.setAlignment(Qt.AlignmentFlag.AlignRight)
-    when = _label(relative_time(row["when"]) if row["when"] else "",
-                  size=9, colour=WEB["muted"], mono=True)
+    # Absolute local time, like the web's recentRow (html:2322,
+    # `new Date(it.created_at).toLocaleTimeString()`). Only the activity feed
+    # is relative; a ledger row is evidence and wants a wall-clock stamp.
+    when = _label(local_time(row["when"]), size=9, colour=WEB["muted"], mono=True)
     when.setAlignment(Qt.AlignmentFlag.AlignRight)
-    when.setProperty("iso", row["when"])
     right.addWidget(verdict)
     right.addWidget(when)
     lay.addLayout(right)
@@ -689,9 +735,9 @@ def alert_row(row: dict) -> QWidget:
     if row["reason"]:
         body.addWidget(_label(row["reason"], size=10.5, colour=WEB["muted"],
                               wrap=True))
-    stamp = _label(f"#{row['seq']} · {relative_time(row['when']) if row['when'] else ''}",
+    # Date AND time, like the web's alertRow (html:3323, `toLocaleString()`).
+    stamp = _label(f"#{row['seq']} · {local_datetime(row['when'])}",
                    size=9, colour=WEB["muted"], mono=True)
-    stamp.setProperty("iso", row["when"])
     body.addWidget(stamp)
     lay.addLayout(body, 1)
     return frame
