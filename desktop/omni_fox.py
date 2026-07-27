@@ -19,7 +19,18 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QPoint, QRect, pyqtSignal, QThread
 from PyQt6.QtGui import QPixmap, QTransform, QCursor, QPainter, QColor, QIcon
-from pynput import keyboard, mouse
+try:
+    from pynput import keyboard, mouse
+except Exception as _pynput_exc:   # noqa: BLE001 — see below
+    # pynput binds to a real input backend AT IMPORT TIME and raises when there
+    # isn't one: a headless Linux box (no X connection), a Wayland session it
+    # can't hook, or macOS before accessibility permission is granted. Typing
+    # and scroll reactions are a companion nicety — losing them must not stop
+    # the app from starting, polling breaches, or opening the console.
+    keyboard = mouse = None
+    _PYNPUT_ERROR = str(_pynput_exc)
+else:
+    _PYNPUT_ERROR = ""
 
 from clay_chat_popup import ChatPopup
 from fox_settings import FoxSettings
@@ -77,12 +88,21 @@ class GlobalSensors(QThread):
     hardware_update_signal = pyqtSignal(dict)
 
     def run(self):
-        kb_listener    = keyboard.Listener(
-            on_press=lambda k: self.typing_signal.emit())
-        mouse_listener = mouse.Listener(
-            on_scroll=lambda x, y, dx, dy: self.scrolling_signal.emit())
-        kb_listener.start()
-        mouse_listener.start()
+        kb_listener = mouse_listener = None
+        if keyboard is not None and mouse is not None:
+            try:
+                kb_listener = keyboard.Listener(
+                    on_press=lambda k: self.typing_signal.emit())
+                mouse_listener = mouse.Listener(
+                    on_scroll=lambda x, y, dx, dy: self.scrolling_signal.emit())
+                kb_listener.start()
+                mouse_listener.start()
+            except Exception as exc:        # noqa: BLE001 — same story at start()
+                print(f"[foxy] input reactions disabled: {exc}", file=sys.stderr)
+                kb_listener = mouse_listener = None
+        else:
+            print(f"[foxy] input reactions unavailable: {_PYNPUT_ERROR}",
+                  file=sys.stderr)
 
         while not self.isInterruptionRequested():
             cpu  = psutil.cpu_percent(interval=None)
@@ -96,8 +116,10 @@ class GlobalSensors(QThread):
             })
             time.sleep(3)
 
-        kb_listener.stop()
-        mouse_listener.stop()
+        if kb_listener is not None:
+            kb_listener.stop()
+        if mouse_listener is not None:
+            mouse_listener.stop()
 
 
 # ── Backend breach poller ──────────────────────────────────────────────────

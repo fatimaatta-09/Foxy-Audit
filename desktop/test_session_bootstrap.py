@@ -14,40 +14,12 @@ the real ones, pulled off the class.
 
 from __future__ import annotations
 
-import sys
-import types
-
 import pytest
 
-# omni_fox imports pynput at module scope, and pynput refuses to import on a
-# headless Linux box ("failed to acquire X connection"). Nothing here uses the
-# input listeners, so stand them in before the import — the alternative is
-# dragging an X server into CI to satisfy a module we never call.
-_pynput = types.ModuleType("pynput")
-_keyboard = types.ModuleType("pynput.keyboard")
-_mouse = types.ModuleType("pynput.mouse")
-
-
-class _Listener:
-    def __init__(self, **kwargs):
-        pass
-
-    def start(self):
-        pass
-
-    def stop(self):
-        pass
-
-
-_keyboard.Listener = _Listener
-_mouse.Listener = _Listener
-_pynput.keyboard = _keyboard
-_pynput.mouse = _mouse
-sys.modules.setdefault("pynput", _pynput)
-sys.modules.setdefault("pynput.keyboard", _keyboard)
-sys.modules.setdefault("pynput.mouse", _mouse)
-
-import omni_fox  # noqa: E402  (must follow the stubs above)
+# Imports cleanly even where pynput cannot bind an input backend (headless
+# Linux, Wayland, macOS without accessibility permission) — omni_fox guards
+# that import and degrades to "no typing/scroll reactions" instead of dying.
+import omni_fox
 
 
 class _Dashboard:
