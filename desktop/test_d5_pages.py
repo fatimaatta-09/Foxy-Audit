@@ -8,6 +8,8 @@ detail behave, and that neither page's workers can gate anything.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtGui import QKeyEvent, QPixmap
@@ -16,6 +18,8 @@ from PyQt6.QtWidgets import QApplication
 import ledger_data as ld
 import threats_data as td
 from panel_state import PanelState
+
+_HERE = Path(__file__).resolve().parent
 
 
 # ══ shaping: threats ════════════════════════════════════════════════════════
@@ -413,8 +417,13 @@ def test_no_page_body_sets_a_selectorless_background():
     `QPushButton#segBtn:checked { background: fox }`. Every page body must
     scope its rule."""
     import re
+    # Resolved against THIS file, not the working directory: CI runs
+    # `python -m pytest desktop -q` from the repo root, where a bare
+    # "home_page.py" does not exist. Running from inside desktop/ is what hid
+    # it locally — the same shape as the pynput incident, where a green local
+    # suite said nothing because the invocation differed from the runner's.
     for module in ("home_page.py", "threats_page.py", "ledger_page.py"):
-        with open(module, encoding="utf-8") as fh:
+        with open(_HERE / module, encoding="utf-8") as fh:
             source = fh.read()
         for call in re.findall(r"setStyleSheet\(\s*([\"'].*?[\"'])\s*\)", source):
             assert "{" in call, (
