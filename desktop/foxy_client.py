@@ -68,6 +68,39 @@ _COOKIES_SECRET = "session_cookies"
 
 
 # ── Errors ──────────────────────────────────────────────────────────────────
+#: How many field errors a 422 summary names before it stops. A validation
+#: failure the user can act on is one or two fields; a list of twelve is a
+#: wall of text in a status line.
+_VALIDATION_LIMIT = 3
+
+
+def _validation_summary(detail: list) -> str:
+    """A FastAPI 422 body, summarised — WITHOUT the value that was rejected.
+
+    FastAPI has no custom RequestValidationError handler here, so `detail` is
+    a list of Pydantic error dicts, and **Pydantic echoes the offending value
+    back in `input`** (and sometimes in `ctx`). Interpolating the list put a
+    rejected API key on screen in cleartext, straight through the
+    password-masked field it was typed into.
+
+    Only `loc`, `msg` and `type` are ever read. `input` and `ctx` are not
+    touched, here or anywhere downstream.
+    """
+    parts = []
+    for item in detail[:_VALIDATION_LIMIT]:
+        if not isinstance(item, dict):
+            parts.append("invalid value")
+            continue
+        where = ".".join(str(p) for p in (item.get("loc") or [])
+                         if p not in ("body", "query", "path"))
+        why = str(item.get("msg") or item.get("type") or "is invalid")
+        parts.append(f"{where}: {why}" if where else why)
+    extra = len(detail) - _VALIDATION_LIMIT
+    if extra > 0:
+        parts.append(f"(+{extra} more)")
+    return "; ".join(parts) or "the request was rejected as invalid"
+
+
 class ApiError(Exception):
     """Any non-2xx backend response (or transport failure, status=0)."""
 
@@ -90,6 +123,8 @@ class ApiError(Exception):
             # human can act on. The machine-readable fields do not survive —
             # only a str crosses the worker signal boundary (see ApiWorker).
             detail = detail.get("message") or detail.get("code") or ""
+        elif isinstance(detail, list):
+            detail = _validation_summary(detail)
         if self.status:
             return f"HTTP {self.status}: {detail or self.reason}"
         return detail or self.reason or "connection failed"

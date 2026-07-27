@@ -477,11 +477,21 @@ class KeyRow(QWidget):
         self.field.setEchoMode(QLineEdit.EchoMode.Password)
         self.field.setAccessibleName(title)
         self.field.setMinimumHeight(44)
+        # The server's cap (policies.py:52-53). Without it an over-length
+        # paste became a request, and the 422 that came back quoted the
+        # rejected key — putting it on screen in cleartext.
+        self.field.setMaxLength(pd.KEY_MAX)
         self.field.setStyleSheet(_input_qss())
         lay.addWidget(self.field)
 
         self.help = _label(pd.KEY_HELP, size=10, colour=WEB["muted"], wrap=True)
         lay.addWidget(self.help)
+        # Its own error line: a key problem reported under the webhook field
+        # in the other card is an error message about something the user is
+        # not looking at.
+        self.error = _label("", size=10.5, colour=BAD_RED, wrap=True)
+        self.error.hide()
+        lay.addWidget(self.error)
 
     def apply(self, view: dict, *, editable: bool = True):
         """Render one `policy_data.key_field()` result."""
@@ -535,7 +545,14 @@ def _input_qss() -> str:
             f" font-size: 11px; }}"
             f"QLineEdit:focus {{ border-color: {WEB['fox']}; }}"
             f"QLineEdit:disabled {{ color: {WEB['muted2']};"
-            f" background: {WEB['surf3']}; }}")
+            f" background: {WEB['surf3']}; }}"
+            # After the :focus rule AND matching it, because in Qt a
+            # pseudo-class selector outranks a plain type selector whatever
+            # the order — so a bare `QLineEdit { border-color: red }` loses to
+            # `QLineEdit:focus`, and the error handler focuses the field it
+            # just marked. Same pattern, same reason, as auth_windows.py:203.
+            f"QLineEdit[invalid=\"true\"], QLineEdit[invalid=\"true\"]:focus"
+            f" {{ border-color: {BAD_RED}; }}")
 
 
 def _spin_qss() -> str:

@@ -27,6 +27,13 @@ to be holding one — and it never is.
 
 from __future__ import annotations
 
+import re
+
+#: What the server accepts for a provider key (policies.py:52-53). Mirrored
+#: here so an over-length paste is refused before it becomes a request: the
+#: 422 that came back for one carried the rejected key in its `input` field.
+KEY_MAX = 512
+
 #: The three content safeguards, in the web's order (html:1311-1313).
 SAFEGUARDS = (
     {"key": "pii_detection",
@@ -233,6 +240,50 @@ def save_body(form: dict, judge: dict, *,
             body[field] = ""                # clear
         # else: omitted on purpose — see the docstring.
     return body
+
+
+# ── keeping key material off the screen ─────────────────────────────────────
+REDACTED = "<redacted>"
+
+#: Both providers' key prefixes. A backstop only — the value-based pass below
+#: is the one that actually knows what the secret is.
+_KEY_SHAPED = re.compile(r"(?:AIza|sk-)[A-Za-z0-9_\-]{6,}")
+
+KEY_TOO_LONG = (
+    f"That does not look like an API key — it is at or over the "
+    f"{KEY_MAX}-character limit. Check what you pasted; nothing was sent.")
+
+
+def key_too_long(typed: dict | None) -> str | None:
+    """The provider whose typed key is at or over the cap, or None.
+
+    At the cap counts, not just over it: the field stops accepting text at
+    `KEY_MAX`, so a paste that hit the limit was silently clipped, and a
+    clipped key is a wrong key that the server would happily store.
+    """
+    for provider, value in (typed or {}).items():
+        if len(str(value or "").strip()) >= KEY_MAX:
+            return provider
+    return None
+
+
+def redact(text, secrets=()) -> str:
+    """Strip key material out of anything on its way to a widget.
+
+    Defence in depth, in the shape the backend already uses for the same
+    problem (`backend/app/anchor.py::_redact`): replace the values we KNOW are
+    secret, then sweep for anything key-shaped that arrived another way. The
+    caller passes the field contents at the moment of the failure — this
+    module never holds them.
+    """
+    out = str(text or "")
+    for secret in secrets or ():
+        value = str(secret or "").strip()
+        # Short strings are not credentials and blanket-replacing one would
+        # mangle ordinary words in the message.
+        if len(value) >= 8 and value in out:
+            out = out.replace(value, REDACTED)
+    return _KEY_SHAPED.sub(REDACTED, out)
 
 
 # ── local validation, mirroring the server's own rules ──────────────────────

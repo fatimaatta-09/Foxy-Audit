@@ -509,8 +509,11 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                track and wrong on its own — "OFF" and "reveal" rendered as
                plain text with no affordance at all. This keeps a pill in both
                states, so off still looks like something you can press. */
+            /* ink2 on surf3 = 8.74:1. `muted` measured 4.02:1, under the 4.5
+               bar — and this is a resting focusable state, not a disabled
+               one, so the label has to be readable as it sits. */
             QPushButton#toggleBtn {{ background: {WEB['surf3']};
-                color: {WEB['muted']}; border: 2px solid {WEB['bc']};
+                color: {WEB['ink2']}; border: 2px solid {WEB['bc']};
                 border-radius: 22px; padding: 6px 16px;
                 font-family: '{mono}'; font-size: 10px; font-weight: 800;
                 letter-spacing: 0.8px; }}

@@ -175,6 +175,67 @@ def test_a_403_repeats_the_servers_own_reason():
     assert "nothing was saved" in pd.save_result(0)[0].lower()
 
 
+# ══ a rejected key must never come back onto the screen ═════════════════════
+PLANTED = "AIza-planted-planted-planted"
+
+
+def _pydantic_422(value: str) -> list:
+    """What FastAPI actually returns with no custom handler: a list of
+    Pydantic error dicts, each echoing the rejected value in `input`."""
+    return [{"type": "string_too_long",
+             "loc": ["body", "gemini_api_key"],
+             "msg": "String should have at most 512 characters",
+             "input": value,
+             "ctx": {"max_length": 512}}]
+
+
+def test_a_422_never_quotes_the_value_it_rejected():
+    """Layer 2. `ApiError._text()` unwrapped a dict detail but let a LIST fall
+    straight through, so `str(err)` was the raw Python repr of Pydantic's
+    errors — `input` and all. That string is what reaches the status line."""
+    from foxy_client import ApiError
+    err = ApiError(422, "Unprocessable Entity", _pydantic_422(PLANTED))
+    text = str(err)
+    assert PLANTED not in text
+    assert "input" not in text and "ctx" not in text
+    # …and it still says something useful about what was wrong
+    assert "gemini_api_key" in text and "512" in text
+    assert text.startswith("HTTP 422: ")          # status_of still parses it
+    from foxy_client import status_of
+    assert status_of(err) == 422
+
+
+def test_the_summary_survives_a_malformed_or_long_error_list():
+    from foxy_client import ApiError
+    many = [{"loc": ["body", f"f{i}"], "msg": "bad"} for i in range(6)]
+    text = str(ApiError(422, "", many))
+    assert "+3 more" in text
+    assert str(ApiError(422, "", ["not-a-dict"])) == "HTTP 422: invalid value"
+    assert str(ApiError(422, "", [])) == \
+        "HTTP 422: the request was rejected as invalid"
+
+
+def test_redaction_removes_known_and_key_shaped_values():
+    """Layer 3, in the shape backend/app/anchor.py:61-67 already uses."""
+    assert pd.redact(f"rejected {PLANTED} here", [PLANTED]) == \
+        f"rejected {pd.REDACTED} here"
+    # unknown to us, but shaped like a key
+    assert "sk-aaaabbbb" not in pd.redact("saw sk-aaaabbbb", [])
+    # a short "secret" must not blanket-replace ordinary words
+    assert pd.redact("the mode is own", ["own"]) == "the mode is own"
+    assert pd.redact(None, []) == ""
+
+
+def test_an_over_length_key_never_becomes_a_request():
+    """Layer 1. At the cap counts as too long: the field stops accepting text
+    at KEY_MAX, so a paste that reached the limit was clipped — and a clipped
+    key is a wrong key the server would accept."""
+    assert pd.key_too_long({"gemini": "a" * (pd.KEY_MAX + 1)}) == "gemini"
+    assert pd.key_too_long({"openai": "a" * pd.KEY_MAX}) == "openai"
+    assert pd.key_too_long({"gemini": "a" * 40}) is None
+    assert pd.key_too_long({}) is None and pd.key_too_long(None) is None
+
+
 def test_the_module_cannot_persist_or_log_anything():
     """The D9 pattern: a module that handles key material must not be able to
     write one anywhere, and that is checked structurally rather than trusted."""
@@ -415,6 +476,90 @@ def test_the_desktop_never_writes_a_judge_key_to_settings(console):
     assert "neverstored" not in blob
 
 
+def test_a_rejected_key_reaches_neither_the_screen_nor_the_a11y_tree(console):
+    """End to end through the layer that actually renders it: the 422 arrives
+    as a worker error string, and BOTH the label text and the accessible name
+    are what a person or a screen reader gets."""
+    from foxy_client import ApiError
+    _as_admin(console)
+    console._on_policy({"judge_provider": "gemini", "gemini_key_set": False})
+    console.pol_key_rows["gemini"].field.setText(PLANTED)
+
+    console._on_policy_save_failed(str(ApiError(422, "Unprocessable Entity",
+                                                _pydantic_422(PLANTED))))
+    assert PLANTED not in console.pol_status.text()
+    assert PLANTED not in console.pol_status.accessibleName()
+    assert "AIza" not in console.pol_status.text()
+    assert console.pol_key_rows["gemini"].field.text() == ""
+
+    # the value-based pass catches a key the summariser could not know about
+    console.pol_key_rows["gemini"].field.setText(PLANTED)
+    console._on_policy_save_failed(f"HTTP 400: rejected {PLANTED}")
+    assert PLANTED not in console.pol_status.text()
+    assert pd.REDACTED in console.pol_status.text()
+
+
+def test_an_over_length_paste_is_refused_before_it_is_sent(console, monkeypatch):
+    _as_admin(console)
+    console._on_policy({"judge_provider": "gemini", "gemini_key_set": False})
+    calls = []
+    monkeypatch.setattr("dashboard.spawn_worker",
+                        lambda *a, **k: calls.append(a))
+    field = console.pol_key_rows["gemini"].field
+    # the widget itself refuses to hold more than the server accepts
+    field.setText("a" * (pd.KEY_MAX + 50))
+    assert len(field.text()) == pd.KEY_MAX
+
+    console.save_policy()
+    assert not calls                                   # never left the app
+    assert field.property("invalid") == "true"
+    # reported on the key row itself, not under the webhook field in the
+    # other card — that is a message about something the user is not looking at
+    row = console.pol_key_rows["gemini"]
+    assert row.error.text() == pd.KEY_TOO_LONG and not row.error.isHidden()
+    assert console.pol_field_error.isHidden()
+    assert pd.KEY_TOO_LONG in field.accessibleDescription()
+
+    field.setText("AIza-short-short")
+    console.save_policy()
+    assert calls and field.property("invalid") == "false"
+    assert row.error.isHidden()
+    field.clear()
+
+
+def test_a_marked_field_is_red_while_focused(console, app):
+    """The bug this replaces: a bare `QLineEdit { border-color: red }` loses
+    to `QLineEdit:focus` whatever the order, and the handler focuses the field
+    it just marked — so the user always saw the ordinary orange ring. Measured
+    from the pixels, because the property-only version of this test passed."""
+    from collections import Counter
+    from foxy_tokens import BAD_RED, WEB
+
+    _as_admin(console)
+    console._on_policy({})
+    console.show()
+    console.go("policy")
+    app.processEvents()
+
+    console.pol_email.setText("not-an-email")
+    console.save_policy()
+    app.processEvents()
+    try:
+        assert console.pol_email.hasFocus()
+        counts = Counter(
+            console.pol_email.grab().toImage().pixelColor(x, y).name()
+            for x in range(console.pol_email.width())
+            for y in range(console.pol_email.height()))
+        red = counts.get(BAD_RED.lower(), 0)
+        orange = counts.get(WEB["fox"].lower(), 0)
+        assert red > 50, f"invalid border painted {red} red pixels"
+        assert red > orange, (f"focus ring wins: {orange} orange vs {red} red")
+    finally:
+        console.pol_email.setText("ops@x.co")
+        console.save_policy()
+        console.hide()
+
+
 def test_bad_input_is_reported_next_to_the_field_not_after_a_round_trip(console,
                                                                        monkeypatch):
     _as_admin(console)
@@ -428,12 +573,12 @@ def test_bad_input_is_reported_next_to_the_field_not_after_a_round_trip(console,
     assert not console.pol_field_error.isHidden()
     # "check the highlighted field" has to be true of something: the field
     # itself is marked, not just described.
-    assert console.pol_email.property("invalid") is True
-    assert console.pol_webhook.property("invalid") is False
+    assert console.pol_email.property("invalid") == "true"
+    assert console.pol_webhook.property("invalid") == "false"
     assert console.pol_field_error.text() in \
         console.pol_email.accessibleDescription()
 
     console.pol_email.setText("ops@x.co")
     console.save_policy()
     assert calls and console.pol_field_error.isHidden()
-    assert console.pol_email.property("invalid") is False
+    assert console.pol_email.property("invalid") == "false"

@@ -3148,9 +3148,7 @@ class DashboardWindow(QWidget):
             button.setEnabled(editable)
         self.pol_save.setToolTip(
             "" if editable else "Changing the ruleset needs an admin account")
-        self.pol_notice.setText(
-            pd.MEMBER_NOTICE if self.client.has_session()
-            else pd.KEY_ONLY_NOTICE)
+        self.pol_notice.setText(self._policy_denied())
         self.pol_notice_card.setVisible(not editable)
         # The search box stays live for everyone — reading what is enforced is
         # not a privileged act, and it is the point of showing members the page.
@@ -3241,6 +3239,12 @@ class DashboardWindow(QWidget):
         self.mark_policy_dirty()
 
     def set_judge_key_mode(self, mode: str):
+        # Re-checked here, not just on the disabled button — same stance as
+        # save_policy(). Neither this nor clear_judge_key() sends anything, so
+        # nothing today can reach them past the gate; the point is that the
+        # rule lives in the methods rather than in the widgets' state.
+        if not self._can_edit_policy():
+            return
         if mode == "platform" and not self._pol_judge.get("platform_allowed"):
             # The button is disabled, so this is only reachable if the plan
             # changed under us. Say what the plan allows, don't just refuse.
@@ -3254,6 +3258,8 @@ class DashboardWindow(QWidget):
     def clear_judge_key(self, provider: str):
         """Mark a stored key for removal. Nothing is sent until save — the web
         says the same ("Key will be removed when you save the ruleset")."""
+        if not self._can_edit_policy():
+            return
         self._pol_cleared.add(provider)
         self.pol_key_rows[provider].clear_field()
         self._render_judge_keys()
@@ -3291,14 +3297,28 @@ class DashboardWindow(QWidget):
         self._pol_dirty = True
         self._set_policy_status(pd.DIRTY, "warn")
 
-    def _set_policy_status(self, text: str, tone: str = "mute"):
+    def _set_policy_status(self, text: str, tone: str = "mute", *, secrets=()):
+        """The ONE funnel for this line, so redaction cannot be forgotten.
+
+        A server message can quote what it rejected: FastAPI's 422 body echoes
+        the offending value, which put a mis-pasted API key on screen in
+        cleartext — through the password field it was typed into, and into the
+        accessibility tree with it. `secrets` is what the key fields held at
+        the moment of the failure; `redact` also sweeps for anything
+        key-shaped that arrived some other way.
+        """
+        safe = pd.redact(text, secrets)
         colour = {"ok": OK_GREEN, "bad": BAD_RED,
                   "warn": WARN_AMBER}.get(tone, WEB["muted"])
         self.pol_status.setStyleSheet(
             f"color: {colour}; font-family: '{_pick_font('mono')}';"
             f" font-size: 10px; font-weight: 800; background: transparent;")
-        self.pol_status.setText(text)
-        self.pol_status.setAccessibleName(text)
+        self.pol_status.setText(safe)
+        self.pol_status.setAccessibleName(safe)
+
+    def _markable_policy_fields(self):
+        return (self.pol_email, self.pol_webhook,
+                *(row.field for row in self.pol_key_rows.values()))
 
     def _mark_policy_field(self, target):
         """Put the error on the FIELD, not only in a sentence about it.
@@ -3306,15 +3326,22 @@ class DashboardWindow(QWidget):
         "check the highlighted field" is a promise that something is
         highlighted; the focus ring alone is the same orange every focused
         input gets, so it says "you are here", not "this is wrong".
+
+        Driven by a dynamic property, because appending a bare
+        `QLineEdit { border-color: red }` rule loses to the `:focus` rule
+        already in the sheet — Qt ranks a pseudo-class above a plain type
+        selector regardless of order, and this handler focuses the field it
+        just marked, so the red never showed. Qt does not re-evaluate property
+        selectors on setProperty either; unpolish/polish is what applies it.
         """
-        for widget in (self.pol_email, self.pol_webhook):
+        for widget in self._markable_policy_fields():
             bad = widget is target
-            widget.setProperty("invalid", bad)
-            widget.setStyleSheet(
-                policy_page._input_qss()
-                + (f"QLineEdit {{ border-color: {BAD_RED}; }}" if bad else ""))
+            if widget.property("invalid") != ("true" if bad else "false"):
+                widget.setProperty("invalid", "true" if bad else "false")
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
             widget.setAccessibleDescription(
-                self.pol_field_error.text() if bad else "")
+                self._policy_error_label(widget).text() if bad else "")
 
     def filter_safeguards(self):
         query = self.pol_search.text()
@@ -3337,24 +3364,51 @@ class DashboardWindow(QWidget):
         })
         return form
 
+    def _policy_denied(self):
+        """One place decides what "you may not" says, so the toast and the
+        on-page card cannot disagree about why."""
+        return (pd.MEMBER_NOTICE if self.client.has_session()
+                else pd.KEY_ONLY_NOTICE)
+
+    def _policy_error_label(self, target):
+        """The error line that belongs to `target`.
+
+        Each key row carries its own, because a key problem reported under the
+        webhook field in the other card is a message about something the user
+        is not looking at.
+        """
+        for row in self.pol_key_rows.values():
+            if row.field is target:
+                return row.error
+        return self.pol_field_error
+
+    def _clear_policy_errors(self):
+        self.pol_field_error.hide()
+        for row in self.pol_key_rows.values():
+            row.error.hide()
+        self._mark_policy_field(None)
+
+    def _refuse_policy_field(self, target, message: str):
+        label = self._policy_error_label(target)
+        label.setText(message)
+        label.show()
+        self._mark_policy_field(target)
+        target.setFocus()
+        self._set_policy_status("Not saved — check the highlighted field", "bad")
+
     def save_policy(self):
         if not self._can_edit_policy():
-            self.toast.show_message(pd.MEMBER_NOTICE)
+            self.toast.show_message(self._policy_denied())
             return
         form = self._policy_form()
+        self._clear_policy_errors()
         problem = pd.validate(form)
-        self._mark_policy_field(None)
-        self.pol_field_error.setVisible(bool(problem))
         if problem:
             field, message = problem
-            self.pol_field_error.setText(message)
             self.pol_alerts_btn.setChecked(True)     # the field is in there
-            target = {"notify_email": self.pol_email,
-                      "notify_webhook_url": self.pol_webhook}[field]
-            self._mark_policy_field(target)
-            target.setFocus()
-            self._set_policy_status("Not saved — check the highlighted field",
-                                    "bad")
+            self._refuse_policy_field({"notify_email": self.pol_email,
+                                       "notify_webhook_url": self.pol_webhook
+                                       }[field], message)
             return
         # The ONLY read of a typed key, and it goes straight into the request
         # body. Nothing between here and the wire holds it.
@@ -3363,6 +3417,14 @@ class DashboardWindow(QWidget):
                                  judge_provider=form["judge_provider"],
                                  mode=self._pol_judge["mode"],
                                  key_set=False)["used"]}
+        # The server's own cap, checked here so an over-length paste never
+        # becomes a request: its 422 quotes the value it rejected, and that is
+        # how a key ended up rendered in cleartext.
+        over = pd.key_too_long(typed)
+        if over:
+            self._refuse_policy_field(self.pol_key_rows[over].field,
+                                      pd.KEY_TOO_LONG)
+            return
         body = pd.save_body(form, self._pol_judge, typed=typed,
                             cleared=tuple(self._pol_cleared))
         self.pol_save.setEnabled(False)
@@ -3389,16 +3451,21 @@ class DashboardWindow(QWidget):
 
     def _on_policy_save_failed(self, err):
         self.pol_save.setEnabled(True)
-        # The fields are cleared here too: the save did not happen, and a key
-        # sitting in a box across a failure is a secret we are holding for no
-        # reason. The user re-enters it, which is the safe direction to fail.
+        # Read the fields BEFORE clearing them: a rejected value can come back
+        # quoted in the server's message, and these are what to redact it
+        # against. Held for the length of this call and never assigned to the
+        # window — the same rule as the send path.
+        secrets = [row.typed() for row in self.pol_key_rows.values()]
+        # Cleared here too: the save did not happen, and a key sitting in a
+        # box across a failure is a secret we are holding for no reason. The
+        # user re-enters it, which is the safe direction to fail.
         for row in self.pol_key_rows.values():
             row.clear_field()
         self._pol_cleared.clear()
         self._render_judge_keys()
         status = status_of(err) or 0
         message, tone = pd.save_result(status, detail_of(err))
-        self._set_policy_status(message, tone)
+        self._set_policy_status(message, tone, secrets=secrets)
         self.toast.show_message(pd.save_toast(status))
 
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
