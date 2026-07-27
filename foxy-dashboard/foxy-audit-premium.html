@@ -610,6 +610,10 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .vres{margin-top:14px;padding:15px;border-radius:var(--r-md);border:var(--border);text-align:center;font-weight:800;font-size:13px;display:none;}
 .vres.match{display:block;background:var(--safe-bg);color:var(--safe-tx);}
 .vres.tamper{display:block;background:var(--breach-bg);color:var(--breach-tx);}
+/* Verification can also NOT RUN: above 50k rows the server skips it and
+   answers ok:false with no first_broken_seq. That is neither a pass nor a
+   finding, so it gets its own tone — amber, never the breach red. */
+.vres.unknown{display:block;background:var(--warn-bg);color:var(--warn-tx);}
 .hashout{font-family:var(--mono);font-size:9.5px;margin-top:8px;word-break:break-all;font-weight:400;opacity:.8;}
 .codebox{font-family:var(--mono);font-size:10px;color:var(--fox2);line-height:2;background:var(--bg);border-radius:10px;padding:13px;border:2px solid var(--line);}
 
@@ -631,6 +635,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .eval{font-size:12px;font-weight:700;text-align:right;}
 .eval.mono{font-family:var(--mono);font-size:10px;}
 .eval.ok{color:var(--safe-bg);}
+.eval.unknown{color:var(--warn-bg);}
 .pbar-wrap{height:10px;border-radius:10px;background:var(--bg);border:var(--border-sm);overflow:hidden;margin-top:8px;}
 .pbar-fill{height:100%;width:0;background:linear-gradient(90deg,var(--fox),var(--fox2));transition:width .4s;}
 .plbl{font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:5px;}
@@ -2357,7 +2362,14 @@ async function loadLoginHistory(){
     try{
       const v=await (await api('/v1/verify')).json();
       const rec=$('metaRecords'); if(rec)rec.textContent=v.count+' hash entries';
-      const integ=$('metaIntegrity'); if(integ){ integ.textContent=v.ok?'100% — no gaps':('broken at seq '+v.first_broken_seq); integ.className='eval '+(v.ok?'ok':''); }
+      // Same three outcomes as verifyChain: this line rendered "broken at seq
+    // null" for a ledger nothing was ever checked against.
+    const integ=$('metaIntegrity');
+    if(integ){
+      if(v.ok){ integ.textContent='100% — no gaps'; integ.className='eval ok'; }
+      else if(chainSkipped(v)){ integ.textContent='not verified — ledger too long for a full check'; integ.className='eval unknown'; }
+      else { integ.textContent='broken at seq '+v.first_broken_seq; integ.className='eval'; }
+    }
       const l=await (await api('/v1/logs?limit=1')).json();
       const head=$('metaHead'); if(head&&l.items&&l.items[0])window.foxMask(head, l.items[0].chain_hash, {label:'chain head'});
       const me=await (await api('/v1/auth/me')).json();
@@ -2419,12 +2431,39 @@ async function loadLoginHistory(){
       if(message)message.textContent='Capture coverage could not be loaded. No conclusion is shown.';
     }
   }
+  // The server SKIPS verification above 50,000 rows and answers
+  // ok:false, first_broken_seq:null, detail:"chain too long for full verify"
+  // (backend/app/routers/verify.py:34-35,108-115). Reading ok:false alone
+  // reported that as "tampering detected ... at seq null" — an alteration
+  // announced on a chain nothing was ever run against, which is the most
+  // damaging thing a tamper-evidence product can say.
+  //
+  // This keys off the ABSENCE of a sequence number rather than the wording of
+  // `detail`: the backend names the seq on every break it genuinely finds
+  // (verify.py:45,47,68), so ok:false with no seq is never a finding — and any
+  // future "no result" shape fails safe too, where a string match would not.
+  function chainSkipped(v){ return !!v && !v.ok && (v.first_broken_seq===null||v.first_broken_seq===undefined); }
+  var NOT_VERIFIED_LONG='Not verified — this ledger is too long for a full check';
+  var NOT_VERIFIED_OTHER='Not verified — the server did not complete this check';
+  function notVerifiedNote(count){
+    var n=Number(count||0);
+    if(n<50000)return 'The server did not report a result for this check. Nothing is claimed about the ledger either way — try again, or verify offline.';
+    return 'This ledger holds '+n.toLocaleString()+' records; above 50,000 the server does not recompute the whole chain on request. Nothing was checked here — this is neither a pass nor a failure. Export the ledger and run <code>python verifier/foxy_verify.py foxy-audit-logs.json</code> for a full, independent check.';
+  }
+
   async function verifyChain(){
     const el=$('chainCheckResult'); if(!el)return;
     el.className='vres match'; el.textContent='checking chain…';
     try{
       const v=await (await api('/v1/verify')).json();
       if(v.ok){ el.className='vres match'; el.innerHTML='✓ chain intact — '+v.count+' blocks verified'; }
+      else if(chainSkipped(v)){
+        // No check ran — say so, and never in the tamper tone.
+        const n=Number(v.count||0);
+        el.className='vres unknown';
+        el.innerHTML=(n>=50000?NOT_VERIFIED_LONG:NOT_VERIFIED_OTHER)
+          +'<br><span style="font-size:10px;opacity:.8;font-weight:400;">'+notVerifiedNote(v.count)+'</span>';
+      }
       else{
         // distinguish a deleted/missing row (sequence gap or broken linkage) from a
         // mutated record (content/hash mismatch) — the backend now reports which.
