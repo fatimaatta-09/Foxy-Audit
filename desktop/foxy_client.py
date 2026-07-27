@@ -277,6 +277,9 @@ class FoxyHttp:
         fresh, working session. Returns True if the jar was cleared."""
         if token is None:
             return False
+        # Check AND clear under ONE lock: releasing between them leaves a window
+        # where a sign-in on another thread installs a fresh cookie that this
+        # call then wipes — precisely the race the check exists to prevent.
         with self._persist_lock:
             current = None
             for c in self._jar:
@@ -285,7 +288,10 @@ class FoxyHttp:
                     break
             if current is not None and current != token:
                 return False        # rotated under us — the newer session wins
-        self.clear_session()
+            self._jar.clear()
+            if self._store is not None:
+                self._store.delete(_COOKIES_SECRET)
+            self._last_saved = None
         return True
 
     def _csrf_token(self, base_url: str | None = None) -> str | None:

@@ -46,31 +46,12 @@ from PyQt6.QtWidgets import (
 
 from foxy_client import ApiError, FoxyClient, shutdown_workers, spawn_worker
 from foxy_tokens import (
-    BAD_RED, OK_GREEN, RADIUS, WEB, paint_icon, pick_font, qcolor, resource_path,
+    BAD_RED, OK_GREEN, RADIUS, WEB, paint_icon, pick_font, qcolor,
+    reduced_motion as _reduced_motion, resource_path,
 )
 
 # Same shape the web validates with (foxy-audit-premium.html:2496).
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-def _reduced_motion() -> bool:
-    """True when the OS asks for reduced motion.
-
-    Qt exposes no cross-platform hint, so read the real setting where we can:
-    on Windows SPI_GETCLIENTAREAANIMATION (0x1042) is what the "Show animations
-    in Windows" toggle writes. Elsewhere assume motion is fine rather than
-    guess — it is only a 180 ms fade either way."""
-    if sys.platform != "win32":
-        return False
-    try:
-        import ctypes
-        enabled = ctypes.c_int()
-        if ctypes.windll.user32.SystemParametersInfoW(
-                0x1042, 0, ctypes.byref(enabled), 0):
-            return not bool(enabled.value)
-    except Exception:
-        pass
-    return False
 
 
 def _glyph(name: str, size: int = 34) -> QPixmap:
