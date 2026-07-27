@@ -405,6 +405,19 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 margin-top: 8px; }}
             QPushButton#navAuthBtn:hover {{ background: rgba(255,255,255,32); }}
             QPushButton#navAuthBtn:focus {{ border: 1px solid {t['accent']}; }}
+            QPushButton#breachChip {{
+                background: {BAD_RED}; color: #2a0303;
+                border: 1.5px solid rgba(0,0,0,120); border-radius: 9px;
+                padding: 5px 10px; font-family: '{mono}'; font-size: 9.5px;
+                font-weight: 800; letter-spacing: 0.4px; }}
+            QPushButton#breachChip:hover {{ background: #ff6b6b; }}
+            QPushButton#breachChip:focus {{ border: 1.5px solid {t['text']}; }}
+            QPushButton#userChip {{
+                background: rgba(255,255,255,16); color: {t['text']};
+                border: 1px solid rgba(255,255,255,40); border-radius: 11px;
+                font-size: 13px; font-weight: 800; }}
+            QPushButton#userChip:hover {{ background: rgba(255,255,255,32); }}
+            QPushButton#userChip:focus {{ border: 1px solid {t['accent']}; }}
             QLabel#pageTitle {{ color: {t['text']}; font-size: 18px; font-weight: 800;
                 letter-spacing: -0.5px; background: transparent; }}
             QLabel#emptyState {{ color: {t['text_muted']}; font-size: 12px;

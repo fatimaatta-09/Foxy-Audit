@@ -16,6 +16,8 @@ under the geometry/* keys — plain coordinates, no secrets.
 
 from __future__ import annotations
 
+import json
+
 from PyQt6.QtCore import QByteArray, QPoint, QSettings, QSize
 
 from foxy_client import default_secret_store
@@ -42,9 +44,13 @@ class FoxSettings:
     """Typed convenience wrapper around QSettings.
     Safe to instantiate many times — QSettings is cheap."""
 
-    def __init__(self):
-        self._s = QSettings(ORG, APP)
-        self._secrets = default_secret_store()
+    def __init__(self, settings: QSettings | None = None, secrets=None):
+        # `settings`/`secrets` are injection seams for tests: without them a
+        # test run reads AND writes the user's real store (HKCU\Software\
+        # OmniAwareFox\DesktopPet on Windows), which both pollutes their app
+        # and makes the suite order-dependent.
+        self._s = settings if settings is not None else QSettings(ORG, APP)
+        self._secrets = secrets if secrets is not None else default_secret_store()
 
     # ── secret plumbing (keychain-first, one-time migration from QSettings) ──
     # The legacy QSettings copy is removed ONLY when the secret has landed in a
@@ -188,6 +194,30 @@ class FoxSettings:
 
     def set_chat_size(self, size: QSize):
         self._s.setValue("geometry/chat_size", size)
+
+    # ── console chrome state (D3) — mirrors the web's localStorage keys ──
+    def breach_seen_seq(self) -> int:
+        """Highest breach seq the user has already looked at (web:
+        `foxy_breach_seen`). Everything above it counts toward the pip."""
+        return self._s.value("chrome/breach_seen_seq", 0, type=int)
+
+    def set_breach_seen_seq(self, seq: int):
+        self._s.setValue("chrome/breach_seen_seq", int(seq))
+
+    def dismissed_announcements(self) -> dict:
+        """Per-id banner dismissals (web: `foxy_dash_ann_dismissed`). A banner
+        the user closed must never reappear for the same id."""
+        raw = self._s.value("chrome/ann_dismissed", "", type=str)
+        try:
+            data = json.loads(raw) if raw else {}
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def dismiss_announcement(self, ident: str):
+        data = self.dismissed_announcements()
+        data[str(ident)] = 1
+        self._s.setValue("chrome/ann_dismissed", json.dumps(data))
 
     # ── weekly-summary counters (previously raw QSettings pokes) ──
     def weekly_breaches(self) -> int:

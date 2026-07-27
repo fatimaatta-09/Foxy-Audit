@@ -53,6 +53,15 @@ from PyQt6.QtGui import (
 
 from fox_settings import FoxSettings
 from foxy_client import FoxyClient, spawn_worker, shutdown_workers
+from console_chrome import (
+    ALL_SECTIONS, BREACH_SCAN_LIMIT, EXTRA_SECTIONS, HEALTH_PING_SECONDS,
+    NOTIF_LIMIT, QUICK_NAV, QUICK_NAV_WINDOW_MS, SECTIONS, announcement,
+    avatar_initial, breach_pip, notification_target,
+)
+from chrome_widgets import (
+    AnnouncementBanner, CommandPalette, LiveDot, NotificationsPanel, Pip,
+    ShortcutsOverlay, Toast,
+)
 from foxy_tokens import (
     OK_GREEN, WARN_AMBER, BAD_RED, INFO_BLUE, DARK_TX,
     clay_tokens as _clay_tokens,
@@ -534,6 +543,8 @@ class DashboardWindow(QWidget):
         tokens = _clay_tokens()
         self._build(tokens)
         self.apply_theme(tokens)
+        self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
+        self._sync_title()
 
         self._tick = QTimer(self)
         self._tick.timeout.connect(self._on_tick)
@@ -546,6 +557,7 @@ class DashboardWindow(QWidget):
         self._backend_poll = QTimer(self)
         self._backend_poll.timeout.connect(self._refresh_backend)
         self._backend_poll.start(15000)
+        self._backend_poll.timeout.connect(self._refresh_chrome)   # D3 signals
         QTimer.singleShot(400, self._refresh_backend)   # initial fill shortly after open
         QTimer.singleShot(400, self._refresh_org)       # real org name for the sidebar
 
@@ -568,12 +580,29 @@ class DashboardWindow(QWidget):
         main.addWidget(self._build_topbar(t))
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._page_overview(t))   # 0
-        self.stack.addWidget(self._page_audit(t))      # 1
-        self.stack.addWidget(self._page_system(t))     # 2
-        self.stack.addWidget(self._page_sandbox(t))    # 3
-        self.stack.addWidget(self._page_analytics(t))  # 4
+        # D3: the web's nine sections in its order, plus the two desktop-only
+        # extras. Existing pages are REMAPPED, not duplicated — Overview→Home,
+        # Threat Analytics→Threats, Audit Log→Ledger — and sections whose real
+        # pages land in later phases get an honest stub, never fake data.
+        self._page_index: dict[str, int] = {}
+        builders = {
+            "home": self._page_overview,
+            "threats": self._page_analytics,
+            "ledger": self._page_audit,
+            "system": self._page_system,
+            "sandbox": self._page_sandbox,
+        }
+        for section_id, _label, title, _crumb, _icon in ALL_SECTIONS:
+            build = builders.get(section_id)
+            page = build(t) if build else self._page_stub(t, section_id, title)
+            self._page_index[section_id] = self.stack.count()
+            self.stack.addWidget(page)
         self.stack.currentChanged.connect(self._sync_title)
+        # The announcement strip sits between the top bar and the page, exactly
+        # where the web puts it — it must never cover content.
+        self._banner_slot = QVBoxLayout()
+        self._banner_slot.setContentsMargins(22, 10, 22, 0)
+        main.addLayout(self._banner_slot)
         main.addWidget(self.stack, stretch=1)
         h.addLayout(main, stretch=1)
 
@@ -607,17 +636,27 @@ class DashboardWindow(QWidget):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons = []
-        for i, (icon, label) in enumerate(
-                [("overview", "Overview"), ("log", "Audit Log"),
-                 ("system", "System"), ("shield", "Sandbox"),
-                 ("analytics", "Threat Analytics")]):
+        self._nav_by_id: dict[str, NavButton] = {}
+        for i, (section_id, label, _title, _crumb, icon) in enumerate(ALL_SECTIONS):
+            if section_id == EXTRA_SECTIONS[0][0]:
+                # The desktop-only extras sit below the web's nine, separated.
+                v.addStretch()
+                sep = QLabel("DESKTOP")
+                sep.setObjectName("navMeta")
+                v.addWidget(sep)
             btn = NavButton(icon, label, t)
-            btn.clicked.connect(lambda _c, idx=i: self.stack.setCurrentIndex(idx))
+            btn.setAccessibleName(label)
+            btn.clicked.connect(lambda _c, sid=section_id: self.go(sid))
             self.nav_group.addButton(btn, i)
             self.nav_buttons.append(btn)
+            self._nav_by_id[section_id] = btn
             v.addWidget(btn)
         self.nav_buttons[0].setChecked(True)
-        v.addStretch()
+
+        # Unseen-breach pip rides the Threats entry (mirrored in the top bar).
+        self.threat_pip = Pip(parent=self._nav_by_id["threats"])
+        self.threat_pip.move(178, 13)
+        v.addSpacing(4)
 
         self.org_lbl = QLabel("ORGANIZATION")
         self.org_lbl.setObjectName("navMeta")
@@ -651,11 +690,17 @@ class DashboardWindow(QWidget):
         self.user_val.setText(f"{who}\n{role}" if role else (who or "signed in"))
         self.auth_btn.setText("Sign out")
         self._signed_in = True
+        self._apply_identity(me or {})      # D3 top-bar chip + palette org id
+        self._refresh_chrome()              # notifications only exist with a session
 
     def on_signed_out(self):
         self.user_val.setText("not signed in")
         self.auth_btn.setText("Sign in")
         self._signed_in = False
+        self._apply_identity({})
+        if hasattr(self, "notif_panel"):
+            self.notif_panel.hide()
+            self.notif_pip.set_count(0)
 
     def set_signing_out(self, busy: bool):
         """Sign-out is a network call — say so, and don't let it be fired twice."""
@@ -676,13 +721,51 @@ class DashboardWindow(QWidget):
         h.setContentsMargins(22, 0, 14, 0)
         h.setSpacing(12)
 
+        titles = QVBoxLayout()
+        titles.setSpacing(0)
         self.page_title = QLabel("Overview")
         self.page_title.setObjectName("pageTitle")
-        self.stack_titles = ["Overview", "Blind Audit Log", "System Health", "Verification Sandbox", "Threat Analytics"]
-        h.addWidget(self.page_title)
+        self.page_crumb = QLabel("Foxy Audit · Home")
+        self.page_crumb.setObjectName("navMeta")
+        titles.addWidget(self.page_title)
+        titles.addWidget(self.page_crumb)
+        h.addLayout(titles)
         h.addStretch()
 
+        # ── D3 chrome: live dot · notifications bell (+pips) · user chip ──
+        self.live_dot = LiveDot()
+        h.addWidget(self.live_dot)
+
+        self.notif_btn = CtrlButton("log", t)
+        self.notif_btn.setAccessibleName("Notifications")
+        self.notif_btn.setToolTip("Notifications")
+        self.notif_btn.clicked.connect(self._toggle_notifications)
+        self.notif_pip = Pip(parent=self.notif_btn)
+        self.notif_pip.move(15, -2)
+        h.addWidget(self.notif_btn)
+
+        # The breach indicator is a control of its own, LEFT of the bell: two
+        # identical red count-badges on one icon is unreadable — this one says
+        # what it counts, and clicking it goes where the breaches are.
+        self.top_breach_btn = QPushButton()
+        self.top_breach_btn.setObjectName("breachChip")
+        self.top_breach_btn.setMinimumHeight(30)
+        self.top_breach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.top_breach_btn.clicked.connect(lambda: self.go("threats"))
+        self.top_breach_btn.hide()
+        h.insertWidget(h.count() - 1, self.top_breach_btn)
+
+        self.user_btn = QPushButton("?")
+        self.user_btn.setObjectName("userChip")
+        self.user_btn.setFixedSize(46, 34)
+        self.user_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.user_btn.setAccessibleName("Account menu")
+        self.user_btn.setToolTip("Account")
+        self.user_btn.clicked.connect(self._show_user_menu)
+        h.addWidget(self.user_btn)
+
         self.refresh_btn = CtrlButton("refresh", t)
+        self.refresh_btn.setAccessibleName("Refresh")
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         h.addWidget(self.refresh_btn)
         self.min_btn = CtrlButton("min", t)
@@ -1476,8 +1559,340 @@ class DashboardWindow(QWidget):
         v.addLayout(body, stretch=1)
         return page
 
+    # ── D3 chrome behaviour ────────────────────────────────────────────────
+    def _init_chrome(self):
+        """Banner, palette, shortcut overlay, toast + the chrome pollers.
+
+        Built ONCE and torn down with the window; the pollers only run while
+        the console is visible (D0.1's teardown rule)."""
+        self.toast = Toast(self)
+        self.banner = AnnouncementBanner()
+        self.banner.action_clicked.connect(self.go)
+        self.banner.dismissed.connect(self._dismiss_announcement)
+        self._banner_slot.addWidget(self.banner)
+
+        self.notif_panel = NotificationsPanel(self)
+        self.notif_panel.item_clicked.connect(self._on_notification_clicked)
+        self.notif_panel.read_all_clicked.connect(self._mark_all_notifications_read)
+
+        self.palette = CommandPalette(self)
+        self.palette.chosen.connect(self._on_palette_choice)
+        self.shortcuts = ShortcutsOverlay(self)
+
+        self._g_pending = False
+        self._breach_max_seq = 0
+        self._ann_inputs = {"breaches": None, "plan": None, "usage": None}
+        self._g_timer = QTimer(self)
+        self._g_timer.setSingleShot(True)
+        self._g_timer.setInterval(QUICK_NAV_WINDOW_MS)
+        self._g_timer.timeout.connect(self._clear_quick_nav)
+
+        # 60 s live-dot ping — the web's setInterval(pingHealth, 60000).
+        self._health_timer = QTimer(self)
+        self._health_timer.timeout.connect(self._ping_health)
+        self._health_timer.start(HEALTH_PING_SECONDS * 1000)
+        QTimer.singleShot(600, self._refresh_chrome)
+
+    def _clear_quick_nav(self):
+        self._g_pending = False
+
+    def show_toast(self, text: str):
+        if hasattr(self, "toast"):
+            self.toast.show_message(text)
+
+    def _ping_health(self):
+        """Any HTTP answer proves the server is reachable; only a transport
+        error is 'offline' (the web says so at html:3895)."""
+        if not self.settings.backend_url():
+            self.live_dot.set_online(False)
+            return
+        if self.settings.org_api_key():
+            path, force = "/v1/health", True
+        else:
+            path, force = "/health/ready", False
+        spawn_worker(self.client, "GET", path, timeout=8, parent=self,
+                     force_bearer=force, track=self._workers,
+                     on_ok=self._on_health_ping_ok,
+                     on_err=self._on_health_ping_failed)
+
+    def _on_health_ping_ok(self, _data):
+        self.live_dot.set_online(True)
+
+    def _on_health_ping_failed(self, err: str):
+        # A status code still means the server answered (403/503 included);
+        # only a status-less transport failure is genuinely offline.
+        self.live_dot.set_online(err.startswith("HTTP "))
+
+    def _refresh_chrome(self):
+        """Pull the real signals the chrome shows. Never runs while hidden."""
+        if not self.isVisible():
+            return
+        self._ping_health()
+        self._refresh_breach_pip()
+        self._refresh_announcement()
+        if self.client.has_session():
+            self._refresh_notifications()
+
+    # ── notifications (session-only endpoint) ──
+    def _refresh_notifications(self):
+        spawn_worker(self.client, "GET", "/v1/notifications?limit=%d" % NOTIF_LIMIT,
+                     timeout=10, parent=self, track=self._workers,
+                     on_ok=self._on_notifications)
+
+    def _on_notifications(self, data):
+        if not isinstance(data, dict):
+            return
+        items = data.get("items")
+        self.notif_pip.set_count(int(data.get("unread") or 0))
+        self.notif_panel.set_items(items if isinstance(items, list) else [])
+
+    def _toggle_notifications(self):
+        if self.notif_panel.isVisible():
+            self.notif_panel.hide()
+            return
+        if not self.client.has_session():
+            self.show_toast("Sign in to see your notifications.")
+            return
+        self._refresh_notifications()
+        corner = self.notif_btn.mapTo(self, self.notif_btn.rect().bottomRight())
+        self.notif_panel.move(max(8, corner.x() - self.notif_panel.width()),
+                              corner.y() + 6)
+        self.notif_panel.show()
+        self.notif_panel.raise_()
+
+    def _on_notification_clicked(self, notif_id: str, kind: str):
+        if notif_id:
+            spawn_worker(self.client, "POST",
+                         "/v1/notifications/%s/read" % notif_id, timeout=8,
+                         parent=self, track=self._workers,
+                         on_ok=self._on_notif_marked)
+        self.notif_panel.hide()
+        target = notification_target(kind)
+        if target:
+            self.go(target)
+
+    def _on_notif_marked(self, _data):
+        self._refresh_notifications()
+
+    def _mark_all_notifications_read(self):
+        spawn_worker(self.client, "POST", "/v1/notifications/read-all", timeout=8,
+                     parent=self, track=self._workers, on_ok=self._on_notif_marked)
+
+    # ── breach pip ──
+    def _refresh_breach_pip(self):
+        if not self.settings.backend_url():
+            return
+        if not (self.settings.org_api_key() or self.client.has_session()):
+            return
+        spawn_worker(self.client, "GET",
+                     "/v1/logs/breaches?limit=%d" % BREACH_SCAN_LIMIT, timeout=10,
+                     parent=self, track=self._workers, on_ok=self._on_breach_rows)
+
+    def _on_breach_rows(self, rows):
+        unread, self._breach_max_seq = breach_pip(
+            rows, self.settings.breach_seen_seq())
+        self._set_breach_count(unread)
+
+    def _set_breach_count(self, unread: int):
+        self.threat_pip.set_count(unread)
+        # Anchor the nav pip to the button's real width — a fixed x clips it
+        # off the edge once the sidebar or font metrics change.
+        nav = self._nav_by_id["threats"]
+        self.threat_pip.move(max(8, nav.width() - self.threat_pip.width() - 12),
+                             (nav.height() - self.threat_pip.height()) // 2)
+        self.threat_pip.raise_()
+        if unread:
+            word = "breach" if unread == 1 else "breaches"
+            self.top_breach_btn.setText(f"⚠ {unread} {word}")
+            self.top_breach_btn.setToolTip(
+                f"{unread} unreviewed policy {word} — open Threats")
+            self.top_breach_btn.setAccessibleName(
+                f"{unread} unreviewed policy {word}")
+            self.top_breach_btn.show()
+        else:
+            self.top_breach_btn.hide()
+
+    def _mark_breaches_read(self):
+        if self._breach_max_seq:
+            self.settings.set_breach_seen_seq(self._breach_max_seq)
+        self._set_breach_count(0)
+
+    # ── announcement banner ──
+    def _refresh_announcement(self):
+        """Three real signals, resolved in the web's priority order."""
+        self._ann_inputs = {"breaches": None, "plan": None, "usage": None}
+        if not self.settings.backend_url():
+            return
+        spawn_worker(self.client, "GET", "/v1/logs/breaches?limit=1", timeout=10,
+                     parent=self, track=self._workers,
+                     on_ok=self._on_ann_breaches)
+        spawn_worker(self.client, "GET", "/v1/billing/plan", timeout=10,
+                     parent=self, track=self._workers, on_ok=self._on_ann_plan)
+        spawn_worker(self.client, "GET", "/v1/usage?days=1", timeout=10,
+                     parent=self, track=self._workers, on_ok=self._on_ann_usage)
+
+    def _on_ann_breaches(self, data):
+        self._ann_part("breaches", data)
+
+    def _on_ann_plan(self, data):
+        self._ann_part("plan", data)
+
+    def _on_ann_usage(self, data):
+        self._ann_part("usage", data)
+
+    def _ann_part(self, key: str, data):
+        self._ann_inputs[key] = data
+        self.banner.show_message(announcement(
+            breaches=self._ann_inputs.get("breaches"),
+            plan=self._ann_inputs.get("plan"),
+            usage=self._ann_inputs.get("usage"),
+            dismissed=self.settings.dismissed_announcements()))
+
+    def _dismiss_announcement(self, ident: str):
+        self.settings.dismiss_announcement(ident)
+
+    # ── user chip ──
+    def _apply_identity(self, me: dict):
+        self.user_btn.setText(avatar_initial(me))
+        who = (me or {}).get("email") or ""
+        role = (me or {}).get("role") or ""
+        self.user_btn.setToolTip(("%s · %s" % (who, role)) if role else (who or "Account"))
+        self.user_btn.setAccessibleName(
+            ("Account menu for %s" % who) if who else "Account menu")
+        if hasattr(self, "palette"):
+            self.palette.set_org_id((me or {}).get("org_id"))
+
+    def _show_user_menu(self):
+        from PyQt6.QtWidgets import QMenu
+        from foxy_tokens import matte_menu_qss
+        menu = QMenu(self)
+        menu.setStyleSheet(matte_menu_qss())
+        menu.addAction("Settings", lambda: self.go("settings"))
+        menu.addAction("Devices & sessions", lambda: self.go("settings"))
+        menu.addSeparator()
+        if self._signed_in:
+            menu.addAction("Log out", self.sign_out_requested.emit)
+        else:
+            menu.addAction("Sign in", self.sign_in_requested.emit)
+        menu.exec(self.user_btn.mapToGlobal(self.user_btn.rect().bottomLeft()))
+
+    # ── command palette + keyboard ──
+    def _on_palette_choice(self, entry: dict):
+        kind = entry.get("kind")
+        arg = entry.get("arg")
+        if kind == "page":
+            self.go(arg)
+        elif kind == "verify-hash":
+            self._pending_verify_hash = arg
+            self.go("verify")
+            self.show_toast("Hash noted — verification arrives in D6 (%s…)" % arg[:12])
+        elif kind == "ledger-seq":
+            self.go("ledger")
+            self.show_toast("Record #%s — ledger lookup arrives in D5" % arg)
+        elif kind == "verify-focus":
+            self.go("verify")
+        elif kind == "copy-org":
+            if arg:
+                QApplication.clipboard().setText(str(arg))
+                self.show_toast("Copied organization ID")
+            else:
+                self.show_toast("Organization ID not loaded yet")
+        elif kind == "shortcuts":
+            self.shortcuts.show_centered(self)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        mods = event.modifiers()
+        if (mods & Qt.KeyboardModifier.ControlModifier) and key == Qt.Key.Key_K:
+            self.palette.open_fresh()
+            event.accept()
+            return
+        if mods & (Qt.KeyboardModifier.ControlModifier
+                   | Qt.KeyboardModifier.AltModifier
+                   | Qt.KeyboardModifier.MetaModifier):
+            super().keyPressEvent(event)
+            return
+        if key == Qt.Key.Key_Escape:
+            self.notif_panel.hide()
+            self._g_pending = False
+            event.accept()
+            return
+        if self._is_typing():
+            super().keyPressEvent(event)
+            return
+        if key == Qt.Key.Key_Question:
+            self.shortcuts.show_centered(self)
+            event.accept()
+            return
+        if self._g_pending:
+            self._g_pending = False
+            self._g_timer.stop()
+            target = QUICK_NAV.get(event.text().lower())
+            if target:
+                self.go(target)
+                event.accept()
+                return
+        elif event.text().lower() == "g":
+            self._g_pending = True
+            self._g_timer.start()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _is_typing(self) -> bool:
+        """Quick-nav must never steal a keystroke from an input (web isTyping)."""
+        return isinstance(QApplication.focusWidget(), (QLineEdit, QTextEdit))
+
+    def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
+        """An honest placeholder for a section whose real page lands later.
+
+        It states plainly what it is and which phase builds it — no invented
+        numbers, no skeleton pretending to be data (the no-fake-data rule)."""
+        phase = {"verify": "D6", "policy": "D7", "export": "D8",
+                 "access": "D9", "billing": "D10", "settings": "D11"}.get(section_id, "")
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(22, 20, 22, 20)
+        v.setSpacing(10)
+        cap = QLabel(title.upper())
+        cap.setObjectName("tableCap")
+        v.addWidget(cap)
+        note = QLabel(
+            f"This section is coming in phase {phase}." if phase
+            else "This section is coming in a later phase.")
+        note.setObjectName("emptyState")
+        note.setWordWrap(True)
+        v.addWidget(note)
+        hint = QLabel("Everything it will show already exists in the web "
+                      "dashboard — nothing is simulated here in the meantime.")
+        hint.setObjectName("connUrl")
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+        v.addStretch()
+        return page
+
+    # ── navigation (D3) ────────────────────────────────────────────────────
+    def go(self, section_id: str):
+        """Switch section by id — the desktop twin of the web's go()."""
+        index = self._page_index.get(section_id)
+        if index is None:
+            return
+        self.stack.setCurrentIndex(index)
+        btn = self._nav_by_id.get(section_id)
+        if btn is not None and not btn.isChecked():
+            btn.setChecked(True)
+        if section_id == "threats":
+            self._mark_breaches_read()
+
     def _sync_title(self):
-        self.page_title.setText(self.stack_titles[self.stack.currentIndex()])
+        """Top-bar title + crumb follow the section (web setTopbarContext)."""
+        index = self.stack.currentIndex()
+        for section_id, _label, title, crumb, _icon in ALL_SECTIONS:
+            if self._page_index.get(section_id) == index:
+                self.page_title.setText(title)
+                if hasattr(self, "page_crumb"):
+                    self.page_crumb.setText(f"Foxy Audit · {crumb}")
+                break
 
     # ── window chrome ──
     def mousePressEvent(self, e):
@@ -1625,8 +2040,10 @@ class DashboardWindow(QWidget):
         if not self._backend_poll.isActive():
             self._tick.start(1000)
             self._backend_poll.start(15000)
+            self._health_timer.start(HEALTH_PING_SECONDS * 1000)
             QTimer.singleShot(400, self._refresh_backend)
             QTimer.singleShot(400, self._refresh_org)
+            QTimer.singleShot(600, self._refresh_chrome)
         super().showEvent(e)
 
     def hideEvent(self, e):
@@ -1643,6 +2060,9 @@ class DashboardWindow(QWidget):
         Alt+F4, the taskbar menu, and the app quitting."""
         self._tick.stop()
         self._backend_poll.stop()
+        self._health_timer.stop()        # D3 live-dot ping — nothing polls while closed
+        if hasattr(self, "notif_panel"):
+            self.notif_panel.hide()
         self.settings.set_console_geometry(self.saveGeometry())
         shutdown_workers(self._workers | self._poll_workers)
         # Restore full opacity so the next show_animated fade starts from a
