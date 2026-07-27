@@ -389,8 +389,12 @@ class SafeguardRow(QFrame):
         col.addWidget(_label(spec["name"], size=11.5, bold=True, wrap=True))
         col.addWidget(_label(spec["desc"], size=10.5, colour=WEB["muted"],
                              wrap=True))
-        text, tone = pd.SEVERITY[spec["severity"]]
+        # D11 reuses this row for the Settings toggles, which have no severity
+        # — the chip is the only part that assumes one.
+        severity = pd.SEVERITY.get(spec.get("severity"))
+        text, tone = severity if severity else ("", "mute")
         chip = QLabel(text.upper())
+        chip.setVisible(bool(text))
         chip.setObjectName("sevChip")
         colour = TONES[tone]
         chip.setStyleSheet(

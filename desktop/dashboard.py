@@ -80,11 +80,13 @@ from export_page import ExportSections, history_row
 import policy_page
 from policy_page import PolicySections
 from billing_page import BillingSections, invoice_row, usage_row
+from settings_page import SettingsSections, device_row
 from ledger_page import LedgerRow, LedgerSections
 from verify_page import VerifySections, anchor_row
 import access_data as ad
 import policy_data as pd
 import billing_data as bd
+import settings_data as sd
 import export_data as ed
 import verify_data as vd
 from threats_page import ThreatsSections, alert_table_row
@@ -630,6 +632,7 @@ class DashboardWindow(QWidget):
         self._init_access()          # D9
         self._init_policy()          # D7
         self._init_billing()         # D10
+        self._init_settings()        # D11a
         self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
         self._sync_title()
 
@@ -680,6 +683,7 @@ class DashboardWindow(QWidget):
         self._access = AccessSections(self)
         self._policy = PolicySections(self)
         self._billing = BillingSections(self)
+        self._settings_page = SettingsSections(self)
         builders = {
             "home": lambda t: self._home.build(self._page_overview(t)),
             "threats": lambda t: self._threats.build(t),
@@ -689,6 +693,7 @@ class DashboardWindow(QWidget):
             "access": lambda t: self._access.build(t),
             "policy": lambda t: self._policy.build(t),
             "billing": lambda t: self._billing.build(t),
+            "settings": lambda t: self._settings_page.build(t),
             "system": self._page_system,
             "sandbox": self._page_sandbox,
         }
@@ -3637,6 +3642,357 @@ class DashboardWindow(QWidget):
     def open_pricing(self):
         QDesktopServices.openUrl(QUrl(bd.PRICING_URL))
 
+    # -- Settings, account half (D11a) --------------------------------------
+    def _init_settings(self):
+        self._init_verify()                 # shares the page-worker bucket
+        self._set_me = sd.identity_view(None)
+        self._badge = sd.badge_view(None)
+        self._pref_loading = False
+        self._apply_mfa_state()
+
+    def refresh_settings(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET", "/v1/auth/me", timeout=12, parent=self,
+                     track=self._page_workers, on_ok=self._on_settings_me,
+                     on_err=lambda _e: self._on_settings_me(None))
+        spawn_worker(self.client, "GET", "/v1/account/preferences", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_preferences,
+                     on_err=lambda _e: self._on_preferences(None))
+        spawn_worker(self.client, "GET", "/v1/auth/sessions", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_devices,
+                     on_err=lambda _e: self._on_devices(None, ok=False))
+
+    def _on_settings_me(self, data):
+        view = sd.identity_view(data)
+        if not view["known"]:
+            return              # a failed /v1/auth/me tells us nothing new
+        self._set_me = view
+        if view["role"] != sd.MISSING:
+            self._role = view["role"]
+        if not self.set_name.hasFocus():
+            self.set_name.setText(view["full_name"])
+        for key, field in self.set_readonly.items():
+            field.setText(view[key])
+        self._apply_mfa_state()
+        self._apply_policy_permission()
+        self._apply_billing_buttons()
+
+    def save_display_name(self):
+        self._set_status(self.set_name_status, "saving...", "mute")
+        spawn_worker(
+            self.client, "PUT", "/v1/account/profile",
+            body=sd.profile_body(self.set_name.text()), timeout=15,
+            parent=self, track=self._page_workers,
+            on_ok=lambda _d: self._set_status(self.set_name_status,
+                                              *sd.save_result(None)),
+            on_err=lambda err: self._set_status(
+                self.set_name_status,
+                *sd.save_result(status_of(err) or 0, detail_of(err))))
+
+    def _set_status(self, label, message: str, tone: str = "mute"):
+        colour = {"ok": OK_GREEN, "bad": BAD_RED,
+                  "warn": WARN_AMBER}.get(tone, WEB["muted"])
+        label.setStyleSheet(
+            "color: %s; font-family: %s%s%s; font-size: 10px;"
+            " font-weight: 800; background: transparent;"
+            % (colour, chr(39), _pick_font("mono"), chr(39)))
+        label.setText(message)
+        label.setAccessibleName(message)
+        label.setVisible(bool(message))
+
+    def _on_preferences(self, data):
+        values = sd.preference_values(data)
+        self._pref_loading = True
+        try:
+            for key, row in self.pref_rows.items():
+                row.toggle.setChecked(values[key])
+        finally:
+            self._pref_loading = False
+
+    def save_preference(self, key: str, value: bool):
+        """One key per request - the server merges (account.py:613), so a
+        stale toggle here can never overwrite a change made elsewhere."""
+        if self._pref_loading:
+            return              # loading the form is not the user changing it
+        spawn_worker(
+            self.client, "PUT", "/v1/account/preferences",
+            body=sd.preference_body(key, value), timeout=15, parent=self,
+            track=self._page_workers,
+            on_ok=lambda _d: self.toast.show_message("Preference saved"),
+            on_err=lambda err: self._preference_failed(key, err))
+
+    def _preference_failed(self, key: str, err):
+        """Put the toggle back. A switch left flipped after a failed save
+        would misdescribe the account until the next reload."""
+        self.toast.show_message(
+            sd.save_result(status_of(err) or 0, detail_of(err),
+                           what="preference")[0])
+        spawn_worker(self.client, "GET", "/v1/account/preferences", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_preferences, on_err=lambda _e: None)
+
+    def change_password(self):
+        current = self.set_pw_fields["current"].text()
+        new = self.set_pw_fields["new"].text()
+        problem = sd.password_problem(current, new)
+        self._set_status(self.set_pw_status, problem or "", "bad")
+        if problem:
+            self.set_pw_fields["current" if not current else "new"].setFocus()
+            return
+        # The only read of either value, and it goes straight into the body.
+        self.set_pw_btn.setEnabled(False)
+        spawn_worker(self.client, "POST", "/v1/auth/change-password",
+                     body={"current_password": current, "new_password": new},
+                     timeout=20, parent=self, track=self._page_workers,
+                     on_ok=lambda _d: self._password_done(None, ""),
+                     on_err=lambda err: self._password_done(
+                         status_of(err) or 0, detail_of(err)))
+
+    def _password_done(self, status, detail: str):
+        # Cleared either way: a password sitting in a box after the request is
+        # a secret held for no reason (the D9 rule, applied here).
+        for field in self.set_pw_fields.values():
+            field.clear()
+        self.set_pw_btn.setEnabled(True)
+        message, tone = sd.save_result(status, detail)
+        ok = status is None
+        self._set_status(self.set_pw_status,
+                         "password changed" if ok else message,
+                         "ok" if ok else tone)
+        self.toast.show_message("Password changed" if ok else message)
+
+    def _apply_mfa_state(self):
+        on = bool(self._set_me.get("mfa_enabled"))
+        self.mfa_state.setText(sd.MFA_ON if on else sd.MFA_OFF)
+        self.mfa_off_box.setVisible(not on)
+        self.mfa_on_box.setVisible(on)
+        if not on:
+            self.mfa_confirm_box.hide()
+
+    def mfa_enroll(self):
+        self.mfa_enroll_btn.setEnabled(False)
+
+        def sent(_data):
+            self.mfa_enroll_btn.setEnabled(True)
+            self.mfa_confirm_box.show()
+            self.mfa_code.setFocus()
+            self.toast.show_message(sd.MFA_CODE_SENT)
+
+        def failed(err):
+            self.mfa_enroll_btn.setEnabled(True)
+            self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0])
+
+        spawn_worker(self.client, "POST", "/v1/auth/mfa/enroll", timeout=20,
+                     parent=self, track=self._page_workers, on_ok=sent,
+                     on_err=failed)
+
+    def mfa_confirm(self):
+        code = self.mfa_code.text().strip()
+        if not sd.mfa_code_ok(code):
+            self.toast.show_message("Enter the 6-digit code from the email.")
+            self.mfa_code.setFocus()
+            return
+
+        def failed(err):
+            self.mfa_code.clear()
+            self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0])
+
+        spawn_worker(self.client, "POST", "/v1/auth/mfa/enable",
+                     body={"code": code}, timeout=20, parent=self,
+                     track=self._page_workers,
+                     on_ok=lambda _d: self._mfa_changed(True), on_err=failed)
+
+    def mfa_disable(self):
+        password = self.mfa_password.text()
+        if not password:
+            self.toast.show_message("Enter your password to turn off 2FA.")
+            self.mfa_password.setFocus()
+            return
+
+        def failed(err):
+            self.mfa_password.clear()
+            self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0])
+
+        spawn_worker(self.client, "POST", "/v1/auth/mfa/disable",
+                     body={"password": password}, timeout=20, parent=self,
+                     track=self._page_workers,
+                     on_ok=lambda _d: self._mfa_changed(False), on_err=failed)
+
+    def _mfa_changed(self, enabled: bool):
+        # Both the code and the password are dropped here, whichever path we
+        # arrived by - neither has any reason to outlive its request.
+        self.mfa_code.clear()
+        self.mfa_password.clear()
+        self._set_me = dict(self._set_me, mfa_enabled=enabled)
+        self._apply_mfa_state()
+        self.toast.show_message("Two-factor is now on" if enabled
+                                else "Two-factor turned off")
+
+    def save_ip_allowlist(self):
+        text = self.ip_allow.text()
+        problem = sd.allowlist_problem(text)
+        self._set_status(self.ip_status, problem or "", "bad")
+        if problem:
+            self.ip_allow.setFocus()
+            return
+        spawn_worker(
+            self.client, "POST", "/v1/account/ip-allowlist",
+            body=sd.allowlist_body(text), timeout=15, parent=self,
+            track=self._page_workers,
+            on_ok=lambda _d: self.toast.show_message("IP allow-list saved"),
+            on_err=lambda err: self._set_status(
+                self.ip_status, sd.save_result(status_of(err) or 0,
+                                               detail_of(err))[0], "bad"))
+
+    def _on_devices(self, data, ok: bool = True):
+        rows = sd.device_rows(data) if ok else []
+        self._fill_rows(
+            self.device_rows, 0, self.device_empty, rows,
+            lambda row: device_row(row, self.revoke_device),
+            resolve(ok, bool(rows)),
+            empty_title=sd.DEVICE_EMPTY[0], empty_body=sd.DEVICE_EMPTY[1])
+
+    def revoke_device(self, row: dict):
+        if not self._confirm_danger("Sign this device out?",
+                                    sd.revoke_device_warning(row["agent"]),
+                                    "Sign it out"):
+            return
+        spawn_worker(
+            self.client, "POST",
+            "/v1/auth/sessions/%s/revoke" % quote(str(row["id"]), safe=""),
+            timeout=15, parent=self, track=self._page_workers,
+            on_ok=lambda _d: self._device_revoked(),
+            on_err=lambda err: self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0]))
+
+    def _device_revoked(self):
+        self.toast.show_message("Device signed out")
+        self.refresh_settings()
+
+    def logout_everywhere(self):
+        if not self._confirm_danger("Log out everywhere?",
+                                    sd.LOGOUT_ALL_WARNING, "Log out"):
+            return
+        spawn_worker(self.client, "POST", "/v1/auth/logout-all", timeout=20,
+                     parent=self, track=self._page_workers,
+                     on_ok=lambda _d: self._signed_out_everywhere(),
+                     on_err=lambda _e: self._signed_out_everywhere())
+
+    def _signed_out_everywhere(self):
+        self.client.http.clear_session()
+        self.toast.show_message("Signed out of every device")
+        self._on_devices(None, ok=False)
+
+    def mint_badge(self):
+        self.badge_btn.setEnabled(False)
+
+        def failed(err):
+            self.badge_btn.setEnabled(True)
+            self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0])
+
+        spawn_worker(self.client, "POST", "/v1/account/badge", timeout=20,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_badge, on_err=failed)
+
+    def _on_badge(self, data):
+        self.badge_btn.setEnabled(True)
+        self._badge = sd.badge_view(data, self.settings.backend_url())
+        has = bool(self._badge["token"])
+        self.badge_btn.setText("Regenerate badge" if has else "Generate badge")
+        self.badge_copy.setVisible(has)
+        self.badge_revoke.setVisible(has)
+        self.badge_link.setVisible(has)
+        if has:
+            self.badge_link.setText(
+                sd.badge_link_html(self._badge, WEB["fox2"]))
+        elif data is not None:
+            self.toast.show_message("The server did not return a badge URL")
+
+    def copy_badge_embed(self):
+        from PyQt6.QtWidgets import QApplication
+        if not self._badge["embed"]:
+            return
+        QApplication.clipboard().setText(self._badge["embed"])
+        self.toast.show_message("Embed snippet copied")
+
+    def revoke_badge(self):
+        if not self._confirm_danger("Revoke the trust badge?",
+                                    sd.BADGE_REVOKE_WARNING, "Revoke"):
+            return
+        spawn_worker(
+            self.client, "DELETE", "/v1/account/badge", timeout=20,
+            parent=self, track=self._page_workers,
+            on_ok=lambda _d: self._on_badge(None),
+            on_err=lambda err: self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0]))
+
+    def export_account(self):
+        spawn_worker(
+            self.client, "GET", "/v1/account/export", timeout=60, parent=self,
+            track=self._page_workers, raw=True,
+            on_ok=lambda payload: self._save_bytes(
+                payload, "foxy-account-export.json", "JSON file (*.json)"),
+            on_err=lambda err: self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0]))
+
+    def _save_bytes(self, payload, suggested: str, file_filter: str):
+        from PyQt6.QtWidgets import QFileDialog
+        data = (payload or {}).get("body") if isinstance(payload, dict) else payload
+        if not data:
+            self.toast.show_message("The server returned an empty file")
+            return
+        target, _ = QFileDialog.getSaveFileName(self, "Save", suggested,
+                                                file_filter)
+        if not target:
+            return
+        try:
+            with open(target, "wb") as fh:
+                fh.write(data if isinstance(data, (bytes, bytearray))
+                         else str(data).encode("utf-8"))
+        except OSError as exc:
+            self.toast.show_message("Could not write the file - %s" % exc)
+            return
+        self.toast.show_message("Saved to %s" % target)
+
+    def delete_workspace(self):
+        from settings_page import ConfirmNameDialog
+        name = self._org_name or ""
+        dialog = ConfirmNameDialog(name, self)
+        if not dialog.exec():
+            return
+        typed = dialog.typed()
+        if not sd.delete_confirmed(typed, name):
+            self.toast.show_message("The name did not match - nothing changed")
+            return
+        spawn_worker(
+            self.client, "POST", "/v1/account/delete",
+            body=sd.delete_body(typed), timeout=30, parent=self,
+            track=self._page_workers,
+            on_ok=lambda _d: self._signed_out_everywhere(),
+            on_err=lambda err: self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err))[0]))
+
+    def _confirm_danger(self, title: str, body: str, verb: str) -> bool:
+        """One confirmation for every destructive control on this page, so the
+        wording and the button label cannot drift apart."""
+        from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(title)
+        box.setInformativeText(body)
+        box.setIcon(QMessageBox.Icon.Warning)
+        go = box.addButton(verb, QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return box.clickedButton() is go
+
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
 
@@ -3693,6 +4049,8 @@ class DashboardWindow(QWidget):
             self.refresh_policy()
         if section_id == "billing":
             self.refresh_billing()
+        if section_id == "settings":
+            self.refresh_settings()
         if section_id == "home":
             # The web reloads a section's data on navigation; Home is the one
             # page whose numbers age while you sit in the ledger.

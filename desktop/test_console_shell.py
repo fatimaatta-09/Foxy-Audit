@@ -88,16 +88,17 @@ def test_existing_pages_are_remapped_not_duplicated(console):
     assert ledger.isAncestorOf(console.ledger_volume)  # ...beside the real ledger
 
 
-def test_unbuilt_sections_are_honest_stubs(console):
-    """A stub says what it is and which phase builds it — no invented data."""
-    # D6/D8/D9 built verify, export and access; D7 policy; D10 billing — what
-    # remains unbuilt shrinks each phase, and this list is the record of that.
-    for section_id in ("settings",):
+def test_no_section_is_a_stub_any_more(console):
+    """Every one of the nine web sections is a real page now — D11 was the
+    last one. The stub wording is what this used to assert; its ABSENCE is
+    what it asserts today, so a section that regressed to a placeholder, or
+    that renders nothing at all, fails here."""
+    for section_id, _label, _title, _crumb, _icon in ALL_SECTIONS:
         page = console.stack.widget(console._page_index[section_id])
-        text = " ".join(lbl.text() for lbl in page.findChildren(type(console.page_title)))
-        assert "coming in phase" in text.lower()
-        assert not any(ch.isdigit() and ch not in "0123456789"
-                       for ch in "")          # no fabricated metrics at all
+        text = " ".join(lbl.text()
+                        for lbl in page.findChildren(type(console.page_title)))
+        assert "coming in phase" not in text.lower(), section_id
+        assert text.strip(), f"{section_id} renders nothing at all"
 
 
 def test_desktop_extras_are_last(console):
