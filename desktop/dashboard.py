@@ -54,7 +54,7 @@ from PyQt6.QtGui import (
 
 from fox_settings import FoxSettings
 from foxy_client import (
-    FoxyClient, spawn_worker, shutdown_workers, status_of,
+    FoxyClient, spawn_worker, shutdown_workers, status_of, detail_of,
 )
 from console_chrome import (
     relative_time,
@@ -1524,14 +1524,21 @@ class DashboardWindow(QWidget):
     def _on_verify_stats(self, v: dict):
         count = int(v.get("count", 0))     # ledger blocks live on the verify card
         intact = bool(v.get("ok", False))
+        # `ok=False` alone does not mean a break was found — above 50k rows the
+        # server declines the recompute and answers ok=False with no sequence
+        # number (see verify_data.chain_skipped). Telling the user "review
+        # required" for a check that never ran sends them after nothing.
+        skipped = vd.chain_skipped(v)
         anchor = v.get("last_anchor") or {}
         root = anchor.get("root_hash")
-        self.chain_meta.setText(f"{count:,} blocks · "
-                                + ("chain intact" if intact else "review required"))
+        self.chain_meta.setText(f"{count:,} blocks · " + (
+            "chain intact" if intact else
+            "not verified" if skipped else "review required"))
         self.chain_hash.setText(f"root {root[:28]}…" if root else "root — (not yet anchored)")
         if hasattr(self, "verif_hash"):
             self.verif_hash.setText(f"{root[:19]}…" if root else "•••• •••• •••• ••••")
-        self.chain_state.setText("VERIFIED" if intact else "REVIEW")
+        self.chain_state.setText(
+            "VERIFIED" if intact else "NOT VERIFIED" if skipped else "REVIEW")
         self.chain_state.setStyleSheet(
             f"color: {OK_GREEN if intact else WARN_AMBER}; font-size: 15px;"
             f" font-weight: 800; background: transparent;")
@@ -1560,6 +1567,15 @@ class DashboardWindow(QWidget):
             self.chain_state.setText("VERIFIED")
             self.chain_state.setStyleSheet(
                 f"color: {OK_GREEN}; font-size: 15px; font-weight: 800; background: transparent;")
+        elif vd.chain_skipped(data):
+            # This button used to answer "⚠ Broken at seq None / TAMPERED" here
+            # — announcing an alteration for a check the server never ran. Same
+            # bug the Verify page carried; it is worse on a button labelled
+            # "Verify chain", so both now report no result rather than a break.
+            self.verify_btn.setText(f"Not verified · {count:,} blocks")
+            self.chain_state.setText("NOT VERIFIED")
+            self.chain_state.setStyleSheet(
+                f"color: {WARN_AMBER}; font-size: 15px; font-weight: 800; background: transparent;")
         else:
             self.verify_btn.setText(f"⚠ Broken at seq {broken}")
             self.chain_state.setText("TAMPERED")
@@ -2629,7 +2645,14 @@ class DashboardWindow(QWidget):
         self.v_quick_result.setText(message)
 
     def run_chain_check(self):
-        """The whole-ledger check. Says so when it only covered a window."""
+        """The whole-ledger check.
+
+        Three outcomes: intact, a named break, or no result at all — above 50k
+        records the server declines the recompute, and `chain_result` reports
+        that as "not verified" rather than as a break it never found. (This
+        docstring used to say the check "only covered a window"; it does not
+        cover one — nothing is checked at that size.)
+        """
         self.v_chain_result.show_result(
             "checking", "Checking the chain…",
             "Re-deriving every record from its predecessor.")
@@ -2699,6 +2722,10 @@ class DashboardWindow(QWidget):
         self._init_verify()                 # shares the bucket
         self._export_head = ""
         self._export_org = ""
+        # None until /v1/auth/me answers. Masked while unknown: revealing a
+        # workspace identifier before we know whether the user asked us to hide
+        # it gets the order wrong, and the cost of waiting is one render.
+        self._hide_metadata: bool | None = None
         self.set_export_range(90)
 
     def set_export_range(self, days: int):
@@ -2806,7 +2833,8 @@ class DashboardWindow(QWidget):
     def _on_export_verify(self, data):
         self.exp_meta["records"].setText(ed.records_text(data))
         text, tone = ed.integrity_text(data)
-        colour = {"ok": OK_GREEN, "bad": BAD_RED}.get(tone, WEB["muted"])
+        colour = {"ok": OK_GREEN, "bad": BAD_RED,
+                  "warn": WARN_AMBER}.get(tone, WEB["muted"])
         self.exp_meta["integrity"].setStyleSheet(
             f"color: {colour}; font-family: '{_pick_font('disp')}';"
             f" font-size: 11px; font-weight: 800; background: transparent;")
@@ -2819,8 +2847,19 @@ class DashboardWindow(QWidget):
         self._render_export_metadata()
 
     def _on_export_org(self, data):
-        self._export_org = str((data or {}).get("org_id") or "") \
-            if isinstance(data, dict) else ""
+        me = data if isinstance(data, dict) else {}
+        self._export_org = str(me.get("org_id") or "")
+        # The web drives the initial mask state off this preference
+        # (html:2170 `masked = !!prefs.hide_sensitive_metadata`, fed by
+        # /v1/auth/me). We were fetching the payload and discarding
+        # `preferences`, so a user who had turned the setting on still got
+        # their chain head and org id in plain text on this card.
+        prefs = me.get("preferences")
+        if isinstance(prefs, dict):
+            self._hide_metadata = bool(prefs.get("hide_sensitive_metadata"))
+            # setChecked only emits `toggled` on a real change; the explicit
+            # render below covers the case where it does not.
+            self.exp_reveal.setChecked(not self._hide_metadata)
         self._render_export_metadata()
 
     def on_reveal_metadata(self, revealed: bool):
@@ -2830,8 +2869,14 @@ class DashboardWindow(QWidget):
     def _render_export_metadata(self):
         revealed = self.exp_reveal.isChecked()
         for key, value in (("head", self._export_head), ("org", self._export_org)):
-            self.exp_meta[key].setText(
-                (value or "—") if revealed else ed.mask(value))
+            if not revealed:
+                self.exp_meta[key].setText(ed.mask(value))
+            elif key == "head":
+                # Grouped so the label has somewhere to wrap (see ed.grouped);
+                # the org id is short and its own separators already break it.
+                self.exp_meta[key].setText(ed.grouped(value))
+            else:
+                self.exp_meta[key].setText(value or "—")
 
     def copy_chain_head(self):
         from PyQt6.QtWidgets import QApplication
@@ -2921,10 +2966,12 @@ class DashboardWindow(QWidget):
                      on_err=self._on_key_create_failed)
 
     def _on_key_create_failed(self, err):
-        # The 402 body is not reachable through the worker's error string, so
-        # the status is what identifies it; the wording comes from access_data.
+        # The 402 body is a structured detail ({code, message, used, included});
+        # only its `message` survives the worker's string-only error contract,
+        # so prefer the server's own sentence and fall back to ours when the
+        # detail did not arrive at all (transport failure, empty body).
         if status_of(err) == 402:
-            self.toast.show_message(ad.LIMIT_REACHED_FALLBACK)
+            self.toast.show_message(detail_of(err) or ad.LIMIT_REACHED_FALLBACK)
             return
         self.toast.show_message(f"Create failed — {err}")
 

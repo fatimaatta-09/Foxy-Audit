@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QApplication
 import access_data as ad
 import export_data as ed
 import verify_data as vd
+from foxy_client import ApiError, detail_of, status_of
 from panel_state import PanelState
 
 
@@ -75,13 +76,47 @@ def test_a_gap_and_a_mutation_are_reported_differently():
     assert "gap" in gap[1] and "altered" in mutation[1]
 
 
-def test_a_partial_window_check_says_so():
-    """"chain intact" over a window is a narrower claim than over everything,
-    and an audit tool must not let them read the same."""
+def test_a_check_that_never_ran_is_not_reported_as_tampering():
+    """The regression this exists for: above 50k rows the backend SKIPS
+    verification and answers ok=False with no broken seq (verify.py:108-115).
+    Reading that as a finding produced "⚠ tampering detected — a record was
+    altered at seq None" — an alteration announced on a chain nothing was run
+    against, on the product whose whole claim is tamper-evidence."""
+    skipped = {"ok": False, "first_broken_seq": None, "count": 60_000,
+               "detail": "chain too long for full verify, use partial window"}
+    tone, title, detail = vd.chain_result(skipped)
+    assert tone == "warn"                      # not "bad" — nothing was found
+    assert title.startswith("Not verified")
+    for word in ("tampering", "altered", "gap", "seq None"):
+        assert word not in title and word not in detail
+    # and it must still be told apart from a real break
+    assert vd.chain_result({"ok": False, "first_broken_seq": 4,
+                            "detail": "hash mismatch"})[0] == "bad"
+
+
+def test_the_partial_window_note_is_reachable_and_says_nothing_was_checked():
+    """It used to fire only when `ok` was true, which the backend never returns
+    for a long ledger — so it was unreachable, and its old wording ("checked
+    the most recent N records") described a check that does not happen."""
     assert vd.partial_window_note({"count": 10}) == ""
     note = vd.partial_window_note({"count": 60_000})
-    assert "bounded window" in note
-    assert vd.chain_result({"ok": True, "count": 60_000})[2] == note
+    assert "Nothing was checked" in note and vd.OFFLINE_COMMAND in note
+    assert vd.chain_result({"ok": False, "first_broken_seq": None,
+                            "count": 60_000})[2] == note
+
+
+def test_an_incomplete_answer_never_becomes_a_finding():
+    """`chain_skipped` keys off the ABSENCE of a sequence number, so any future
+    "no result" shape the backend grows is also reported as no result rather
+    than as a detected break."""
+    assert vd.chain_skipped({"ok": False, "first_broken_seq": None})
+    assert not vd.chain_skipped({"ok": False, "first_broken_seq": 4})
+    assert not vd.chain_skipped({"ok": True}) and not vd.chain_skipped(None)
+    # a small ledger with no seq: still no claim, and it does not pretend the
+    # 50k window explains it
+    tone, title, detail = vd.chain_result({"ok": False, "count": 12})
+    assert tone == "warn" and title.startswith("Not verified")
+    assert detail == vd.NOT_VERIFIED_FALLBACK
 
 
 def test_anchor_conflict_is_not_an_error():
@@ -142,10 +177,32 @@ def test_integrity_and_records_never_claim_a_number_they_lack():
         "broken at seq 7"
 
 
-def test_metadata_is_masked_by_default():
-    assert ed.mask("9f2c1ab77e0d5544abcdef") == "9f2c1a…cdef"
+def test_the_metadata_card_does_not_claim_a_break_either():
+    """Same false claim as the Verify page, on a different surface: this card
+    rendered the never-checked ledger as "broken at seq None" in red."""
+    text, tone = ed.integrity_text({"ok": False, "first_broken_seq": None,
+                                    "count": 60_000})
+    assert tone == "warn" and text.startswith("not verified")
+    assert "broken" not in text
+
+
+def test_the_mask_matches_the_web_byte_for_byte():
+    """web `maskStr` (html:2167): 4 head + six bullets + 4 tail, and anything
+    short enough to be identified by its ends is hidden entirely."""
+    assert ed.mask("9f2c1ab77e0d5544abcdef") == "9f2c••••••cdef"
     assert ed.mask("") == "—"
-    assert ed.mask("short") == "short"
+    assert ed.mask("short") == "••••••"      # was returned in full
+
+
+def test_a_revealed_hash_has_somewhere_to_wrap():
+    """64 unbroken characters have no break opportunity, so the label dragged
+    its card past the column and then clipped the front of the hash. Grouping
+    is a display transform only — `copy head` copies the stored value."""
+    head = "9f2c1ab77e0d5544" * 4
+    shown = ed.grouped(head)
+    assert shown.replace(" ", "") == head and " " in shown
+    assert max(len(part) for part in shown.split(" ")) == 8
+    assert ed.grouped("") == "—"
 
 
 def test_history_range_labels():
@@ -243,13 +300,19 @@ def test_stat_row_is_all_dashes_before_anything_is_known():
     assert [t[1] for t in ad.stat_row(None, None)] == ["—", "—", "—", "—"]
 
 
-def test_the_quota_limit_message_carries_the_numbers():
-    message = ad.limit_reached_message(
-        {"code": "api_key_limit_reached", "message": "No slots.",
-         "used": 3, "included": 3})
-    assert "3 of 3" in message
-    assert ad.limit_reached_message({"code": "other"}) is None
-    assert ad.limit_reached_message("nope") is None
+def test_the_402_shows_the_servers_own_sentence_not_a_python_dict():
+    """keys.py:116 answers 402 with a structured detail. It used to reach the
+    toast as a raw `{'code': …}` repr, and the only shaped function for it
+    (`limit_reached_message`) could never be called because nothing downstream
+    of the worker ever holds the dict — so it is gone and the message travels
+    the way every other error does."""
+    err = ApiError(402, "Payment Required",
+                   {"code": "api_key_limit_reached", "message": "No slots.",
+                    "used": 3, "included": 3})
+    assert str(err) == "HTTP 402: No slots."
+    assert status_of(err) == 402 and detail_of(err) == "No slots."
+    assert not hasattr(ad, "limit_reached_message")
+    assert ad.LIMIT_REACHED_FALLBACK        # the no-detail fallback stays
 
 
 def test_create_body_clamps_expiry_like_the_web():
@@ -329,6 +392,42 @@ def test_anchors_empty_and_error_say_different_things(console):
     assert console.v_anchor_empty.title.text() == ERROR_TITLE
 
 
+_SKIPPED_VERIFY = {"ok": False, "first_broken_seq": None, "count": 60_000,
+                   "detail": "chain too long for full verify, use partial window"}
+
+
+def test_no_surface_announces_tampering_for_a_check_that_never_ran(console):
+    """The same payload reaches three widgets. All three said a record had been
+    altered — the Verify panel in red at "seq None", the System card as
+    "TAMPERED", the Export card as "broken at seq None"."""
+    console.v_chain_result.show_result(*vd.chain_result(_SKIPPED_VERIFY))
+    assert console.v_chain_result.tone() == "warn"
+
+    console._on_verify_success(_SKIPPED_VERIFY)
+    assert console.chain_state.text() == "NOT VERIFIED"
+    console._on_verify_stats(_SKIPPED_VERIFY)
+    assert "not verified" in console.chain_meta.text()
+
+    console._on_export_verify(_SKIPPED_VERIFY)
+    assert console.exp_meta["integrity"].text().startswith("not verified")
+
+    for widget in (console.v_chain_result.title, console.v_chain_result.detail,
+                   console.chain_state, console.chain_meta,
+                   console.exp_meta["integrity"]):
+        text = widget.text().lower()
+        assert "tamper" not in text and "broken" not in text, text
+        assert "none" not in text, text          # "seq None" in any casing
+
+    # a real break must still be red and named on every one of them
+    real = {"ok": False, "first_broken_seq": 42, "detail": "hash mismatch at 42"}
+    console.v_chain_result.show_result(*vd.chain_result(real))
+    console._on_verify_success(real)
+    console._on_export_verify(real)
+    assert console.v_chain_result.tone() == "bad"
+    assert console.chain_state.text() == "TAMPERED"
+    assert "42" in console.exp_meta["integrity"].text()
+
+
 def test_export_range_presets_drive_the_pickers(console):
     console.set_export_range(30)
     assert console.exp_range_buttons[30].isChecked()
@@ -342,9 +441,40 @@ def test_export_range_presets_drive_the_pickers(console):
 def test_chain_metadata_is_masked_until_revealed(console):
     console._on_export_head({"items": [{"chain_hash": "9f2c1ab77e0d5544abcdef"}]})
     console._on_export_org({"org_id": "11112222333344445555"})
-    assert "…" in console.exp_meta["head"].text()
+    assert ed.MASK_FILL in console.exp_meta["head"].text()
     console.exp_reveal.setChecked(True)
-    assert console.exp_meta["head"].text() == "9f2c1ab77e0d5544abcdef"
+    # revealed = the real value, grouped so a 64-char hash can wrap
+    assert console.exp_meta["head"].text().replace(" ", "") == \
+        "9f2c1ab77e0d5544abcdef"
+    console.exp_reveal.setChecked(False)
+
+
+def test_the_initial_mask_state_comes_from_the_users_preference(console):
+    """`hide_sensitive_metadata` drives it on the web (html:2170) and we were
+    fetching /v1/auth/me for the org id and dropping `preferences` on the floor
+    — so someone who had switched the setting on still got their chain head in
+    plain text here."""
+    console._on_export_head({"items": [{"chain_hash": "9f2c1ab77e0d5544abcdef"}]})
+
+    console._on_export_org({"org_id": "1111", "preferences":
+                            {"hide_sensitive_metadata": True}})
+    assert console._hide_metadata is True
+    assert not console.exp_reveal.isChecked()
+    assert ed.MASK_FILL in console.exp_meta["head"].text()
+
+    console._on_export_org({"org_id": "1111", "preferences": {}})
+    assert console._hide_metadata is False       # absent means off, as on the web
+    assert console.exp_reveal.isChecked()
+    assert console.exp_meta["head"].text().replace(" ", "") == \
+        "9f2c1ab77e0d5544abcdef"
+
+    # A failed /v1/auth/me carries no preference, so it must not move the
+    # state; and before any answer the page starts masked (the toggle is built
+    # unchecked) — revealing first and asking afterwards is the wrong order.
+    console._on_export_org({"org_id": "1111",
+                            "preferences": {"hide_sensitive_metadata": True}})
+    console._on_export_org(None)
+    assert console._hide_metadata is True and not console.exp_reveal.isChecked()
     console.exp_reveal.setChecked(False)
 
 

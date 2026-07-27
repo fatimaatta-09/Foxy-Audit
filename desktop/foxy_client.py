@@ -82,9 +82,17 @@ class ApiError(Exception):
         # this IP is not allowed"); `reason` is only the generic HTTP phrase
         # ("Forbidden"). Workers hand str(exc) to the UI, so preferring reason
         # here silently threw away every message worth showing.
+        detail = self.detail
+        if isinstance(detail, dict):
+            # A few endpoints answer with a structured detail (keys.py:116's
+            # 402 is {code, message, used, included}). Interpolating the dict
+            # put a raw Python repr in a toast; its `message` is the half a
+            # human can act on. The machine-readable fields do not survive —
+            # only a str crosses the worker signal boundary (see ApiWorker).
+            detail = detail.get("message") or detail.get("code") or ""
         if self.status:
-            return f"HTTP {self.status}: {self.detail or self.reason}"
-        return self.detail or self.reason or "connection failed"
+            return f"HTTP {self.status}: {detail or self.reason}"
+        return detail or self.reason or "connection failed"
 
     def __str__(self) -> str:
         return self._text()
@@ -443,7 +451,7 @@ class FoxyClient(QObject):
         sent_with = self.http.session_value(base_url)
         try:
             return self.http.request(method, path, body=body, timeout=timeout,
-                                     force_bearer=force_bearer,
+                                     force_bearer=force_bearer, raw=raw,
                                      base_url=base_url, bearer_key=bearer_key)
         except StepUpRequired as e:
             self.step_up_required.emit(e)
@@ -598,6 +606,18 @@ def status_of(error) -> int | None:
     """
     match = _STATUS_RE.match(str(error or ""))
     return int(match.group(1)) if match else None
+
+
+def detail_of(error) -> str:
+    """The server's half of a worker error string, without the "HTTP 404: ".
+
+    The same one-way flattening as `status_of`: `ApiError` already put the
+    actionable text there, and this is how a handler shows it without the
+    status code repeated in front of a sentence.
+    """
+    text = str(error or "").strip()
+    match = _STATUS_RE.match(text)
+    return text[match.end():].lstrip(": ").strip() if match else text
 
 
 def spawn_worker(client: FoxyClient, method: str, path: str, *, body=None,

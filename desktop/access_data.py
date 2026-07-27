@@ -97,17 +97,6 @@ def _relative(iso) -> str:
     return relative_time(iso) or "—"
 
 
-def limit_reached_message(detail) -> str | None:
-    """The 402 body from POST /v1/keys (keys.py:116). None if it isn't that."""
-    if not isinstance(detail, dict) or detail.get("code") != "api_key_limit_reached":
-        return None
-    used, included = detail.get("used"), detail.get("included")
-    counts = (f" You are using {used} of {included}."
-              if used is not None and included is not None else "")
-    return (str(detail.get("message")
-                or "Your plan has no available active API-key slots.") + counts)
-
-
 def create_body(name: str, expires_in_days: str | int | None) -> dict:
     """POST /v1/keys. Mirrors the web's clamp of 3650 days (html:createKey)."""
     body = {"name": (name or "").strip() or "unnamed key"}
@@ -180,10 +169,13 @@ MEMBER_NOTICE = (
     "needs an admin account.")
 
 
-#: Shown when POST /v1/keys answers 402. The server's own message carries the
-#: used/included counts, but a worker's error string does not reach us with the
-#: body attached (see foxy_client.ApiWorker), so the fallback says the same
-#: thing without inventing numbers it cannot see.
+#: The FALLBACK for a 402 from POST /v1/keys, used only when the server's own
+#: message did not survive the trip (see `_on_key_create_failed`). The 402 body
+#: also carries used/included counts; those do not cross the worker's
+#: string-only error contract, so this says the same thing without inventing
+#: numbers it cannot see. There used to be a `limit_reached_message(detail)`
+#: here that formatted the counts — nothing could call it, because nothing ever
+#: had the dict, so it was deleted rather than left looking like live behavior.
 LIMIT_REACHED_FALLBACK = (
     "Your plan has no available active API-key slots. Revoke a key you no "
     "longer use, or upgrade to add another environment or service.")

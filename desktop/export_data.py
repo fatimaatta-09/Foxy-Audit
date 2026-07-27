@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from home_data import dict_rows
+from verify_data import chain_skipped
 
 #: (label, days) — 0 means "all time", which sends no date_from (web:2457).
 RANGE_PRESETS = (("30 days", 30), ("90 days", 90), ("1 year", 365),
@@ -112,11 +113,18 @@ def progress_for(stage: str) -> tuple[int, str]:
 
 # ── chain metadata card (web loadChainMeta, html:3348-3360) ─────────────────
 def integrity_text(verify: dict | None) -> tuple[str, str]:
-    """(text, tone) for chain integrity."""
+    """(text, tone) for chain integrity.
+
+    Three outcomes, not two: `ok=False` also covers the ledger the server never
+    checked, and this card used to render that as "broken at seq None" — a
+    detected break, in red, on a chain nothing was ever run against.
+    """
     if not isinstance(verify, dict):
         return "—", "mute"
     if verify.get("ok"):
         return "100% — no gaps", "ok"
+    if chain_skipped(verify):
+        return "not verified — ledger too long for a full check", "warn"
     return f"broken at seq {verify.get('first_broken_seq')}", "bad"
 
 
@@ -127,19 +135,44 @@ def records_text(verify: dict | None) -> str:
     return f"{thousands(int(_num(verify.get('count'))))} hash entries"
 
 
-def mask(value: str | None, *, head: int = 6, tail: int = 4) -> str:
-    """`9f2c1a…44ab` — the masked form of a chain head or org id.
+#: The web's mask glyph — six bullets, not an ellipsis (html:2167 `maskStr`).
+MASK_FILL = "••••••"
+
+
+def mask(value: str | None, *, head: int = 4, tail: int = 4) -> str:
+    """`9f2c••••••44ab` — the masked form of a chain head or org id.
+
+    Byte-identical to the web's `maskStr` (html:2167): four head, four tail,
+    and a value short enough to be given away by its ends is hidden entirely
+    rather than printed in full.
 
     These are not secrets, but they identify a workspace, and the console is
-    frequently on screen while someone screen-shares. Masked by default per the
-    `hide_sensitive_metadata` preference, revealable on request.
+    frequently on screen while someone screen-shares. The initial state comes
+    from the `hide_sensitive_metadata` preference — see
+    `DashboardWindow._on_export_org`; this function only formats.
     """
     text = (value or "").strip()
     if not text:
         return "—"
     if len(text) <= head + tail:
-        return text
-    return f"{text[:head]}…{text[-tail:]}"
+        return MASK_FILL
+    return f"{text[:head]}{MASK_FILL}{text[-tail:]}"
+
+
+def grouped(value: str | None, size: int = 8) -> str:
+    """A revealed chain hash, in groups of `size`.
+
+    64 hex characters have no break opportunity anywhere, so the label either
+    drags its card past the column (pushing the card beside it out of shape) or
+    silently clips the front of the hash — both of which rendering caught and
+    neither of which any assertion would. Grouping is also how a person
+    actually compares one hash against another. `copy head` copies the real
+    value, never this.
+    """
+    text = (value or "").strip()
+    if not text:
+        return "—"
+    return " ".join(text[i:i + size] for i in range(0, len(text), size))
 
 
 # ── export history (web loadExportHistory) ──────────────────────────────────

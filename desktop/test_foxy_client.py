@@ -87,6 +87,10 @@ class _StubHandler(BaseHTTPRequestHandler):
                         raw=b"\x00\x01binary-payload")
         elif self.path == "/v1/auth/me":
             self._reply(200, {"email": "t@example.com"})
+        elif self.path.startswith("/v1/logs/export"):
+            # The real endpoint answers JSON here (routers/logs.py:448-455) —
+            # the shape that made `raw` look like it worked when it did not.
+            self._reply(200, {"items": [{"seq": 1}]})
         else:
             self._reply(404, {"detail": "Not Found"})
 
@@ -110,6 +114,9 @@ class _StubHandler(BaseHTTPRequestHandler):
                         set_cookies=["session=sess-plain; Path=/; Max-Age=2592000"])
         elif self.path == "/v1/echo":
             self._reply(200, {"ok": True})
+        elif self.path == "/v1/passport":
+            self._reply(200, content_type="application/pdf",
+                        raw=b"%PDF-1.4\n%fake")
         elif self.path == "/v1/gated":
             if "stepup" in self._cookies().get("session", ""):
                 self._reply(200, {"ok": True})
@@ -274,6 +281,47 @@ def test_suspended_workspace_is_terminal(server):
 # ── responses & persistence ─────────────────────────────────────────────────
 def test_non_json_response_returns_raw_bytes(server):
     assert _client(server).request("GET", "/v1/binary") == b"\x00\x01binary-payload"
+
+
+def _qt_client(server) -> FoxyClient:
+    """The wrapper the app actually calls, over the stub. Settings=None makes
+    _credentials() read straight off the FoxyHttp."""
+    return FoxyClient(settings=None, http=_client(server))
+
+
+def test_raw_survives_the_wrapper_the_app_actually_calls(server):
+    """`FoxyClient.request` took `raw` and never forwarded it to FoxyHttp, so
+    every caller got the DEFAULT behaviour: parsed JSON, content-type gone.
+    Two shipped features were broken by that and no test saw it, because every
+    other raw test talks to FoxyHttp directly — the layer without the bug."""
+    client = _qt_client(server)
+
+    # 1. JSON log export: parsed dict here means `payload.get("body")` is None
+    #    and the save path reports "the server returned an empty file".
+    payload = client.request("GET", "/v1/logs/export?format=json", raw=True)
+    assert set(payload) == {"body", "content_type"}
+    assert json.loads(payload["body"]) == {"items": [{"seq": 1}]}
+    assert "json" in payload["content_type"]
+
+    # 2. Passport: the content-type is the only thing that tells a PDF from
+    #    HTML, and dropping it saved real PDFs under a .html name.
+    pdf = client.request("POST", "/v1/passport", raw=True)
+    assert pdf["body"].startswith(b"%PDF")
+    assert "pdf" in pdf["content_type"]
+
+    # without raw=, the same wrapper still parses JSON and returns bytes
+    assert client.request("GET", "/v1/logs/export?format=json") == \
+        {"items": [{"seq": 1}]}
+
+
+def test_the_raw_passport_reaches_the_save_dialog_as_a_pdf(server):
+    """End to end, because the two halves were individually right: the client
+    kept the content-type and export_data sniffed it, but nothing connected
+    them."""
+    import export_data as ed
+    got = _qt_client(server).request("POST", "/v1/passport", raw=True)
+    assert ed.suggested_filename("passport", got["content_type"]) \
+        .endswith(".pdf")
 
 
 def test_cookies_persist_across_clients_via_secret_store(server):

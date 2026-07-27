@@ -101,42 +101,75 @@ CHECKING = ("checking", "Checking the ledger…",
 _GAP = re.compile(r"sequence gap|previous hash mismatch", re.I)
 
 
+#: Above this many records the server declines the recompute entirely
+#: (`verify_chain` returns None — backend/app/routers/verify.py:34-35).
+PARTIAL_WINDOW_AT = 50_000
+
+NOT_VERIFIED_LONG = "Not verified — this ledger is too long for a full check"
+NOT_VERIFIED_OTHER = "Not verified — the server did not complete this check"
+NOT_VERIFIED_FALLBACK = (
+    "The server did not report a result for this check. Nothing is claimed "
+    "about the ledger either way — try again, or verify offline.")
+
+
+def chain_skipped(data: dict | None) -> bool:
+    """True when the server DECLINED to verify — as opposed to finding a break.
+
+    Above the bound the route answers `ok=False, first_broken_seq=None`
+    (verify.py:108-115), which is indistinguishable from a finding if you only
+    read `ok`. The absence of a sequence number is what separates them: the
+    backend names the seq on every real break it detects (verify.py:45,47,68),
+    so `ok=False` with no seq is never something it found.
+
+    Announcing an alteration that was never detected is the most damaging false
+    statement a tamper-evidence product can make, so this reads `ok=False` as
+    "no result" unless there is a sequence number to point at.
+    """
+    return (isinstance(data, dict) and not data.get("ok")
+            and data.get("first_broken_seq") is None)
+
+
 def chain_result(data: dict | None) -> tuple[str, str, str]:
     """(tone, title, detail) for the full-ledger check.
 
-    A gap and a mutation are different incidents — one says a record was
-    removed, the other that one was changed — and the backend distinguishes
-    them in `detail`. Reporting both as "tampering" would misdescribe the first.
+    Three outcomes, not two. A gap and a mutation are different incidents — one
+    says a record was removed, the other that one was changed — and the backend
+    distinguishes them in `detail`; reporting both as "tampering" would
+    misdescribe the first. And a check that never ran is neither: it is toned
+    `warn`, never `bad`, because nothing was found.
     """
     if not isinstance(data, dict):
         return ("bad", "Could not reach the server", "")
     if data.get("ok"):
         count = int(_num(data.get("count")))
-        return ("ok", f"✓ chain intact — {thousands(count)} blocks verified",
-                partial_window_note(data))
-    detail = str(data.get("detail") or "")
+        return ("ok", f"✓ chain intact — {thousands(count)} blocks verified", "")
+    detail = str(data.get("detail") or "").replace("<", "").replace(">", "")
+    if chain_skipped(data):
+        note = partial_window_note(data)
+        return ("warn", NOT_VERIFIED_LONG if note else NOT_VERIFIED_OTHER,
+                note or detail or NOT_VERIFIED_FALLBACK)
     seq = data.get("first_broken_seq")
     title = ("⚠ record missing — the ledger has a gap" if _GAP.search(detail)
              else "⚠ tampering detected — a record was altered")
-    return ("bad", f"{title} at seq {seq}", detail.replace("<", "").replace(">", ""))
-
-
-#: The server verifies a bounded window on very large ledgers.
-PARTIAL_WINDOW_AT = 50_000
+    return ("bad", f"{title} at seq {seq}", detail)
 
 
 def partial_window_note(data: dict | None) -> str:
-    """Say so when the check covered a window rather than everything.
+    """What "not verified" means on a ledger this size, and what to do instead.
 
-    "chain intact" over a partial window is a narrower claim than over the
-    whole ledger, and an audit tool must not let the two read the same.
+    This used to say the server had "checked the most recent N records". It
+    never does — above the bound it verifies nothing at all — so that was the
+    same false claim in a quieter voice. The honest version says no check ran
+    and points at the one that would settle it.
     """
     count = int(_num((data or {}).get("count")))
     if count < PARTIAL_WINDOW_AT:
         return ""
-    return (f"Checked the most recent {thousands(count)} records — on a ledger "
-            f"this size the server verifies a bounded window, so this result "
-            f"covers that window rather than every record ever written.")
+    return (f"This ledger holds {thousands(count)} records; above "
+            f"{thousands(PARTIAL_WINDOW_AT)} the server does not recompute the "
+            f"whole chain on request. Nothing was checked here — this is "
+            f"neither a pass nor a failure. Export the ledger and run "
+            f"`{OFFLINE_COMMAND}` for a full, independent check.")
 
 
 # ── anchors (web loadAnchors, html:3300) ────────────────────────────────────

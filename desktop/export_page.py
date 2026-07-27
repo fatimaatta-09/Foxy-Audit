@@ -14,7 +14,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from foxy_tokens import BAD_RED, OK_GREEN, RADIUS, WEB, pick_font
@@ -150,15 +150,35 @@ class ExportSections:
             line.addStretch()
             value = _label("—", size=11, bold=True,
                            mono=key in ("head", "org"))
+            if key in ("head", "org"):
+                # A revealed chain head is 64 unbroken characters and pushed
+                # this card past its column, squeezing the one beside it — the
+                # masked form fits, so nothing showed it until the preference
+                # could start revealed. Wrap inside the card instead.
+                value.setWordWrap(True)
+                value.setAlignment(Qt.AlignmentFlag.AlignRight
+                                   | Qt.AlignmentFlag.AlignVCenter)
+                # A 64-character hash has no break opportunity, so the label's
+                # minimum size hint is the whole string and it drags the card
+                # wider than its column no matter the stretch factors. Ignored
+                # lets the layout size it down; word wrap then splits it.
+                value.setSizePolicy(QSizePolicy.Policy.Ignored,
+                                    QSizePolicy.Policy.Preferred)
             o.exp_meta[key] = value
-            line.addWidget(value)
+            # Only the wrapping values take the spare width; the short ones
+            # stay hard against the right edge like every other stat line.
+            line.addWidget(value, 1 if key in ("head", "org") else 0)
             lay2.addLayout(line)
 
         # The head and org id identify a workspace and this console is often on
         # screen while someone shares it, so they are masked by default and
         # revealed deliberately.
         o.exp_reveal = QPushButton("reveal")
-        o.exp_reveal.setObjectName("ghostBtn")
+        # Checkable → segBtn, for the same reason `exp_all_time` is one: a
+        # checkable ghostBtn has no :checked rule, so Qt falls back to the
+        # native "on" look — which rendered as a bright cyan button that
+        # belongs to no palette in this app. Caught by rendering it checked.
+        o.exp_reveal.setObjectName("segBtn")
         o.exp_reveal.setCheckable(True)
         o.exp_reveal.setMinimumHeight(44)
         o.exp_reveal.setCursor(Qt.CursorShape.PointingHandCursor)
