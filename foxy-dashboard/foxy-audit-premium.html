@@ -2097,8 +2097,16 @@ async function loadLoginHistory(){
   }
   function drawStacked(host,o){
     var P=norm(o), labels=P.labels, series=P.series;
-    if(!series.length||!series[0].values.length){host.innerHTML=emptyMarkup(o);return;}
-    var n=series[0].values.length, totals=[]; for(var i=0;i<n;i++){ var t=0; series.forEach(function(s){t+=(+s.values[i]||0);}); totals.push(t); }
+    // Span the LONGEST series, not series[0]. Keying off the first series meant
+    // a stacked chart whose FIRST band was empty drew nothing at all — for
+    // "Breaches over time" that is any window with no High-risk days, so a week
+    // of Medium and Low breaches rendered as "No breaches in this window". A
+    // false empty state is worse than a blank chart: it states something about
+    // the ledger that is not true. Missing points count as 0, so a shorter
+    // series simply contributes nothing at those indices.
+    if(!series.length||!series.some(function(s){return s.values.length;})){host.innerHTML=emptyMarkup(o);return;}
+    var n=Math.max.apply(null,series.map(function(s){return s.values.length;}));
+    var totals=[]; for(var i=0;i<n;i++){ var t=0; series.forEach(function(s){t+=(+s.values[i]||0);}); totals.push(t); }
     var max=Math.max(1,Math.max.apply(null,totals));
     var W=cw(host,200), H=o.height||150, pb=20, pt=12, gap=Math.max(4,W*0.03), bw=(W-gap*(n-1))/n;
     var marks='', labs='', tips=[];
