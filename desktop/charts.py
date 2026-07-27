@@ -392,11 +392,17 @@ class FoxChart(QWidget):
             title, Qt.TextElideMode.ElideRight, int(r.width()) - 8)
         p.drawText(QRectF(r.left(), cy + 6, r.width(), 18),
                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, title)
-        if desc:
+        # The body only fits in a chart tall enough to hold it under the mark
+        # and the title. A short one (a 60px hbar with no rows, the 120px
+        # activity bar) was drawing it into the bottom edge and slicing the
+        # sentence in half — half a sentence about a failure reads worse than
+        # none, and the title already carries the news.
+        if desc and (r.bottom() - (cy + 24)) >= 26:
             fd = QFont(pick_font("mono"), 7)
             p.setFont(fd)
             p.setPen(qcolor(WEB["muted"]))
-            p.drawText(QRectF(r.left() + 8, cy + 24, r.width() - 16, 30),
+            p.drawText(QRectF(r.left() + 8, cy + 24, r.width() - 16,
+                              max(0.0, min(30.0, r.bottom() - (cy + 24)))),
                        int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
                            | Qt.TextFlag.TextWordWrap), desc)
 
@@ -533,36 +539,46 @@ class FoxChart(QWidget):
                                       f"{lab}{name} · {_fmt(s['values'][i])}"))
 
         if not spark and labels:
-            p.setFont(self._axis_font())
-            p.setPen(qcolor(WEB["muted"]))
-            step = max(1, -(-len(labels) // 6))         # ceil(len/6), as the web
-            fm = QFontMetrics(self._axis_font())
-            drawn_right = None
-            for i, lab in enumerate(labels):
-                if i % step and i != len(labels) - 1:
-                    continue
-                x = X(i)
-                if i == 0:
-                    rect, flag = QRectF(x, H - 16, 60, 14), Qt.AlignmentFlag.AlignLeft
-                elif i == len(labels) - 1:
-                    rect, flag = QRectF(x - 60, H - 16, 60, 14), Qt.AlignmentFlag.AlignRight
-                else:
-                    rect, flag = QRectF(x - 30, H - 16, 60, 14), Qt.AlignmentFlag.AlignHCenter
-                # The final tick is always drawn, so on a series whose length is
-                # just past a step boundary it lands on top of its neighbour and
-                # the two dates render as one unreadable smear. Skip it instead.
-                #
-                # The glyphs, not the layout rect, are what collide: every rect
-                # here is 60px wide but a label rarely fills it, and a CENTRED
-                # label sits inset by half the slack on each side. Measuring the
-                # rect edges (as the first cut did) overstates the box on the
-                # left and understates it on the right, so a genuine overlap
-                # could still slip through.
-                left, right = _text_bounds(rect, flag, fm.horizontalAdvance(str(lab)))
-                if drawn_right is not None and left < drawn_right + _TICK_GAP:
-                    continue
-                p.drawText(rect, flag | Qt.AlignmentFlag.AlignVCenter, str(lab))
-                drawn_right = right
+            self._paint_ticks(p, labels, X, H)
+
+    def _paint_ticks(self, p: QPainter, labels: list, x_of, H: float):
+        """Draw the x-axis labels, thinned so they cannot overlap.
+
+        Shared by the line/area and stacked painters. Stacked used to draw
+        EVERY label into its own bar-width rect: at 28 days that is ~20px for a
+        10-character date, so the axis rendered as a row of clipped fragments
+        rather than dates. Same series in the line chart read fine, because
+        only this path thinned them.
+        """
+        p.setFont(self._axis_font())
+        p.setPen(qcolor(WEB["muted"]))
+        step = max(1, -(-len(labels) // 6))         # ceil(len/6), as the web
+        fm = QFontMetrics(self._axis_font())
+        drawn_right = None
+        for i, lab in enumerate(labels):
+            if i % step and i != len(labels) - 1:
+                continue
+            x = x_of(i)
+            if i == 0:
+                rect, flag = QRectF(x, H - 16, 60, 14), Qt.AlignmentFlag.AlignLeft
+            elif i == len(labels) - 1:
+                rect, flag = QRectF(x - 60, H - 16, 60, 14), Qt.AlignmentFlag.AlignRight
+            else:
+                rect, flag = QRectF(x - 30, H - 16, 60, 14), Qt.AlignmentFlag.AlignHCenter
+            # The final tick is always drawn, so on a series whose length is
+            # just past a step boundary it lands on top of its neighbour and
+            # the two dates render as one unreadable smear. Skip it instead.
+            #
+            # The glyphs, not the layout rect, are what collide: every rect here
+            # is 60px wide but a label rarely fills it, and a CENTRED label sits
+            # inset by half the slack on each side. Measuring the rect edges
+            # overstates the box on the left and understates it on the right, so
+            # a genuine overlap could still slip through.
+            left, right = _text_bounds(rect, flag, fm.horizontalAdvance(str(lab)))
+            if drawn_right is not None and left < drawn_right + _TICK_GAP:
+                continue
+            p.drawText(rect, flag | Qt.AlignmentFlag.AlignVCenter, str(lab))
+            drawn_right = right
 
     def _paint_stacked(self, p: QPainter, r: QRectF):
         labels, series = self._norm()
@@ -598,13 +614,11 @@ class FoxChart(QWidget):
                 p.drawRect(QRectF(bx, yb, bw, seg))
                 parts.append(f"{s.get('name') or f'S{si + 1}'}: {_fmt(v)}")
             label = str(labels[i]) if i < len(labels) else ""
-            p.setPen(qcolor(WEB["muted"]))
-            p.drawText(QRectF(bx, H - 18, bw, 16),
-                       Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
-                       label)
             tip = label + ("\n" + "\n".join(parts) if parts else "")
             self._hit.append((QRectF(bx, r.top(), bw, H),
                               f"{tip}\ntotal {_fmt(totals[i])}"))
+        if labels:
+            self._paint_ticks(p, labels, lambda i: i * (bw + gap) + bw / 2.0, H)
 
     def _paint_donut(self, p: QPainter, r: QRectF):
         rows = [x for x in self._rows() if _num(x.get("value")) > 0]

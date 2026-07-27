@@ -72,13 +72,20 @@ def test_go_switches_page_and_title(console, app):
 
 def test_existing_pages_are_remapped_not_duplicated(console):
     """Overview→Home, Threat Analytics→Threats, Audit Log→Ledger: the widgets
-    that already worked must be reused, not rebuilt beside new empties."""
+    that already worked must be reused, not rebuilt beside new empties.
+
+    D5 replaced the D1-era Threats and Ledger stubs with the real pages, so the
+    widgets checked here are the real ones now. The live capture table is still
+    asserted because it is the case that matters: it is desktop-only
+    functionality fed by the fox over UDP, and rebuilding those pages must not
+    quietly drop it."""
     home = console.stack.widget(console._page_index["home"])
     threats = console.stack.widget(console._page_index["threats"])
     ledger = console.stack.widget(console._page_index["ledger"])
     assert console.hero.parent() is not None and home.isAncestorOf(console.hero)
-    assert threats.isAncestorOf(console.analytics_recent_card)
-    assert ledger.isAncestorOf(console.table)
+    assert threats.isAncestorOf(console.threat_timeline)
+    assert ledger.isAncestorOf(console.table)          # the live UDP feed
+    assert ledger.isAncestorOf(console.ledger_volume)  # ...beside the real ledger
 
 
 def test_unbuilt_sections_are_honest_stubs(console):

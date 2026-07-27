@@ -69,8 +69,12 @@ from charts import FoxChart
 import home_data as hd
 
 import panel_state
-from panel_state import PanelState, chart_empty
+from panel_state import PanelState, chart_empty, resolve
 
+from ledger_page import LedgerRow, LedgerSections
+from threats_page import ThreatsSections, alert_table_row
+import ledger_data as ld
+import threats_data as td
 from home_page import (
     FlipCard, HomeSections, activity_row, alert_row, coverage_row, ledger_row,
     onboarding_step_row, quick_check_face,
@@ -604,6 +608,8 @@ class DashboardWindow(QWidget):
         self._build(tokens)
         self.apply_theme(tokens)
         self._init_home()            # D4: Home's workers + activity re-tick
+        self._init_threats()         # D5: Threats page state
+        self._init_ledger()          # D5: Ledger page state
         self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
         self._sync_title()
 
@@ -647,10 +653,12 @@ class DashboardWindow(QWidget):
         # pages land in later phases get an honest stub, never fake data.
         self._page_index: dict[str, int] = {}
         self._home = HomeSections(self)
+        self._threats = ThreatsSections(self)
+        self._ledger = LedgerSections(self)
         builders = {
             "home": lambda t: self._home.build(self._page_overview(t)),
-            "threats": self._page_analytics,
-            "ledger": self._page_audit,
+            "threats": lambda t: self._threats.build(t),
+            "ledger": lambda t: self._ledger.build(t, self._live_capture(t)),
             "system": self._page_system,
             "sandbox": self._page_sandbox,
         }
@@ -1052,25 +1060,33 @@ class DashboardWindow(QWidget):
         v.addLayout(body, stretch=1)
         return page
 
-    def _page_audit(self, t: dict) -> QWidget:
-        page = QWidget()
-        v = QVBoxLayout(page)
-        v.setContentsMargins(22, 20, 22, 20)
-        v.setSpacing(12)
+
+    def _live_capture(self, t: dict) -> QWidget:
+        """The blind audit log the fox streams into over UDP.
+
+        No web counterpart and not part of the D5 spec, but real working
+        functionality: the paginated ledger above it is a page of server state,
+        while this is interactions arriving as they happen on this machine. It
+        lives here rather than in ledger_page because Card and AuditTable are
+        defined in this module."""
+        wrap = QWidget()
+        col = QVBoxLayout(wrap)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(8)
         head = QHBoxLayout()
-        cap = QLabel("BLIND AUDIT LOG")
+        cap = QLabel("LIVE CAPTURE")
         cap.setObjectName("tableCap")
         self.audit_count = QLabel("0 records")
         self.audit_count.setObjectName("tableCount")
         head.addWidget(cap)
         head.addStretch()
         head.addWidget(self.audit_count)
-        v.addLayout(head)
+        col.addLayout(head)
         self.table_card = Card(t)
         self.table = AuditTable(t)
         self.table_card.body.addWidget(self.table, stretch=1)
-        v.addWidget(self.table_card, stretch=1)
-        return page
+        col.addWidget(self.table_card, stretch=1)
+        return wrap
 
     def _page_system(self, t: dict) -> QWidget:
         page = QWidget()
@@ -1556,74 +1572,12 @@ class DashboardWindow(QWidget):
                      on_ok=self._on_refresh_success, on_err=self._on_refresh_failed,
                      track=self._workers)
 
-        # Trigger Analytics + org-name updates as well
-        spawn_worker(self.client, "GET", "/v1/analytics/threats", parent=self,
-                     on_ok=self._on_analytics_success, track=self._workers)
+        # D5: the Threats page owns its own fetches and reloads on navigation,
+        # so this no longer pulls /v1/analytics/threats on behalf of a stub
+        # page that no longer exists.
+        self.refresh_threats()
         self._refresh_org()
 
-    def _on_analytics_success(self, data: dict):
-        self.analytics_kpi_threats.set_value(str(data.get("total_threats", 0)))
-        self.analytics_kpi_risk.set_value(str(data.get("avg_risk_score", 0)))
-
-        # Update high risk list
-        # Clear existing items
-        while self.analytics_recent_box.count() > 1:
-            item = self.analytics_recent_box.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.hide()          # stop painting now, not next event loop
-                widget.deleteLater()
-        
-        recent = data.get("recent_high_risk", [])
-        if recent:
-            self.analytics_recent_empty.hide()
-            t = _clay_tokens()
-            for ev in recent:
-                row = QWidget()
-                rl = QHBoxLayout(row)
-                rl.setContentsMargins(2, 6, 2, 6)
-                
-                tlbl = QLabel(ev["timestamp"][:19].replace("T", " "))
-                tlbl.setStyleSheet(f"color: {t.get('text_muted', '#888')}; font-size: 11px;")
-                badge = Badge(f"RISK {ev['risk_score']}", BAD_RED)
-                dlbl = QLabel(f"Seq {ev['seq']} · {ev['policy_tag']} · {ev['reason']}")
-                dlbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
-                
-                rl.addWidget(tlbl)
-                rl.addWidget(badge)
-                rl.addWidget(dlbl, stretch=1)
-                row.setStyleSheet(f"border-top: 1px solid {_hairline(t, 30)};")
-                self.analytics_recent_box.insertWidget(self.analytics_recent_box.count()-1, row)
-        else:
-            self.analytics_recent_empty.show()
-
-        # Update policies list
-        while self.analytics_policies_box.count() > 1:
-            item = self.analytics_policies_box.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.hide()          # stop painting now, not next event loop
-                widget.deleteLater()
-                
-        policies = data.get("top_policies", [])
-        if policies:
-            self.analytics_policies_empty.hide()
-            t = _clay_tokens()
-            for p in policies:
-                row = QWidget()
-                rl = QHBoxLayout(row)
-                rl.setContentsMargins(2, 6, 2, 6)
-                plbl = QLabel(p["tag"])
-                plbl.setStyleSheet(f"color: {t['text']}; font-size: 12px;")
-                clbl = QLabel(f"{p['count']} breaches")
-                clbl.setStyleSheet(f"color: {WARN_AMBER}; font-size: 12px; font-weight: bold;")
-                
-                rl.addWidget(plbl, stretch=1)
-                rl.addWidget(clbl)
-                row.setStyleSheet(f"border-top: 1px solid {_hairline(t, 30)};")
-                self.analytics_policies_box.insertWidget(self.analytics_policies_box.count()-1, row)
-        else:
-            self.analytics_policies_empty.show()
 
     def _on_refresh_success(self, data: dict):
         items: list = data.get("items", [])
@@ -1643,48 +1597,7 @@ class DashboardWindow(QWidget):
         # Silently log — the table keeps its existing data
         print(f"[Dashboard] Refresh failed: {err}")
 
-    def _page_analytics(self, t: dict) -> QWidget:
-        page = QWidget()
-        v = QVBoxLayout(page)
-        v.setContentsMargins(22, 20, 22, 20)
-        v.setSpacing(16)
-        
-        kpis = QHBoxLayout()
-        kpis.setSpacing(14)
-        self.analytics_kpi_threats = KpiTile(t, "Total Threats", "0", "policy breaches", BAD_RED)
-        self.analytics_kpi_risk = KpiTile(t, "Avg Risk Score", "0", "across threats", WARN_AMBER)
-        kpis.addWidget(self.analytics_kpi_threats)
-        kpis.addWidget(self.analytics_kpi_risk)
-        kpis.addStretch()
-        v.addLayout(kpis)
 
-        body = QHBoxLayout()
-        body.setSpacing(16)
-
-        self.analytics_recent_card = Card(t, "Recent High-Risk Events")
-        self.analytics_recent_box = QVBoxLayout()
-        self.analytics_recent_box.setSpacing(0)
-        self.analytics_recent_empty = QLabel("No high-risk threats detected.")
-        self.analytics_recent_empty.setObjectName("emptyState")
-        self.analytics_recent_box.addWidget(self.analytics_recent_empty)
-        self.analytics_recent_box.addStretch()
-        self.analytics_recent_card.body.addLayout(self.analytics_recent_box, stretch=1)
-        body.addWidget(self.analytics_recent_card, stretch=2)
-
-        self.analytics_policies_card = Card(t, "Top Breached Policies")
-        self.analytics_policies_box = QVBoxLayout()
-        self.analytics_policies_box.setSpacing(0)
-        self.analytics_policies_empty = QLabel("All policies compliant.")
-        self.analytics_policies_empty.setObjectName("emptyState")
-        self.analytics_policies_box.addWidget(self.analytics_policies_empty)
-        self.analytics_policies_box.addStretch()
-        self.analytics_policies_card.body.addLayout(self.analytics_policies_box, stretch=1)
-        body.addWidget(self.analytics_policies_card, stretch=1)
-
-        v.addLayout(body, stretch=1)
-        return page
-
-    # ── D3 chrome behaviour ────────────────────────────────────────────────
     def _init_chrome(self):
         """Banner, palette, shortcut overlay, toast + the chrome pollers.
 
@@ -2378,6 +2291,269 @@ class DashboardWindow(QWidget):
             self.activity_stamp.setText(
                 f"updated {relative_time(self._activity_at.isoformat())}")
 
+    # ── Threats page (D5) ──────────────────────────────────────────────────
+    def _init_threats(self):
+        """Its own worker set, so a Threats fetch cannot gate a Home refresh
+        and vice versa. Only the periodic cycle uses a gating set (the C1
+        rule); these pages refresh on navigation, so theirs is a plain bucket
+        drained at teardown."""
+        self._threat_workers: set = set()
+        self._threat_days = td.DEFAULT_RANGE
+        self._threat_stats_payload = None
+        self._threat_payload = None
+
+    def refresh_threats(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET", "/v1/analytics/threats", timeout=12,
+                     parent=self, track=self._threat_workers,
+                     on_ok=self._on_threat_analytics,
+                     on_err=lambda _e: self._on_threat_analytics(None, ok=False))
+        spawn_worker(self.client, "GET", "/v1/stats", timeout=12, parent=self,
+                     track=self._threat_workers, on_ok=self._on_threat_stats,
+                     on_err=lambda _e: self._on_threat_stats(None, ok=False))
+        spawn_worker(self.client, "GET", "/v1/analytics/by-agent", timeout=12,
+                     parent=self, track=self._threat_workers,
+                     on_ok=self._on_by_agent,
+                     on_err=lambda _e: self._on_by_agent(None, ok=False))
+        self._load_timeline()
+
+    def set_threat_range(self, days: int):
+        """7d / 30d / 90d. Only the timeline re-fetches — the other panels are
+        not windowed, so refetching them would be wasted work."""
+        if days not in td.RANGES:
+            return
+        self._threat_days = days
+        for value, button in self.threat_range_buttons.items():
+            button.setChecked(value == days)
+        self._load_timeline()
+
+    def _load_timeline(self):
+        if not self._can_fetch():
+            return
+        spawn_worker(self.client, "GET",
+                     f"/v1/analytics/timeseries?days={self._threat_days}",
+                     timeout=12, parent=self, track=self._threat_workers,
+                     on_ok=self._on_timeline,
+                     on_err=lambda _e: self._on_timeline(None, ok=False))
+
+    def _on_threat_analytics(self, data, ok: bool = True):
+        self._threat_payload = data if ok else None
+        self._apply_threat_stats()
+
+        rows = td.alert_table_rows(data) if ok else []
+        state = PanelState.OK if rows else (
+            PanelState.EMPTY if ok else PanelState.ERROR)
+        self._fill_rows(self.threat_table, self.threat_rows_start,
+                        self.threat_table_empty, rows, alert_table_row, state,
+                        empty_title="No high-risk breaches",
+                        empty_body="Every graded interaction is within policy.")
+
+        view = td.avg_risk_view(data if ok else None)
+        self.avg_risk_num.setText(view["text"] if ok else "—")
+        self.avg_risk_label.setText(view["label"] if ok else "")
+        self.avg_risk_note.setText(view["note"] if ok else UNAVAILABLE_TEXT)
+        self.avg_risk_gauge.set_options(
+            value=view["value"] if ok else 0, max=100, height=14,
+            tone=view["tone"] if ok else "mute", tip=view["tip"],
+            aria="average breach risk out of 100",
+            empty=chart_empty(PanelState.OK if ok else PanelState.ERROR))
+
+        policies = td.policy_rows(data) if ok else []
+        self.threat_policies.set_options(
+            data=policies, height=td.hbar_height(policies), limit=td.TOP_N,
+            aria="top flagged policies",
+            empty=chart_empty(
+                resolve(ok, bool(policies)),
+                empty_title="No flagged policies",
+                empty_body="Nothing has breached policy yet."))
+
+    def _on_threat_stats(self, data, ok: bool = True):
+        self._threat_stats_payload = data if ok else None
+        self._apply_threat_stats()
+        bars = td.activity_bars(data) if ok else []
+        # Padded zero-days are real, so "has rows" means the window itself
+        # exists, not that anything happened in it.
+        self.threat_activity.set_options(
+            data=bars, height=120, aria="interactions per day, last 7 days",
+            empty=chart_empty(
+                resolve(ok, bool(bars)),
+                empty_title="No activity yet",
+                empty_body="Weekly volume appears as your SDK logs graded "
+                           "interactions."))
+
+    def _apply_threat_stats(self):
+        for label, (_name, value, _tone) in zip(
+                self.threat_stats,
+                td.stat_row(self._threat_stats_payload, self._threat_payload)):
+            label.setText(value)
+
+    def _on_timeline(self, data, ok: bool = True):
+        labels, series = td.timeline_series(data) if ok else ([], [])
+        self.threat_timeline.set_options(
+            labels=labels, series=series, height=180, legend=False,
+            aria="breaches per day by risk band",
+            empty=chart_empty(
+                resolve(ok, bool(labels)),
+                empty_title="No breaches in this window",
+                empty_body="Breaches appear here as the Judge flags "
+                           "interactions."))
+
+    def _on_by_agent(self, data, ok: bool = True):
+        rows = td.agent_rows(data) if ok else []
+        self.threat_by_agent.set_options(
+            data=rows, height=td.hbar_height(rows), limit=td.TOP_N,
+            aria="breaches by agent",
+            empty=chart_empty(
+                resolve(ok, bool(rows)),
+                empty_title="No breaches by agent yet",
+                empty_body="Attribution appears once flagged interactions "
+                           "carry an agent."))
+
+    # ── Ledger page (D5) ───────────────────────────────────────────────────
+    def _init_ledger(self):
+        self._ledger_workers: set = set()
+        self._ledger_page = 1
+        self._ledger_total = 0
+
+    def _ledger_filters(self) -> tuple[str, str, str]:
+        return (self.ledger_q.text(), self.ledger_policy.text(),
+                self.ledger_verdict.currentData() or "")
+
+    def apply_ledger_filters(self):
+        """Any filter change resets to page 1 — staying on page 7 of a result
+        set that no longer has seven pages would show an empty table and blame
+        the data for it."""
+        self._ledger_page = 1
+        self.refresh_ledger()
+
+    def clear_ledger_filters(self):
+        self.ledger_q.clear()
+        self.ledger_policy.clear()
+        self.ledger_verdict.setCurrentIndex(0)
+        if "" in self.ledger_chips:
+            self.ledger_chips[""].setChecked(True)
+        self.apply_ledger_filters()
+
+    def quick_ledger(self, verdict: str):
+        index = self.ledger_verdict.findData(verdict)
+        if index >= 0:
+            self.ledger_verdict.setCurrentIndex(index)
+        self.apply_ledger_filters()
+
+    def ledger_page(self, delta: int):
+        top = ld.max_page(self._ledger_total)
+        self._ledger_page = min(top, max(1, self._ledger_page + delta))
+        self.refresh_ledger()
+
+    def refresh_ledger(self):
+        if not self._can_fetch():
+            return
+        q, policy, verdict = self._ledger_filters()
+        query = ld.query_string(page=self._ledger_page, q=q,
+                                policy_tag=policy, verdict=verdict)
+        spawn_worker(self.client, "GET", f"/v1/logs{query}", timeout=15,
+                     parent=self, track=self._ledger_workers,
+                     on_ok=self._on_ledger_rows,
+                     on_err=lambda _e: self._on_ledger_rows(None, ok=False))
+        spawn_worker(self.client, "GET", "/v1/stats", timeout=12, parent=self,
+                     track=self._ledger_workers, on_ok=self._on_ledger_stats,
+                     on_err=lambda _e: self._on_ledger_stats(None, ok=False))
+        spawn_worker(self.client, "GET", "/v1/usage?days=90", timeout=12,
+                     parent=self, track=self._ledger_workers,
+                     on_ok=self._on_ledger_volume,
+                     on_err=lambda _e: self._on_ledger_volume(None, ok=False))
+
+    def _on_ledger_rows(self, data, ok: bool = True):
+        rows = ld.table_rows(data) if ok else []
+        self._ledger_total = int(hd._num((data or {}).get("total"))) if ok else 0
+        q, policy, verdict = self._ledger_filters()
+        filtered = any(x.strip() for x in (q, policy, verdict))
+        title, body = ld.empty_message(self._ledger_total, self._ledger_page,
+                                       filtered)
+        self._fill_rows(
+            self.ledger_rows, 0, self.ledger_empty, rows,
+            lambda row: LedgerRow(row, self._verify_record),
+            resolve(ok, bool(rows)), empty_title=title, empty_body=body)
+
+        self.ledger_count.setText(ld.count_label(self._ledger_total) if ok else "—")
+        self.ledger_page_lbl.setText(
+            ld.page_label(self._ledger_page, self._ledger_total) if ok else "")
+        top = ld.max_page(self._ledger_total)
+        self.ledger_prev.setEnabled(ok and self._ledger_page > 1)
+        self.ledger_next.setEnabled(ok and self._ledger_page < top)
+
+    def _on_ledger_stats(self, data, ok: bool = True):
+        for label, (_name, value, _tone) in zip(
+                self.ledger_stats, ld.summary_tiles(data if ok else None)):
+            label.setText(value)
+        slices, total = ld.verdict_slices(data) if ok else ([], 0)
+        self.ledger_donut.set_options(
+            data=slices if total else [], height=150, legend=True,
+            center=hd.thousands(total) if total else None,
+            aria="verdict distribution",
+            empty=chart_empty(
+                resolve(ok, bool(total)),
+                empty_title="Nothing graded yet",
+                empty_body="Verdicts appear once the Judge processes "
+                           "interactions."))
+
+    def _on_ledger_volume(self, data, ok: bool = True):
+        rows = ld.volume_rows(data) if ok else []
+        self.ledger_volume.set_options(
+            data=rows, height=140, tone="fox",
+            aria="records logged per day, last 90 days",
+            empty=chart_empty(
+                resolve(ok, bool(rows)),
+                empty_title="No records yet",
+                empty_body="Logged interactions appear here as your SDK "
+                           "reports them."))
+
+    def _verify_record(self, chain_hash: str, row_widget):
+        """Re-verify one record against the server. A one-off, so it uses the
+        one-off bucket — never a set another panel gates on."""
+        if not chain_hash:
+            row_widget.set_verify_result("no hash on this record", "warn")
+            return
+        spawn_worker(
+            self.client, "GET", f"/v1/verify/hash/{quote(chain_hash, safe='')}",
+            timeout=15, parent=self, track=self._oneoff_workers,
+            on_ok=lambda d: row_widget.set_verify_result(*ld.verify_result(d)),
+            on_err=lambda _e: row_widget.set_verify_result(
+                "could not verify", "warn"))
+
+    # ── shared list plumbing ───────────────────────────────────────────────
+    def _can_fetch(self) -> bool:
+        """Same gate the breach pip and Home use: every endpoint behind these
+        pages needs a credential, and firing them signed-out would paint
+        "backend unreachable" at someone who is simply signed out."""
+        if not self.isVisible() or not self.settings.backend_url():
+            return False
+        return bool(self.settings.org_api_key() or self.client.has_session())
+
+    def _fill_rows(self, layout, start: int, strip, rows: list, build,
+                   state, *, empty_title: str, empty_body: str):
+        """Rebuild a row list and put its status strip in the right state.
+
+        One place, because the D4 retrofit showed how easily two of these drift
+        apart — and every one of them has to distinguish "nothing" from
+        "couldn't ask"."""
+        while layout.count() > start:
+            item = layout.takeAt(start)
+            widget = item.widget()
+            if widget is not None and widget is not strip:
+                widget.hide()
+                widget.deleteLater()
+        if state is PanelState.OK:
+            strip.hide()
+            for row in rows:
+                layout.addWidget(build(row))
+        else:
+            strip.set_state(state, empty_title=empty_title,
+                            empty_body=empty_body)
+            strip.show()
+            layout.addWidget(strip)
+
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
 
@@ -2420,6 +2596,10 @@ class DashboardWindow(QWidget):
             btn.setChecked(True)
         if section_id == "threats":
             self._mark_breaches_read()
+        if section_id == "threats":
+            self.refresh_threats()
+        if section_id == "ledger":
+            self.refresh_ledger()
         if section_id == "home":
             # The web reloads a section's data on navigation; Home is the one
             # page whose numbers age while you sit in the ledger.
@@ -2626,7 +2806,8 @@ class DashboardWindow(QWidget):
         for anim in self.findChildren(QAbstractAnimation):
             anim.stop()
         shutdown_workers(self._workers | self._poll_workers | self._ann_workers
-                         | self._home_workers | self._oneoff_workers)
+                         | self._home_workers | self._oneoff_workers
+                         | self._threat_workers | self._ledger_workers)
         # Restore full opacity so the next show_animated fade starts from a
         # clean slate even though this instance is reused.
         self.setWindowOpacity(1.0)

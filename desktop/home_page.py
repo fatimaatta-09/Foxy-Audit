@@ -104,6 +104,44 @@ def _section_title(text: str, action: str | None = None) -> tuple[QWidget, QPush
     return row, btn
 
 
+def scroll_qss() -> str:
+    """The console's scroll-area skin. Shared so every long page scrolls the
+    same way rather than each one restating it."""
+    return (
+        f"QScrollArea {{ background: transparent; border: none; }}"
+        f"QScrollBar:vertical {{ width: 8px; background: transparent;"
+        f" margin: 6px 2px; }}"
+        f"QScrollBar::handle:vertical {{ background: {WEB['surf3']};"
+        f" border-radius: 4px; min-height: 30px; }}"
+        f"QScrollBar::handle:vertical:hover {{ background: {WEB['muted2']}; }}"
+        f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical"
+        f" {{ height: 0; }}")
+
+
+def seg_container() -> tuple[QWidget, QHBoxLayout, QButtonGroup]:
+    """The web's `.seg` pill (html:186-192): one container, exclusive buttons."""
+    seg = QWidget()
+    seg.setObjectName("seg")
+    lay = QHBoxLayout(seg)
+    lay.setContentsMargins(3, 3, 3, 3)
+    lay.setSpacing(2)
+    group = QButtonGroup(seg)
+    group.setExclusive(True)
+    return seg, lay, group
+
+
+def seg_button(text: str, *, accessible: str | None = None) -> QPushButton:
+    """One button inside a `.seg`. The checked pill is the only visual cue for
+    which option is live, so the accessible name spells it out."""
+    btn = QPushButton(text.upper())          # .seg uppercases in CSS
+    btn.setObjectName("segBtn")
+    btn.setCheckable(True)
+    btn.setMinimumHeight(30)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setAccessibleName(accessible or f"Show {text}")
+    return btn
+
+
 def _stat_tile(label: str, value: str = "—", tone: str | None = None) -> tuple[QFrame, QLabel]:
     frame = QFrame()
     frame.setObjectName("statTile")
@@ -236,17 +274,16 @@ class HomeSections:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(
-            f"QScrollArea {{ background: transparent; border: none; }}"
-            f"QScrollBar:vertical {{ width: 8px; background: transparent;"
-            f" margin: 6px 2px; }}"
-            f"QScrollBar::handle:vertical {{ background: {WEB['surf3']};"
-            f" border-radius: 4px; min-height: 30px; }}"
-            f"QScrollBar::handle:vertical:hover {{ background: {WEB['muted2']}; }}"
-            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical"
-            f" {{ height: 0; }}")
+        scroll.setStyleSheet(scroll_qss())
         body = QWidget()
-        body.setStyleSheet("background: transparent;")
+        body.setObjectName("pageBody")
+        # Scoped to the body itself. A selector-LESS "background: transparent"
+        # is applied by Qt to this widget AND every descendant, and being the
+        # closest ancestor sheet it beat the shell's
+        # `QPushButton#segBtn:checked { background: fox }` — so the active
+        # segment of every segmented control rendered with no pill at all.
+        # Measured: 108 orange pixels before, 697 after.
+        body.setStyleSheet("QWidget#pageBody { background: transparent; }")
         v = QVBoxLayout(body)
         v.setContentsMargins(22, 18, 22, 22)
         v.setSpacing(16)
