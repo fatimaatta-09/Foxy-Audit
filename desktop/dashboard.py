@@ -1597,13 +1597,16 @@ class DashboardWindow(QWidget):
         self.notif_panel.item_clicked.connect(self._on_notification_clicked)
         self.notif_panel.read_all_clicked.connect(self._mark_all_notifications_read)
 
-        self.palette = CommandPalette(self)
-        self.palette.chosen.connect(self._on_palette_choice)
+        self.cmd_palette = CommandPalette(self)
+        self.cmd_palette.chosen.connect(self._on_palette_choice)
         self.shortcuts = ShortcutsOverlay(self)
 
         self._g_pending = False
         self._breach_max_seq = 0
         self._ann_inputs = {"breaches": None, "plan": None, "usage": None}
+        # Its own set so the banner's in-flight guard can't be confused by the
+        # other one-shot workers sharing self._workers.
+        self._ann_workers: set = set()
         self._g_timer = QTimer(self)
         self._g_timer.setSingleShot(True)
         self._g_timer.setInterval(QUICK_NAV_WINDOW_MS)
@@ -1752,22 +1755,26 @@ class DashboardWindow(QWidget):
     def _refresh_announcement(self):
         """Three real signals, resolved in the web's priority order.
 
-        Guarded like _refresh_backend: if the previous cycle's three calls are
-        still in flight, skip rather than start a second set whose replies can
-        interleave and repaint stale banner state."""
+        The in-flight guard keys off the WORKER SET, exactly like
+        `_refresh_backend`/`_poll_workers`: membership is cleared by QThread's
+        `finished`, which fires on success AND on failure, so the guard cannot
+        latch. A counter decremented only from the success callback could — and
+        did: one blip on /v1/billing/plan left the count above zero and froze
+        the banner for the rest of the session."""
         if not self.settings.backend_url():
             return
-        if getattr(self, "_ann_pending", 0) > 0:
+        if self._ann_workers:
             return
         self._ann_inputs = {"breaches": None, "plan": None, "usage": None}
-        self._ann_pending = 3
-        spawn_worker(self.client, "GET", "/v1/logs/breaches?limit=1", timeout=10,
-                     parent=self, track=self._workers,
-                     on_ok=self._on_ann_breaches)
-        spawn_worker(self.client, "GET", "/v1/billing/plan", timeout=10,
-                     parent=self, track=self._workers, on_ok=self._on_ann_plan)
-        spawn_worker(self.client, "GET", "/v1/usage?days=1", timeout=10,
-                     parent=self, track=self._workers, on_ok=self._on_ann_usage)
+        for path, handler in (
+                ("/v1/logs/breaches?limit=1", self._on_ann_breaches),
+                ("/v1/billing/plan", self._on_ann_plan),
+                ("/v1/usage?days=1", self._on_ann_usage)):
+            spawn_worker(self.client, "GET", path, timeout=10, parent=self,
+                         track=self._ann_workers, on_ok=handler,
+                         # A failed leg still repaints from what we DO know,
+                         # instead of leaving the banner on stale inputs.
+                         on_err=lambda _err, h=handler: h(None))
 
     def _on_ann_breaches(self, data):
         self._ann_part("breaches", data)
@@ -1779,7 +1786,6 @@ class DashboardWindow(QWidget):
         self._ann_part("usage", data)
 
     def _ann_part(self, key: str, data):
-        self._ann_pending = max(0, getattr(self, "_ann_pending", 1) - 1)
         self._ann_inputs[key] = data
         self.banner.show_message(announcement(
             breaches=self._ann_inputs.get("breaches"),
@@ -1798,8 +1804,8 @@ class DashboardWindow(QWidget):
         self.user_btn.setToolTip(("%s · %s" % (who, role)) if role else (who or "Account"))
         self.user_btn.setAccessibleName(
             ("Account menu for %s" % who) if who else "Account menu")
-        if hasattr(self, "palette"):
-            self.palette.set_org_id((me or {}).get("org_id"))
+        if hasattr(self, "cmd_palette"):
+            self.cmd_palette.set_org_id((me or {}).get("org_id"))
 
     def _show_user_menu(self):
         from PyQt6.QtWidgets import QMenu
@@ -1843,7 +1849,7 @@ class DashboardWindow(QWidget):
         key = event.key()
         mods = event.modifiers()
         if (mods & Qt.KeyboardModifier.ControlModifier) and key == Qt.Key.Key_K:
-            self.palette.open_fresh()
+            self.cmd_palette.open_fresh()
             event.accept()
             return
         if mods & (Qt.KeyboardModifier.ControlModifier
@@ -2107,12 +2113,12 @@ class DashboardWindow(QWidget):
         # Nothing may float or poll once the console is closed: the palette and
         # the shortcut overlay are shown non-modally, so an X-click while one is
         # open would otherwise leave it orphaned on screen.
-        for floating in ("notif_panel", "palette", "shortcuts"):
+        for floating in ("notif_panel", "cmd_palette", "shortcuts"):
             widget = getattr(self, floating, None)
             if widget is not None:
                 widget.hide()
         self.settings.set_console_geometry(self.saveGeometry())
-        shutdown_workers(self._workers | self._poll_workers)
+        shutdown_workers(self._workers | self._poll_workers | self._ann_workers)
         # Restore full opacity so the next show_animated fade starts from a
         # clean slate even though this instance is reused.
         self.setWindowOpacity(1.0)

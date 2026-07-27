@@ -137,10 +137,51 @@ def test_quick_nav_is_suppressed_while_the_dropdown_owns_the_keyboard(console, a
 
 def test_announcement_refresh_skips_while_a_cycle_is_in_flight(console):
     """A second set of three calls can interleave and repaint stale state."""
-    console._ann_pending = 3
-    before = len(console._workers)
+    sentinel = object()
+    console._ann_workers.add(sentinel)
+    try:
+        before = len(console._ann_workers)
+        console._refresh_announcement()
+        assert len(console._ann_workers) == before
+    finally:
+        console._ann_workers.discard(sentinel)
+
+
+def test_announcement_guard_cannot_latch_on_a_failed_leg(console, monkeypatch):
+    """Regression: the guard used to be a counter decremented only from the
+    SUCCESS callback, so one failing leg (a 500 on /v1/billing/plan, a timeout)
+    left it above zero and froze the banner for the rest of the session.
+
+    Two properties make that impossible now, and both are asserted here:
+    every leg is tracked in `_ann_workers` — membership is released by
+    QThread.finished, which fires on failure too — and every leg carries an
+    on_err. The old test only force-set the counter, never exercised failure,
+    which is exactly why the latch shipped green."""
+    import dashboard as dashboard_mod
+
+    calls = []
+    monkeypatch.setattr(dashboard_mod, "spawn_worker",
+                        lambda *a, **kw: calls.append(kw) or object())
+    console.settings.set_backend_url("http://127.0.0.1:9")
+
     console._refresh_announcement()
-    assert len(console._workers) == before
+    assert len(calls) == 3, "all three signals must be requested"
+    for kwargs in calls:
+        assert kwargs.get("track") is console._ann_workers, (
+            "an untracked leg can never release the guard")
+        assert callable(kwargs.get("on_err")), (
+            "a leg with no on_err leaves the banner on stale inputs")
+
+    # The failure callback records the leg as unavailable and repaints from
+    # what IS known, rather than raising or leaving the guard held.
+    calls[1]["on_err"]("HTTP 500: Internal Server Error")
+    assert console._ann_inputs["plan"] is None
+
+    # With the set empty (as QThread.finished would leave it), the next cycle
+    # runs — the whole point of the fix.
+    console._ann_workers.clear()
+    console._refresh_announcement()
+    assert len(calls) == 6
 
 
 def test_breach_chip_shares_the_99_plus_cap(console, app):
@@ -234,13 +275,13 @@ def test_health_ping_treats_http_errors_as_online(console):
 
 
 def test_palette_opens_and_routes(console, app):
-    console.palette.open_fresh()
+    console.cmd_palette.open_fresh()
     app.processEvents()
-    assert console.palette.list.count() > 0
+    assert console.cmd_palette.list.count() > 0
     console._on_palette_choice({"kind": "page", "arg": "policy"})
     app.processEvents()
     assert console.stack.currentIndex() == console._page_index["policy"]
-    console.palette.close()
+    console.cmd_palette.close()
 
 
 def test_shortcuts_overlay_renders(console, app):
