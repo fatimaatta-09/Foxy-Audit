@@ -40,6 +40,26 @@ def test_money_is_the_servers_amount_in_the_servers_currency(cents, currency,
     assert bd.money(cents, currency) == expected
 
 
+def test_a_three_decimal_currency_is_not_ten_times_too_large():
+    """Stripe quotes KWD in thousandths: 1000 is 1.000 KWD, not 10.00. These
+    fell through to divmod(_, 100) and rendered TEN TIMES too large — and
+    `billing.py:544` stores whatever currency the webhook sends, with no
+    allowlist, so this is reachable rather than theoretical."""
+    assert bd.money(1000, "kwd") == "1.000 KWD"
+    assert bd.money(1234567, "BHD") == "1,234.567 BHD"
+    assert bd.money(-2000, "omr") == "-2.000 OMR"
+    for code in bd.THREE_DECIMAL:
+        assert bd.money(1000, code).startswith(("1.000", "-"))
+
+
+def test_a_currency_we_cannot_scale_exactly_renders_no_number():
+    """A number that is out by a factor of ten is worse than no number."""
+    assert bd.money(1999, "") == bd.MISSING
+    assert bd.money(1999, "US") == bd.MISSING        # not an ISO 4217 code
+    assert bd.money(1999, "dollars") == bd.MISSING
+    assert bd.money(1999, "u$d") == bd.MISSING
+
+
 def test_a_zero_decimal_currency_is_not_divided_by_a_hundred():
     """Stripe sends 1000 for ¥1000 — the smallest unit IS the yen. Dividing
     these by 100 would understate every invoice by 100×, which is the whole
@@ -365,6 +385,43 @@ def test_invoice_rows_render_the_amount_the_server_sent(console):
         for lbl in console.bil_inv_rows.itemAt(i).widget().findChildren(
             type(console.bil_gauge_lbl)))
     assert "€49.00" in texts and "$" not in texts     # never assumed USD
+
+
+def test_the_plan_panel_has_all_three_states(console):
+    from panel_state import ERROR_TITLE, PanelState
+    _as_admin(console)
+    console._on_billing_plan({"plan_tier": "growth", "has_billing_account": True})
+    assert console.bil_plan_state.state() is PanelState.OK
+    assert console.bil_plan_state.isHidden()
+
+    console._on_billing_plan({})                 # answered, nothing on file
+    assert console.bil_plan_state.state() is PanelState.EMPTY
+    assert not console.bil_plan_state.isHidden()
+    assert "No plan on file" in console.bil_plan_state.title.text()
+
+    console._on_billing_plan(None, ok=False)     # never answered
+    assert console.bil_plan_state.state() is PanelState.ERROR
+    assert console.bil_plan_state.title.text() == ERROR_TITLE
+
+
+def test_a_mid_session_promotion_reaches_the_buttons(console):
+    """The role gates both billing side-doors and used to be read once, at
+    sign-in — so a user promoted to admin kept a hidden "Manage billing" until
+    they signed out and back in."""
+    _as_admin(console, admin=False)
+    console._on_billing_plan({"plan_tier": "growth", "has_billing_account": True})
+    console._on_invoices(INVOICES)
+    assert console.bil_manage.isHidden()
+
+    console._on_billing_role({"role": "admin"})   # the per-visit /v1/auth/me
+    assert not console.bil_manage.isHidden()
+    row = console.bil_inv_rows.itemAt(0).widget()
+    assert any(b.text() == "PDF ↗"
+               for b in row.findChildren(type(console.bil_manage)))
+
+    # …and a failed re-fetch is not evidence of a demotion
+    console._on_billing_role(None)
+    assert not console.bil_manage.isHidden()
 
 
 def test_invoices_empty_and_error_say_different_things(console):

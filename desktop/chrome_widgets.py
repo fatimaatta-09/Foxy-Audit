@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 from console_chrome import (
     SHORTCUT_PAIRS, TOAST_MS, badge_text, palette_entries, relative_time,
 )
+import panel_state
 from foxy_tokens import (
     BAD_RED, OK_GREEN, RADIUS, WARN_AMBER, WEB, paint_icon, pick_font, qcolor,
     reduced_motion,
@@ -282,10 +283,8 @@ class NotificationsPanel(QFrame):
         self.resize(self.width(), max(130, min(self.maximumHeight(), wanted)))
 
     def set_items(self, items: list[dict]):
-        while self.rows.count() > 1:
-            item = self.rows.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Takes from the top but keeps the trailing footer row.
+        panel_state.clear_rows(self.rows, start=0, floor=1)
         if not items:
             empty = QLabel("No notifications yet\nBreaches, quota and account "
                            "events will show up here.")
@@ -294,11 +293,12 @@ class NotificationsPanel(QFrame):
             empty.setStyleSheet(
                 f"color: {WEB['muted']}; font-family: '{pick_font('disp')}';"
                 f" font-size: 11px; padding: 22px 10px; background: transparent;")
-            self.rows.insertWidget(0, empty)
+            panel_state.insert_visible(self.rows, 0, empty)
             self.sizeToContents()
             return
         for n in items:
-            self.rows.insertWidget(self.rows.count() - 1, self._row(n))
+            panel_state.insert_visible(self.rows,
+                                       self.rows.count() - 1, self._row(n))
         self.sizeToContents()
 
     def _row(self, n: dict) -> QWidget:

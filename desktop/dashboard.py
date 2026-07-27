@@ -2052,14 +2052,10 @@ class DashboardWindow(QWidget):
             value=view["done"], max=view["total"], height=12, tone=view["tone"],
             aria=f"onboarding progress, {view['progress_text']}",
             tip=view["progress_text"])
-        while self.onboarding_steps.count():
-            item = self.onboarding_steps.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.hide()          # stop painting now, not next event loop
-                widget.deleteLater()
-        for step in view["steps"]:
-            self.onboarding_steps.addWidget(onboarding_step_row(step, self.go))
+        panel_state.clear_rows(self.onboarding_steps)
+        panel_state.fill_visible(
+            self.onboarding_steps,
+            (onboarding_step_row(step, self.go) for step in view["steps"]))
         self.onboarding_card.show()
 
     def _dismiss_onboarding(self):
@@ -2087,14 +2083,11 @@ class DashboardWindow(QWidget):
         chips = view["chips"] or [(None, "—", False)] * len(self.coverage_chips)
         for label, (_name, value, _danger) in zip(self.coverage_chips, chips):
             label.setText(value)
-        while self.coverage_table.count() > self.coverage_rows_start:
-            item = self.coverage_table.takeAt(self.coverage_rows_start)
-            widget = item.widget()
-            if widget is not None:
-                widget.hide()          # stop painting now, not next event loop
-                widget.deleteLater()
-        for client in view["clients"]:
-            self.coverage_table.addWidget(coverage_row(client))
+        panel_state.clear_rows(self.coverage_table,
+                               start=self.coverage_rows_start)
+        panel_state.fill_visible(
+            self.coverage_table,
+            (coverage_row(client) for client in view["clients"]))
         self.coverage_empty.set_state(
             panel_state.resolve(view["ok"], bool(view["clients"])),
             empty_title="No identified SDK clients yet",
@@ -2213,19 +2206,15 @@ class DashboardWindow(QWidget):
         self.recent_ledger_empty.set_state(
             state, empty_title="No ledger records yet",
             empty_body="Rows appear as your SDK reports interactions.")
-        while self.recent_ledger.count():
-            item = self.recent_ledger.takeAt(0)
-            widget = item.widget()
-            if widget is not None and widget is not self.recent_ledger_empty:
-                widget.hide()
-                widget.deleteLater()
+        panel_state.clear_rows(self.recent_ledger,
+                               keep=(self.recent_ledger_empty,))
         if not rows:
-            self.recent_ledger.addWidget(self.recent_ledger_empty)
-            self.recent_ledger_empty.show()
+            panel_state.add_visible(self.recent_ledger,
+                                    self.recent_ledger_empty)
             return
         self.recent_ledger_empty.hide()
-        for row in rows:
-            self.recent_ledger.addWidget(ledger_row(row))
+        panel_state.fill_visible(self.recent_ledger,
+                                 (ledger_row(row) for row in rows))
 
     # ── active alerts ──
     def _on_threats(self, data, ok: bool = True):
@@ -2234,19 +2223,14 @@ class DashboardWindow(QWidget):
             panel_state.resolve(ok, bool(rows)),
             empty_title="No active alerts",
             empty_body="Every graded interaction is within policy.")
-        while self.home_alerts.count():
-            item = self.home_alerts.takeAt(0)
-            widget = item.widget()
-            if widget is not None and widget is not self.home_alerts_empty:
-                widget.hide()
-                widget.deleteLater()
+        panel_state.clear_rows(self.home_alerts,
+                               keep=(self.home_alerts_empty,))
         if not rows:
-            self.home_alerts.addWidget(self.home_alerts_empty)
-            self.home_alerts_empty.show()
+            panel_state.add_visible(self.home_alerts, self.home_alerts_empty)
         else:
             self.home_alerts_empty.hide()
-            for row in rows:
-                self.home_alerts.addWidget(alert_row(row))
+            panel_state.fill_visible(self.home_alerts,
+                                     (alert_row(row) for row in rows))
         # Open alerts ≠ the "Policy Breaches" KPI tile: that one counts every
         # breach ever recorded, this counts the ones still live. It rides the
         # section header rather than overwriting a differently-labelled tile.
@@ -2310,20 +2294,15 @@ class DashboardWindow(QWidget):
 
     def _render_activity(self, rows: list):
         self._activity_rows = rows
-        while self.activity_list.count():
-            item = self.activity_list.takeAt(0)
-            widget = item.widget()
-            if widget is not None and widget is not self.activity_empty:
-                widget.hide()
-                widget.deleteLater()
+        panel_state.clear_rows(self.activity_list,
+                               keep=(self.activity_empty,))
         if not rows:
-            self.activity_list.addWidget(self.activity_empty)
-            self.activity_empty.show()
+            panel_state.add_visible(self.activity_list, self.activity_empty)
             self.activity_stamp.setText("")
             return
         self.activity_empty.hide()
-        for item in rows:
-            self.activity_list.addWidget(activity_row(item))
+        panel_state.fill_visible(self.activity_list,
+                                 (activity_row(item) for item in rows))
         self._activity_at = datetime.now(timezone.utc)
         self.activity_stamp.setText("updated just now")
 
@@ -2590,27 +2569,14 @@ class DashboardWindow(QWidget):
         One place, because the D4 retrofit showed how easily two of these drift
         apart — and every one of them has to distinguish "nothing" from
         "couldn't ask"."""
-        while layout.count() > start:
-            item = layout.takeAt(start)
-            widget = item.widget()
-            if widget is not None and widget is not strip:
-                widget.hide()
-                widget.deleteLater()
+        panel_state.clear_rows(layout, start=start, keep=(strip,))
         if state is PanelState.OK:
             strip.hide()
-            for row in rows:
-                widget = build(row)
-                layout.addWidget(widget)
-                # `addWidget` does NOT show a child: Qt leaves it hidden until
-                # the layout next activates. Usually the next event-loop pass
-                # does that and nobody notices — but a refill followed closely
-                # by a repaint painted a table of 28 rows as an empty card,
-                # every row present with default 640×480 geometry and
-                # isHidden() true. Found by rendering the billing page; every
-                # list in the console goes through here, so it was latent on
-                # all of them.
-                widget.show()
-            layout.activate()
+            # add_visible, because `addWidget` does not show a child — see
+            # panel_state. This helper is one of SEVEN rebuild sites; the other
+            # six are Home's five and the notifications panel, and they all use
+            # the same helpers now.
+            panel_state.fill_visible(layout, (build(row) for row in rows))
         else:
             strip.set_state(state, empty_title=empty_title,
                             empty_body=empty_body)
@@ -3488,6 +3454,9 @@ class DashboardWindow(QWidget):
     def _init_billing(self):
         self._init_verify()                 # shares the page-worker bucket
         self._bil_plan = bd.plan_view(None)
+        # The last invoices we were given, so the rows can be rebuilt when the
+        # role arrives — the PDF link is admin-only. None means "not asked".
+        self._bil_invoices = None
 
     def refresh_billing(self):
         if not self._can_fetch():
@@ -3504,6 +3473,24 @@ class DashboardWindow(QWidget):
                      parent=self, track=self._page_workers,
                      on_ok=self._on_billing_plan,
                      on_err=lambda _e: self._on_billing_plan(None, ok=False))
+        # The role gates both billing side-doors and `self._role` is set once,
+        # at sign-in. Policy re-fetches it per visit for exactly this reason:
+        # otherwise a user promoted to admin mid-session keeps a hidden
+        # "Manage billing" and no invoice links until they sign out and in.
+        spawn_worker(self.client, "GET", "/v1/auth/me", timeout=10, parent=self,
+                     track=self._page_workers, on_ok=self._on_billing_role,
+                     on_err=lambda _e: self._on_billing_role(None))
+
+    def _on_billing_role(self, data):
+        if isinstance(data, dict):
+            self._role = str(data.get("role") or "")
+        # A failed /v1/auth/me is not evidence of a demotion — keep what we
+        # already know and re-apply, same as the Policy page.
+        self._apply_billing_buttons()
+        # The invoice rows carry the PDF link, which is admin-only too, so they
+        # are rebuilt against the role we just learned.
+        if self._bil_invoices is not None:
+            self._on_invoices(self._bil_invoices)
 
     def _on_billing_usage(self, data, ok: bool = True):
         payload = data if isinstance(data, dict) else {}
@@ -3546,6 +3533,7 @@ class DashboardWindow(QWidget):
                         empty_body=bd.USAGE_EMPTY[1])
 
     def _on_invoices(self, data, ok: bool = True):
+        self._bil_invoices = data if ok else None
         rows = bd.invoice_rows(data) if ok else []
         # The PDF link is admin-only (account.py:423-427), so a member gets
         # the row without a control that would answer 403.

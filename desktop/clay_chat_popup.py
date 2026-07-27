@@ -38,6 +38,7 @@ import os
 import sys
 import json
 import time
+import panel_state
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QFrame, QGraphicsDropShadowEffect,
@@ -980,19 +981,17 @@ class ChatPopup(QWidget):
         self._refresh_history_list()
 
     def _refresh_history_list(self):
-        while self.history_layout.count():
-            w = self.history_layout.takeAt(0).widget()
-            if w is not None:
-                w.deleteLater()
+        panel_state.clear_rows(self.history_layout)
         if not self._sessions:
             empty = QLabel("No saved chats yet.\nYour conversations show up here.")
             empty.setWordWrap(True)
             empty.setStyleSheet(f"background: transparent; color: #9b9aae; border: none; "
                                 f"font-family: '{_glass_tokens()['font']}'; font-size: 12px;")
-            self.history_layout.addWidget(empty)
+            panel_state.add_visible(self.history_layout, empty)
         else:
-            for session in self._sessions:
-                self.history_layout.addWidget(self._history_row(session))
+            panel_state.fill_visible(
+                self.history_layout,
+                (self._history_row(s) for s in self._sessions))
         self.history_layout.addStretch()
 
     def _history_row(self, session: dict) -> QWidget:

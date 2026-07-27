@@ -82,6 +82,60 @@ def chart_empty(state: PanelState, *, empty_title: str = "Nothing yet",
             "state": state.value}
 
 
+def add_visible(layout, widget):
+    """Add a row to a list layout and make it visible NOW.
+
+    `QLayout.addWidget` does NOT show the child. Qt leaves it hidden until the
+    layout next activates, which normally happens on the next event-loop pass
+    and nobody notices. When a repaint lands first — a refill followed closely
+    by a paint, a grab, or a resize — the panel draws as an empty card with
+    every row present, hidden, at the default 640×480 geometry.
+
+    Every list rebuild in the desktop goes through this or `fill_visible`;
+    `test_row_lists.py` walks the source and fails if a new one does not.
+    """
+    layout.addWidget(widget)
+    widget.show()
+    return widget
+
+
+def fill_visible(layout, widgets) -> int:
+    """`add_visible` for a whole list, activating the layout once at the end."""
+    count = 0
+    for widget in widgets:
+        add_visible(layout, widget)
+        count += 1
+    layout.activate()
+    return count
+
+
+def insert_visible(layout, index: int, widget):
+    """`add_visible` for a positional insert — `insertWidget` hides too."""
+    layout.insertWidget(index, widget)
+    widget.show()
+    return widget
+
+
+def clear_rows(layout, *, start: int = 0, floor: int | None = None, keep=()):
+    """Drop the current rows.
+
+    `takeAt` removes the layout item but does NOT unparent the widget, so it
+    keeps painting until it is hidden — `hide()` before `deleteLater()`, which
+    only runs on the next event-loop pass.
+
+    `start` is where to take from; `floor` is how many items to leave behind
+    when that differs (the notifications panel takes from 0 but keeps a
+    trailing footer).
+    """
+    stop = start if floor is None else floor
+    while layout.count() > stop:
+        item = layout.takeAt(start)
+        widget = item.widget()
+        if widget is not None and widget not in keep:
+            widget.hide()
+            widget.deleteLater()
+
+
 class StatusStrip(QWidget):
     """What a panel shows instead of its content while it is not OK.
 
@@ -156,6 +210,6 @@ class StatusStrip(QWidget):
             f" background: {WEB['surf3']}; }}")
 
 
-__all__ = ["PanelState", "StatusStrip", "chart_empty", "message_for",
-           "resolve", "ERROR_TITLE", "ERROR_BODY", "LOADING_TITLE",
-           "LOADING_BODY"]
+__all__ = ["PanelState", "StatusStrip", "add_visible", "chart_empty",
+           "clear_rows", "fill_visible", "message_for", "resolve",
+           "ERROR_TITLE", "ERROR_BODY", "LOADING_TITLE", "LOADING_BODY"]

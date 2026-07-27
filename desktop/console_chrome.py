@@ -24,13 +24,7 @@ from __future__ import annotations
 
 import math
 import re
-import sys
 from datetime import datetime, timezone
-
-#: strftime's no-pad flag differs by platform: glibc/BSD take "%-d", the MSVC
-#: runtime takes "%#d" and raises on the other. CI runs on Linux, the app ships
-#: on Windows, so both have to be right.
-_WINDOWS = sys.platform.startswith("win")
 
 # ── The nine web sections, in the web's order, with its exact copy ──────────
 # (id, sidebar label, top-bar title, crumb tail, icon) — CTX at html:3480-3484.
@@ -271,8 +265,11 @@ def local_date(iso: str | None, *, short: bool = False) -> str:
     when = _local(iso)
     if when is None:
         return ""
-    return when.strftime("%b %#d" if _WINDOWS else "%b %-d") if short \
-        else when.strftime("%x")
+    # `%-d` (glibc) and `%#d` (MSVC) are the same idea spelled differently, and
+    # a platform branch here can only ever be exercised on one of them — CI is
+    # Linux, the app ships on Windows. Formatting the month and interpolating
+    # the day as an int needs no no-pad flag at all, so there is no branch.
+    return f"{when:%b} {when.day}" if short else when.strftime("%x")
 
 
 def local_time(iso: str | None) -> str:

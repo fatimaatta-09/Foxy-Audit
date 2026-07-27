@@ -7,9 +7,12 @@ openBillingPortal / openInvoice) and checked against the endpoints it reads:
 
 **The rule this module exists under: every amount on screen is the server's.**
 
-* Money is formatted from `amount_cents` with the invoice's OWN `currency`.
-  There is no default currency here and no conversion — an invoice in EUR says
-  EUR, and a workspace billed in yen is not silently divided by a hundred.
+* Money is formatted from `amount_cents` with the invoice's OWN `currency`,
+  scaled by that currency's real minor unit: 100 for most, 1 for the
+  zero-decimal set (¥1000 is 1000, not 10.00) and 1000 for the three-decimal
+  set (1.000 KWD is 1000, not 10.00). There is no default currency and no
+  conversion, and a code we cannot scale exactly renders "—" rather than a
+  number that is out by a factor of ten.
 * The arithmetic is integer-only. `cents / 100` is a float, and a float is the
   wrong type for money: it is how a total ends up one cent away from the
   invoice the customer is looking at. `divmod` is exact.
@@ -31,6 +34,17 @@ ZERO_DECIMAL = frozenset({
     "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF",
     "UGX", "VND", "VUV", "XAF", "XOF", "XPF",
 })
+
+#: Currencies quoted in thousandths — Stripe sends 1000 for 1.000 KWD
+#: (stripe.com/docs/currencies#three-decimal). Dividing these by 100 renders
+#: them TEN TIMES too large. `billing.py:544` stores whatever currency the
+#: webhook sends with no allowlist and prices are set in the Stripe dashboard
+#: outside this repo, so this is reachable, not theoretical.
+THREE_DECIMAL = frozenset({"BHD", "JOD", "KWD", "OMR", "TND"})
+
+#: How many minor units make one major unit, per currency.
+_MINOR_UNITS = {**{c: 1 for c in ZERO_DECIMAL},
+                **{c: 1000 for c in THREE_DECIMAL}}
 
 #: Symbols for the currencies most Foxy invoices are in. Anything else prints
 #: its ISO code — "1,234.56 SEK" is honest, a wrong symbol is not.
@@ -54,14 +68,17 @@ def money(cents, currency: str | None) -> str:
         amount = int(cents)
     except (TypeError, ValueError):
         return MISSING
-    code = str(currency or "").upper() or "USD"
+    code = str(currency or "").upper()
+    if not code.isalpha() or len(code) != 3:
+        return MISSING          # not an ISO code; we cannot render it exactly
     sign = "-" if amount < 0 else ""
     amount = abs(amount)
-    if code in ZERO_DECIMAL:
+    per_unit = _MINOR_UNITS.get(code, 100)
+    if per_unit == 1:
         body = thousands(amount)
     else:
-        whole, minor = divmod(amount, 100)
-        body = f"{thousands(whole)}.{minor:02d}"
+        whole, minor = divmod(amount, per_unit)
+        body = f"{thousands(whole)}.{minor:0{len(str(per_unit)) - 1}d}"
     symbol = SYMBOLS.get(code)
     return f"{sign}{symbol}{body}" if symbol else f"{sign}{body} {code}"
 
