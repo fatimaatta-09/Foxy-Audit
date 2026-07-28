@@ -791,6 +791,30 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 @keyframes cx-in{from{opacity:0;}to{opacity:1;}}
 .chart-host svg{animation:cx-in .35s ease both;}
 
+/* ════════════════ P2 §3 · PAGINATION ════════════════
+   One component on every surface that scrolls. A count you can trust beats
+   infinite scroll: "1–20 of 137" tells you how much there is and where you
+   are, which an endless list never does. Buttons are real <button>s, so
+   keyboard operation and focus come from the platform rather than from
+   handlers that have to remember to exist. */
+.pager{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:2px dashed var(--line);}
+.pager-count{font-family:var(--mono);font-size:10px;color:var(--muted);
+  letter-spacing:.04em;white-space:nowrap;}
+.pager-nav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+.pager button{min-width:30px;height:30px;padding:0 8px;border:0;border-radius:9px;
+  background:var(--bg);box-shadow:var(--raise-sm);color:var(--ink2);cursor:pointer;
+  font-family:var(--mono);font-size:10.5px;font-weight:700;
+  transition:color .14s,box-shadow .14s;}
+.pager button:hover:not(:disabled){color:var(--fox2);}
+.pager button:active:not(:disabled){box-shadow:var(--sink-sm);}
+.pager button:focus-visible{outline:2px solid var(--fox);outline-offset:2px;}
+.pager button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
+.pager button[aria-current="page"]{background:var(--fox);color:var(--foxink);
+  box-shadow:var(--raise-sm);cursor:default;}
+.pager-gap{color:var(--muted2);font-family:var(--mono);font-size:10.5px;padding:0 2px;}
+@media(max-width:560px){ .pager{justify-content:center;} }
+
 /* ════════════════ P2 §4 · HOME'S ONE-LINE ANSWER ════════════════
    Not a page name (the crumb has that) and not a blurb. Both lines are written
    from loaded counts and both say so honestly until those counts arrive. */
@@ -1377,14 +1401,8 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">loading…</td></tr>
           </tbody>
         </table>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:11px;color:var(--muted);">
-          <span id="ledgerCount">—</span>
-          <span style="display:flex;gap:6px;align-items:center;">
-            <button class="btn ghost sm" id="ledgerPrev" style="margin:0;" onclick="ledgerPage(-1)">← prev</button>
-            <span id="ledgerPageLbl" style="font-family:var(--mono);"></span>
-            <button class="btn ghost sm" id="ledgerNext" style="margin:0;" onclick="ledgerPage(1)">next →</button>
-          </span>
-        </div>
+        <div id="ledgerPager"></div>
+        <div style="margin-top:8px;font-size:11px;color:var(--muted);"><span id="ledgerCount">—</span></div>
       </div>
     </div>
 
@@ -1583,6 +1601,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <thead><tr><th>Type</th><th>Range</th><th>By</th><th>When</th></tr></thead>
             <tbody id="exportHistory"><tr><td colspan="4" style="color:var(--muted);padding:10px;">No exports yet.</td></tr></tbody>
           </table>
+          <div id="exportPager"></div>
         </div>
       </div>
     </div>
@@ -2678,7 +2697,6 @@ async function loadLoginHistory(){
   }
   window.applyLedgerFilters=function(){ _ledgerPage=1; loadLogs(); };
   window.clearLedgerFilters=function(){ ['ledgerQ','ledgerPolicy'].forEach(id=>{ const e=$(id); if(e)e.value=''; }); const v=$('ledgerVerdict'); if(v)v.value=''; _ledgerPage=1; loadLogs(); };
-  window.ledgerPage=function(delta){ const max=Math.max(1,Math.ceil(_ledgerTotal/_ledgerLimit)); _ledgerPage=Math.min(max,Math.max(1,_ledgerPage+delta)); loadLogs(); };
   function recentRow(it){
     const {v,cls}=verdictOf(it);
     const t=new Date(it.created_at).toLocaleTimeString();
@@ -2697,9 +2715,10 @@ async function loadLoginHistory(){
     // pagination footer
     const maxPage=Math.max(1,Math.ceil(_ledgerTotal/_ledgerLimit));
     const cnt=$('ledgerCount'); if(cnt)cnt.textContent=money(_ledgerTotal)+' record'+(_ledgerTotal===1?'':'s');
-    const lbl=$('ledgerPageLbl'); if(lbl)lbl.textContent='page '+_ledgerPage+' / '+maxPage;
-    const pv=$('ledgerPrev'); if(pv)pv.disabled=(_ledgerPage<=1);
-    const nx=$('ledgerNext'); if(nx)nx.disabled=(_ledgerPage>=maxPage);
+    // §3 · one component, server-side: /v1/logs takes page + limit
+    if(window.foxPager)window.foxPager('ledgerPager',{
+      page:_ledgerPage, pageSize:_ledgerLimit, total:_ledgerTotal, label:'Audit ledger pages',
+      onPage:function(pg){ _ledgerPage=pg; loadLogs(); }});
     // dashboard "Recent ledger" card mirrors the newest few — only from an
     // unfiltered page 1, so filtering the ledger never rewrites the home preview.
     const filtered=!!((($('ledgerQ')||{}).value||'').trim()||(($('ledgerPolicy')||{}).value||'').trim()||(($('ledgerVerdict')||{}).value||'').trim());
@@ -4111,9 +4130,17 @@ async function loadLoginHistory(){
       try{ showToast('Logs export ('+fmt.toUpperCase()+') started'); }catch(e){}
     }
   };
+  var _expPage={page:1,size:20}, _expItems=[];
   window.loadExportHistory=async function(){
     var tb=$('exportHistory'); if(!tb)return;
-    var d=await api('/v1/exports'); var items=(d&&Array.isArray(d.items))?d.items:[];
+    var d=await api('/v1/exports');
+    _expItems=(d&&Array.isArray(d.items))?d.items:[];
+    _expPage.page=1;
+    renderExportHistory();
+  };
+  function renderExportHistory(){
+    var tb=$('exportHistory'); if(!tb)return;
+    var items=window.foxPageSlice?window.foxPageSlice(_expItems,_expPage,'exportPager',renderExportHistory,'Export history pages'):_expItems;
     var TYPE={passport:'Passport · HTML',logs_csv:'Logs · CSV',logs_json:'Logs · JSON'};
     tb.innerHTML=items.length?items.map(function(j){
       var p=j.params||{};
@@ -4121,7 +4148,7 @@ async function loadLoginHistory(){
       var when=j.created_at?new Date(j.created_at).toLocaleString():'';
       return '<tr><td>'+esc(TYPE[j.type]||j.type)+'</td><td class="mono">'+range+'</td><td class="mono">'+esc(j.requested_by||'—')+'</td><td class="mono">'+esc(when)+'</td></tr>';
     }).join(''):'<tr><td colspan="4" style="color:var(--muted);padding:10px;">No exports yet.</td></tr>';
-  };
+  }
   var _go=window.go;
   if(typeof _go==='function'){ window.go=function(p,e){ _go(p,e); if(p==='export')window.loadExportHistory(); }; }
 })();
@@ -4636,6 +4663,95 @@ async function loadLoginHistory(){
     if(next){ e.preventDefault(); pick(next); }
   });
   if(document.readyState!=='loading')sync(); else document.addEventListener('DOMContentLoaded',sync);
+})();
+</script>
+
+<!-- ═══ P2 §3 · the pagination component ═══
+     One implementation, used by every surface that scrolls. Server-side where
+     the endpoint supports it (the ledger: /v1/logs takes page + limit), and a
+     local slice where the loader already has the whole list in hand.
+
+     Rendering is by DOM node rather than innerHTML: these labels are numbers we
+     computed, but the surrounding code has been bitten before by building
+     markup out of values, and a pager is not worth the risk. -->
+<script>
+(function(){
+  /* which page numbers to show around the current one, with gaps */
+  function window_(page,last){
+    if(last<=7){ var all=[]; for(var i=1;i<=last;i++)all.push(i); return all; }
+    var out=[1];
+    var lo=Math.max(2,page-1), hi=Math.min(last-1,page+1);
+    if(lo>2)out.push('gap');
+    for(var j=lo;j<=hi;j++)out.push(j);
+    if(hi<last-1)out.push('gap');
+    out.push(last);
+    return out;
+  }
+  function btn(label,opts){
+    var b=document.createElement('button');
+    b.type='button';
+    b.textContent=label;
+    if(opts.label)b.setAttribute('aria-label',opts.label);
+    if(opts.disabled)b.disabled=true;
+    if(opts.current){ b.setAttribute('aria-current','page'); b.disabled=true; }
+    if(opts.onClick)b.addEventListener('click',opts.onClick);
+    return b;
+  }
+  /* foxPager(host, {page, pageSize, total, onPage})
+     Renders nothing at all when there is only one page — a pager over a single
+     page is furniture, not information. */
+  window.foxPager=function(host,o){
+    host=(typeof host==='string')?document.getElementById(host):host;
+    if(!host)return;
+    host.textContent='';
+    var total=Math.max(0,+o.total||0), size=Math.max(1,+o.pageSize||20);
+    var last=Math.max(1,Math.ceil(total/size));
+    var page=Math.min(last,Math.max(1,+o.page||1));
+    if(total===0||last===1)return;
+
+    var nav=document.createElement('nav');
+    nav.className='pager';
+    nav.setAttribute('role','navigation');
+    nav.setAttribute('aria-label',o.label||'Pagination');
+
+    var first=(page-1)*size+1, lastRow=Math.min(total,page*size);
+    var count=document.createElement('span');
+    count.className='pager-count';
+    count.textContent=first+'\u2013'+lastRow+' of '+total;
+    nav.appendChild(count);
+
+    var group=document.createElement('div');
+    group.className='pager-nav';
+    function goTo(target){ return function(){ if(o.onPage)o.onPage(target); }; }
+    group.appendChild(btn('\u2039',{label:'Previous page',disabled:page<=1,onClick:goTo(page-1)}));
+    window_(page,last).forEach(function(item){
+      if(item==='gap'){
+        var g=document.createElement('span');
+        g.className='pager-gap'; g.textContent='\u2026';
+        g.setAttribute('aria-hidden','true');
+        group.appendChild(g);
+        return;
+      }
+      group.appendChild(btn(String(item),{
+        label:'Page '+item, current:item===page, onClick:goTo(item)}));
+    });
+    group.appendChild(btn('\u203a',{label:'Next page',disabled:page>=last,onClick:goTo(page+1)}));
+    nav.appendChild(group);
+    host.appendChild(nav);
+  };
+
+  /* For loaders that already hold the whole list: slice it, render the pager,
+     and hand back the rows for this page. */
+  window.foxPageSlice=function(items,state,host,onChange,label){
+    var size=state.size||20;
+    var total=items.length;
+    var last=Math.max(1,Math.ceil(total/size));
+    if(state.page>last)state.page=last;
+    if(state.page<1)state.page=1;
+    window.foxPager(host,{page:state.page,pageSize:size,total:total,label:label,
+      onPage:function(pg){ state.page=pg; onChange(); }});
+    return items.slice((state.page-1)*size,state.page*size);
+  };
 })();
 </script>
 </body>
