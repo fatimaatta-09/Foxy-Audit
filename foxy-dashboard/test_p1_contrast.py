@@ -233,9 +233,13 @@ def test_a_fill_colour_is_not_a_text_colour(themes):
 # ══ the muted2 convention, pinned from both sides ═══════════════════════════
 @pytest.mark.parametrize("theme", ["dark", "light"])
 def test_muted2_stays_a_disabled_only_colour(themes, theme):
-    """`muted2` is under AA on purpose — it paints `:disabled` states and the
-    `.cin::placeholder`, which WCAG 1.4.3 exempts as inactive controls. This
-    pins the convention from both sides: muted2 must stay UNDER the bar and
+    """`muted2` is under AA on purpose — it paints `:disabled` states, which
+    WCAG 1.4.3 exempts as inactive controls. It no longer paints
+    `.cin::placeholder`: P3 §2.1 moved that to `muted` because the owner could
+    not read the sign-in fields, and an input awaiting your typing is not an
+    inactive control. See test_login_card.py, which measures it.
+
+    This pins the convention from both sides: muted2 must stay UNDER the bar and
     `muted`, its readable neighbour, must stay over it. The day someone reaches
     for muted2 for live text believing it is readable, or lightens it until the
     two roles are indistinguishable, this is what breaks.
