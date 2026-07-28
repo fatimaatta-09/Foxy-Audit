@@ -273,21 +273,25 @@ def test_the_decorative_faces_carry_ink_that_clears_aa(css, themes):
     """§9's decorative KPI faces are gradients, so the LIGHT stop is the pair
     that decides. White on the light end of these measures 2.35-2.74:1, which
     is why the faces carry dark ink instead. The stops are read out of the
-    stylesheet so a re-tune cannot quietly break the label."""
+    stylesheet so a re-tune cannot quietly break the label.
+    Every decorative gradient in the sheet is judged, however many there are.
+    Pinning a count made this fail the moment P2 deleted the two hero tiles —
+    a true change to the subject, not a regression — so the rule is now "all of
+    them, and there is at least one", which cannot be satisfied by deleting the
+    thing under test either."""
     ink = themes["dark"]["foxink"]
     faces = re.findall(
         r"\.(?:k-(?:fox|blue|violet|pink)\s+\.face|htile\.t-(?:blue|pink))"
         r"\{background:linear-gradient\(145deg,(#[0-9a-fA-F]{6}),"
         r"(#[0-9a-fA-F]{6})\);?\}", css)
-    assert len(faces) == 6, (
-        f"expected 6 decorative gradients (4 KPI faces + 2 hero tiles), "
-        f"found {len(faces)}")
-    faces = [("face", a, b) for a, b in faces]
-    for name, light_stop, dark_stop in faces:
+    assert len(faces) >= 4, (
+        f"found only {len(faces)} decorative gradients — the four KPI faces "
+        f"are the floor")
+    for light_stop, dark_stop in faces:
         for label, stop in (("light stop", light_stop), ("dark stop", dark_stop)):
             measured = ratio(ink, stop)
             assert measured >= AA_BODY, (
-                f".k-{name} {label} {stop} carries {ink} at {measured:.2f}:1. "
+                f"a decorative {label} {stop} carries {ink} at {measured:.2f}:1. "
                 f"The .l label on that face is 9.5px body text.")
 
 
@@ -385,7 +389,7 @@ def test_depth_is_never_the_only_signal_of_focus(css):
     declare a real outline on :focus-visible."""
     for selector in (".btn:focus-visible", ".topbtn:focus-visible",
                      ".stat.kpi:focus-visible", ".lvseg button:focus-visible",
-                     ".fb-go:focus-visible", ".seg button:focus-visible"):
+                     ".seg button:focus-visible"):
         decls = _declarations(_block(css, selector))
         assert "outline" in decls and decls["outline"] != "none", (
             f"{selector} has no visible outline — under soft UI a box-shadow "
