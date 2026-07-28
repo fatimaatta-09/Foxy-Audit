@@ -146,3 +146,42 @@ def test_the_worker_error_signal_still_carries_a_plain_string():
     source = (_HERE / "foxy_client.py").read_text(encoding="utf-8")
     worker = source.split("class ApiWorker")[1].split("\nclass ")[0]
     assert "failed = pyqtSignal(str)" in worker
+
+def _app_built_inside_a_test(path):
+    """QApplication constructed in a test FUNCTION body rather than a
+    module-scoped fixture.
+
+    Binding it to a name is not enough — a local dies when the function
+    returns, so the C++ application is collected while widgets are still
+    alive. That is exactly how exit 127 survived the b939f3f fix: the bare
+    expression became `app = ...` inside a test body, which only looked safe
+    because another module's cached fixture usually still held one. Whether it
+    did was decided by collection order, which is why it read as flaky.
+    """
+    import ast
+    tree = ast.parse(open(path, encoding="utf-8").read(), filename=str(path))
+    bad = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef) and node.name.startswith("test_")):
+            continue
+        for sub in ast.walk(node):
+            if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                    and sub.func.id == "QApplication"):
+                bad.append(f"{os.path.basename(str(path))}:{sub.lineno} "
+                           f"in {node.name}() — build it in a module-scoped "
+                           f"`app` fixture instead")
+    return bad
+
+
+def test_no_test_builds_its_qapplication_inside_the_test_body():
+    """The second half of the same bug, and the half that outlived the first fix.
+
+    `test_d12_companion.py` had a bound-but-local application inside a test
+    body; the suite still exited 127 on roughly one random order in four.
+    Reverting this file's fixture back to that shape reproduces it.
+    """
+    offenders = [line for path in _TESTS for line in _app_built_inside_a_test(path)]
+    assert offenders == [], (
+        "a QApplication built inside a test body dies when that function "
+        "returns:\n  " + "\n  ".join(offenders))
+

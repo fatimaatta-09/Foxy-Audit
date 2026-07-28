@@ -18,6 +18,7 @@ import ast
 from pathlib import Path
 
 import pytest
+from PyQt6.QtWidgets import QApplication
 
 import companion_events as ce
 import companion_status as cs
@@ -372,18 +373,29 @@ def test_the_panel_routes_are_real_console_sections():
 
 
 # ══ the wiring ══════════════════════════════════════════════════════════════
-def test_the_alert_defaults_are_what_the_fox_already_did():
+@pytest.fixture(scope="module")
+def app():
+    """Module-scoped, like every other test file here — and that scope is the
+    point, not a detail.
+
+    This test used to build the application as a LOCAL inside the test body.
+    Binding it to a name (the b939f3f fix) is not enough: a local dies when
+    the function returns, so the C++ QApplication was still collected while
+    widgets were alive whenever no other module's cached fixture happened to
+    be holding one. That is why exit 127 survived that fix and stayed a
+    coin flip decided by collection order. A module-scoped fixture keeps the
+    reference for the whole file, which is what the other 14 files rely on.
+    """
+    return QApplication.instance() or QApplication([])
+
+
+def test_the_alert_defaults_are_what_the_fox_already_did(app):
     """Adding the keys must not change behaviour on its own — D13 adds the UI
     that can turn them off."""
     from PyQt6.QtCore import QSettings
-    from PyQt6.QtWidgets import QApplication
     from fox_settings import FoxSettings
     from foxy_client import MemorySecretStore
     import tempfile, os
-    # HELD, not discarded — see test_qt_lifecycle.py. A bare
-    # `QApplication.instance() or QApplication([])` drops the only Python
-    # reference and the interpreter dies at shutdown with exit 127.
-    app = QApplication.instance() or QApplication([])
     assert app is not None
     path = os.path.join(tempfile.mkdtemp(), "s.ini")
     s = FoxSettings(QSettings(path, QSettings.Format.IniFormat),
