@@ -4,17 +4,18 @@
 
 > ## ✅ COMPLETE AND RELEASED — v1.2.0, 2026-07-28
 >
-> **Every phase D0 → D14 is built, merged, deployed and released.** `main` = `1707e69`,
-> tag `v1.2.0` (the desktop app's first ever release), 698 desktop tests, all three
-> platforms building green, SDK 1.2.0 on PyPI, Windows + Linux installers live at
-> `foxyaudit.tech/download/`. All four owner-locked decisions in §2 are delivered.
+> **Every phase D0 → D15 is built, merged, deployed and released.** `main` = `1968388`,
+> tag `v1.2.0` (the desktop app's first ever release), **754 desktop tests**, all three
+> platforms building green, SDK 1.2.0 on PyPI, all three installers on the v1.2.0 release
+> page, with Windows + Linux also served under stable names at `foxyaudit.tech/download/`.
+> All four owner-locked decisions in §2 are delivered.
 >
 > **D15a (the automatable half of the QA sweep) is DONE and merged** — `5c76750`,
 > +51 tests (698 → 749): a WCAG contrast audit over the token palette, accessible-name
 > and focus-order guards, reduced-motion and HiDPI checks. Every guard was re-broken in
 > both directions to prove it bites.
 >
-> **What is left of D15 is the owner-only manual sweep (§12)** — a visual check across
+> **D15b is merged too (`1968388`, 754 tests). What is left is the owner-only manual sweep (§12)** — a visual check across
 > 3 OSes × auth modes, not a merge gate; the release did not wait on it.
 >
 > **Known gaps, none blocking:**
@@ -38,15 +39,28 @@
 >   because dark ink fails on the darker shade — fixing one state alone would have swapped the
 >   failure to the other. `QMenu::item:selected` had the identical miss, found by checking
 >   siblings. `min_btn`/`close_btn` gained accessible names.
-> - **a11y, still open, reported not fixed:** `threats_page.py:135` risk-legend **dot** and
->   `charts.py:66`'s chart "mute" tone both use `--muted2` (2.45:1) — non-text, with adjacent
->   labels carrying the meaning; these are web ports, so any fix goes on the site first.
->   `tilePink`'s light gradient stop is 4.05:1 with white ink, and `clay_chat_popup`'s
->   `#newChatBtn:hover` repeats the white-on-`#c96a2f` miss on the companion surface.
->   The verify page's `sb_prompt`/`sb_response`/`sb_seq` have visible labels but no
->   `setAccessibleName`/`setBuddy`. Four vector icons rasterise at 1× on scaled displays.
->   Companion/console animation never consults `reduced_motion()` (mitigated: roaming
->   defaults off).
+> - **D15b — the five reported findings are CLOSED** (`1968388`, 754 tests). The white-on-
+>   `#c96a2f` family turned out to be **six** sites, not one: `#newChatBtn:hover` plus four in
+>   `settings_dialog` (`#testBtn:hover`, `#foxyTestBtn:hover`, the tab `:checked` pill,
+>   `#saveBtn`). Two were invisible to a `#ffffff` grep because the ink came from
+>   `is_dark(acc, 140)` — a picker that classifies `#c96a2f` as "dark" and returns white.
+>   `matte_tokens()` hard-codes that accent, so the branch was dead flexibility and is gone.
+>   All six now use `#1a0900` (3.76 → 5.16:1). `tilePink`'s light stop `#c25c88` → `#bd4f7e`
+>   (4.05 → 4.58:1); its dark stop and both tileBlue stops were measured and correctly left.
+>   Spot-check fields named, four icons rasterise at the display scale, reduced motion wired.
+> - **Reduced motion, product call (confirmed):** roaming stops — the one large-amplitude,
+>   unprompted movement the app makes — while the sprite keeps ticking in place and settles to
+>   IDLE rather than freezing mid-stride. `prefers-reduced-motion` targets vestibular triggers,
+>   not an idle blink, and a mascot that holds still is not the product.
+> - **Still open, reported not fixed:** `threats_page.py:135` risk-legend **dot** and
+>   `charts.py:66`'s chart "mute" tone use `--muted2` (2.45:1) — non-text, adjacent labels
+>   carry the meaning, and both are faithful web ports, so any fix goes on the site first.
+>   **NEW:** the chat's sent-message bubble (`clay_chat_popup.py:150-153`) paints `#ffffff` on
+>   a gradient measuring **1.95:1 at the top stop**, 3.05 at 0.45, 4.45 at the bottom — worse
+>   than anything in the D15a ledger, and fixing it is a redesign of the companion's core
+>   surface, so it needs scoping rather than a colour swap. **NEW:** `settings_dialog.py:540/566`
+>   set `selection-background-color` with no `selection-color`, so selected text falls back to
+>   the palette's HighlightedText; not measurable from the QSS.
 >
 > **Follow-up debt:** (1) **OPEN** — PRE-EXISTING `usage_daily` 48h-rolling-window rollup understates historical counts; 5 routers read it (`account.py`, `admin_data.py`, `admin_health.py`, `admin_orgs.py`, `admin_stats.py`); fix = derive from `audit_logs`, own phase. (2) ✅ **FIXED** — org-level breach notices moved out of the grading batch into `org_notifications_loop` on its own thread. (3) ✅ **RESOLVED as deliberate** — `user_notifications_enabled` intentionally does *not* gate the org-policy notice; that switch governs the per-user fan-out, and reusing it would silently disable a paid feature (reasoning now in `worker.py:361-364`). (4) ACCEPTED — per-user breach-alert queue is in-memory (≤5s email loss at deploy; in-app notification unaffected).
 >
