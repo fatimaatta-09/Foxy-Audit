@@ -879,9 +879,14 @@ class DashboardWindow(QWidget):
         self.refresh_btn.setAccessibleName("Refresh")
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         h.addWidget(self.refresh_btn)
+        # D15a: these two were the only icon-only controls on the bar without a
+        # name — refresh, notifications, threats and the account menu all have
+        # one, so a reader announced "button, button" for minimise and close.
         self.min_btn = CtrlButton("min", t)
+        self.min_btn.setAccessibleName("Minimize")
         self.min_btn.clicked.connect(self.showMinimized)
         self.close_btn = CtrlButton("close", t, danger=True)
+        self.close_btn.setAccessibleName("Close window")
         self.close_btn.clicked.connect(self.close_animated)
         h.addWidget(self.min_btn)
         h.addWidget(self.close_btn)

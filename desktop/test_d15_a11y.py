@@ -114,9 +114,8 @@ def _attr_name(root: QWidget, widget: QWidget) -> str:
 # to leave it broken — see the two tests below for what each one is and why it
 # is not fixed on this branch.
 UNNAMED = {
-    # icon-only window chrome — a real gap, two lines to close
-    "min_btn",
-    "close_btn",
+    # (min_btn / close_btn used to sit here — named in the same change that
+    #  merged this ledger, so the entries are gone rather than annotated)
     # labelled by an adjacent QLabel and a placeholder, but with no
     # setAccessibleName / setBuddy tying the two together
     "sb_prompt",
@@ -182,21 +181,21 @@ def test_every_interactive_control_can_be_named(console):
         f"so the guard covers it properly.")
 
 
-def test_the_window_controls_are_the_one_unambiguous_naming_gap(console):
-    """`min_btn` and `close_btn` are icon-only QPushButtons in the top bar with
-    no text, no accessible name and no tooltip. Every other top-bar control
-    got one — notifications, threats, account, refresh (dashboard.py:850-880)
-    — so this is an omission, not a convention.
+def test_the_window_controls_are_named_like_every_other_top_bar_button(console):
+    """`min_btn` and `close_btn` are icon-only QPushButtons with no text, so an
+    accessible name is the only thing a screen reader can announce. They were
+    the sole controls on the bar without one — notifications, threats, account
+    and refresh all had one, refresh being set on the line directly after the
+    two that missed out — which made it an omission rather than a convention.
 
-    Reported rather than fixed: it is two `setAccessibleName` calls, but they
-    change the shipped app on a branch whose brief is automation only, and
-    MAIN gates app changes. Pinned so the fix is a one-line delete here."""
-    for attr, expected_icon in (("min_btn", "min"), ("close_btn", "close")):
+    Now closed. The assertion is inverted rather than deleted: an icon-only
+    control silently losing its name is exactly the regression that produced
+    the finding, and it reads as "button" to a reader either way."""
+    for attr in ("min_btn", "close_btn"):
         button = getattr(console, attr)
-        assert not _label_of(button), (
-            f"{attr} is named now — remove it from UNNAMED and delete this "
-            f"assertion; the finding is closed.")
-        assert not button.toolTip(), f"{attr} grew a tooltip but not a name"
+        assert _label_of(button), (
+            f"{attr} lost its accessible name — it has no visible text, so a "
+            f"reader now announces a bare 'button'")
         assert button.isEnabled(), f"{attr} is a live, clickable control"
 
     # the neighbours that show the convention this pair missed

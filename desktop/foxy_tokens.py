@@ -342,9 +342,12 @@ def matte_menu_qss() -> str:
             border-radius: 11px;
             margin: 3px 5px;
         }}
+        /* Same 3.76:1 white-on-#c96a2f miss as the CTA buttons, found by
+           checking siblings rather than by another bug report: the tray menu
+           is where the app is driven from when its window is closed. */
         QMenu::item:selected {{
             background-color: #c96a2f;
-            color: #ffffff;
+            color: #1a0900;
         }}
         QMenu::item:disabled {{ color: #6b6675; }}
         QMenu::separator {{
@@ -451,13 +454,28 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 background: transparent; }}
             QLabel#connUrl {{ color: {t['text_muted']}; font-size: 11px;
                 font-family: '{mono}'; background: transparent; }}
+            /* D15a: the ink here was #ffffff, which is 3.76:1 on this button
+               and 3.27:1 while hovered — both under AA, on the primary action
+               of the whole console.  #c96a2f is NOT a web colour (it appears
+               nowhere in the dashboard's :root); it is this app's own matte
+               accent, so the usual "re-port from the site" rule has nothing to
+               re-port.  What the site DOES have is the answer: `.btn.pri` is
+               `background:var(--fox); color:#1a0900` at 7.46:1 — dark ink on
+               orange.  Taking that ink brings the desktop CLOSER to the web,
+               not further, and clears AA in every state (5.16 rest, 5.93
+               hover, 4.74 pressed). */
             QPushButton#verifyBtn {{
                 background: #c96a2f;
-                color: #ffffff;
+                color: #1a0900;
                 border: 1px solid rgba(255,255,255,14);
                 border-radius: 11px; padding: 9px 0; font-size: 12px; font-weight: 800; }}
             QPushButton#verifyBtn:hover {{ background: #d6743a; }}
-            QPushButton#verifyBtn:pressed {{ background: #a8551f; }}
+            /* Pressed was #a8551f, which is 3.68:1 under the new ink — dark
+               enough to fail in the other direction.  #c06529 is the deepest
+               shade that still clears AA (4.74:1) while reading as darker than
+               rest.  The press is therefore subtler than it was; the focus
+               border below carries the rest of the feedback. */
+            QPushButton#verifyBtn:pressed {{ background: #c06529; }}
             QLabel#eyebrow {{ color: {t['accent2']}; font-family: '{mono}';
                 font-size: 9px; font-weight: 800; letter-spacing: 1.6px;
                 background: transparent; }}
@@ -465,7 +483,7 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 letter-spacing: -1px; background: transparent; }}
             QLabel#subHead {{ color: {t['text_muted']}; font-size: 12px;
                 background: transparent; }}
-            QPushButton#ctaBtn {{ background: #c96a2f; color: #ffffff;
+            QPushButton#ctaBtn {{ background: #c96a2f; color: #1a0900;
                 border: 1px solid rgba(255,255,255,14); border-radius: 12px; padding: 9px 16px;
                 font-size: 12px; font-weight: 800; }}
             QPushButton#ctaBtn:hover {{ background: #d6743a; }}

@@ -27,10 +27,13 @@ same thing.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from foxy_tokens import (
-    BAD_RED, DARK_TX, INFO_BLUE, OK_GREEN, WARN_AMBER, WEB, is_dark,
+    BAD_RED, DARK_TX, INFO_BLUE, OK_GREEN, WARN_AMBER, WEB, clay_tokens,
+    console_shell_qss, is_dark,
 )
 
 
@@ -296,28 +299,51 @@ def test_the_seg_switcher_label_is_a_faithful_port_of_a_web_miss():
         f"miss tolerable, and it no longer holds.")
 
 
-def test_the_primary_cta_ink_is_recorded_as_the_one_real_desktop_failure():
-    """`#ctaBtn` and `#verifyBtn` paint white on #c96a2f: 3.76:1, and 3.27:1
-    on hover (#d6743a). That is a genuine AA failure on the most-clicked
-    controls in the console — "Export passport", "Check ledger", "Verify".
+def test_the_primary_cta_ink_clears_aa_in_every_state():
+    """`#ctaBtn` and `#verifyBtn` — "Export passport", "Check ledger", "Verify"
+    — used to paint #ffffff on #c96a2f: 3.76:1 resting, 3.27:1 hovered. A
+    genuine AA failure on the most-clicked controls in the console.
 
-    This one is NOT a web port. `#c96a2f` appears nowhere in the dashboard's
-    HTML; it is the desktop's own pre-token matte accent. The site's primary
-    button is `.btn.pri{background:var(--fox);color:#1a0900}` (html:602),
-    which measures 7.46:1 — so the web already has a passing answer and the
-    desktop simply never adopted it here.
+    Not a web port, which is why it could not be deferred to the site: #c96a2f
+    appears nowhere in the dashboard's HTML — it is this app's own matte
+    accent. The web's `.btn.pri` is `background:var(--fox); color:#1a0900` at
+    7.46:1, so taking that ink moved the desktop TOWARD the web, not away from
+    it, and the "no theme changes" rule argued for the fix rather than against.
 
-    Left unfixed deliberately: swapping the ink is a visible change to every
-    primary button in the app, which is the owner's call under the "no theme
-    changes" decision, not an executor's. Pinned so it cannot get worse and so
-    that fixing it is noticed."""
-    resting = ratio("#ffffff", "#c96a2f")
-    hover = ratio("#ffffff", "#d6743a")
-    assert resting < AA_BODY and hover < resting, (
-        f"the CTA ink now measures {resting:.2f}:1 resting / {hover:.2f}:1 "
-        f"hover. If it clears {AA_BODY} this was fixed — delete this pin.")
-    assert ratio("#1a0900", WEB["fox"]) >= AA_BODY, \
-        "the web's own answer (--fox + #1a0900) no longer passes either"
+    Pressed needed moving too: #a8551f is 3.68:1 under dark ink, so the fix
+    would have traded a resting failure for a pressed one. #c06529 is the
+    deepest shade that still clears AA while reading as darker than resting.
+
+    Reads the QSS rather than two literals. The version this replaces asserted
+    `ratio("#ffffff", "#c96a2f") < 4.5`, which is arithmetic about two
+    constants — true forever, regardless of what the app paints. It claimed to
+    notice the fix and could not have."""
+    qss = console_shell_qss(clay_tokens())
+
+    def declared(selector: str, prop: str) -> str:
+        block = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", qss)
+        assert block, f"{selector} is gone from the console stylesheet"
+        found = re.search(prop + r"\s*:\s*(#[0-9a-fA-F]{3,6})", block.group(1))
+        assert found, f"{selector} no longer declares {prop}"
+        return found.group(1)
+
+    for selector in ("QPushButton#ctaBtn", "QPushButton#verifyBtn"):
+        ink = declared(selector, "color")
+        for state, bg_selector in ((" resting", selector),
+                                   (" hovered", selector + ":hover")):
+            bg = declared(bg_selector, "background")
+            measured = ratio(ink, bg)
+            assert measured >= AA_BODY, (
+                f"{selector}{state} paints {ink} on {bg} — {measured:.2f}:1, "
+                f"under AA ({AA_BODY}). The web's answer is #1a0900 on an "
+                f"orange of this weight.")
+
+    pressed_bg = declared("QPushButton#verifyBtn:pressed", "background")
+    pressed = ratio(declared("QPushButton#verifyBtn", "color"), pressed_bg)
+    assert pressed >= AA_BODY, (
+        f"verifyBtn pressed paints on {pressed_bg} at {pressed:.2f}:1. A "
+        f"darker pressed state fails under dark ink just as the light one "
+        f"failed under white — it has to clear AA in both directions.")
 
 
 def test_the_kpi_sub_rule_paints_nothing_and_that_is_why_it_is_not_a_finding():
