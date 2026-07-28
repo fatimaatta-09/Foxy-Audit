@@ -4,10 +4,11 @@ Foxy Audit desktop — the ONE design-token / QSS / font / resource source.
 Every desktop surface (auditor console, chat popup, settings dialog, menus,
 fox pet) pulls its colors, fonts, shadows, icons and asset paths from here.
 There is no theme toggle and no skin picker: the desktop look is locked to the
-web dashboard's dark "original" skin.
+web dashboard's dark theme. (The web collapsed its three skins into one in
+P1, so there is no longer a skin to name.)
 
 `WEB` is a byte-for-byte port of the web dashboard's design tokens
-(foxy-dashboard/foxy-audit-premium.html `:root`, lines 24-94).  The colours
+(foxy-dashboard/foxy-audit-premium.html `:root`).  The colours
 must never drift from the site — if the site's `:root` changes, this dict is
 re-ported, not hand-tuned.  The one permitted deviation from the web is
 typography: the desktop keeps its bundled Unbounded (display) + Space Mono
@@ -43,18 +44,21 @@ def resource_path(relative_path: str) -> str:
 
 # ── WEB — byte-for-byte the web dashboard :root (dark "original" skin) ──────
 WEB: dict[str, str] = {
-    # deep clay base — not cream, not pure black
-    "bg":      "#0e0c0a",
-    "bg2":     "#161310",
-    "surf":    "#1c1815",
-    "surf2":   "#221d18",
-    "surf3":   "#2a241d",
-    "line":    "#322b23",
+    # barely-warm neutrals — one ramp, hue 30, 3-5% saturation. The ramp this
+    # replaces sat at 14-18% saturation (and ink at 48%), which is not a grey
+    # at all: it is a desaturated orange, and at 5% lightness that tint reads
+    # as mud. Warmth now comes almost entirely from the fox accent.
+    "bg":      "#141312",
+    "bg2":     "#171616",
+    "surf":    "#1b1a19",
+    "surf2":   "#1e1d1c",
+    "surf3":   "#242322",
+    "line":    "#312f2e",
 
-    "ink":     "#f7f1e8",
-    "ink2":    "#cdc2b3",
-    "muted":   "#8c8174",
-    "muted2":  "#5f564a",
+    "ink":     "#f4f4f3",
+    "ink2":    "#ccc8c4",
+    "muted":   "#938b83",
+    "muted2":  "#69625b",
 
     # fox / paprika
     "fox":     "#ff7a2e",

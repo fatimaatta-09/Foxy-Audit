@@ -110,6 +110,10 @@ jobs:
         run: pytest sdk/tests -q
       - name: Hash-chain regression test
         run: pytest backend/tests/test_chain.py -q
+      - name: Dashboard contrast + theme audit
+        # Rides an already-running, dependency-light job: it parses the shipped
+        # CSS with the standard library and needs no browser and no Postgres.
+        run: pytest foxy-dashboard/test_p1_contrast.py -q
       - name: Offline judge demo
         run: python demo/offline_demo.py
       - name: Live OpenAI demo boundary tests

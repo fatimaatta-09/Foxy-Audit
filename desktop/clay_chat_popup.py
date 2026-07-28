@@ -158,7 +158,7 @@ class ChatBubble(QLabel):
             pad = "9px 14px"
         else:                                             # received — plain text, no bubble
             bg = "transparent"
-            text_col = tokens.get("text", "#f7f1e8")
+            text_col = tokens.get("text", "#f4f4f3")
             border = "none"
             radius_css = ""
             pad = "2px 2px"
@@ -854,7 +854,7 @@ class ChatPopup(QWidget):
         """A welcoming intro with quick-ask chips, shown before any chatting."""
         t     = _glass_tokens()
         face  = t.get("font", "Segoe UI")
-        ink   = t.get("text", "#f7f1e8")
+        ink   = t.get("text", "#f4f4f3")
         muted = "#9b9aae"
         acc   = t.get("accent", "#c96a2f")
 

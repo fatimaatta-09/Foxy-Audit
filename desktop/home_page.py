@@ -159,10 +159,14 @@ def _stat_tile(label: str, value: str = "—", tone: str | None = None) -> tuple
               "warn": WARN_AMBER}.get(tone or "", WEB["ink"])
     value_lbl = _label(value, size=20, bold=True, colour=colour)
     lay.addWidget(value_lbl)
-    # ink2, not muted: muted #8c8174 on the #221d18 tile is 4.38:1, under the
-    # 4.5:1 floor at 8.5px. ink2 #cdc2b3 is 9.52:1 on the same surface. The WEB
-    # dict is a byte-for-byte port of the site's :root and must not drift, so
-    # the fix is which token this picks — not what the token holds.
+    # ink2, not muted. When this was written muted (#8c8174) on the #221d18
+    # tile was 4.38:1, under the 4.5:1 floor at 8.5px. The site's P1 ramp has
+    # since lifted that pair to 5.02:1, so muted would now clear — but ink2 is
+    # 10.12:1 on the same surface and 8.5px mono is exactly where the extra
+    # margin earns its keep, so the choice stands on its own merits rather than
+    # on the old failure. The WEB dict is a byte-for-byte port of the site's
+    # :root and must not drift: the fix is always which token this picks, never
+    # what the token holds.
     lay.addWidget(_label(label.upper(), size=8.5, bold=True, colour=WEB["ink2"],
                          mono=True, spacing=0.5))
     return frame, value_lbl

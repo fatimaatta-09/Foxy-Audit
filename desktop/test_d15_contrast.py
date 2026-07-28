@@ -226,7 +226,7 @@ def test_the_pill_ink_picker_never_lands_on_an_unreadable_pair():
 
 # ══ the muted2 convention ═══════════════════════════════════════════════════
 def test_muted2_stays_a_disabled_only_colour():
-    """`muted2` is ~2.45:1 on `surf` — far under AA — and that is legitimate
+    """`muted2` is 2.90:1 on `surf` — under AA — and that is legitimate
     *only* because it paints `:disabled` states, which WCAG 1.4.3 exempts as
     inactive controls (foxy_tokens.py:483/506/525, policy_page.py:560/577,
     settings_page.py:508, export_page.py:231, settings_admin_page.py:495).
@@ -270,7 +270,7 @@ def test_muted2_is_never_the_only_thing_carrying_a_meaning():
 
 # ══ non-text tokens, recorded so they are not re-litigated ══════════════════
 def test_line_is_a_separator_not_text():
-    """`line` measures 1.26:1 on `surf`. That is correct and out of scope:
+    """`line` measures 1.30:1 on `surf`. That is correct and out of scope:
     WCAG 1.4.3 governs text, and 1.4.11 (non-text contrast, 3:1) governs
     controls and meaningful graphics — a decorative rule between rows is
     neither. Recorded so the next audit does not re-open it, and asserted as
@@ -284,7 +284,7 @@ def test_line_is_a_separator_not_text():
 
 
 def test_fox3_is_dead_and_is_the_reason_it_is_not_a_finding(app):
-    """`fox3` is 4.48:1 on `surf` — three hundredths under the bar. It is not
+    """`fox3` is 4.41:1 on `surf` — a tenth under the bar. It is not
     reported as a contrast failure because nothing paints with it: the only
     hop out of the token dict is `clay_tokens()["accent3"]`, which no widget
     reads. If a consumer ever appears, the 4.48 stops being academic — so this
@@ -309,35 +309,37 @@ def test_fox3_is_dead_and_is_the_reason_it_is_not_a_finding(app):
 
 
 # ══ recorded failures — under the bar, NOT fixed here ══════════════════════
-# Three live text pairs measure under 4.5:1. None is fixed in this file, for
-# two different reasons, and each is pinned at its measured value so that it
-# can neither drift further nor be quietly repaired without this audit
-# noticing. When one is genuinely fixed the pin below fails — that is the
-# signal to delete it from this section, not to widen the tolerance.
-def test_the_seg_switcher_label_is_a_faithful_port_of_a_web_miss():
-    """The trend-metric switcher paints its resting label in `muted` on the
-    track's `surf2`: 4.38:1, three per cent under AA.
+# Live text pairs that measure under 4.5:1 are pinned at their measured value
+# so that they can neither drift further nor be quietly repaired without this
+# audit noticing. When one is genuinely fixed the pin fails — that is the
+# signal to invert it, not to widen the tolerance.
+#
+# One of the three has now gone that way: the seg switcher's resting label was
+# 4.38:1, the site's P1 ramp fixed it, the re-port carried it across, and the
+# pin below is inverted to hold it above the bar from here on.
+def test_the_seg_switcher_label_was_fixed_by_the_web_and_came_back_by_re_port():
+    """This used to be a recorded failure. The trend-metric switcher painted
+    its resting label in `muted` on the track's `surf2` at 4.38:1 — three per
+    cent under AA — and it was pinned rather than fixed, because it was not the
+    desktop's miss: the site did exactly the same thing, so the desktop was a
+    correct port of a web bug, and hand-darkening `surf2` here would have
+    forked the two looks for a 0.12 gain.
 
-    Not fixed, because it is not the desktop's miss. The site does exactly the
-    same thing — `.seg button{color:var(--muted)}` over `.seg{background:
-    var(--surf2)}` (html:186-187) — so the desktop is a correct port of a web
-    bug. Hand-darkening `surf2` or lightening `muted` here would fork the two
-    looks for a 0.12 gain. The fix belongs in the site's `:root` and comes
-    back by re-port.
-
-    Mitigating, and why it is minor rather than urgent: the *checked* label
-    (the one that carries the state) is #1a0900 on `fox` at 7.46:1, hovering
-    lifts the resting label to `ink`, and the control is a redundant view
-    switcher, not the only route to the data."""
+    The site's P1 theme rebuild regenerated the whole neutral ramp at 3-5%
+    saturation, and re-porting that ramp carried the fix across: the same pair
+    now measures 5.02:1. This is the route the old pin described, so the
+    assertion is inverted rather than deleted — the pair is now held ABOVE the
+    bar, and a future ramp that pushes it back under fails here."""
     resting = ratio(WEB["muted"], WEB["surf2"])
-    assert 4.2 <= resting < AA_BODY, (
-        f"#segBtn's resting label now measures {resting:.2f}:1 — it was 4.38. "
-        f"If it now clears {AA_BODY} the web was fixed and re-ported: delete "
-        f"this pin. If it dropped further, the port drifted.")
+    assert resting >= AA_BODY, (
+        f"#segBtn's resting label is back to {resting:.2f}:1, under {AA_BODY}. "
+        f"It measured 4.38 before the P1 ramp and 5.02 after — a regression "
+        f"here means the ramp drifted, and the fix belongs in the site's "
+        f":root and comes back by re-port, never by hand-tuning WEB.")
     checked = ratio("#1a0900", WEB["fox"])
     assert checked >= AA_BODY, (
-        f"the checked label is {checked:.2f}:1 — it was what made the resting "
-        f"miss tolerable, and it no longer holds.")
+        f"the checked label is {checked:.2f}:1 — it is what carries the "
+        f"control's state, and it no longer holds.")
 
 
 def test_the_primary_cta_ink_clears_aa_in_every_state():
@@ -354,6 +356,10 @@ def test_the_primary_cta_ink_clears_aa_in_every_state():
     Pressed needed moving too: #a8551f is 3.68:1 under dark ink, so the fix
     would have traded a resting failure for a pressed one. #c06529 is the
     deepest shade that still clears AA while reading as darker than resting.
+
+    (The web's `.btn.pri` has since become a gradient from `--fox` to a
+    dedicated `--fox-grad` stop, both of which carry the same #1a0900 ink. The
+    argument is unchanged: the ink came from the site.)
 
     Reads the QSS rather than two literals. The version this replaces asserted
     `ratio("#ffffff", "#c96a2f") < 4.5`, which is arithmetic about two
