@@ -96,3 +96,76 @@ def test_export_over_session(make_org, login, client):
     c = login(org["admin_email"], org["admin_password"])
     r = c.get("/v1/logs/export")
     assert r.status_code == 200 and r.json()["count"] == 1
+
+
+# ── the date range (P2 §8.5) ────────────────────────────────────────────────
+# The Export page has always shown two date pickers. It sent them to
+# /v1/passport and handed the log download a URL with no range on it at all, so
+# the user picked a window and silently got the whole ledger. The endpoint now
+# takes date_from/date_to — and "accepted and silently ignored" is exactly the
+# failure that comes back in a refactor while still looking correct, so both
+# bounds are pinned here rather than left to review.
+#
+# BOTH bounds, deliberately. A date_from-only test passes even when the end
+# bound is off by a day, because rows created today are after any past start.
+# `date_to=<today>` is the assertion that catches it: the range is inclusive of
+# the whole 'to' day (`< date_to + 1 day`, matching routers/passport.py), so
+# today's rows must survive a date_to of today.
+
+def _day(offset: int) -> str:
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) + timedelta(days=offset)).strftime("%Y-%m-%d")
+
+
+def test_export_without_a_range_is_still_the_whole_ledger(make_org, client):
+    org = make_org()
+    _ingest(client, org, 3)
+    assert client.get("/v1/logs/export", headers=org["auth"]).json()["count"] == 3
+
+
+def test_export_end_bound_includes_the_whole_to_day(make_org, client):
+    """The off-by-one guard. Rows ingested now must survive date_to=today."""
+    org = make_org()
+    _ingest(client, org, 3)
+    r = client.get(f"/v1/logs/export?date_to={_day(0)}", headers=org["auth"])
+    assert r.status_code == 200
+    assert r.json()["count"] == 3, (
+        "date_to=today dropped today's rows — the end bound is exclusive of "
+        "the 'to' day, but the passport treats it as inclusive")
+
+
+def test_export_end_bound_actually_excludes_later_rows(make_org, client):
+    """And the other side: an end bound that filters nothing is not a filter."""
+    org = make_org()
+    _ingest(client, org, 3)
+    r = client.get(f"/v1/logs/export?date_to={_day(-1)}", headers=org["auth"])
+    assert r.status_code == 200
+    assert r.json()["count"] == 0, "date_to=yesterday returned today's rows"
+
+
+def test_export_start_bound_is_inclusive_and_filters(make_org, client):
+    org = make_org()
+    _ingest(client, org, 3)
+    auth = org["auth"]
+    assert client.get(f"/v1/logs/export?date_from={_day(0)}",
+                      headers=auth).json()["count"] == 3
+    assert client.get(f"/v1/logs/export?date_from={_day(1)}",
+                      headers=auth).json()["count"] == 0, \
+        "date_from=tomorrow returned rows created today"
+
+
+def test_export_range_applies_to_csv_too(make_org, client):
+    """The filter runs before the format branch; CSV must not be a way around
+    it. Header row only means zero data rows."""
+    org = make_org()
+    _ingest(client, org, 2)
+    r = client.get(f"/v1/logs/export?format=csv&date_to={_day(-1)}",
+                   headers=org["auth"])
+    assert r.status_code == 200
+    assert len(r.text.strip().splitlines()) == 1
+
+
+def test_export_rejects_a_date_it_cannot_parse(make_org, client):
+    org = make_org()
+    r = client.get("/v1/logs/export?date_from=not-a-date", headers=org["auth"])
+    assert r.status_code == 422
