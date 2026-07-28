@@ -2,8 +2,37 @@
 
 **Plan of record** · 2026-07-26 · MAIN chat is the committer; executors build per this file.
 
-> **PROGRESS:** ✅ D0+D0.1 merged (`7b039ed`, 2026-07-27) — foxy_client/foxy_tokens/geometry/teardown/fake-data purge; 33 desktop tests. ✅ D-S merged (`9342b0f`, 2026-07-27) — 3 web toggles real end-to-end, per-user senders + queue thread, 549-test suite green, head stays 0053. **Next: D1 auth UI.**
-> **Follow-up debt (scheduled, not blockers):** (1) PRE-EXISTING `usage_daily` 48h-rolling-window rollup understates historical counts — dashboard usage charts + quota widgets read it (fix = derive from `audit_logs`, own phase); (2) PRE-EXISTING org-level `_notify_breach` still sends synchronously inside the grading batch (worker.py:221) — decouple like the per-user path; (3) `user_notifications_enabled=False` gates only the drain thread, not `enqueue_breach_alert` (worker.py:226) — one-line guard + a test; (4) per-user breach-alert queue is in-memory (≤5s email loss at deploy; in-app notification unaffected) — acceptable, revisit only if it bites.
+> ## ✅ COMPLETE AND RELEASED — v1.2.0, 2026-07-28
+>
+> **Every phase D0 → D14 is built, merged, deployed and released.** `main` = `1707e69`,
+> tag `v1.2.0` (the desktop app's first ever release), 698 desktop tests, all three
+> platforms building green, SDK 1.2.0 on PyPI, Windows + Linux installers live at
+> `foxyaudit.tech/download/`. All four owner-locked decisions in §2 are delivered.
+>
+> **The only phase left is D15 — the owner-only manual QA sweep (§12).** It is a
+> visual check across 3 OSes × auth modes, not a merge gate; the release did not
+> wait on it.
+>
+> **Known gaps, none blocking:**
+> - **macOS has no download route.** The `.dmg` builds fine but `publish-installers-to-vm`
+>   copies only Windows + Linux, and the workflow creates no GitHub Release — so the Mac
+>   build exists only as a 90-day workflow artifact. Fix = add it to the VM copy + a sale-page
+>   button, or publish a GitHub Release with all three attached.
+> - **`check-version` validates only 2 of 3 version stamps.** `sdk/src/foxy_audit/__init__.py`
+>   carries its own `__version__` and is unchecked, so a wheel can pass the gate with correct
+>   metadata while reporting the previous version at runtime. Bumped by hand for 1.2.0.
+> - **exit-127 in the desktop test suite: CLOSED as won't-fix.** Test-harness only; the shipped
+>   app holds its QApplication for its whole life by construction. The intuitive fix (a
+>   `conftest.py` owning the app) was built, measured, and **rejected — 5 crashes/10 runs
+>   against 0/12 without it**, because the app's early death was accidentally cleaning up stale
+>   workers. Do not reopen. Details in the 2026-07-28 devlog.
+> - **a11y:** `threats_page.py:135` paints the risk-legend dot in `--muted2` (2.45:1). Minor —
+>   the adjacent label carries the same meaning and its text passes. Any fix belongs on the
+>   **web** `:root` first and gets re-ported; hand-tuning the desktop copy would fork the looks.
+>
+> **Follow-up debt:** (1) **OPEN** — PRE-EXISTING `usage_daily` 48h-rolling-window rollup understates historical counts; 5 routers read it (`account.py`, `admin_data.py`, `admin_health.py`, `admin_orgs.py`, `admin_stats.py`); fix = derive from `audit_logs`, own phase. (2) ✅ **FIXED** — org-level breach notices moved out of the grading batch into `org_notifications_loop` on its own thread. (3) ✅ **RESOLVED as deliberate** — `user_notifications_enabled` intentionally does *not* gate the org-policy notice; that switch governs the per-user fan-out, and reusing it would silently disable a paid feature (reasoning now in `worker.py:361-364`). (4) ACCEPTED — per-user breach-alert queue is in-memory (≤5s email loss at deploy; in-app notification unaffected).
+>
+> ⚠ Stale reference: `user_notifications.py:11` still names `worker._notify_breach`, which no longer exists.
 **Rule:** if scope changes, update THIS file first — it is the single source of truth.
 **Source-of-truth rule (owner mandate):** past plans drifted from the shipped site. This plan's inventory was read from the **live code** (`foxy-audit-premium.html`, all 4,027 lines + `backend/app/routers/*`), NOT from the old design docs. Every executor phase MUST re-read the relevant live SPA section and router file before building, and MUST verify response shapes against the running local stack — if live code disagrees with this plan, live code wins and the executor reports the delta so MAIN updates this file.
 
