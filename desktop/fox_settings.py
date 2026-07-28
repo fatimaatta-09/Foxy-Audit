@@ -39,6 +39,31 @@ PROVIDER_DEFAULTS = {
 }
 
 
+def _respawn(store: QSettings) -> QSettings:
+    """A second QSettings pointing at the SAME place as `store`.
+
+    Two shapes to cover, and getting either wrong sends the copy somewhere
+    else entirely: a file-backed store (what tests inject — an ini path) is
+    reopened by `fileName()` + `format()`, and the app's own registry/native
+    store is reopened by its organization and application names. Anything
+    unrecognised falls back to the store we were handed rather than to a
+    guessed default, because sharing one instance across threads is a
+    correctness risk while pointing at the WRONG store is a data-loss one.
+    """
+    try:
+        name = store.fileName()
+        fmt = store.format()
+        if fmt in (QSettings.Format.IniFormat, QSettings.Format.NativeFormat) \
+                and name and ("/" in name or "\\" in name) \
+                and not name.startswith("\\HKEY"):
+            return QSettings(name, fmt)
+        org = store.organizationName() or ORG
+        app = store.applicationName() or APP
+        return QSettings(org, app)
+    except Exception:                   # noqa: BLE001 — never break a request
+        return store
+
+
 # ────────────────────────────────────────────────────────── FoxSettings ──
 class FoxSettings:
     """Typed convenience wrapper around QSettings.
@@ -51,6 +76,26 @@ class FoxSettings:
         # and makes the suite order-dependent.
         self._s = settings if settings is not None else QSettings(ORG, APP)
         self._secrets = secrets if secrets is not None else default_secret_store()
+
+    def clone(self) -> "FoxSettings":
+        """A same-store copy with its own QSettings, for another thread.
+
+        `FoxyClient._fresh_settings` needs a fresh QSettings per worker thread
+        — QSettings is reentrant across INSTANCES, not one instance across
+        threads — and used to get it with `type(self.settings)()`, which
+        rebuilds `FoxSettings` **with no arguments** and so silently drops both
+        injection seams. The consequence was not theoretical: every credential
+        read on a worker thread went to the developer's real keychain and real
+        `HKCU\\Software\\OmniAwareFox`, and the tests only agreed because the
+        injected store and the real one happened to resolve the same default
+        URL. A test that reads a live secret is both a lie and a hazard.
+
+        The QSettings is genuinely new (that is the point); the SECRET store is
+        carried over by reference, because a keychain client is not the thing
+        QSettings' threading rule is about and re-creating it per request would
+        mean a keyring round trip on every call.
+        """
+        return type(self)(_respawn(self._s), self._secrets)
 
     # ── secret plumbing (keychain-first, one-time migration from QSettings) ──
     # The legacy QSettings copy is removed ONLY when the secret has landed in a

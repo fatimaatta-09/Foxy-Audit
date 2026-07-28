@@ -420,3 +420,88 @@ def test_clear_session_wipes_jar_and_store(server):
     assert not http.has_session()
     assert store.get("session_cookies") is None
     assert not _client(server, secret_store=store).has_session()
+
+
+# ══ the credential injection seam (TASK 020 item 2) ═════════════════════════
+def test_a_worker_thread_reads_the_store_it_was_given(tmp_path):
+    """`_fresh_settings` used to do `type(self.settings)()`, rebuilding
+    FoxSettings with NO arguments — so the credential READ path bypassed both
+    injection seams and went to the developer's real keychain and registry.
+    The old tests agreed only because both stores resolved the same default
+    URL, which is the failure mode that hides this class of bug."""
+    from PyQt6.QtCore import QSettings
+    from fox_settings import FoxSettings
+    from foxy_client import FoxyClient, MemorySecretStore
+
+    store = QSettings(str(tmp_path / "injected.ini"), QSettings.Format.IniFormat)
+    secrets = MemorySecretStore()
+    settings = FoxSettings(store, secrets)
+    settings.set_backend_url("https://injected.example.test")
+    settings.set_org_api_key("foxy_injected_key")
+
+    client = FoxyClient(settings)
+    url, key = client._credentials()
+    assert url == "https://injected.example.test"
+    assert key == "foxy_injected_key", "the read bypassed the injected store"
+
+
+def test_the_clone_is_a_new_qsettings_over_the_same_store(tmp_path):
+    """Both halves matter: a NEW instance (QSettings is reentrant across
+    instances, not one instance across threads) over the SAME store."""
+    from PyQt6.QtCore import QSettings
+    from fox_settings import FoxSettings
+    from foxy_client import MemorySecretStore
+
+    store = QSettings(str(tmp_path / "c.ini"), QSettings.Format.IniFormat)
+    settings = FoxSettings(store, MemorySecretStore())
+    settings.set_backend_url("https://same.example.test")
+    twin = settings.clone()
+    assert twin._s is not store, "clone shares one QSettings across threads"
+    assert twin._secrets is settings._secrets, "the keychain client was rebuilt"
+    assert twin.backend_url() == "https://same.example.test"
+
+
+def test_a_write_through_the_clone_is_visible_to_the_original(tmp_path):
+    """Same store, not a snapshot — otherwise a settings change made on a
+    worker thread would be invisible to the UI thread."""
+    from PyQt6.QtCore import QSettings
+    from fox_settings import FoxSettings
+    from foxy_client import MemorySecretStore
+
+    store = QSettings(str(tmp_path / "w.ini"), QSettings.Format.IniFormat)
+    settings = FoxSettings(store, MemorySecretStore())
+    twin = settings.clone()
+    twin.set_backend_url("https://written-by-the-twin.test")
+    twin._s.sync()
+    store.sync()
+    assert settings.backend_url() == "https://written-by-the-twin.test"
+
+
+def test_the_secret_store_is_never_silently_swapped_for_the_real_one(tmp_path):
+    """The whole point: a test run must not touch the real keychain."""
+    from PyQt6.QtCore import QSettings
+    from fox_settings import FoxSettings
+    from foxy_client import FoxyClient, MemorySecretStore
+
+    secrets = MemorySecretStore()
+    settings = FoxSettings(
+        QSettings(str(tmp_path / "s.ini"), QSettings.Format.IniFormat), secrets)
+    client = FoxyClient(settings)
+    assert client._fresh_settings()._secrets is secrets
+
+
+def test_a_settings_object_without_clone_still_works():
+    """A test double should degrade to sharing the instance, not explode."""
+    from foxy_client import FoxyClient
+
+    class Bare:
+        def backend_url(self):
+            return "https://bare.test"
+
+        def org_api_key(self):
+            return "k"
+
+    bare = Bare()
+    client = FoxyClient(bare)
+    assert client._fresh_settings() is bare
+    assert client._credentials() == ("https://bare.test", "k")

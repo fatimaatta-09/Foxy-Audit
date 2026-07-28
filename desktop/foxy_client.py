@@ -457,10 +457,23 @@ class FoxyClient(QObject):
     def _fresh_settings(self):
         """QSettings is reentrant across INSTANCES, not one instance across
         threads — request() runs on worker threads, so read the current values
-        through a same-class instance made on the calling thread (FoxSettings
-        is documented cheap to construct)."""
+        through a same-STORE instance made on the calling thread.
+
+        This used to be `type(self.settings)()`, which rebuilds FoxSettings
+        with NO ARGUMENTS and so drops both of its injection seams: every
+        credential read on a worker thread went to the developer's real
+        keychain and real QSettings even when a test had injected its own.
+        `clone()` keeps the property that motivated this — a genuinely new
+        QSettings per thread — while pointing it at the store the caller gave
+        us.
+        """
         try:
-            return type(self.settings)()
+            return self.settings.clone()
+        except AttributeError:
+            # A settings object without clone() — a test double, say. Sharing
+            # the one instance is the lesser risk: at worst a threading
+            # hazard, where the old fallback silently read a DIFFERENT store.
+            return self.settings
         except Exception:
             return self.settings
 
