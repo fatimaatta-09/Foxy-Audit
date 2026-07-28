@@ -117,6 +117,33 @@ def require_org(
     return org
 
 
+# Paths that must stay reachable while the dashboard is card-locked (P3 §4.3).
+# Getting this wrong bricks the product: lock somebody out of /v1/billing and they
+# cannot add the card that would unlock them, and lock them out of /v1/auth and
+# they cannot even sign out. The gate is a dashboard gate — SDK ingest authenticates
+# with an API key and never passes through here, so a missing card can never cause
+# a customer to silently lose audit evidence.
+_CARD_GATE_EXEMPT = ("/v1/auth/", "/v1/billing/", "/v1/account/preferences")
+
+
+def _enforce_card_gate(request: Request, org: Organization) -> None:
+    """402 when the deployment requires a card on file and this org has none.
+
+    Distinct status from 401/403 on purpose: the SPA needs to tell "sign in again"
+    apart from "you are signed in, we just need a card" — and only the second one
+    should render the locked state rather than bouncing to the login screen.
+    """
+    if not get_settings().require_card_on_file or org.card_on_file:
+        return
+    if request.url.path.startswith(_CARD_GATE_EXEMPT):
+        return
+    raise HTTPException(status_code=402, detail={
+        "code": "card_required",
+        "message": "Add a payment method to unlock your dashboard. "
+                   "Your card is verified, not charged — the free tier stays free.",
+    })
+
+
 def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Human auth for the dashboard: resolve the user from the signed session
     cookie. Sets the same RLS GUC as require_org so tenant scoping is identical."""
@@ -132,6 +159,7 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     if org is None:
         raise HTTPException(status_code=403, detail="This workspace is unavailable")
     _ensure_org_access(org)
+    _enforce_card_gate(request, org)
     if org.ip_allowlist and not ip_allow.ip_allowed(
             ip_allow.client_ip(request), ip_allow.parse_allowlist(org.ip_allowlist)):
         raise HTTPException(status_code=403, detail="Access from this IP is not allowed")
@@ -175,6 +203,8 @@ def resolve_org(
     never holds the API key) while the SDK keeps using its key. Both paths set the
     same RLS GUC. Ingest stays Bearer-only via require_org."""
     if authorization:
+        # SDK path. NEVER card-gated: a missing card must not make a customer
+        # silently lose audit evidence (P3 §4.3).
         return require_org(authorization, db)
     user_id = request.session.get("user_id")
     if user_id:
@@ -182,6 +212,9 @@ def resolve_org(
         if user is not None and not user.disabled:
             org = db.get(Organization, user.org_id)
             if org is not None and org.deleted_at is None and not org.suspended:
+                # Dashboard path — same gate as require_user, or the lock would be
+                # trivially bypassed by every read endpoint that accepts a cookie.
+                _enforce_card_gate(request, org)
                 if org.ip_allowlist and not ip_allow.ip_allowed(
                         ip_allow.client_ip(request), ip_allow.parse_allowlist(org.ip_allowlist)):
                     raise HTTPException(status_code=403, detail="Access from this IP is not allowed")

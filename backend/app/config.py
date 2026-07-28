@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     # Product entitlements. One credit is one captured model call, not a token.
     # A zero quota means unlimited under a contract, not an unknown plan.
     trial_days: int = 7
+    # P3 §4 · signup payment gate. OFF by default, and it must stay that way until
+    # the owner decides otherwise: every existing org reads as "no card on file",
+    # so turning this on locks every current customer out of their dashboard until
+    # they complete a card setup. That is a business decision, not a deploy.
+    require_card_on_file: bool = False
+    # Days of warning before a billing change. The owner asked for "3-4 days before
+    # anything changes"; 4 leaves a working day of slack.
+    billing_change_notice_days: int = 4
     monthly_quota_free: int = 500
     monthly_quota_companion: int = 25000       # legacy alias for pro
     monthly_quota_pro: int = 25000

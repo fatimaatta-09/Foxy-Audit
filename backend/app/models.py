@@ -41,6 +41,15 @@ class Organization(Base):
         String(320), nullable=True, default=None)            # owner/billing contact
     trial_ends_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None)
+    # Card-on-file state for the signup payment gate (P3 §4, migration 0055). The
+    # card itself lives at Stripe — these four columns are the answer to "is there
+    # one?" plus a display label. Nothing here can be used to charge anybody.
+    card_on_file: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False)
+    card_brand: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
+    card_last4: Mapped[str | None] = mapped_column(String(4), nullable=True, default=None)
+    card_added_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
     deleted_at: Mapped[datetime | None] = mapped_column(     # soft delete — never hard-delete an org
         DateTime(timezone=True), nullable=True, default=None)
     # Per-org DASHBOARD IP allow-list (5K) — comma-separated IPs/CIDRs; empty/NULL

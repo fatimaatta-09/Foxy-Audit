@@ -512,11 +512,83 @@ def send_key_rotation_reminders(db: Session, *, today: date | None = None) -> in
 
 
 # ── worker thread ───────────────────────────────────────────────────────────
+def send_trial_ending_notices(db: Session, *, today: date | None = None) -> int:
+    """Warn the billing contact before a trial ends (P3 §4.4).
+
+    The owner asked for "3-4 days before anything changes". A trial expiring is
+    the one dated change this product actually has, so that is what this warns
+    about — settings.billing_change_notice_days ahead of the date.
+
+    NOT gated on a notification preference: this says money is about to behave
+    differently, and somebody who muted product updates has not agreed to be
+    surprised by that. Deduped on the trial's own end date, so re-running the
+    sweep any number of times sends one email."""
+    s = get_settings()
+    today = today or datetime.now(timezone.utc).date()
+    target = today + timedelta(days=s.billing_change_notice_days)
+    sent = 0
+    for org in _live_orgs(db):
+        try:
+            # Normalise to UTC before taking the date. psycopg hands back
+            # timestamptz in the SERVER's local zone, so a bare .date() compares a
+            # local calendar day against a UTC one and fires the notice a day
+            # early or late depending on the deployment's timezone and the hour.
+            if org.trial_ends_at is None:
+                continue
+            ends_date = org.trial_ends_at.astimezone(timezone.utc).date()
+            if ends_date != target:
+                continue
+            ends = ends_date.isoformat()
+            if _marker_exists(db, org.id, "billing_change", ends):
+                continue
+            recipients = sorted({u.email for u in _org_users(db, org.id) if u.role == "admin"}
+                                | ({org.contact_email} if org.contact_email else set()))
+            if not recipients:
+                continue
+            plan = org.plan_tier or "free"
+            marker = Notification(
+                org_id=org.id, kind="billing_change", level="info",
+                title=f"Your trial ends on {ends}",
+                body=("Nothing is charged automatically. Upgrade from Settings → "
+                      "Billing if you want to keep the paid features."),
+                target_type="billing_change", target_id=ends)
+            db.add(marker)
+            db.commit()
+            marker_id = marker.id
+            html, plain = et.layout(
+                title="Your Foxy Audit trial ends soon",
+                preheader=f"Your trial ends on {ends}. Nothing is charged automatically.",
+                blocks=[
+                    et.paragraph(f"Your Foxy Audit trial ends on {ends}, in "
+                                 f"{s.billing_change_notice_days} days."),
+                    et.info_rows([("Trial ends", ends), ("Current plan", plan)]),
+                    et.callout("You will not be charged. Nothing happens to your card "
+                               "unless you choose to upgrade — your evidence and your "
+                               "ledger stay exactly where they are.", tone="info"),
+                    et.muted("This is a billing notice, not a marketing email, so it is "
+                             "sent whatever your notification settings say."),
+                ],
+                cta={"label": "Review your plan", "url": _dashboard_url()},
+                surface="customer",
+            )
+            delivered = sum(1 for to in recipients if email_mod.send_email(
+                to=to, subject="Your Foxy Audit trial ends soon", html=html, text=plain))
+            if delivered:
+                sent += delivered
+            else:
+                _drop_marker(db, marker_id)   # nobody got it — let a later pass retry
+        except Exception as exc:              # noqa: BLE001 — one org must not stop the sweep
+            db.rollback()
+            log.warning("trial-ending notice failed for org %s: %s", org.id, exc)
+    return sent
+
+
 def run_once(db: Session, *, today: date | None = None) -> None:
-    """One digest + rotation pass. Both jobs dedupe, so any call frequency is
-    safe (the breach queue is drained separately, on a much shorter tick)."""
+    """One digest + rotation + billing-notice pass. Every job dedupes, so any call
+    frequency is safe (the breach queue is drained separately, on a shorter tick)."""
     send_weekly_digests(db, today=today)
     send_key_rotation_reminders(db, today=today)
+    send_trial_ending_notices(db, today=today)
 
 
 def user_notifications_loop(stopping: dict, s) -> None:

@@ -7,7 +7,9 @@ stripe_events row is stamped processed|ignored|failed IN THE SAME transaction as
 the org/invoice mutation — a change without a logged event (or vice-versa) can't
 happen. Handled events:
 
+  checkout.session.completed (mode=setup)     → record a card on file ($0 auth, P3 §4)
   checkout.session.completed                  → provision org + tag the lead converted
+  payment_method.attached / detached          → keep card_on_file honest (portal edits)
   customer.subscription.updated / deleted     → patch subscription_status
   invoice.paid / payment_failed / finalized   → upsert invoices history
 """
@@ -31,8 +33,8 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
-from .. import password_reset
-from ..auth import hash_key, require_role, resolve_org
+from .. import account_audit, password_reset
+from ..auth import hash_key, require_role, require_step_up_user, resolve_org
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..models import (
@@ -46,6 +48,9 @@ router = APIRouter()
 
 _SUBSCRIPTION_EVENTS = ("customer.subscription.updated", "customer.subscription.deleted")
 _INVOICE_EVENTS = ("invoice.paid", "invoice.payment_failed", "invoice.finalized")
+# Card-on-file lifecycle (P3 §4). `attached` also covers a card added through the
+# Stripe billing portal, so the flag stays true no matter which route was used.
+_CARD_EVENTS = ("payment_method.attached", "payment_method.detached")
 
 
 def _generate_api_key() -> tuple[str, str]:
@@ -390,8 +395,14 @@ async def stripe_webhook(
 
         # (2) Dispatch + stamp the event row in the SAME transaction as the mutation.
         try:
-            if event_type == "checkout.session.completed":
+            if event_type == "checkout.session.completed" and data_obj.get("mode") == "setup":
+                # A card-on-file setup, NOT a purchase — there is no plan to
+                # provision and no payment to record (P3 §4.1).
+                result, org_id = _handle_card_setup(db, data_obj)
+            elif event_type == "checkout.session.completed":
                 result, org_id = _handle_checkout(db, data_obj)
+            elif event_type in _CARD_EVENTS:
+                result, org_id = _handle_payment_method(db, event_type, data_obj)
             elif event_type in _SUBSCRIPTION_EVENTS:
                 result, org_id = _handle_subscription_change(db, data_obj)
             elif event_type in _INVOICE_EVENTS:
@@ -606,3 +617,180 @@ def billing_portal(request: Request, admin: User = Depends(require_role("admin")
     except Exception as exc:                 # noqa: BLE001
         log.warning("billing portal failed: %s", exc)
         raise HTTPException(status_code=502, detail="could not open billing portal")
+
+
+# ─────────────────── payment gate: card on file, never charged (P3 §4) ───────
+# The owner's decision: "card captured at signup, never charged without consent."
+# The card is collected through a Stripe Checkout session in SETUP mode — a $0
+# authorisation that validates the card and stores the payment method, with no
+# line items and therefore no possible charge. Nothing added here creates one:
+# upgrading still goes through /v1/billing/checkout-session, which the user has
+# to start themselves (§4.2).
+
+@router.get("/v1/billing/access")
+def billing_access(org: Organization = Depends(resolve_org)):
+    """Whether this org's dashboard is unlocked, and what is needed if it is not.
+
+    Honest locked state (§4.6): the UI has to be able to say what is missing and
+    why, instead of rendering a broken dashboard. Always 200 — this is the
+    endpoint that EXPLAINS the 402, so it must stay readable while locked."""
+    s = get_settings()
+    required = bool(s.require_card_on_file)
+    locked = required and not org.card_on_file
+    return {
+        "card_required": required,
+        "card_on_file": bool(org.card_on_file),
+        "locked": locked,
+        "card": ({"brand": org.card_brand, "last4": org.card_last4,
+                  "added_at": org.card_added_at.isoformat() if org.card_added_at else None}
+                 if org.card_on_file else None),
+        "plan_tier": org.plan_tier,
+        "free_tier_is_free": True,
+        "message": ("Add a payment method to unlock your dashboard. Your card is "
+                    "verified, not charged." if locked else "No action needed."),
+    }
+
+
+@router.post("/v1/billing/card-setup-session")
+@limiter.limit("10/minute")
+def card_setup_session(request: Request, admin: User = Depends(require_role("admin")),
+                       db: Session = Depends(get_db)):
+    """Start a $0 card authorisation (Stripe Checkout, mode='setup').
+
+    mode='setup' takes NO line_items and creates a SetupIntent, so Stripe validates
+    the card and saves it against the customer without moving any money. That is
+    what makes "captured, not charged" true — it is not a charge we refund later."""
+    s = get_settings()
+    if not s.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="billing not configured")
+    org = db.get(Organization, admin.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="workspace not found")
+    try:
+        import stripe
+        stripe.api_key = s.stripe_secret_key
+        kwargs = {
+            "mode": "setup",
+            "success_url": f"{s.dashboard_url}?card=added",
+            "cancel_url": f"{s.dashboard_url}?card=cancelled",
+            "metadata": {"foxy_org_id": str(org.id), "foxy_purpose": "card_on_file"},
+        }
+        if org.stripe_customer_id:
+            kwargs["customer"] = org.stripe_customer_id
+        else:
+            kwargs["customer_creation"] = "always"
+            if org.contact_email:
+                kwargs["customer_email"] = org.contact_email
+        session = stripe.checkout.Session.create(**kwargs)
+        return {"checkout_url": session.url, "mode": "setup", "amount": 0}
+    except HTTPException:
+        raise
+    except Exception as exc:                 # noqa: BLE001
+        log.warning("card setup session failed: %s", exc)
+        raise HTTPException(status_code=502, detail="could not start card setup")
+
+
+@router.post("/v1/billing/cancel", dependencies=[Depends(require_step_up_user)])
+@limiter.limit("5/minute")
+def cancel_subscription(request: Request, admin: User = Depends(require_role("admin")),
+                        db: Session = Depends(get_db)):
+    """Cancel without contacting support (§4.5).
+
+    Cancels at period end rather than immediately, so the customer keeps what they
+    have already paid for; Stripe's webhook flips subscription_status when it
+    finalises. Step-up gated like every other irreversible account action."""
+    s = get_settings()
+    if not s.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="billing not configured")
+    org = db.get(Organization, admin.org_id)
+    if org is None or not org.stripe_subscription_id:
+        raise HTTPException(status_code=400, detail="no active subscription to cancel")
+    try:
+        import stripe
+        stripe.api_key = s.stripe_secret_key
+        sub = stripe.Subscription.modify(org.stripe_subscription_id,
+                                         cancel_at_period_end=True)
+    except HTTPException:
+        raise
+    except Exception as exc:                 # noqa: BLE001
+        log.warning("cancel failed for org %s: %s", org.id, exc)
+        raise HTTPException(status_code=502, detail="could not cancel the subscription")
+    period_end = (sub.get("current_period_end") if isinstance(sub, dict)
+                  else getattr(sub, "current_period_end", None))
+    ends = _ts(period_end)
+    account_audit.record_account_action(
+        db, org_id=org.id, actor_email=admin.email, action="billing.cancel",
+        target=str(org.id), detail={"cancel_at_period_end": True})
+    db.commit()
+    return {"status": "cancelling", "cancel_at_period_end": True,
+            "access_until": ends.isoformat() if ends else None}
+
+
+def _org_for_customer(db: Session, customer_id: str | None) -> Organization | None:
+    if not customer_id:
+        return None
+    return db.execute(select(Organization).where(
+        Organization.stripe_customer_id == str(customer_id))).scalars().first()
+
+
+def _mark_card(org: Organization, card: dict | None) -> None:
+    """Record that a card exists, plus a display label. Never stores anything
+    chargeable — no payment-method id, no token, no PAN."""
+    org.card_on_file = True
+    org.card_brand = (str(card.get("brand"))[:32] if card and card.get("brand") else None)
+    org.card_last4 = (str(card.get("last4"))[:4] if card and card.get("last4") else None)
+    org.card_added_at = datetime.now(timezone.utc)
+
+
+def _handle_card_setup(db: Session, session: dict) -> tuple[dict, str | None]:
+    """checkout.session.completed with mode='setup' — the $0 authorisation landed.
+
+    No commit here; the caller commits once with the event row."""
+    org_id = (session.get("metadata") or {}).get("foxy_org_id")
+    org = None
+    if org_id:
+        try:
+            org = db.get(Organization, uuid.UUID(str(org_id)))
+        except (ValueError, AttributeError):
+            org = None
+    if org is None:
+        org = _org_for_customer(db, session.get("customer"))
+    if org is None:
+        return {"status": "ignored", "reason": "no matching org"}, None
+    # Bind the customer so later portal / cancel calls have one.
+    if session.get("customer") and not org.stripe_customer_id:
+        org.stripe_customer_id = str(session["customer"])
+    _mark_card(org, None)
+    return {"status": "card_on_file", "org_id": str(org.id)}, str(org.id)
+
+
+def _handle_payment_method(db: Session, event_type: str,
+                           pm: dict) -> tuple[dict, str | None]:
+    """payment_method.attached / .detached — keeps the flag honest when the card
+    is managed from the Stripe billing portal rather than our setup session."""
+    org = _org_for_customer(db, pm.get("customer"))
+    if org is None:
+        return {"status": "ignored", "reason": "no matching org"}, None
+    if event_type == "payment_method.attached":
+        _mark_card(org, pm.get("card") or {})
+        return {"status": "card_on_file", "org_id": str(org.id)}, str(org.id)
+    # Detached: only clear if Stripe has no other card for this customer. A
+    # customer swapping cards fires detached AFTER attached, and clearing blindly
+    # would lock a paying customer out of their dashboard for replacing a card.
+    try:
+        import stripe
+        stripe.api_key = get_settings().stripe_secret_key
+        remaining = stripe.PaymentMethod.list(customer=org.stripe_customer_id, type="card")
+        still_has = bool(getattr(remaining, "data", None) or
+                         (remaining.get("data") if isinstance(remaining, dict) else None))
+    except Exception as exc:                 # noqa: BLE001
+        # Cannot confirm — leave the flag alone. Failing OPEN here only risks
+        # showing an unlocked dashboard; failing closed would lock a customer out
+        # on a transient Stripe error.
+        log.warning("could not list payment methods for org %s: %s", org.id, exc)
+        return {"status": "unchanged", "org_id": str(org.id)}, str(org.id)
+    if still_has:
+        return {"status": "unchanged", "org_id": str(org.id)}, str(org.id)
+    org.card_on_file = False
+    org.card_brand = org.card_last4 = None
+    return {"status": "card_removed", "org_id": str(org.id)}, str(org.id)
