@@ -99,7 +99,11 @@ def _section_title(text: str, action: str | None = None) -> tuple[QWidget, QPush
             f" font-weight: 700; padding: 4px 6px; }}"
             f"QPushButton#linkAct:hover {{ color: {WEB['fox']}; }}"
             f"QPushButton#linkAct:focus {{ border: 1px solid {WEB['fox']};"
-            f" border-radius: 6px; }}")
+            f" border-radius: 6px; }}"
+            # Without this a disabled action keeps the full fox-orange of a
+            # live link — D11b's "+ add auditor" read as clickable to a member
+            # who cannot use it. Same rule #ctaBtn learned in D7.
+            f"QPushButton#linkAct:disabled {{ color: {WEB['muted2']}; }}")
         lay.addWidget(btn)
     return row, btn
 

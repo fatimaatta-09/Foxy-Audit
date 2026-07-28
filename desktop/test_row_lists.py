@@ -118,6 +118,13 @@ import home_data as _hd
 ACTIVITY = _hd.merge_activity(
     [{"created_at": "2026-07-28T10:00:00Z", "action": "auth.login",
       "actor_email": "a@b.co", "detail": {}}], [])
+TEAM = [{"id": "u1", "email": "a@b.co", "role": "admin", "disabled": False},
+        {"id": "u2", "email": "c@b.co", "role": "member", "disabled": False}]
+ACCOUNT_AUDIT = [{"id": "a1", "action": "key.create", "target": "prod",
+                  "actor_email": "a@b.co",
+                  "created_at": "2026-07-28T10:00:00Z"}]
+WEBHOOKS = [{"id": "w1", "url": "https://a.co/h", "events": "breach",
+             "secret_prefix": "whsec_1a2b3…", "last_status": "200"}]
 
 # (name, layout attribute, how to fill it, where the rows start)
 CASES = [
@@ -135,7 +142,16 @@ CASES = [
      lambda c: c._on_billing_usage(USAGE), 0),
     ("Billing · invoices", "bil_inv_rows",
      lambda c: c._on_invoices(INVOICES), 0),
+    ("Settings · team", "team_rows", lambda c: c._on_team(TEAM), 0),
+    ("Settings · account activity", "acct_audit_rows",
+     lambda c: c._on_account_audit(ACCOUNT_AUDIT), 0),
+    ("Settings · webhooks", "wh_rows", lambda c: c._on_webhooks(WEBHOOKS), 0),
 ]
+
+#: Which section each list lives on — `go()` has to put the page on screen or
+#: the container is hidden and `_hidden` proves nothing (see its docstring).
+_PAGE_OF = {"bil_": "billing", "team_": "settings", "acct_": "settings",
+            "wh_": "settings"}
 
 
 @pytest.mark.parametrize("name,attr,fill,start", CASES,
@@ -144,7 +160,8 @@ def test_rows_are_visible_the_instant_they_are_filled(console, name, attr,
                                                       fill, start):
     """No `processEvents` anywhere in here on purpose — that is the whole
     point. Pumping the loop is what used to hide the bug."""
-    console.go("billing" if attr.startswith("bil_") else "home")
+    console.go(next((page for prefix, page in _PAGE_OF.items()
+                     if attr.startswith(prefix)), "home"))
     layout = getattr(console, attr)
     container = layout.parentWidget()
     if container is not None:

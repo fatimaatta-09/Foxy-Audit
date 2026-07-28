@@ -1,10 +1,12 @@
-"""Foxy Audit desktop — the Settings page, account half (D11a).
+"""Foxy Audit desktop — the Settings page (D11a account half + D11b admin).
 
-The web's `#page-settings` (foxy-audit-premium.html:1546-1670), rebuilt with
+The web's `#page-settings` (foxy-audit-premium.html:1546-1706), rebuilt with
 foxy_tokens: identity, password, two-factor, data & privacy, access control,
 devices, recent logins, trust badge, what-Foxy-stores, help & support and
 the danger zone.
-The admin half (team, account activity, webhooks, SSO) lands in D11b.
+The four admin cards below them — team, account activity, outbound webhooks
+and enterprise SSO — are built by `settings_admin_page`, which this module
+assembles into the page; their data shaping lives in `settings_admin`.
 
 **Not ported, on purpose:** the web's theme toggle and skin picker — the
 desktop look is locked (`foxy_tokens` has no second palette) — and the web's
@@ -29,6 +31,7 @@ from home_page import _card, _label, scroll_qss
 from export_page import _field_label
 from policy_page import SafeguardRow, _input_qss
 from panel_state import StatusStrip
+import settings_admin_page as sap
 import settings_data as sd
 
 TONES = {"ok": OK_GREEN, "bad": BAD_RED, "warn": WARN_AMBER,
@@ -78,6 +81,12 @@ class SettingsSections:
         row.addLayout(left, 1)
         row.addLayout(right, 1)
         v.addLayout(row)
+        # The four admin cards run full width, in the web's order. The web puts
+        # them AFTER its danger zone; here the danger zone stays last, which is
+        # where D11a already put it and where an irreversible control belongs.
+        for build in (sap.team_card, sap.audit_card, sap.webhook_card,
+                      sap.sso_card):
+            v.addWidget(build(o))
         v.addWidget(self._danger())
         v.addStretch()
 

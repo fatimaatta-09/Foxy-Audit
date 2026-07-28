@@ -81,12 +81,16 @@ import policy_page
 from policy_page import PolicySections
 from billing_page import BillingSections, invoice_row, usage_row
 from settings_page import SettingsSections, device_row, login_row
+from settings_admin_page import (
+    AddUserDialog, audit_row, set_status_chip, user_row, webhook_row,
+)
 from ledger_page import LedgerRow, LedgerSections
 from verify_page import VerifySections, anchor_row
 import access_data as ad
 import policy_data as pd
 import billing_data as bd
 import settings_data as sd
+import settings_admin as sa
 import export_data as ed
 import verify_data as vd
 from threats_page import ThreatsSections, alert_table_row
@@ -3121,7 +3125,7 @@ class DashboardWindow(QWidget):
         An org API key authenticates the SDK, not a person, so key-only mode is
         read-only here no matter how the workspace is configured.
         """
-        return bool(self.client.has_session()) and self._role == "admin"
+        return self._is_admin()
 
     def _apply_policy_permission(self):
         editable = self._can_edit_policy()
@@ -3581,7 +3585,7 @@ class DashboardWindow(QWidget):
     def _is_billing_admin(self) -> bool:
         """Both billing side-doors are admin-only: POST /v1/billing/portal
         (billing.py:583) and GET /v1/invoices/{id}/link (account.py:426)."""
-        return bool(self.client.has_session()) and self._role == "admin"
+        return self._is_admin()
 
     def _apply_billing_buttons(self):
         """Show a button only where it leads somewhere.
@@ -3649,10 +3653,15 @@ class DashboardWindow(QWidget):
         self._badge = sd.badge_view(None)
         self._pref_loading = False
         self._apply_mfa_state()
+        self._init_settings_admin()         # D11b
 
     def refresh_settings(self):
         if not self._can_fetch():
             return
+        # The four admin cards hang off this one call: the role decides whether
+        # they load or explain themselves, and `/v1/auth/me` is where the role
+        # comes from. Firing them in parallel would gate them on a role that is
+        # stale on the first visit and after any mid-session change.
         spawn_worker(self.client, "GET", "/v1/auth/me", timeout=12, parent=self,
                      track=self._page_workers, on_ok=self._on_settings_me,
                      on_err=lambda _e: self._on_settings_me(None))
@@ -3669,10 +3678,15 @@ class DashboardWindow(QWidget):
     def _on_settings_me(self, data):
         view = sd.identity_view(data)
         if not view["known"]:
-            return              # a failed /v1/auth/me tells us nothing new
+            # A failed /v1/auth/me tells us nothing new about identity — but it
+            # does mean the role is unknown, and the admin cards must not claim
+            # to be empty on the strength of a role we could not read.
+            self._settings_admin_unreachable()
+            return
         self._set_me = view
         if view["role"] != sd.MISSING:
             self._role = view["role"]
+        self._me_email = "" if view["email"] == sd.MISSING else view["email"]
         if not self.set_name.hasFocus():
             self.set_name.setText(view["full_name"])
         for key, field in self.set_readonly.items():
@@ -3680,6 +3694,7 @@ class DashboardWindow(QWidget):
         self._apply_mfa_state()
         self._apply_policy_permission()
         self._apply_billing_buttons()
+        self.refresh_settings_admin()
 
     def save_display_name(self):
         self._set_status(self.set_name_status, "saving...", "mute")
@@ -4051,6 +4066,410 @@ class DashboardWindow(QWidget):
         box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         return box.clickedButton() is go
+
+    # -- Settings, admin half (D11b) ----------------------------------------
+    def _init_settings_admin(self):
+        """Team / activity / webhooks / SSO. All four are
+        `require_role("admin")` server-side, so each one renders the reason
+        rather than hiding, and each treats a 403 as "member", not "error"."""
+        self._me_email = ""
+        self._sso = sa.sso_view(None)
+        self._team_handlers = {
+            "role": self.change_team_role,
+            "reinvite": self.reinvite_team_user,
+            "disable": self.disable_team_user,
+            "enable": self.enable_team_user,
+        }
+        self._wh_handlers = {"test": self.test_webhook,
+                             "remove": self.remove_webhook}
+        self._apply_sso(self._sso)
+
+    def _is_admin(self) -> bool:
+        """Every admin-gated route in the app wants the same two things: a
+        human session, and the admin role on it. An org API key authenticates
+        the SDK, not a person, so key-only mode is never admin."""
+        return bool(self.client.has_session()) and self._role == "admin"
+
+    def refresh_settings_admin(self):
+        self.refresh_team()
+        self.refresh_account_audit()
+        self.refresh_webhooks()
+        self.refresh_sso()
+
+    def _settings_admin_unreachable(self):
+        """`/v1/auth/me` did not answer, so we do not know the role and cannot
+        honestly claim any of these panels is empty.
+
+        Routed through the normal handlers rather than setting the four strips
+        by hand: `_fill_rows` is what puts a strip back INTO a layout after
+        `clear_rows` has taken it out, and the hand-rolled version left three
+        of them parented but unplaced — floating at a stale geometry, clipped
+        by their own card. Same failure D3 hit with the notifications panel.
+        """
+        self._on_team(None, ok=False)
+        self._on_account_audit(None, ok=False)
+        self._on_webhooks(None, ok=False)
+        self._on_sso(None, ok=False)
+
+    # ── team ───────────────────────────────────────────────────────────────
+    def refresh_team(self):
+        if not self._can_fetch():
+            return
+        if not self._is_admin():
+            self._on_team(None, status=403)
+            return
+        spawn_worker(self.client, "GET", "/v1/auth/users", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_team,
+                     on_err=lambda err: self._on_team(
+                         None, ok=False, status=status_of(err)))
+
+    def _on_team(self, data, ok: bool = True, status: int | None = None):
+        member = status == 403
+        self.team_add_btn.setEnabled(not member)
+        # Qt still shows a widget's own cursor when it is disabled, so the
+        # pointing hand would keep promising a click that cannot happen.
+        self.team_add_btn.setCursor(Qt.CursorShape.ArrowCursor if member
+                                    else Qt.CursorShape.PointingHandCursor)
+        rows = sa.team_rows(data, self._me_email) if ok else []
+        if member:
+            state, title, body = (PanelState.EMPTY, "Managed by an admin",
+                                  sa.TEAM_MEMBER_NOTICE)
+        else:
+            state = resolve(ok, bool(rows))
+            title, body = sa.TEAM_EMPTY
+        self._fill_rows(self.team_rows, 0, self.team_strip, rows,
+                        lambda row: user_row(row, self._team_handlers), state,
+                        empty_title=title, empty_body=body)
+
+    def add_team_user(self):
+        dialog = AddUserDialog(self)
+        if dialog.exec() != AddUserDialog.DialogCode.Accepted:
+            return
+        email, role = dialog.values()
+        spawn_worker(self.client, "POST", "/v1/auth/users",
+                     body=sa.create_user_body(email, role), timeout=20,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_user_created,
+                     on_err=self._on_user_create_failed)
+
+    def _on_user_created(self, data):
+        """The server invites by email, so normally there is no secret at all.
+        If one does come back it goes straight into the shown-once dialog and
+        nowhere else — never stored, never logged, never toasted."""
+        message, secret = sa.invite_result(data)
+        if secret:
+            dialog = ShownOnceDialog("Temporary password", secret, self)
+            del secret                # no plaintext lingering in this frame
+            dialog.exec()
+        self.toast.show_message(message)
+        self.refresh_team()
+
+    def _on_user_create_failed(self, err):
+        if status_of(err) == 402:
+            # The 402 detail is a dict; only its `message` survives the
+            # worker's string-only error contract (the D9 lesson).
+            self.toast.show_message(detail_of(err) or sa.SEAT_LIMIT_FALLBACK)
+            return
+        self.toast.show_message(
+            sd.save_result(status_of(err) or 0, detail_of(err),
+                           what="invite")[0])
+
+    def change_team_role(self, row: dict):
+        role = row["next_role"]
+        if not self._confirm_danger(f"Make {row['email']} {'an' if role == 'admin' else 'a'} {role}?",
+                                    sa.role_change_warning(row["email"], role),
+                                    f"Make {role}"):
+            return
+        self._team_action(
+            row, f"/v1/auth/users/{quote(row['id'], safe='')}/role",
+            body={"role": role}, done=f"Role updated to {role}",
+            step_up="Confirm your identity to change a role")
+
+    def disable_team_user(self, row: dict):
+        if not self._confirm_danger(
+                f"Disable {row['email']}?",
+                sa.disable_user_warning(row["email"]), "Disable"):
+            return
+        self._team_action(
+            row, f"/v1/auth/users/{quote(row['id'], safe='')}/disable",
+            done="User disabled")
+
+    def enable_team_user(self, row: dict):
+        self._team_action(
+            row, f"/v1/auth/users/{quote(row['id'], safe='')}/enable",
+            done="User re-enabled")
+
+    def reinvite_team_user(self, row: dict):
+        self._team_action(
+            row, f"/v1/auth/users/{quote(row['id'], safe='')}/resend-invite",
+            done=f"Invite email re-sent to {row['email']}", reload=False)
+
+    def _team_action(self, row: dict, path: str, *, done: str, body=None,
+                     step_up: str = "", reload: bool = True):
+        """Every team POST in one place, so the toast, the reload and the
+        step-up handling cannot drift between four near-identical calls."""
+        def failed(err):
+            # A 403 step_up_required is the server asking to re-authenticate.
+            # The client emits `step_up_required` and D1's central handler runs
+            # the dialog and replays — so this must NOT open a second one.
+            if step_up and status_of(err) == 403 and "step_up" in str(err):
+                self.toast.show_message(step_up)
+                QTimer.singleShot(6000, self.refresh_team)
+                return
+            self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err),
+                               what="change")[0])
+
+        spawn_worker(self.client, "POST", path, body=body, timeout=20,
+                     parent=self, track=self._page_workers,
+                     on_ok=lambda _d: self._team_done(done, reload),
+                     on_err=failed)
+
+    def _team_done(self, message: str, reload: bool):
+        self.toast.show_message(message)
+        if reload:
+            self.refresh_team()
+
+    # ── account activity ───────────────────────────────────────────────────
+    def refresh_account_audit(self):
+        if not self._can_fetch():
+            return
+        if not self._is_admin():
+            self._on_account_audit(None, status=403)
+            return
+        spawn_worker(self.client, "GET", "/v1/account/audit?limit=50",
+                     timeout=12, parent=self, track=self._page_workers,
+                     on_ok=self._on_account_audit,
+                     on_err=lambda err: self._on_account_audit(
+                         None, ok=False, status=status_of(err)))
+
+    def _on_account_audit(self, data, ok: bool = True,
+                          status: int | None = None):
+        member = status == 403
+        rows = sa.audit_rows(data) if ok else []
+        if member:
+            state, title, body = (PanelState.EMPTY, "Visible to admins",
+                                  sa.AUDIT_MEMBER_NOTICE)
+        else:
+            state = resolve(ok, bool(rows))
+            title, body = sa.AUDIT_EMPTY
+        self._fill_rows(self.acct_audit_rows, 0, self.acct_audit_strip, rows,
+                        audit_row, state, empty_title=title, empty_body=body)
+
+    # ── outbound webhooks ──────────────────────────────────────────────────
+    def refresh_webhooks(self):
+        if not self._can_fetch():
+            return
+        if not self._is_admin():
+            self._on_webhooks(None, status=403)
+            return
+        spawn_worker(self.client, "GET", "/v1/webhooks", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_webhooks,
+                     on_err=lambda err: self._on_webhooks(
+                         None, ok=False, status=status_of(err)))
+
+    def _on_webhooks(self, data, ok: bool = True, status: int | None = None):
+        member = status == 403
+        self.wh_form.setEnabled(not member)
+        rows = sa.webhook_rows(data) if ok else []
+        if member:
+            state, title, body = (PanelState.EMPTY, "Managed by an admin",
+                                  sa.WEBHOOK_MEMBER_NOTICE)
+        else:
+            state = resolve(ok, bool(rows))
+            title, body = sa.WEBHOOK_EMPTY
+        self._fill_rows(self.wh_rows, 0, self.wh_strip, rows,
+                        lambda row: webhook_row(row, self._wh_handlers), state,
+                        empty_title=title, empty_body=body)
+
+    def add_webhook(self):
+        events = [value for value, box in self.wh_events.items()
+                  if box.isChecked()]
+        url = self.wh_url.text()
+        problem = sa.webhook_problem(url, events)
+        self._set_status(self.wh_status, problem or "", "bad")
+        if problem:
+            self.wh_url.setFocus()
+            return
+        self.wh_add_btn.setEnabled(False)
+        spawn_worker(self.client, "POST", "/v1/webhooks",
+                     body=sa.webhook_body(url, events), timeout=20,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_webhook_created,
+                     on_err=self._on_webhook_create_failed)
+
+    def _on_webhook_created(self, data):
+        """The signing secret is shown once, here, and never again — the
+        server only ever returns an 11-character prefix afterwards."""
+        self.wh_add_btn.setEnabled(True)
+        secret = sa.webhook_secret(data)
+        if not secret:
+            self.toast.show_message("The server did not return a signing secret")
+        else:
+            dialog = ShownOnceDialog(sa.WEBHOOK_SECRET_TITLE, secret, self)
+            del secret
+            dialog.exec()
+        self.wh_url.clear()
+        self.toast.show_message("Webhook added")
+        self.refresh_webhooks()
+
+    def _on_webhook_create_failed(self, err):
+        self.wh_add_btn.setEnabled(True)
+        self._set_status(
+            self.wh_status,
+            sd.save_result(status_of(err) or 0, detail_of(err),
+                           what="webhook")[0], "bad")
+
+    def test_webhook(self, row: dict):
+        spawn_worker(
+            self.client, "POST",
+            f"/v1/webhooks/{quote(row['id'], safe='')}/test", timeout=25,
+            parent=self, track=self._page_workers,
+            on_ok=lambda d: self._webhook_tested(
+                sa.webhook_test_result(None, d)),
+            on_err=lambda err: self._webhook_tested(
+                sa.webhook_test_result(status_of(err) or 0, None,
+                                       detail_of(err))))
+
+    def _webhook_tested(self, message: str):
+        self.toast.show_message(message)
+        self.refresh_webhooks()          # last_status just changed
+
+    def remove_webhook(self, row: dict):
+        if not self._confirm_danger("Remove this webhook?",
+                                    sa.webhook_remove_warning(row["url"]),
+                                    "Remove"):
+            return
+        spawn_worker(
+            self.client, "DELETE", f"/v1/webhooks/{quote(row['id'], safe='')}",
+            timeout=20, parent=self, track=self._page_workers,
+            on_ok=lambda _d: self._webhook_removed(),
+            on_err=lambda err: self.toast.show_message(
+                sd.save_result(status_of(err) or 0, detail_of(err),
+                               what="removal")[0]))
+
+    def _webhook_removed(self):
+        self.toast.show_message("Webhook removed")
+        self.refresh_webhooks()
+
+    # ── enterprise SSO ─────────────────────────────────────────────────────
+    def refresh_sso(self):
+        if not self._can_fetch():
+            return
+        if not self._is_admin():
+            self._on_sso(None, status=403)
+            return
+        spawn_worker(self.client, "GET", "/v1/auth/sso/connection", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_sso,
+                     on_err=lambda err: self._on_sso(
+                         None, ok=False, status=status_of(err)))
+
+    def _on_sso(self, data, ok: bool = True, status: int | None = None):
+        member = status == 403
+        if member or not ok:
+            # The chip must NOT keep saying "not set up": we did not ask, so we
+            # do not know, and a workspace WITH SSO would be told it has none.
+            self._sso = sa.sso_view(None)
+            self._apply_sso(self._sso, known=False)
+            if member:
+                self.sso_strip.set_state(PanelState.EMPTY,
+                                         empty_title="Managed by an admin",
+                                         empty_body=sa.SSO_MEMBER_NOTICE)
+            else:
+                self.sso_strip.set_state(PanelState.ERROR)
+            self.sso_strip.show()
+            self.sso_form.setEnabled(False)
+            return
+        self.sso_strip.hide()
+        self.sso_form.setEnabled(True)
+        self._sso = sa.sso_view(data)
+        self._apply_sso(self._sso)
+
+    def _apply_sso(self, view: dict, *, known: bool = True):
+        """`known=False` means nobody answered, so nothing here is asserted —
+        the fields blank and the chip says so rather than inheriting the
+        not-configured look (the panel_state rule, applied to a form)."""
+        for key, field in self.sso_fields.items():
+            if not field.hasFocus():
+                field.setText(view[key] if known else "")
+        self.sso_active.setChecked(view["active"])
+        self.sso_secret.setPlaceholderText(
+            sa.sso_secret_placeholder(view["has_secret"]) if known else "")
+        self.sso_secret_help.setText(
+            sa.sso_secret_help(view["has_secret"]) if known
+            else sa.SSO_SECRET_UNKNOWN)
+        self.sso_remove_btn.setVisible(known and view["configured"])
+        status, tone = ((view["status"], view["tone"]) if known
+                        else (sa.SSO_UNKNOWN, "mute"))
+        set_status_chip(self.sso_status_chip, status, tone)
+        self.sso_status_chip.setAccessibleName(f"Single sign-on: {status}")
+        callback = sa.sso_callback_url(self.settings.backend_url())
+        self.sso_callback.setText(callback or sa.SSO_CALLBACK_UNKNOWN)
+        self.sso_callback.setAccessibleName(
+            f"Callback URL: {callback}" if callback
+            else sa.SSO_CALLBACK_UNKNOWN)
+
+    def save_sso(self):
+        secret = self.sso_secret.text()
+        problem = sa.sso_problem(
+            self.sso_fields["domain"].text(), self.sso_fields["issuer"].text(),
+            self.sso_fields["client_id"].text(), secret,
+            bool(self._sso.get("has_secret")))
+        self._set_status(self.sso_status, problem or "", "bad")
+        if problem:
+            return
+        # The only read of the secret, and it goes straight into the body.
+        body = sa.sso_body(self.sso_fields["domain"].text(),
+                           self.sso_fields["issuer"].text(),
+                           self.sso_fields["client_id"].text(), secret,
+                           self.sso_active.isChecked())
+        del secret
+        self.sso_save_btn.setEnabled(False)
+        spawn_worker(self.client, "PUT", "/v1/auth/sso/connection", body=body,
+                     timeout=20, parent=self, track=self._page_workers,
+                     on_ok=self._on_sso_saved,
+                     on_err=self._on_sso_save_failed)
+
+    def _on_sso_saved(self, data):
+        # Cleared whichever way it went: a secret sitting in a field after the
+        # request is a secret held for no reason (the D9 rule).
+        self.sso_secret.clear()
+        self.sso_save_btn.setEnabled(True)
+        self._set_status(self.sso_status, "", "mute")
+        self.toast.show_message("SSO saved")
+        self._on_sso(data)
+
+    def _on_sso_save_failed(self, err):
+        self.sso_secret.clear()
+        self.sso_save_btn.setEnabled(True)
+        self._set_status(
+            self.sso_status,
+            sd.save_result(status_of(err) or 0, detail_of(err),
+                           what="SSO change")[0], "bad")
+
+    def remove_sso(self):
+        if not self._confirm_danger("Remove SSO for this workspace?",
+                                    sa.SSO_REMOVE_WARNING, "Remove SSO"):
+            return
+        spawn_worker(
+            self.client, "DELETE", "/v1/auth/sso/connection", timeout=20,
+            parent=self, track=self._page_workers,
+            on_ok=lambda _d: self._sso_removed(),
+            on_err=lambda err: self._set_status(
+                self.sso_status,
+                sd.save_result(status_of(err) or 0, detail_of(err),
+                               what="removal")[0], "bad"))
+
+    def _sso_removed(self):
+        self.sso_secret.clear()
+        for field in self.sso_fields.values():
+            field.clear()
+        self._set_status(self.sso_status, "", "mute")
+        self.toast.show_message("SSO removed")
+        self.refresh_sso()
 
     def _page_stub(self, t: dict, section_id: str, title: str) -> QWidget:
         """An honest placeholder for a section whose real page lands later.
