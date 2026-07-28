@@ -830,6 +830,17 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .ldg-row:hover{background:var(--surf2);}
 .ldg-row:focus-visible{outline:2px solid var(--fox);outline-offset:-2px;}
 
+/* ════════════════ P2 §9.3 · THE THEMED DIALOG ════════════════ */
+.foxdlg{display:none;position:fixed;inset:0;z-index:11000;background:rgba(6,5,4,.62);
+  align-items:center;justify-content:center;padding:20px;}
+.foxdlg.on{display:flex;}
+.foxdlg-box{width:420px;max-width:94%;background:var(--surf);border-radius:var(--r-lg);
+  box-shadow:var(--raise-lg);padding:20px;}
+.foxdlg-t{font-weight:800;font-size:15px;letter-spacing:-.3px;}
+.foxdlg-b{font-size:11.5px;color:var(--muted);line-height:1.65;margin-top:8px;}
+.foxdlg .btnrow{margin-top:16px;}
+@media(prefers-reduced-motion:no-preference){ .foxdlg.on .foxdlg-box{animation:afade .16s ease both;} }
+
 /* ════════════════ P2 §8.2 · THE PASSPORT CARD ════════════════
    The page's one signature element: the artefact it produces, shown as an
    object rather than described in a sentence. Dark ink on the fox gradient,
@@ -1719,20 +1730,31 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
       <div class="pg-head"><span class="pg-wm" aria-hidden="true">ACCESS</span>
         <div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn ghost sm" onclick="regenerateKey()" title="Mint a fresh key behind an emailed 2FA code — the old key is revoked">↻ regenerate (2FA)</button>
+          <button class="btn ghost sm" onclick="regenerateKey()" data-tip="Issues a new key and revokes the current one. Confirmed by a code emailed to you.">Rotate API key</button>
           <button class="btn pri sm" onclick="createKey()">+ new key</button>
         </div>
       </div>
       <!-- P12 · key-usage summary -->
+      <!-- §9.1 · decorative faces per P1 §9: fox, blue, violet, pink. None of
+           these four carries a state — they are counts and a timestamp — so the
+           colour here is decorative and cannot be mistaken for a warning. -->
       <div class="stats" style="margin-bottom:16px;">
-        <div class="stat"><div class="v fox" id="keyActiveCount">—</div><div class="l">Active keys</div></div>
-        <div class="stat"><div class="v" id="keyTotalCount">—</div><div class="l">Total keys</div></div>
-        <div class="stat"><div class="v" id="keyLimit">—</div><div class="l">Key limit</div></div>
-        <div class="stat"><div class="v" id="keyLastUsed">—</div><div class="l">Last SDK activity</div></div>
+        <div class="stat kpi k-fox"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-key"/></svg>
+          <div class="v" id="keyActiveCount">—</div><div class="l">Active keys</div></div></div>
+        <div class="stat kpi k-blue"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-access"/></svg>
+          <div class="v" id="keyTotalCount">—</div><div class="l">Total keys</div></div></div>
+        <div class="stat kpi k-violet"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-quota"/></svg>
+          <div class="v" id="keyLimit">—</div><div class="l">Key limit</div></div></div>
+        <div class="stat kpi k-pink"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-agent"/></svg>
+          <div class="v" id="keyLastUsed">—</div><div class="l">Last SDK activity</div></div></div>
       </div>
       <!-- P12 · primary element: the API-key table -->
       <div class="clay pad">
-        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="#000"/><rect x="11" y="11.5" width="11" height="3" rx="1.2" fill="#000" transform="rotate(-45 11 13)"/></svg></span></div><div class="txt">Your API keys</div></div><button class="btn pri sm" onclick="createKey()" style="margin:0;">+ new key</button></div>
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="15" r="4.2" fill="#000"/><rect x="11" y="11.5" width="11" height="3" rx="1.2" fill="#000" transform="rotate(-45 11 13)"/></svg></span></div><div class="txt">Your API keys</div></div></div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;">each key maps to one developer or service · keys authenticate SDK writes via <span style="font-family:var(--mono);color:var(--fox2);">POST /v1/logs/batch</span> · a key's secret is shown once at creation</div>
         <div style="overflow-x:auto;">
           <table class="dtbl">
@@ -1751,8 +1773,11 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
         <div class="codebox">export FOXY_API_KEY=foxy_sk_your_key_here</div>
         <div class="flabel">3 · decorate your model call</div>
         <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.audit(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
-        <button class="btn" onclick="checkSdkConnection(this)" style="margin-top:12px;">Test connection</button>
-        <span id="sdkCheckOut" style="margin-left:8px;font-size:11px;font-weight:700;"></span>
+        <div class="btnrow" style="flex-wrap:wrap;align-items:center;">
+          <button class="btn half" onclick="checkSdkConnection(this)" style="margin-top:0;">Test connection</button>
+          <a class="btn ghost half" style="margin-top:0;text-decoration:none;" href="https://foxyaudit.tech/blog/connect-the-sdk.html" target="_blank" rel="noopener">Read the setup guide</a>
+        </div>
+        <span id="sdkCheckOut" style="font-size:11px;font-weight:700;"></span>
       </div>
     </div>
 
@@ -2260,11 +2285,17 @@ function exportWorkspaceData(){
 }
 // soft-delete the workspace (5D.3): confirm by typing the workspace name
 async function deleteWorkspace(){
-  const name=window.prompt('This locks your workspace and signs everyone out (reversible by support). Type your workspace name to confirm:');
-  if(name===null||!name.trim())return;
+  const name=await foxConfirm({
+    title:'Lock this workspace?',
+    body:'Everyone is signed out immediately and the workspace stops accepting SDK writes. '
+        +'Your ledger is not destroyed and support can reverse this. '
+        +'Type the workspace name to confirm.',
+    confirm:'Lock workspace', danger:true,
+    input:{placeholder:'workspace name'}});
+  if(name===null||!String(name).trim())return;
   try{
     const r=await fetch('/v1/account/delete',{method:'POST',credentials:'same-origin',
-      headers:{'content-type':'application/json'},body:JSON.stringify({confirm_name:name.trim()})});
+      headers:{'content-type':'application/json'},body:JSON.stringify({confirm_name:String(name).trim()})});
     if(!r.ok){ const d=await r.json().catch(()=>({})); showToast(d.detail||('delete failed ('+r.status+')')); return; }
     showToast('Workspace deleted — signing out'); setTimeout(()=>location.reload(),1200);
   }catch(e){ showToast('Could not reach the server'); }
@@ -3063,14 +3094,13 @@ async function loadLoginHistory(){
   window.paintPassPeriod=paintPassPeriod;
   document.addEventListener('change',function(e){
     if(e.target&&(e.target.id==='expFrom'||e.target.id==='expTo'))paintPassPeriod();
-  });
+  });   // setFieldValue emits this, so the presets repaint through the same path
   window.setExportRange=function(days){
     const from=$('expFrom'), to=$('expTo'); if(!from||!to)return;
     const iso=d=>d.toISOString().slice(0,10);
-    to.value=iso(new Date());
-    if(days===0){ from.value=''; to.value=''; }
-    else { const f=new Date(); f.setDate(f.getDate()-days); from.value=iso(f); }
-    paintPassPeriod();          // assigning .value fires no change event
+    setFieldValue(to,iso(new Date()));
+    if(days===0){ setFieldValue(from,''); setFieldValue(to,''); }
+    else { const f=new Date(); f.setDate(f.getDate()-days); setFieldValue(from,iso(f)); }
   };
   // Real Passport export: POST /v1/passport (honouring the date range) -> open the PDF.
   window.runExport=async function(){
@@ -3250,6 +3280,12 @@ async function loadLoginHistory(){
       if($('polRegulated'))$('polRegulated').checked=!!p.regulated_data_mode;
       if($('polMaxTokens'))$('polMaxTokens').value=p.max_token_threshold;
       if(window.syncTokenSeg)window.syncTokenSeg();
+      // setFieldValue-exempt: 'polEnforcement' 'polConfidence' 'polMaxTokens' 'polNotify' 'polNotifyEmail' 'polNotifyWebhook'
+      // These load SERVER state into the form. Their change handler is
+      // markPolicyDirty, which exists to notice USER edits — notifying here
+      // would mark the ruleset unsaved the instant the page opened. The two
+      // controls that need a repaint after load call their sync() explicitly
+      // below, which is the right shape for load-time population.
       if($('polEnforcement')&&p.enforcement_mode)$('polEnforcement').value=p.enforcement_mode;
       if($('polConfidence')&&p.confidence_threshold)$('polConfidence').value=p.confidence_threshold;
       if(window.syncConfidenceSeg)window.syncConfidenceSeg();
@@ -3270,6 +3306,10 @@ async function loadLoginHistory(){
     JUDGE.set.gemini=!!p.gemini_key_set; JUDGE.set.openai=!!p.openai_key_set;
     JUDGE.clear.gemini=false; JUDGE.clear.openai=false;
     JUDGE.mode=(p.judge_key_mode==='platform'&&JUDGE.platformAllowed)?'platform':'own';
+    // setFieldValue-exempt: 'polJudgeProvider' — renderJudgeKeyFields() is called
+    // explicitly at the end of this loader, once judge_key_mode and the key-set
+    // flags are also populated. Firing it early through a change event would
+    // render the key fields against half-loaded state.
     if($('polJudgeProvider'))$('polJudgeProvider').value=p.judge_provider||'gemini';
     // §7.6 · name the model that will actually grade, per provider. The backend
     // reports these because there is no per-org model to choose; an absent map
@@ -3418,10 +3458,19 @@ async function loadLoginHistory(){
     }catch(_){ if($('keyActiveCount'))$('keyActiveCount').textContent=arr.filter(k=>k.status==='active'&&!k.expired).length; if($('keyLimit'))$('keyLimit').textContent='—'; }
   };
   window.createKey=async function(){
-    const name=window.prompt('Name this key (e.g. "Backend — prod"):','SDK key'); if(name===null)return;
-    const expRaw=window.prompt('Auto-expire after how many days? (leave blank = never)','');
+    // was two sequential window.prompt() calls — the second appeared only after
+    // you answered the first, so the expiry question arrived as a surprise
+    const got=await foxConfirm({
+      title:'New API key',
+      body:'The secret is shown once, at creation, and never again.',
+      confirm:'Create key',
+      fields:[{name:'name', label:'name', placeholder:'e.g. Backend — prod', value:'SDK key'},
+              {name:'days', label:'auto-expire after (days) — blank means never',
+               placeholder:'never', inputmode:'numeric'}]});
+    if(got===null)return;
+    const name=(got.name||'').trim();
     const body={name:name||'unnamed key'};
-    const days=parseInt(expRaw,10);
+    const days=parseInt(got.days,10);
     if(!isNaN(days)&&days>0)body.expires_in_days=Math.min(3650,days);
     try{ const r=await api('/v1/keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       if(!r.ok){ toast('Create failed — '+await errText(r)); return; }
@@ -3437,13 +3486,23 @@ async function loadLoginHistory(){
     if(btn)btn.disabled=false;
   };
   window.regenerateKey=async function(){
-    if(!confirm('Regenerate your API key?\n\nYour current key stops working immediately. We’ll email you a 6-digit code to confirm.'))return;
+    // §9.3 · was confirm() + prompt(): the browser's own dialogs, unstyled, and
+    // giving no room to say what the action actually does.
+    const go=await foxConfirm({
+      title:'Rotate your API key?',
+      body:'A new key is issued and the current one stops working immediately. '
+          +'Anything still using the old key will start failing until you update it. '
+          +'We email you a 6-digit code to confirm.',
+      confirm:'Send the code', danger:true});
+    if(!go)return;
     try{
       const r=await api('/v1/keys/regenerate/request',{method:'POST'});
       if(!r.ok){ toast('Could not send code — '+await errText(r)); return; }
-      const code=window.prompt('Enter the 6-digit code we just emailed you:');
-      if(code===null||!code.trim())return;
-      const r2=await api('/v1/keys/regenerate/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:code.trim()})});
+      const code=await foxConfirm({
+        title:'Enter the code', body:'We emailed a 6-digit code to your account address.',
+        input:{placeholder:'123456', inputmode:'numeric', maxlength:6}, confirm:'Rotate key', danger:true});
+      if(code===null||!String(code).trim())return;
+      const r2=await api('/v1/keys/regenerate/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:String(code).trim()})});
       if(!r2.ok){ toast('Regeneration failed — '+await errText(r2)); return; }
       const k=await r2.json(); revealSecret('Regenerated API key', k.api_key); toast('API key regenerated'); loadKeys();
     }catch(e){ toast('Could not reach the server'); }
@@ -3657,9 +3716,15 @@ async function loadLoginHistory(){
     }catch(e){}
   }
   window.addUser=async function(){
-    const email=window.prompt('New auditor email:'); if(email===null||!email.trim())return;
-    const role=(window.prompt('Role — admin or member:','member')||'member').trim().toLowerCase();
-    try{ const r=await api('/v1/auth/users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.trim(),role:role})});
+    const got=await foxConfirm({
+      title:'Invite someone to this workspace', confirm:'Send invite',
+      body:'A member can read the ledger, run verifications and export. An admin can also change policy and keys.',
+      fields:[{name:'email', label:'email', placeholder:'auditor@firm.com'},
+              {name:'role', label:'role — admin or member', value:'member'}]});
+    if(got===null||!String(got.email||'').trim())return;
+    const email=String(got.email).trim();
+    const role=(String(got.role||'member').trim().toLowerCase()==='admin')?'admin':'member';
+    try{ const r=await api('/v1/auth/users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:email,role:role})});
       if(!r.ok){ toast('Add failed — '+await errText(r)); return; }
       const u=await r.json();
       if(u.invited){ toast('Invite email sent to '+u.email); }
@@ -4816,9 +4881,8 @@ async function loadLoginHistory(){
   window.syncConfidenceSeg=sync;
   function pick(btn){
     var s=sel(); if(!s||!btn)return;
-    s.value=btn.getAttribute('data-val');
+    setFieldValue(s,btn.getAttribute('data-val'));
     sync();
-    s.dispatchEvent(new Event('change'));
     btn.focus();
   }
   document.addEventListener('click',function(e){
@@ -4914,9 +4978,8 @@ async function loadLoginHistory(){
   window.syncTokenSeg=sync;
   function pick(btn){
     var f=fld(); if(!f||!btn)return;
-    f.value=btn.getAttribute('data-val');
+    setFieldValue(f,btn.getAttribute('data-val'));
     sync();
-    f.dispatchEvent(new Event('change'));
     btn.focus();
   }
   document.addEventListener('click',function(e){
@@ -5021,6 +5084,114 @@ async function loadLoginHistory(){
     window.foxPager(host,{page:state.page,pageSize:size,total:total,label:label,
       onPage:function(pg){ state.page=pg; onChange(); }});
     return items.slice((state.page-1)*size,state.page*size);
+  };
+})();
+</script>
+
+<div class="foxdlg" id="foxDlg" role="dialog" aria-modal="true" aria-labelledby="foxDlgT">
+  <div class="foxdlg-box">
+    <div class="foxdlg-t" id="foxDlgT">—</div>
+    <div class="foxdlg-b" id="foxDlgB">—</div>
+    <div id="foxDlgFields"></div>
+    <div class="btnrow">
+      <button class="btn ghost half" type="button" id="foxDlgNo" style="margin-top:0;">Cancel</button>
+      <button class="btn pri half" type="button" id="foxDlgYes" style="margin-top:0;">Confirm</button>
+    </div>
+  </div>
+</div>
+<!-- ═══ P2 · setFieldValue + foxConfirm ═══
+     setFieldValue exists because `.value = x` with no change event has bitten
+     this file three times: polConfidence (P1 §10), polMaxTokens (§7.2) and
+     setExportRange (§8.2). Each time the field held the right value and
+     everything watching it stayed stale. Assign through this instead; the
+     guard in test_p2_structure.py fails the build if a watched field is
+     assigned directly. -->
+<script>
+(function(){
+  window.setFieldValue=function(el,v){
+    if(typeof el==='string')el=document.getElementById(el);
+    if(!el)return;
+    el.value=v;
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+  };
+
+  /* foxConfirm({title, body, confirm, danger, input}) -> Promise
+     resolves false on cancel; true on confirm, or the entered string when an
+     input was requested. Replaces confirm()/prompt() so a destructive action
+     can explain itself in the product's own voice. */
+  var open=null;
+  window.foxConfirm=function(o){
+    o=o||{};
+    return new Promise(function(resolve){
+      var dlg=document.getElementById('foxDlg');
+      if(!dlg){ resolve(window.confirm(o.title||'Are you sure?')); return; }
+      var t=document.getElementById('foxDlgT'), b=document.getElementById('foxDlgB');
+      var host=document.getElementById('foxDlgFields');
+      var yes=document.getElementById('foxDlgYes'), no=document.getElementById('foxDlgNo');
+      t.textContent=o.title||'Are you sure?';
+      b.textContent=o.body||'';
+      b.style.display=o.body?'':'none';
+      yes.textContent=o.confirm||'Confirm';
+      yes.className='btn half '+(o.danger?'danger':'pri');
+      // `input:` is the one-field shorthand; `fields:` is the general form.
+      var fields=o.fields||(o.input?[Object.assign({name:'value'},o.input)]:[]);
+      host.textContent='';
+      var inputs=[];
+      fields.forEach(function(f,i){
+        if(f.label){
+          var lb=document.createElement('div');
+          lb.className='flabel'; lb.textContent=f.label;
+          if(i===0)lb.style.marginTop='12px';
+          host.appendChild(lb);
+        }
+        var el=document.createElement('input');
+        el.className='cin';
+        el.autocomplete='off';
+        if(!f.label&&i===0)el.style.marginTop='12px';
+        if(f.placeholder)el.placeholder=f.placeholder;
+        if(f.value!=null)el.value=f.value;
+        if(f.inputmode)el.setAttribute('inputmode',f.inputmode);
+        if(f.maxlength)el.setAttribute('maxlength',String(f.maxlength));
+        el.dataset.name=f.name||('field'+i);
+        host.appendChild(el);
+        inputs.push(el);
+      });
+      var last=document.activeElement;
+      function done(v){
+        dlg.classList.remove('on');
+        document.removeEventListener('keydown',onKey,true);
+        open=null;
+        if(last&&last.focus)last.focus();
+        resolve(v);
+      }
+      function onKey(e){
+        if(e.key==='Escape'){ e.preventDefault(); done(inputs.length?null:false); }
+        else if(e.key==='Enter'&&inputs.indexOf(document.activeElement)>=0){ e.preventDefault(); yes.click(); }
+        else if(e.key==='Tab'){
+          /* a modal that lets Tab escape it is not modal */
+          var f=dlg.querySelectorAll('button,input');
+          if(!f.length)return;
+          var first=f[0], lastEl=f[f.length-1];
+          if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); lastEl.focus(); }
+          else if(!e.shiftKey&&document.activeElement===lastEl){ e.preventDefault(); first.focus(); }
+        }
+      }
+      function collect(){
+        if(!inputs.length)return true;
+        if(o.input)return inputs[0].value;          // shorthand returns the string
+        var out={};
+        inputs.forEach(function(el){ out[el.dataset.name]=el.value; });
+        return out;
+      }
+      var cancelled=inputs.length?null:false;
+      yes.onclick=function(){ done(collect()); };
+      no.onclick=function(){ done(cancelled); };
+      dlg.onclick=function(e){ if(e.target===dlg)done(cancelled); };
+      dlg.classList.add('on');
+      open=dlg;
+      document.addEventListener('keydown',onKey,true);
+      (inputs[0]||yes).focus();
+    });
   };
 })();
 </script>
