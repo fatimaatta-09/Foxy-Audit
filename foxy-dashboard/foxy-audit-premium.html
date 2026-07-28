@@ -22,18 +22,27 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root{
-  /* ── deep clay base — not cream, not pure black ── */
-  --bg:      #0e0c0a;
-  --bg2:     #161310;
-  --surf:    #1c1815;
-  --surf2:   #221d18;
-  --surf3:   #2a241d;
-  --line:    #322b23;
+  /* ── barely-warm neutrals — 3-5% saturation @ hue 30 ──
+     The old ramp sat at 14-18% saturation (and --ink at 48%), which is not a
+     grey at all: it is a desaturated orange. At high lightness that reads as
+     warm paper, which is why the light theme always looked right; at 5%
+     lightness the same tint reads as mud, which is the "brownish hue" in dark
+     mode. Warmth now comes almost entirely from --fox, so the accent no longer
+     competes with a background made of its own hue.
+     Contrast against --surf is unchanged or better: ink 15.8:1, ink2 10.5:1,
+     muted 5.2:1, fox 6.7:1. --muted2 stays under the bar ON PURPOSE — it is
+     the disabled-only colour (WCAG 1.4.3 exempts inactive controls). */
+  --bg:      #141312;
+  --bg2:     #171616;
+  --surf:    #1b1a19;
+  --surf2:   #1e1d1c;
+  --surf3:   #242322;
+  --line:    #312f2e;
 
-  --ink:     #f7f1e8;
-  --ink2:    #cdc2b3;
-  --muted:   #8c8174;
-  --muted2:  #5f564a;
+  --ink:     #f4f4f3;
+  --ink2:    #ccc8c4;
+  --muted:   #938b83;
+  --muted2:  #69625b;
 
   /* fox / paprika */
   --fox:     #ff7a2e;
