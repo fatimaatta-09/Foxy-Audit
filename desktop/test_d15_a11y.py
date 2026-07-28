@@ -780,12 +780,15 @@ def test_the_four_vector_icons_rasterise_for_the_display(app):
     assert _glyph("key", 34).devicePixelRatio() == pytest.approx(screen), \
         "_glyph stopped consulting the screen when no ratio is passed"
 
-    # the three on the console are bound to it, so they are read there
+    # The three on the console are bound to it, so they are read there — one
+    # method body at a time, cut at the next `def`. A fixed-size window instead
+    # of the real boundary was the first version of this, and it did not bite:
+    # _monogram passed on _paint_chain_icon's call three lines further down.
     source = (_HERE / "dashboard.py").read_text(encoding="utf-8")
     for what in ("_monogram", "_paint_chain_icon", "_fox_pixmap"):
-        body = source.split(f"def {what}(", 1)
-        assert len(body) == 2, f"{what} is gone"
-        body = body[1][:900]
+        after = source.split(f"    def {what}(", 1)
+        assert len(after) == 2, f"{what} is gone"
+        body = after[1].split("\n    def ", 1)[0]
         assert "devicePixelRatioF()" in body, (
             f"{what} stopped asking the widget for the display scale — on a "
             f"200% display it is soft again, and nothing else here notices")
