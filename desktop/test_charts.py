@@ -562,6 +562,34 @@ def test_bars_never_go_negative_or_sub_pixel(n, width):
     assert bw * n + gap * (n - 1) <= width + 0.01      # still fits the row
 
 
+@pytest.mark.parametrize("width,n", [(600.0, 900), (600.0, 1200),
+                                     (200.0, 601), (60.0, 90)])
+def test_more_bars_than_pixels_fills_the_row_instead_of_overflowing_it(width, n):
+    """Past n > W there is no room for a 1px bar each, and clamping to
+    `_MIN_BAR` there makes the row wider than the space it was handed —
+    overflowing whatever sits beside it. The web port got this guard
+    (`barMetrics`, foxy-audit-premium.html:2071); this is the same two lines.
+
+    Unreachable from either UI today, since both range controls stop at 90, so
+    this is about the function being honest at any n, not a live defect.
+    """
+    from charts import bar_metrics
+    bw, gap = bar_metrics(width, n)
+    assert gap == 0.0
+    assert bw > 0.0, "a zero-width bar is not a bar"
+    assert bw * n + gap * (n - 1) <= width + 0.01, \
+        f"n={n} W={width} overflows by {bw * n - width:.2f}px"
+
+
+def test_the_sub_pixel_guard_does_not_touch_anything_reachable():
+    """It must engage ONLY past n > W — every count a range control can ask
+    for still gets a full-width, >=1px bar."""
+    from charts import bar_metrics
+    for n in (7, 12, 30, 90, 365):
+        bw, _gap = bar_metrics(600.0, n)
+        assert bw >= 1.0, f"n={n} -> {bw}"
+
+
 def test_bar_metrics_match_the_web_until_the_cap_binds():
     """Below the crowding threshold this is byte-identical to
     foxy-audit-premium.html:2111 — the cap engages only where the web breaks."""

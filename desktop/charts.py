@@ -97,13 +97,22 @@ def bar_metrics(W: float, n: int) -> tuple[float, float]:
     threshold moves with width — so every chart below it is byte-identical to
     the web. Above it the gap shrinks instead of the bars vanishing. Verified
     at W=600: n=7 -> 70.29px (same as the web), n=30 -> 13.56px (was 2.60),
-    n=90 -> 4.47px (was -11.13). The web has the same defect and is
-    deliberately NOT changed here — see OWNER_DECISIONS.
+    n=90 -> 4.47px (was -11.13).
+
+    The web has since been given the same cap (`barMetrics`,
+    foxy-audit-premium.html:2063-2075) — and one guard this function lacked:
+    past n > W there is no room for a 1px bar each, and clamping to `_MIN_BAR`
+    there makes the row wider than the space it was handed. That guard is now
+    here too. Unreachable from either UI, since both range controls stop at
+    90, but it keeps the row's total width honest at any n. OWNER_DECISIONS #15.
     """
     if n <= 0:
         return W, 0.0
     if n == 1:
         return max(_MIN_BAR, W), 0.0
+    if W / n < _MIN_BAR:
+        # Fill the row exactly with sub-pixel bars rather than overflow it.
+        return W / n, 0.0
     pitch = W / n
     gap = min(max(4.0, W * 0.03), pitch / 3.0)
     gap = max(0.0, min(gap, (W - n * _MIN_BAR) / (n - 1)))
