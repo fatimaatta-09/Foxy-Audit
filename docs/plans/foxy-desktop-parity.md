@@ -9,15 +9,19 @@
 > platforms building green, SDK 1.2.0 on PyPI, Windows + Linux installers live at
 > `foxyaudit.tech/download/`. All four owner-locked decisions in §2 are delivered.
 >
-> **The only phase left is D15 — the owner-only manual QA sweep (§12).** It is a
-> visual check across 3 OSes × auth modes, not a merge gate; the release did not
-> wait on it.
+> **D15a (the automatable half of the QA sweep) is DONE and merged** — `5c76750`,
+> +51 tests (698 → 749): a WCAG contrast audit over the token palette, accessible-name
+> and focus-order guards, reduced-motion and HiDPI checks. Every guard was re-broken in
+> both directions to prove it bites.
+>
+> **What is left of D15 is the owner-only manual sweep (§12)** — a visual check across
+> 3 OSes × auth modes, not a merge gate; the release did not wait on it.
 >
 > **Known gaps, none blocking:**
-> - **macOS has no download route.** The `.dmg` builds fine but `publish-installers-to-vm`
->   copies only Windows + Linux, and the workflow creates no GitHub Release — so the Mac
->   build exists only as a 90-day workflow artifact. Fix = add it to the VM copy + a sale-page
->   button, or publish a GitHub Release with all three attached.
+> - ~~macOS has no download route~~ **CLOSED** (`8125db7`): `release.yml` now publishes a
+>   GitHub Release with all three builds + the wheel, and v1.2.0's page is live. Note the
+>   macOS build is **unsigned and not notarized** — Gatekeeper blocks first launch until the
+>   user right-clicks → Open. The release notes say so. Signing needs an Apple Developer ID.
 > - **`check-version` validates only 2 of 3 version stamps.** `sdk/src/foxy_audit/__init__.py`
 >   carries its own `__version__` and is unchecked, so a wheel can pass the gate with correct
 >   metadata while reporting the previous version at runtime. Bumped by hand for 1.2.0.
@@ -26,9 +30,23 @@
 >   `conftest.py` owning the app) was built, measured, and **rejected — 5 crashes/10 runs
 >   against 0/12 without it**, because the app's early death was accidentally cleaning up stale
 >   workers. Do not reopen. Details in the 2026-07-28 devlog.
-> - **a11y:** `threats_page.py:135` paints the risk-legend dot in `--muted2` (2.45:1). Minor —
->   the adjacent label carries the same meaning and its text passes. Any fix belongs on the
->   **web** `:root` first and gets re-ported; hand-tuning the desktop copy would fork the looks.
+> - **a11y, fixed** (`f9b3cb3`): `#ctaBtn`/`#verifyBtn` painted white on `#c96a2f` — 3.76:1
+>   resting, 3.27:1 hovered — on the app's most-clicked controls. The one contrast finding the
+>   "web wins" rule could not absorb, because `#c96a2f` appears nowhere in the site's `:root`;
+>   it is the desktop's own matte accent. Took the web's own answer (`#1a0900` ink, as
+>   `.btn.pri` uses), which moved desktop *toward* the web. Pressed moved `#a8551f`→`#c06529`
+>   because dark ink fails on the darker shade — fixing one state alone would have swapped the
+>   failure to the other. `QMenu::item:selected` had the identical miss, found by checking
+>   siblings. `min_btn`/`close_btn` gained accessible names.
+> - **a11y, still open, reported not fixed:** `threats_page.py:135` risk-legend **dot** and
+>   `charts.py:66`'s chart "mute" tone both use `--muted2` (2.45:1) — non-text, with adjacent
+>   labels carrying the meaning; these are web ports, so any fix goes on the site first.
+>   `tilePink`'s light gradient stop is 4.05:1 with white ink, and `clay_chat_popup`'s
+>   `#newChatBtn:hover` repeats the white-on-`#c96a2f` miss on the companion surface.
+>   The verify page's `sb_prompt`/`sb_response`/`sb_seq` have visible labels but no
+>   `setAccessibleName`/`setBuddy`. Four vector icons rasterise at 1× on scaled displays.
+>   Companion/console animation never consults `reduced_motion()` (mitigated: roaming
+>   defaults off).
 >
 > **Follow-up debt:** (1) **OPEN** — PRE-EXISTING `usage_daily` 48h-rolling-window rollup understates historical counts; 5 routers read it (`account.py`, `admin_data.py`, `admin_health.py`, `admin_orgs.py`, `admin_stats.py`); fix = derive from `audit_logs`, own phase. (2) ✅ **FIXED** — org-level breach notices moved out of the grading batch into `org_notifications_loop` on its own thread. (3) ✅ **RESOLVED as deliberate** — `user_notifications_enabled` intentionally does *not* gate the org-policy notice; that switch governs the per-user fan-out, and reusing it would silently disable a paid feature (reasoning now in `worker.py:361-364`). (4) ACCEPTED — per-user breach-alert queue is in-memory (≤5s email loss at deploy; in-app notification unaffected).
 >
