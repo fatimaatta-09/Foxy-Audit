@@ -55,9 +55,13 @@ def test_the_document_is_branded(make_org, client, monkeypatch):
     assert "Foxy Audit" in doc
     assert 'class="wordmark"' in doc
     assert "Content-blind audit evidence" in doc
-    # The mark is inline SVG: sharp in print, no network fetch (CSP + weasyprint
-    # renders offline).
-    assert '<svg width="34" height="34"' in doc
+    # The mark is the REAL Foxy logo, embedded as base64 — not a hand-drawn
+    # stand-in and not a network fetch (CSP + weasyprint renders offline).
+    # An auditor comparing this against the website must see the same fox.
+    assert 'class="brand-mark"' in doc
+    assert "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEA" in doc, (
+        "the brand mark is no longer the shipped logo — a passport that carries "
+        "a different mark than the product is worse than one carrying none")
     assert "http://" not in doc.split("<style>")[0]
 
 
