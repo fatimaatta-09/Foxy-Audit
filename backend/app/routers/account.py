@@ -670,20 +670,46 @@ def _notif_dict(n: Notification) -> dict:
 
 @router.get("/v1/notifications")
 def list_notifications(user: User = Depends(require_user), db: Session = Depends(get_db),
-                       limit: int = Query(default=30, ge=1, le=100), unread_only: bool = False):
-    """The org's notifications (newest first) + unread count. Syncs real events on read."""
+                       limit: int = Query(default=30, ge=1, le=100),
+                       page: int = Query(default=1, ge=1, description="1-indexed page"),
+                       unread_only: bool = False):
+    """The org's notifications (newest first), the unread count, and the total.
+
+    `page` mirrors /v1/logs (1-indexed, paired with `limit`) because the
+    dashboard's notifications PAGE has to reach the whole history, not just the
+    newest `limit`. The top-bar panel keeps calling this with limit=30 and no
+    page, which is page 1 — unchanged. `total` is additive; existing callers
+    ignore it.
+
+    Without this the page could only ever show the newest 100 rows, since limit
+    is capped there, and an audit surface that silently stops at 100 is the same
+    defect as one that silently stops at 30."""
     _sync_notifications(db, user)                 # stages rows (no commit)
     db.flush()                                    # autoflush is off — flush so the SELECT sees new rows
-    q = select(Notification).where(Notification.org_id == user.org_id)
+    scope = [Notification.org_id == user.org_id]
     if unread_only:
-        q = q.where(Notification.read_at.is_(None))
-    rows = db.execute(q.order_by(Notification.created_at.desc()).limit(limit)).scalars().all()
-    unread = int(db.execute(
-        select(func.count()).select_from(Notification)
-        .where(Notification.org_id == user.org_id, Notification.read_at.is_(None))
-    ).scalar_one())
+        scope.append(Notification.read_at.is_(None))
+    # ONE aggregate for both counts. Two separate COUNTs would make this three
+    # round trips where the endpoint used to take two, and every extra
+    # statement holds the transaction — and its locks — open a little longer
+    # against a test fixture that TRUNCATEs `users` and `organizations`
+    # between cases.
+    total_all, unread = db.execute(
+        select(func.count(Notification.id),
+               func.count(Notification.id).filter(Notification.read_at.is_(None)))
+        .where(Notification.org_id == user.org_id)
+    ).one()
+    # when the caller asked for unread only, the filtered total IS the unread
+    # count — otherwise the pager renders pages that cannot be reached
+    total = int(unread if unread_only else total_all)
+    unread = int(unread)
+    rows = db.execute(
+        select(Notification).where(*scope)
+        .order_by(Notification.created_at.desc())
+        .offset((page - 1) * limit).limit(limit)
+    ).scalars().all()
     db.commit()                                   # persist the synced rows
-    return {"unread": unread, "items": [_notif_dict(n) for n in rows]}
+    return {"unread": unread, "total": total, "items": [_notif_dict(n) for n in rows]}
 
 
 @router.post("/v1/notifications/{note_id}/read")
