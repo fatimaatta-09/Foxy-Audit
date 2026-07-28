@@ -110,6 +110,7 @@ from foxy_tokens import (
     paint_icon,
     pick_font as _pick_font,
     qcolor as _qcolor,
+    reduced_motion as _reduced_motion,
     resource_path,
     with_alpha as _with_alpha,
 )
@@ -1199,6 +1200,9 @@ class DashboardWindow(QWidget):
         prompt_lbl = QLabel("ORIGINAL PROMPT")
         prompt_lbl.setObjectName("kpiLabel")
         self.sb_prompt = QTextEdit()
+        # The visible QLabel above is enough for a sighted user; a reader needs
+        # the tie spelled out. Same shape as auth_windows._Field.
+        self.sb_prompt.setAccessibleName(prompt_lbl.text().title())
         self.sb_prompt.setPlaceholderText("Paste the original prompt text here…")
         self.sb_prompt.setFixedHeight(130)
         prompt_box.addWidget(prompt_lbl)
@@ -1209,6 +1213,7 @@ class DashboardWindow(QWidget):
         response_lbl = QLabel("ORIGINAL RESPONSE")
         response_lbl.setObjectName("kpiLabel")
         self.sb_response = QTextEdit()
+        self.sb_response.setAccessibleName(response_lbl.text().title())
         self.sb_response.setPlaceholderText("Paste the original response text here…")
         self.sb_response.setFixedHeight(130)
         response_box.addWidget(response_lbl)
@@ -1254,6 +1259,7 @@ class DashboardWindow(QWidget):
         seq_lbl = QLabel("LEDGER SEQ #")
         seq_lbl.setObjectName("kpiLabel")
         self.sb_seq = QLineEdit()
+        self.sb_seq.setAccessibleName(seq_lbl.text().title())
         self.sb_seq.setPlaceholderText("e.g. 3")
         self.sb_seq.setFixedWidth(110)
         self.sb_compare_btn = QPushButton("Compare to Ledger")
@@ -1386,17 +1392,27 @@ class DashboardWindow(QWidget):
             m.set_tokens(t)
 
     def _fox_pixmap(self, size: int):
-        """A little Foxy portrait — the first idle sprite cell (192×208), scaled."""
+        """A little Foxy portrait — the first idle sprite cell (192×208), scaled.
+
+        Scaled in device pixels and stamped with the ratio, the way the
+        annunciator's icon is (chrome_widgets.py:194): downscaling the 192×208
+        cell to a flat `size` and letting the compositor blow it back up on a
+        200% display throws away detail the sprite actually has."""
         pm = QPixmap(self._sprite_path)
         if pm.isNull():
             return None
+        ratio = self.devicePixelRatioF() or 1.0
         frame = pm.copy(0, 0, 192, 208)
-        return frame.scaled(size, size,
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation)
+        out = frame.scaled(int(size * ratio), int(size * ratio),
+                           Qt.AspectRatioMode.KeepAspectRatio,
+                           Qt.TransformationMode.SmoothTransformation)
+        out.setDevicePixelRatio(ratio)
+        return out
 
     def _monogram(self, t: dict) -> QPixmap:
-        pm = QPixmap(30, 30)
+        ratio = self.devicePixelRatioF() or 1.0
+        pm = QPixmap(int(30 * ratio), int(30 * ratio))
+        pm.setDevicePixelRatio(ratio)
         pm.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -1408,7 +1424,9 @@ class DashboardWindow(QWidget):
         return pm
 
     def _paint_chain_icon(self, ok: bool):
-        pm = QPixmap(16, 16)
+        ratio = self.devicePixelRatioF() or 1.0
+        pm = QPixmap(int(16 * ratio), int(16 * ratio))
+        pm.setDevicePixelRatio(ratio)
         pm.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm)
         paint_icon(p, QRectF(0, 0, 16, 16), "link",
@@ -4670,6 +4688,12 @@ class DashboardWindow(QWidget):
                 self._acrylic_on = True
                 self.apply_theme(None)
         self._bring_to_front()
+        if _reduced_motion():
+            # Land on the finished frame. Returning without this leaves the
+            # window at the 0.0 set above — invisible, which is what a
+            # half-applied motion skip looks like.
+            self.setWindowOpacity(1.0)
+            return
         # opacity-only fade (no geometry slide — avoids the high-DPI setGeometry
         # warnings on a fixed-size window).
         self._a_op = QPropertyAnimation(self, b"windowOpacity", self)
@@ -4685,6 +4709,9 @@ class DashboardWindow(QWidget):
         # hiding alone would leave them polling forever behind a hidden window.
         # The window is reused (no WA_DeleteOnClose), and show_animated restarts
         # the timers on the way back in.
+        if _reduced_motion():
+            self.close()
+            return
         self._a_out = QPropertyAnimation(self, b"windowOpacity", self)
         self._a_out.setDuration(140)
         self._a_out.setStartValue(1.0)

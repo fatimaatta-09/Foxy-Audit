@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QPropertyAnimation, pyqtProperty, pyqtSignal, QTimer
 from PyQt6.QtGui import QPainter, QColor, QRadialGradient
 
+from foxy_tokens import reduced_motion
+
 
 class SecurityOverlay(QWidget):
     """
@@ -58,6 +60,25 @@ class SecurityOverlay(QWidget):
         self._opacity = val
         self.update()
 
+    # ── Fading ───────────────────────────────────────────────────────────
+    def _fade_to_clear(self, duration_ms: int, start: float):
+        """Ramp the glow down over `duration_ms`, or hold-then-clear if the OS
+        has asked for reduced motion.
+
+        The glow is feedback, not decoration — it is how a hash confirmation or
+        a breach announces itself — so reduced motion must not silence it. What
+        goes is the ramp: the indicator appears at full strength, stays for the
+        same time, and then goes out in one step."""
+        self._fade_anim.stop()
+        if reduced_motion():
+            self.opacity_prop = start
+            QTimer.singleShot(duration_ms, lambda: setattr(self, "opacity_prop", 0.0))
+            return
+        self._fade_anim.setDuration(duration_ms)
+        self._fade_anim.setStartValue(start)
+        self._fade_anim.setEndValue(0.0)
+        self._fade_anim.start()
+
     # ── Triggers ─────────────────────────────────────────────────────────
     def flash_green(self):
         """A quick pulse to indicate a successful hash or backend connection."""
@@ -65,11 +86,7 @@ class SecurityOverlay(QWidget):
             return  # Red alert overrides ambient green flashes
 
         self._color = QColor(100, 255, 120)  # Bright neon green
-        self._fade_anim.stop()
-        self._fade_anim.setDuration(1500)
-        self._fade_anim.setStartValue(1.0)
-        self._fade_anim.setEndValue(0.0)
-        self._fade_anim.start()
+        self._fade_to_clear(1500, 1.0)
 
     def flash_red(self, duration_ms: int = 5000):
         """A severe red alert for policy breaches."""
@@ -90,19 +107,11 @@ class SecurityOverlay(QWidget):
             return
 
         self._color = QColor(255, 180, 50)  # Amber
-        self._fade_anim.stop()
-        self._fade_anim.setDuration(3000)
-        self._fade_anim.setStartValue(0.8)
-        self._fade_anim.setEndValue(0.0)
-        self._fade_anim.start()
+        self._fade_to_clear(3000, 0.8)
 
     def _end_alert(self):
         self._active_alert = False
-        self._fade_anim.stop()
-        self._fade_anim.setDuration(1000)
-        self._fade_anim.setStartValue(self._opacity)
-        self._fade_anim.setEndValue(0.0)
-        self._fade_anim.start()
+        self._fade_to_clear(1000, self._opacity)
 
     # ── Paint ─────────────────────────────────────────────────────────────
     def paintEvent(self, event):

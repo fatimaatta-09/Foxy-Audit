@@ -74,6 +74,47 @@ AA_BODY = 4.5          # WCAG 1.4.3 AA, normal-size text
 AA_LARGE = 3.0         # WCAG 1.4.3 AA, >=18.66px bold / >=24px
 
 
+# ══ reading what the app actually declares ══════════════════════════════════
+_HEX = r"(#[0-9a-fA-F]{3,6})"
+_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+
+
+def declared(qss: str, selector: str, prop: str) -> str:
+    """The colour a stylesheet really declares for `prop` under `selector`.
+
+    Every colour assertion in this file goes through the rendered QSS rather
+    than a pair of literals. A test that measures `ratio("#ffffff", "#c96a2f")`
+    is arithmetic about two constants: it stays true whatever the app paints,
+    so it can neither notice a fix nor catch a regression."""
+    block = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", qss)
+    assert block, f"{selector} is gone from the stylesheet"
+    found = re.search(prop + r"\s*:\s*" + _HEX, block.group(1))
+    assert found, f"{selector} no longer declares {prop}"
+    return found.group(1)
+
+
+def solid_pairs(qss: str) -> list[tuple[str, str, str]]:
+    """(selector, ink, background) for every rule declaring both as a literal.
+
+    Rules whose background is `transparent`, an rgba() wash or a gradient are
+    skipped — there is nothing to measure without compositing them over what
+    is underneath, and the tile gradients get their own test below.
+
+    `selection-background-color` is deliberately not treated as a background
+    here. Its partner is `selection-color`, not the resting ink, and pairing
+    the two that Qt does not pair produces a confident, wrong number."""
+    pairs = []
+    qss = re.sub(r"/\*.*?\*/", "", qss, flags=re.S)   # a comment is not a selector
+    for match in _RULE.finditer(qss):
+        selector, body = match.group(1).strip(), match.group(2)
+        body = re.sub(r"selection-[a-z-]+:[^;]*;?", "", body)
+        ink = re.search(r"(?<![-a-z])color\s*:\s*" + _HEX, body)
+        bg = re.search(r"(?<![-a-z])background(?:-color)?\s*:\s*" + _HEX, body)
+        if ink and bg:
+            pairs.append((" ".join(selector.split()), ink.group(1), bg.group(1)))
+    return pairs
+
+
 def test_the_maths_is_right():
     """Pinned first, because a broken formula passes everything.
 
@@ -320,30 +361,150 @@ def test_the_primary_cta_ink_clears_aa_in_every_state():
     notice the fix and could not have."""
     qss = console_shell_qss(clay_tokens())
 
-    def declared(selector: str, prop: str) -> str:
-        block = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", qss)
-        assert block, f"{selector} is gone from the console stylesheet"
-        found = re.search(prop + r"\s*:\s*(#[0-9a-fA-F]{3,6})", block.group(1))
-        assert found, f"{selector} no longer declares {prop}"
-        return found.group(1)
-
     for selector in ("QPushButton#ctaBtn", "QPushButton#verifyBtn"):
-        ink = declared(selector, "color")
+        ink = declared(qss, selector, "color")
         for state, bg_selector in ((" resting", selector),
                                    (" hovered", selector + ":hover")):
-            bg = declared(bg_selector, "background")
+            bg = declared(qss, bg_selector, "background")
             measured = ratio(ink, bg)
             assert measured >= AA_BODY, (
                 f"{selector}{state} paints {ink} on {bg} — {measured:.2f}:1, "
                 f"under AA ({AA_BODY}). The web's answer is #1a0900 on an "
                 f"orange of this weight.")
 
-    pressed_bg = declared("QPushButton#verifyBtn:pressed", "background")
-    pressed = ratio(declared("QPushButton#verifyBtn", "color"), pressed_bg)
+    pressed_bg = declared(qss, "QPushButton#verifyBtn:pressed", "background")
+    pressed = ratio(declared(qss, "QPushButton#verifyBtn", "color"), pressed_bg)
     assert pressed >= AA_BODY, (
         f"verifyBtn pressed paints on {pressed_bg} at {pressed:.2f}:1. A "
         f"darker pressed state fails under dark ink just as the light one "
         f"failed under white — it has to clear AA in both directions.")
+
+
+def test_the_home_tiles_keep_their_white_ink_readable_at_both_gradient_stops(app):
+    """`tilePink`'s light stop was #c25c88 — 4.05:1 under the white ink the
+    tiles declare — while its dark stop was already 6.47:1. So half the tile
+    was readable and half was not, which is worse than a uniformly weak colour
+    because nothing about the design says where the bad half is.
+
+    Now #bd4f7e, 4.58:1: the same hue and saturation, darkened until white
+    clears the bar and no further. `tileBlue` was measured too and passes at
+    both ends (5.04 / 7.73), so it is untouched — and asserted here, because a
+    fix applied to the wrong tile is the obvious way to get this wrong.
+
+    Both stops are checked, not just the failing one. A linear gradient's
+    interior sits between its ends, so two passing ends is the whole tile."""
+    qss = console_shell_qss(clay_tokens())
+
+    shared = re.search(r"QPushButton#tileBlue,\s*QPushButton#tilePink\s*\{([^}]*)\}", qss)
+    assert shared, "the tiles no longer share one ink rule"
+    ink = re.search(r"color\s*:\s*" + _HEX, shared.group(1))
+    assert ink, "the tiles no longer declare an ink"
+    ink = ink.group(1)
+
+    for tile in ("tileBlue", "tilePink"):
+        rule = next((m for m in re.finditer(
+            r"QPushButton#" + tile + r"\s*\{([^}]*)\}", qss)
+            if "qlineargradient" in m.group(1)), None)
+        assert rule, f"#{tile} no longer paints a gradient"
+        stops = re.findall(r"stop:[\d.]+\s+" + _HEX, rule.group(1))
+        assert len(stops) == 2, f"#{tile} has {len(stops)} stops, expected 2"
+        for stop in stops:
+            measured = ratio(ink, stop)
+            assert measured >= AA_BODY, (
+                f"#{tile} paints {ink} on its {stop} stop — {measured:.2f}:1, "
+                f"under AA ({AA_BODY}). Darken the stop along its own hue; the "
+                f"ink is shared with the other tile and cannot move alone.")
+
+
+# Rules that declare a solid ink on a solid background and land under AA. Each
+# is here with the reason it is not a text-contrast failure — never because it
+# was inconvenient to fix. Keyed by the widget class that owns the stylesheet
+# and a fragment of the selector, both of which have to match.
+EXEMPT_RULES = [
+    ("_IconButton", "",
+     "_IconButton has no text — it paints a vector glyph in its own colour "
+     "(clay_chat_popup.py:249), so the QSS `color` styles nothing. As a "
+     "non-text mark it answers to 1.4.11's 3:1, which it clears at 3.76:1"),
+]
+
+
+def _exempt(owner: str, selector: str) -> str | None:
+    for want_owner, want_selector, reason in EXEMPT_RULES:
+        if (want_owner in ("*", owner)) and want_selector in selector:
+            return reason
+    return None
+
+
+def test_every_rule_the_two_dialogs_paint_puts_readable_ink_on_its_background(
+        app, tmp_path):
+    """The sweep that would have caught the finding this test was written for.
+
+    D15a measured token *pairs* — `ink` on `surf`, each pill on its own fill —
+    and passed, while four rules painted #ffffff on #c96a2f (3.76:1) in QSS
+    built at runtime: the chat popup's "New chat" hover, and the settings
+    dialog's tab pill, Save button and two "Test connection" hovers. A pair
+    audit cannot see those, because the failing pair is assembled from a token
+    and a literal inside an f-string, and neither half is wrong on its own.
+
+    So this builds the two surfaces the console's own stylesheet does not
+    cover, walks every widget's stylesheet, and measures every rule that
+    declares a literal ink on a literal background. Anything under the bar is
+    either fixed or listed in EXEMPT_RULES with a reason.
+
+    Known gap, recorded rather than measured wrongly: the settings dialog sets
+    `selection-background-color: {acc}` on QLineEdit and the combo popup
+    without a matching `selection-color` (settings_dialog.py:540, 566), so
+    selected text falls back to the palette's HighlightedText. It is not
+    measurable from the QSS and it is not the same finding, so `solid_pairs`
+    skips `selection-*` rather than pair it against the resting ink."""
+    from PyQt6.QtCore import QSettings
+    from PyQt6.QtWidgets import QWidget as W
+
+    import autostart as asm
+    from clay_chat_popup import ChatPopup
+    from fox_settings import FoxSettings
+    from foxy_client import MemorySecretStore
+    from settings_dialog import SettingsDialog
+
+    store = QSettings(str(tmp_path / "surfaces.ini"), QSettings.Format.IniFormat)
+    settings = FoxSettings(store, MemorySecretStore())
+    backend = asm.MemoryBackend()
+    backend.supported = True
+
+    dialog = SettingsDialog(settings, autostart=asm.Autostart(backend))
+    host = W()
+    popup = ChatPopup(host, settings)
+    try:
+        checked, failures = 0, []
+        for surface in (dialog, popup):
+            for widget in [surface] + surface.findChildren(W):
+                sheet = widget.styleSheet()
+                if not sheet:
+                    continue
+                owner = type(widget).__name__
+                for selector, ink, background in solid_pairs(sheet):
+                    checked += 1
+                    measured = ratio(ink, background)
+                    if measured >= AA_BODY or _exempt(owner, selector):
+                        continue
+                    failures.append(
+                        f"{owner} / {selector}: {ink} on {background} is "
+                        f"{measured:.2f}:1")
+
+        assert checked > 15, (
+            f"only {checked} ink/background rules found across both surfaces — "
+            f"the sweep stopped seeing the stylesheets and proves nothing")
+        assert not failures, (
+            "rules painting unreadable text:\n  " + "\n  ".join(failures)
+            + "\nThe web's answer for ink on the accent is #1a0900 (5.16:1). "
+              "If a rule is genuinely exempt, add it to EXEMPT_RULES with the "
+              "reason.")
+    finally:
+        popup.close()
+        popup.deleteLater()
+        host.deleteLater()
+        dialog.reject()
+        dialog.deleteLater()
 
 
 def test_the_kpi_sub_rule_paints_nothing_and_that_is_why_it_is_not_a_finding():

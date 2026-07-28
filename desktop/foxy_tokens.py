@@ -565,8 +565,12 @@ def console_shell_qss(t: dict, acrylic: bool = False) -> str:
                 font-size: 15px; font-weight: 800; }}
             QPushButton#tileBlue {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                 stop:0 #4d6cba, stop:1 #39508f); }}
+            /* The light stop was #c25c88 — 4.05:1 under the white ink above,
+               while the dark stop was already 6.47:1. Darkened along its own
+               hue and saturation until white clears AA (4.58:1); tileBlue
+               passes at both ends and is untouched. */
             QPushButton#tilePink {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #c25c88, stop:1 #9c3c64); }}
+                stop:0 #bd4f7e, stop:1 #9c3c64); }}
             QPushButton#tileBlue:hover, QPushButton#tilePink:hover {{
                 border: 1px solid rgba(255,255,255,40); }}
             QWidget {{ font-family: '{font}'; }}

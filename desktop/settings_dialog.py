@@ -43,14 +43,18 @@ import companion_prefs as cp
 from autostart import Autostart
 from fox_settings import FoxSettings, AI_PROVIDERS
 from foxy_client import FoxyClient, shutdown_workers, spawn_worker
-from foxy_tokens import is_dark, matte_tokens as _matte_tokens
+from foxy_tokens import matte_tokens as _matte_tokens
 from clay_chat_popup import GradientText, _IconButton
 import window_tracker
 import ai_providers
 
-# The settings dialog has always used a slightly higher luminance threshold
-# than the console when deciding black-vs-white text on the accent.
-_IS_DARK_THRESHOLD = 140
+# Ink for text sitting ON the accent — the tab pill, Save, and the two hover
+# states. This used to be picked by `is_dark(acc, 140)`, a crude luminance test
+# that called #c96a2f "dark" and chose white: 3.76:1, under AA. The picker was
+# dead flexibility anyway (matte_tokens is a fixed skin, no theme switching), so
+# it is gone and the web's own .btn.pri ink stands in its place — 5.16:1, the
+# same answer f9b3cb3 gave #ctaBtn/#verifyBtn.
+_ACCENT_INK = "#1a0900"
 
 
 # ───────────────────────────────────────── background connection tester ────
@@ -129,7 +133,7 @@ class PillTabBar(QWidget):
                 }}
                 QPushButton:checked {{
                     background-color: {acc};
-                    color: {'#000' if not is_dark(acc, _IS_DARK_THRESHOLD) else '#fff'};
+                    color: {_ACCENT_INK};
                     border: 1px solid {acc_dark};
                 }}
                 QPushButton:hover:!checked {{
@@ -512,7 +516,7 @@ class SettingsDialog(QDialog):
         self._save_btn.setStyleSheet(f"""
             QPushButton#saveBtn {{
                 background-color: {acc};
-                color: {'#000000' if not is_dark(acc, _IS_DARK_THRESHOLD) else '#ffffff'};
+                color: {_ACCENT_INK};
                 border-radius: {min(r,18)}px;
                 font-size: 13px; font-weight: 700;
                 font-family: '{font}';
@@ -730,7 +734,7 @@ class SettingsDialog(QDialog):
                 font-family: '{font}';
                 padding: 0 16px;
             }}
-            QPushButton#testBtn:hover {{ background-color: {acc}; color: #ffffff; border: none; }}
+            QPushButton#testBtn:hover {{ background-color: {acc}; color: {_ACCENT_INK}; border: none; }}
             QPushButton#testBtn:disabled {{ color: {tokens.get('text_muted', '#888')}; border-color: {tokens['panel']}; }}
         """)
 
@@ -1205,7 +1209,7 @@ class SettingsDialog(QDialog):
                 font-family: '{font}';
                 padding: 0 16px;
             }}
-            QPushButton#foxyTestBtn:hover {{ background-color: {acc}; color: #ffffff; border: none; }}
+            QPushButton#foxyTestBtn:hover {{ background-color: {acc}; color: {_ACCENT_INK}; border: none; }}
             QPushButton#foxyTestBtn:disabled {{ color: {tokens.get('text_muted', '#888')}; border-color: {tokens['panel']}; }}
         """)
 

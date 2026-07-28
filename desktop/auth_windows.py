@@ -54,10 +54,20 @@ from foxy_tokens import (
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def _glyph(name: str, size: int = 34) -> QPixmap:
+def _glyph(name: str, size: int = 34, ratio: float = 0.0) -> QPixmap:
     """A fox-orange rounded tile with a vector glyph — the web gate's icon
-    chip, without the emoji."""
-    pm = QPixmap(size, size)
+    chip, without the emoji.
+
+    Rasterises at the display's scale, like chrome_widgets' annunciator: a
+    fixed `size`×`size` buffer is upscaled by the compositor on a 150% or 200%
+    display and reads visibly soft. Callers that have a widget pass its
+    `devicePixelRatioF()`, which is right on a mixed-DPI multi-monitor setup;
+    without one, the primary screen is the honest fallback."""
+    if not ratio:
+        screen = QGuiApplication.primaryScreen()
+        ratio = screen.devicePixelRatio() if screen is not None else 1.0
+    pm = QPixmap(int(size * ratio), int(size * ratio))
+    pm.setDevicePixelRatio(ratio)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -151,7 +161,7 @@ class _AuthCard(QDialog):
         row.setSpacing(10)
         chip = QLabel()
         chip.setFixedSize(36, 36)
-        chip.setPixmap(_glyph(icon, 36))
+        chip.setPixmap(_glyph(icon, 36, chip.devicePixelRatioF()))
         self.header_chip = chip
         row.addWidget(chip, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -641,7 +651,8 @@ class LoginWindow(_AuthCard):
         self.stack.setCurrentIndex(page)
         self.title_lbl.setText(title)
         self.eyebrow_lbl.setText(eyebrow.upper())
-        self.header_chip.setPixmap(_glyph(self._PAGE_GLYPH.get(page, "key"), 36))
+        self.header_chip.setPixmap(_glyph(self._PAGE_GLYPH.get(page, "key"), 36,
+                                          self.header_chip.devicePixelRatioF()))
         self._fit_stack()
         {self.PAGE_LOGIN: self.email, self.PAGE_MFA: self.mfa_code,
          self.PAGE_FORGOT: self.forgot_email, self.PAGE_KEY: self.key}[page].focus()

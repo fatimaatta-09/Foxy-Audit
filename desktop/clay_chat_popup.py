@@ -57,6 +57,7 @@ from foxy_tokens import (
     PANEL_WASH as _PANEL_WASH,
     glass_tokens as _glass_tokens,
     make_shadow as _make_shadow,
+    reduced_motion as _reduced_motion,
 )
 import ai_providers
 import window_tracker
@@ -625,7 +626,10 @@ class ChatPopup(QWidget):
                 padding: 5px 12px; font-family: '{font}';
                 font-size: 11px; font-weight: 700;
             }}
-            QPushButton#newChatBtn:hover {{ background: {acc}; color: #ffffff; border: 1px solid {acc}; }}
+            /* #1a0900, not white: white on the accent is 3.76:1 — the same AA
+               miss #ctaBtn/#verifyBtn carried. This is the web's own .btn.pri
+               ink and clears 4.5:1 on an orange of this weight. */
+            QPushButton#newChatBtn:hover {{ background: {acc}; color: #1a0900; border: 1px solid {acc}; }}
         """)
         _scroll_ss = f"""
             QScrollArea {{ background: transparent; border: none; }}
@@ -817,6 +821,13 @@ class ChatPopup(QWidget):
             self.show()
         self.raise_()
         self.activateWindow()
+
+        if _reduced_motion():
+            # Both halves have to go together: skipping the slide but keeping
+            # the fade, or vice versa, is worse than either. Land opaque and in
+            # place — the popup still appears, it just does not travel.
+            self.setWindowOpacity(1.0)
+            return
 
         start_geo = self.geometry().translated(0, 18)
         end_geo   = self.geometry()

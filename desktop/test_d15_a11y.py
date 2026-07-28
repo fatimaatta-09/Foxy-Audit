@@ -116,11 +116,9 @@ def _attr_name(root: QWidget, widget: QWidget) -> str:
 UNNAMED = {
     # (min_btn / close_btn used to sit here — named in the same change that
     #  merged this ledger, so the entries are gone rather than annotated)
-    # labelled by an adjacent QLabel and a placeholder, but with no
-    # setAccessibleName / setBuddy tying the two together
-    "sb_prompt",
-    "sb_response",
-    "sb_seq",
+    # (sb_prompt / sb_response / sb_seq sat here too: labelled by an adjacent
+    #  QLabel and a placeholder, but with nothing tying the two together for a
+    #  reader. They now carry setAccessibleName — see the test below.)
     # empty until data arrives; both are asserted to name themselves once
     # populated, by test_controls_that_fill_in_later_name_themselves
     "v_anchor_link",
@@ -204,29 +202,34 @@ def test_the_window_controls_are_named_like_every_other_top_bar_button(console):
             f"{attr} lost its accessible name — the convention is eroding"
 
 
-def test_the_spot_check_fields_are_labelled_visually_but_not_for_a_reader(console):
+def test_the_spot_check_fields_are_labelled_for_a_reader_as_well_as_the_eye(console):
     """The verify page's spot-check inputs each sit under a real always-visible
-    QLabel (dashboard.py:1194-1210) and carry a placeholder, so a sighted user
-    is fine. What is missing is the machine-readable tie: no
-    `setAccessibleName` and no `QLabel.setBuddy`, so a screen reader reaches
-    three unlabelled fields.
+    QLabel (dashboard.py:1194-1212) and carry a placeholder, so a sighted user
+    was always fine. What was missing was the machine-readable tie — no
+    `setAccessibleName`, no `QLabel.setBuddy` — so a reader reached three
+    unlabelled fields on the page that carries the product's core proof.
 
-    Minor, and reported rather than fixed for the same reason as above. The
-    house convention already exists one file over — `_Field` in auth_windows.py
-    does `self.input.setAccessibleName(label)` — so the fix is to apply it."""
-    for attr, placeholder in (("sb_prompt", "prompt"),
-                              ("sb_response", "response"),
-                              ("sb_seq", "")):
+    Now closed, with the house convention that already existed one file over:
+    `_Field` in auth_windows.py does `self.input.setAccessibleName(label)`.
+    Inverted rather than deleted, because the placeholder is the thing that
+    makes this look fine in a screenshot while being broken for a reader —
+    exactly the regression that produced the finding.
+
+    The name is title-cased, not the label's shouted display text: an
+    announcement of "ORIGINAL PROMPT" is read as an acronym by some readers."""
+    for attr, expect, placeholder in (("sb_prompt", "Original Prompt", "prompt"),
+                                      ("sb_response", "Original Response", "response"),
+                                      ("sb_seq", "Ledger Seq #", "")):
         field = getattr(console, attr)
-        assert not _label_of(field), (
-            f"{attr} is named now — remove it from UNNAMED and drop this "
-            f"expectation")
+        assert field.accessibleName() == expect, (
+            f"{attr} announces {field.accessibleName()!r}, not {expect!r} — a "
+            f"reader has nothing but the placeholder to go on again")
         assert field.placeholderText(), \
-            f"{attr} lost its placeholder too — now it has nothing at all"
+            f"{attr} lost its placeholder — the sighted hint went with it"
         if placeholder:
             assert placeholder in field.placeholderText().lower()
 
-    # the pattern they should be following, asserted so it cannot be lost
+    # the pattern they now follow, asserted so it cannot be lost at the source
     from auth_windows import _Field
     assert _Field("Email", placeholder="you@company.com").input.accessibleName() \
         == "Email"
@@ -459,31 +462,158 @@ def test_the_shortcuts_overlay_skips_its_fade_under_reduced_motion(app, monkeypa
         overlay.deleteLater()
 
 
-def test_the_companion_does_not_roam_the_screen_unless_asked(app, tmp_path):
-    """The fox is the one animation that cannot consult `reduced_motion()` —
-    an animated mascot that holds still is not the product. What matters for
-    motion sensitivity is the large-amplitude motion: roaming across the
-    desktop. That is opt-in and off by default, which is the mitigation, and
-    this pins the default.
+def test_the_companion_stops_roaming_when_the_os_asks_for_less_motion(app, tmp_path):
+    """The fox used to be the one animation that consulted nothing, on the
+    argument that a mascot which holds still is not the product. That argument
+    is right about the sprite and wrong about the walk, and the two are
+    separable: an idle blink on a 100 ms tick is not what a motion-sensitivity
+    preference is about, and a sprite crossing the width of the desktop
+    unprompted is precisely what it is about.
 
-    Recorded as a finding rather than a fix: the sprite still animates in
-    place under reduced motion (omni_fox.py drives it on a 100 ms tick with no
-    `reduced_motion()` check), as do the console's window fade
-    (dashboard.py:4670), the chat popup (clay_chat_popup.py:824) and the
-    security overlay (security_overlay.py:33). Whether the mascot should
-    honour the OS preference is a product decision, not an executor's."""
+    So roaming — the one large-amplitude, unbidden movement the app makes —
+    now stops under reduced motion, and the sprite keeps ticking in place.
+    Roaming being opt-in and off by default was the old mitigation; that
+    default is still pinned below, because it is what protects anyone whose OS
+    cannot be asked (`reduced_motion()` has no answer off Windows).
+
+    Driven, not grepped. The version this replaces asserted `"reduced_motion"
+    not in omni_fox.py` — a source scan that a stray mention in a comment would
+    have satisfied."""
     from fox_settings import FoxSettings
     from foxy_client import MemorySecretStore
 
     store = QSettings(str(tmp_path / "fox.ini"), QSettings.Format.IniFormat)
     settings = FoxSettings(store, MemorySecretStore())
     assert settings.roaming_enabled() is False, \
-        "the fox now roams out of the box — the reduced-motion mitigation is gone"
+        "the fox now roams out of the box — the off-Windows mitigation is gone"
 
-    source = (_HERE / "omni_fox.py").read_text(encoding="utf-8")
-    assert "reduced_motion" not in source, (
-        "omni_fox now consults reduced_motion — the companion honours the OS "
-        "preference and this finding is closed; delete this assertion")
+    import omni_fox
+
+    class _Fox:
+        """Only what `_roaming_tick` touches — building the real companion
+        starts sensor threads, a tray icon and a breach poller."""
+        state = "WALKING"
+        current_row = 99
+        current_frame = 7
+        roam_target_x = 400
+        is_dragging = _chat_open = _user_placed = _roam_paused = False
+        _roam_pause_until = 0.0
+
+        def __init__(self, roaming):
+            self.settings = type("S", (), {"roaming_enabled": lambda _: roaming,
+                                           "roam_speed": lambda _: 2})()
+            self.moved = []
+
+        def x(self):
+            return 100
+
+        def move(self, x, y):
+            self.moved.append((x, y))
+
+    for reduced, should_move in ((True, False), (False, True)):
+        fox = _Fox(roaming=True)
+        original = omni_fox.reduced_motion
+        omni_fox.reduced_motion = lambda: reduced
+        try:
+            fox.screen_geom = app.primaryScreen().availableGeometry()
+            fox._cell_w = 192
+            fox._bottom_y = 900
+            omni_fox.OmniAwareFox._roaming_tick(fox)
+        finally:
+            omni_fox.reduced_motion = original
+
+        assert bool(fox.moved) is should_move, (
+            f"with reduced_motion={reduced} the fox "
+            f"{'walked' if fox.moved else 'stayed put'} — it should "
+            f"{'walk' if should_move else 'stay put'}")
+
+    # and it settles rather than freezing mid-stride: a fox left in WALKING
+    # keeps playing the walk cycle on the spot, which is a worse animation
+    # than the one that was removed
+    frozen = _Fox(roaming=True)
+    frozen.screen_geom = app.primaryScreen().availableGeometry()
+    frozen._cell_w, frozen._bottom_y = 192, 900
+    original = omni_fox.reduced_motion
+    omni_fox.reduced_motion = lambda: True
+    try:
+        omni_fox.OmniAwareFox._roaming_tick(frozen)
+    finally:
+        omni_fox.reduced_motion = original
+    assert frozen.state == "IDLE" and frozen.roam_target_x is None, \
+        "the fox stopped walking but stayed in the WALKING state"
+
+
+def test_the_console_window_lands_opaque_when_motion_is_reduced(console, monkeypatch):
+    """The console fades in over 190 ms from `windowOpacity = 0`
+    (dashboard.py:4657). Skipping the animation without landing the opacity is
+    the failure mode that matters here — it does not look like less motion, it
+    looks like the console failed to open."""
+    import dashboard
+    monkeypatch.setattr(dashboard, "_reduced_motion", lambda: True)
+    console.show_animated()
+    try:
+        assert console.windowOpacity() == 1.0, \
+            "reduced motion skipped the fade and left the console invisible"
+    finally:
+        console.hide()
+
+
+def test_the_chat_popup_arrives_in_place_when_motion_is_reduced(app, tmp_path,
+                                                                monkeypatch):
+    """The popup fades AND slides up 18 px (clay_chat_popup.py:824). Both have
+    to go together — a slide with no fade, or a fade that leaves the window 18
+    px low, is worse than either animation."""
+    import clay_chat_popup
+    monkeypatch.setattr(clay_chat_popup, "_reduced_motion", lambda: True)
+    from clay_chat_popup import ChatPopup
+    from fox_settings import FoxSettings
+    from foxy_client import MemorySecretStore
+
+    store = QSettings(str(tmp_path / "chat.ini"), QSettings.Format.IniFormat)
+    host = QWidget()
+    popup = ChatPopup(host, FoxSettings(store, MemorySecretStore()))
+    try:
+        popup.show_animated()
+        assert popup.windowOpacity() == 1.0, \
+            "reduced motion skipped the fade but left the popup transparent"
+        assert popup.isVisible(), "the popup did not open at all"
+        assert not hasattr(popup, "_anim_pos"), "the popup slid anyway"
+        assert not hasattr(popup, "_anim_group"), \
+            "the entrance animation group was built and started regardless"
+    finally:
+        popup.close()
+        popup.deleteLater()
+        host.deleteLater()
+
+
+def test_the_security_glow_still_shows_itself_when_motion_is_reduced(app,
+                                                                    monkeypatch):
+    """The overlay's glow is feedback — it is how a hash confirmation and a
+    breach announce themselves on the sprite — so reduced motion must take the
+    ramp and leave the signal. Silencing it would trade an accessibility
+    preference for a security one, which is not a trade this app gets to make.
+    """
+    import security_overlay
+    monkeypatch.setattr(security_overlay, "reduced_motion", lambda: True)
+    from security_overlay import SecurityOverlay
+
+    host = QWidget()
+    overlay = SecurityOverlay(host)
+    try:
+        overlay.flash_green()
+        assert overlay.opacity_prop == 1.0, \
+            "the glow was skipped entirely — the confirmation is now invisible"
+        assert overlay._fade_anim.state() == QAbstractAnimation.State.Stopped, \
+            "the fade animation ran anyway"
+
+        monkeypatch.setattr(security_overlay, "reduced_motion", lambda: False)
+        overlay.flash_green()
+        assert overlay._fade_anim.state() == QAbstractAnimation.State.Running, \
+            "the other half of the pin: the ramp must still run normally"
+        overlay._fade_anim.stop()
+    finally:
+        overlay.deleteLater()
+        host.deleteLater()
 
 
 # ══ HiDPI ═══════════════════════════════════════════════════════════════════
@@ -522,13 +652,16 @@ def test_no_layout_maths_reads_the_display_scale(console):
         + "\n  ".join(offenders))
 
     # …and the scan is only meaningful if the ratio is read *somewhere*,
-    # otherwise a rename would empty it out and it would pass forever
+    # otherwise a rename would empty it out and it would pass forever. The
+    # list grew from one file to three when the three remaining 1x rasters
+    # were fixed; it is spelled out rather than counted so that a *fourth*
+    # reader has to be justified here before it ships.
     reads = [path.name for path in sorted(_HERE.glob("*.py"))
              if not path.name.startswith("test_")
              and "devicePixelRatio" in path.read_text(encoding="utf-8")]
-    assert reads == ["chrome_widgets.py"], (
-        f"the display scale is now read in {reads} — the scan above was "
-        f"written when only the annunciator's rasteriser consulted it")
+    assert reads == ["auth_windows.py", "chrome_widgets.py", "dashboard.py"], (
+        f"the display scale is now read in {reads} — every reader must be a "
+        f"rasteriser allocating device pixels, never layout maths")
 
     # the runtime half of the HiDPI guard is the two tests below: they check
     # that painting at 2x keeps the same logical geometry. It is deliberately
@@ -600,48 +733,62 @@ def test_the_icon_painter_draws_at_the_same_logical_size_on_a_2x_buffer():
         "the icon is a different logical height on a 2x surface"
 
 
-def test_the_annunciator_icon_is_the_one_site_that_rasterises_for_the_display():
-    """chrome_widgets.py:196 is the app's only DPR-aware raster: it allocates
-    `18 * devicePixelRatioF()` device pixels and stamps the ratio on the
-    pixmap, so the icon stays 18×18 logical and stays sharp when scaled.
-
-    Pinned as the reference implementation the four sites below should copy."""
+def test_the_annunciator_icon_keeps_the_raster_the_others_copied():
+    """chrome_widgets.py:196 was the app's only DPR-aware raster and is now the
+    pattern the other four follow: allocate `logical * devicePixelRatioF()`
+    device pixels and stamp the ratio on the pixmap, so the icon keeps its
+    logical size and gains its sharpness."""
     source = (_HERE / "chrome_widgets.py").read_text(encoding="utf-8")
     assert "devicePixelRatioF()" in source and "setDevicePixelRatio(ratio)" in source, \
         "the annunciator lost its HiDPI rasterisation"
 
 
-def test_four_vector_icons_still_rasterise_at_1x(app):
-    """The finding. Four painted pixmaps allocate at logical size and never
-    call `setDevicePixelRatio`, so on a 150% or 200% display the compositor
-    upscales an 18-to-34 px bitmap and they render visibly soft:
+def test_the_four_vector_icons_rasterise_for_the_display(app):
+    """Four painted pixmaps used to allocate at logical size and never call
+    `setDevicePixelRatio`, so on a 150% or 200% display the compositor
+    upscaled a 16-to-34 px bitmap and they rendered visibly soft:
 
-      auth_windows._glyph      (34×34, the sign-in card's icon chip)
-      dashboard._monogram      (30×30, the account chip)
-      dashboard._paint_chain_icon (16×16, the ledger status icon)
-      dashboard._fox_pixmap    (sprite scaled to a logical size)
+      auth_windows._glyph          (34×34, the sign-in card's icon chip)
+      dashboard._monogram          (30×30, the account chip)
+      dashboard._paint_chain_icon  (16×16, the ledger status icon)
+      dashboard._fox_pixmap        (sprite scaled to a logical size)
 
-    Cosmetic, not functional — nothing is unreadable or unreachable, which is
-    why it is reported and not fixed here; each needs the same three-line
-    change chrome_widgets already makes. Asserted so the count cannot grow and
-    so that fixing one is noticed.
+    All four now do what the annunciator does. Inverted rather than deleted,
+    because the regression is silent by construction: on the 1× display most
+    development happens on, every one of these looks identical whether or not
+    the ratio is applied, and no other test in the suite would notice.
 
-    `_glyph` is the one that can be checked on the object rather than the
-    source, so it is."""
+    Both halves are asserted for each: the buffer must be allocated in DEVICE
+    pixels *and* carry the ratio. Allocating without stamping gives a
+    double-size icon; stamping without allocating gives a half-size one."""
     from auth_windows import _glyph
 
-    glyph = _glyph("key", 34)
-    assert glyph.devicePixelRatio() == 1.0, (
-        "_glyph now rasterises for the display — good; drop it from this "
-        "finding and from the source scan below")
-    assert glyph.width() == 34, "the buffer is still allocated at logical size"
+    # forced to 2x rather than read from the test machine's screen, which is
+    # almost always 1x — where a broken implementation still passes
+    for size, ratio in ((34, 1.0), (34, 2.0), (36, 1.5)):
+        glyph = _glyph("key", size, ratio)
+        assert glyph.devicePixelRatio() == pytest.approx(ratio), \
+            f"_glyph({size}, {ratio}) does not carry the ratio it painted at"
+        assert glyph.width() == int(size * ratio), \
+            f"_glyph({size}, {ratio}) is not allocated in device pixels"
+        assert glyph.deviceIndependentSize().width() == pytest.approx(size, abs=1), \
+            f"_glyph({size}, {ratio}) no longer occupies {size} logical pixels"
 
+    # _glyph with no ratio falls back to the screen, never to a constant 1.0
+    from PyQt6.QtGui import QGuiApplication
+    screen = QGuiApplication.primaryScreen().devicePixelRatio()
+    assert _glyph("key", 34).devicePixelRatio() == pytest.approx(screen), \
+        "_glyph stopped consulting the screen when no ratio is passed"
+
+    # the three on the console are bound to it, so they are read there
     source = (_HERE / "dashboard.py").read_text(encoding="utf-8")
-    for call, what in (("QPixmap(30, 30)", "_monogram"),
-                       ("QPixmap(16, 16)", "_paint_chain_icon")):
-        assert call in source, (
-            f"{what} no longer allocates a fixed 1x buffer — if it is now "
-            f"DPR-aware, remove it from this finding")
-    assert "setDevicePixelRatio" not in source, (
-        "dashboard.py started rasterising for the display; update this "
-        "finding to match what is actually left")
+    for what in ("_monogram", "_paint_chain_icon", "_fox_pixmap"):
+        body = source.split(f"def {what}(", 1)
+        assert len(body) == 2, f"{what} is gone"
+        body = body[1][:900]
+        assert "devicePixelRatioF()" in body, (
+            f"{what} stopped asking the widget for the display scale — on a "
+            f"200% display it is soft again, and nothing else here notices")
+        assert "setDevicePixelRatio(ratio)" in body, (
+            f"{what} allocates device pixels without stamping the ratio, so "
+            f"the icon now draws at the display scale times its logical size")

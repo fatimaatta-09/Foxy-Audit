@@ -35,7 +35,9 @@ else:
 from clay_chat_popup import ChatPopup
 from fox_settings import FoxSettings
 from foxy_client import FoxyClient, shutdown_workers, spawn_worker
-from foxy_tokens import matte_menu_qss as _matte_menu_qss, resource_path
+from foxy_tokens import (
+    matte_menu_qss as _matte_menu_qss, reduced_motion, resource_path,
+)
 from settings_dialog import SettingsDialog
 import window_tracker
 from eye_tracker import EyeOverlay
@@ -940,6 +942,19 @@ class OmniAwareFox(QWidget):
         """Gentle walk along the bottom of the screen."""
         if not self.settings.roaming_enabled():
             return          # the `behavior/roam` key was dead until D13
+        if reduced_motion():
+            # The sprite keeps ticking in place — a mascot that holds still is
+            # not the product, and an idle blink is not what a motion
+            # sensitivity setting is about. Walking the width of the screen is:
+            # it is the one large-amplitude, unprompted movement the app makes.
+            # So roaming stops and the fox settles where it stands rather than
+            # freezing mid-stride.
+            self.roam_target_x = None
+            if self.state == "WALKING":
+                self.state         = "IDLE"
+                self.current_row   = ROW_SLEEP
+                self.current_frame = 0
+            return
         if self.is_dragging or self._chat_open or self._user_placed:
             return
         if self.state not in ("IDLE", "WALKING"):
