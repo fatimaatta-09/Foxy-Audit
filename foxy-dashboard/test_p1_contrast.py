@@ -351,8 +351,11 @@ def test_every_accent_chip_that_carries_ink_clears_aa(css, themes):
     """The small filled chips — the section-title action, the step marker, the
     segmented control's selected tab — set their own ink on their own fill.
     Each is read from the stylesheet and each is judged on its own pair."""
+    # .vstep-n went with P2 §6.7 — the three-step wizard around a one-field form
+    # was the "AI-looking card". The pager's current-page chip took its place as
+    # a filled chip that sets its own ink.
     chips = [(".stitle-act", "section-title action"),
-             (".vstep-n", "verify step marker"),
+             ('.pager button[aria-current="page"]', "current page"),
              ('.seg button[aria-pressed="true"]', "selected segment")]
     for selector, name in chips:
         decls = _declarations(_block(css, selector))

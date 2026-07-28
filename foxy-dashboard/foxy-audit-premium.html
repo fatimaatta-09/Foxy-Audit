@@ -198,10 +198,6 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none;}
 .seg-chip:hover{background:var(--surf3);color:var(--fox2);}
 .seg-chip:focus-visible{outline:2px solid var(--fox);outline-offset:2px;}
 /* P9 · guided verify — step markers + rich status panel */
-.vstep{display:flex;align-items:flex-start;gap:10px;margin:14px 0 7px;}
-.vstep-n{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--fox);color:var(--foxink);font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;box-shadow:var(--raise-sm);}
-.vstep b{font-size:12px;font-weight:700;display:block;}
-.vstep-d{font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:1px;}
 .vstatus{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:var(--r-md);border:var(--border);margin-top:14px;}
 .vstatus.ok{background:rgba(61,220,132,.13);border-color:var(--safe-bg);}
 .vstatus.bad{background:rgba(255,77,77,.12);border-color:var(--breach-bg);}
@@ -389,7 +385,13 @@ body{
 .h1{font-size:clamp(22px,3vw,34px);font-weight:800;letter-spacing:-1px;line-height:1.05;}
 .h1 .fox-dot{color:var(--fox);}
 .sub{color:var(--muted);font-size:clamp(11px,1vw,13px);margin-top:6px;max-width:480px;}
-.pg-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:clamp(20px,3vw,30px);flex-wrap:wrap;}
+/* §6.6 · the head has to RESERVE height, not inherit it from whatever
+   happens to be inside. §1 deleted the duplicate page name and the blurb
+   from every page, which left the heads with an action button collapsed to
+   the button and the heads WITHOUT one collapsed to nothing at all — and
+   since the head clips its own overflow, P1's wordmark was being cropped to
+   zero on Verify and Threats. Measured at 0px before this. */
+.pg-head{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:clamp(58px,7vw,86px);margin-bottom:clamp(14px,2.2vw,22px);flex-wrap:wrap;}
 
 /* ════════ CLAY SURFACE ════════ */
 .clay{
@@ -1463,15 +1465,13 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
       <div class="g2">
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="7" stroke="#000" stroke-width="2.3" fill="none"/></svg></span></div><div class="txt">Verify a single record</div></div></div>
-          <div class="vstep"><span class="vstep-n">1</span><div><b>Paste a chain hash</b><div class="vstep-d">Copy it from any row in your ledger. Raw prompts and responses are never uploaded from this page.</div></div></div>
-          <input class="cin" id="vLedgerHash" placeholder="paste chain hash from the ledger…" oninput="vHashValidate()" onkeydown="if(event.key==='Enter')runVerify()" autocomplete="off" spellcheck="false">
-          <div id="vHashHint" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;min-height:13px;"></div>
-          <div class="vstep"><span class="vstep-n">2</span><div><b>Run the check</b><div class="vstep-d">Foxy recomputes this record with its real predecessor and compares it to what was stored.</div></div></div>
+          <label class="flabel" style="margin-top:0;" for="vLedgerHash">chain hash</label>
+          <input class="cin" id="vLedgerHash" placeholder="paste chain hash from the ledger…" oninput="vHashValidate()" onkeydown="if(event.key==='Enter')runVerify()" autocomplete="off" spellcheck="false" aria-describedby="vHashHint">
+          <div id="vHashHint" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;min-height:13px;">the hash goes up, the prompt never does</div>
           <div class="btnrow">
             <button class="btn pri half" onclick="runVerify()">Verify record</button>
             <button class="btn ghost half" onclick="clearVerify()">Clear</button>
           </div>
-          <div class="vstep"><span class="vstep-n">3</span><div><b>Read the result</b><div class="vstep-d">A clear pass / fail with the record's sequence and verdict.</div></div></div>
           <div id="verifyResult" style="display:none;"></div>
         </div>
         <div>
@@ -1486,10 +1486,8 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:10px;">For independent offline proof, export your ledger and run <code>python verifier/foxy_verify.py foxy-audit-logs.json</code>. Known-content checks require your customer-held commitment key and an events sidecar; neither is sent to Foxy.</div>
           </details>
           <div class="clay pad" style="margin-top:14px;">
-            <div style="font-weight:700;font-size:11.5px;margin-bottom:6px;">Check the whole ledger</div>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:11px;">One click re-checks every record on the server and flags any tampering.</div>
-            <button class="btn pri" id="chainCheckBtn" style="margin-top:0;">verify live ledger chain</button>
-            <button class="btn ghost" id="anchorNowBtn" style="margin-top:8px;">⚓ anchor now (publish head to Sepolia)</button>
+            <button class="btn pri" id="chainCheckBtn" style="margin-top:0;">Verify the whole ledger</button>
+            <button class="btn ghost" id="anchorNowBtn" style="margin-top:8px;">Anchor now</button>
             <div class="vres" id="chainCheckResult"></div>
           </div>
           <div class="clay pad" style="margin-top:14px;">
@@ -1497,7 +1495,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
               <div style="font-weight:700;font-size:11.5px;">Public-chain anchors</div>
               <span id="anchorFresh" style="font-size:10px;color:var(--muted);font-family:var(--mono);"></span>
             </div>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:11px;">Each receipt records your ledger head on a public blockchain — independent, third-party proof no one (not even us) can alter. <span id="anchorSLA"></span></div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:11px;"><span id="anchorSLA"></span></div>
             <div id="anchorReceipts"><div style="font-size:11px;color:var(--muted);">loading receipts…</div></div>
           </div>
         </div>
