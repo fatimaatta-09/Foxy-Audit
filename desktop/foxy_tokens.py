@@ -42,7 +42,7 @@ def resource_path(relative_path: str) -> str:
     return os.path.join(base, relative_path)
 
 
-# ── WEB — byte-for-byte the web dashboard :root (dark "original" skin) ──────
+# ── WEB — byte-for-byte the web dashboard :root (its dark theme) ────────────
 WEB: dict[str, str] = {
     # barely-warm neutrals — one ramp, hue 30, 3-5% saturation. The ramp this
     # replaces sat at 14-18% saturation (and ink at 48%), which is not a grey
