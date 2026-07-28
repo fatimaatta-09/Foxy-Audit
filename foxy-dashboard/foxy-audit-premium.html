@@ -1631,6 +1631,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <thead><tr><th>Name</th><th>Key</th><th>Status</th><th>Last used</th><th></th></tr></thead>
             <tbody id="keysList"><tr><td colspan="5" style="padding:8px 10px;"><div class="skel line" style="width:60%"></div></td></tr></tbody>
           </table>
+          <div id="keysPager"></div>
         </div>
       </div>
       <div class="clay pad" style="max-width:780px;margin-top:16px;">
@@ -1678,6 +1679,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
                 <tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">loading…</td></tr>
               </tbody>
             </table>
+            <div id="usagePager"></div>
           </div>
         </div>
         <div>
@@ -1705,6 +1707,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
                 <tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">loading…</td></tr>
               </tbody>
             </table>
+            <div id="invPager"></div>
           </div>
         </div>
       </div>
@@ -1800,6 +1803,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Recent logins</div>
             <button class="btn" onclick="loadLoginHistory()">Load login history</button>
             <div id="loginHistOut" style="margin-top:10px;font-size:11px;"></div>
+            <div id="loginHistPager"></div>
           </div>
           <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Trust badge</div>
@@ -2178,13 +2182,17 @@ async function revokeBadge(){
   }catch(e){ showToast('Could not reach the server'); }
 }
 // per-org login history (5K)
+const _loginHistPage={page:1,size:20};
 async function loadLoginHistory(){
   try{
     const r=await fetch('/v1/auth/login-history',{credentials:'same-origin'});
     if(!r.ok){ showToast('load failed ('+r.status+')'); return; }
-    const rows=await r.json(); const el=document.getElementById('loginHistOut');
+    const allRows=await r.json(); const el=document.getElementById('loginHistOut');
+    const rows=window.foxPageSlice
+      ?window.foxPageSlice(allRows,_loginHistPage,'loginHistPager',loadLoginHistory,'Login history pages')
+      :allRows;
     const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-    el.innerHTML = rows.length ? rows.map(e=>`<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);">
+    el.innerHTML = allRows.length ? rows.map(e=>`<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);">
       <b style="color:${e.success?'#2e7d32':'#c62828'};">${e.success?'✓':'✗'}</b>
       ${esc(e.email)} · ${esc(e.ip||'—')} · ${e.created_at?new Date(e.created_at).toLocaleString():''}</div>`).join('')
       : '<div style="color:var(--muted);">no login events yet</div>';
@@ -3192,12 +3200,18 @@ async function loadLoginHistory(){
       +'<td class="mono">'+used+'</td>'
       +'<td style="text-align:right;">'+(!revoked?'<button class="btn danger sm" type="button" style="margin:0;" onclick="revokeKeyApi(\''+k.id+'\')">revoke</button>':'')+'</td></tr>';
   }
+  let _keysPage={page:1,size:20}, _keysAll=[];
+  function renderKeys(){
+    const box=$('keysList'); if(!box)return;
+    const arr=window.foxPageSlice?window.foxPageSlice(_keysAll,_keysPage,'keysPager',renderKeys,'API key pages'):_keysAll;
+    box.innerHTML=_keysAll.length?arr.map(keyRow).join(''):'<tr><td colspan="5" style="color:var(--muted);padding:10px;">No keys yet — create one to connect the SDK.</td></tr>';
+  }
   window.loadKeys=async function(){
     const box=$('keysList'); if(!box)return;
     let arr=[];
     try{ const r=await api('/v1/keys');
       if(r.ok){ const keys=await r.json(); arr=Array.isArray(keys)?keys:[];
-        box.innerHTML=arr.length?arr.map(keyRow).join(''):'<tr><td colspan="5" style="color:var(--muted);padding:10px;">No keys yet — create one to connect the SDK.</td></tr>'; }
+        _keysAll=arr; _keysPage.page=1; renderKeys(); }
       else box.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:10px;">Could not load keys ('+esc(await errText(r))+').</td></tr>';
     }catch(e){ box.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:10px;">Could not reach the server.</td></tr>'; }
     // key-usage context (real)
@@ -3574,6 +3588,7 @@ async function loadLoginHistory(){
   const tdMono=td+'font-family:var(--mono);font-size:10px;color:var(--muted);';
   const invPill=s=>s==='paid'?'safe':(s==='open'||s==='draft')?'warn':'breach';
 
+  const _usagePage={page:1,size:20}, _invPage={page:1,size:20};
   window.loadBilling=async function(){
     try{
       const r=await api('/v1/usage?days=30');
@@ -3627,8 +3642,13 @@ async function loadLoginHistory(){
           $('bilRemaining').nextElementSibling.textContent='Remaining';
           if(evalBox)evalBox.style.display='none';
         }
+        // §3 · newest first, then paged — the rollup runs to months of rows
+        const _uAll=days.slice().reverse();
+        const _uRows=window.foxPageSlice
+          ?window.foxPageSlice(_uAll,_usagePage,'usagePager',function(){loadBilling();},'Daily usage pages')
+          :_uAll;
         $('usageBody').innerHTML=days.length
-          ?days.slice().reverse().map(d=>'<tr>'
+          ?_uRows.map(d=>'<tr>'
             +'<td style="'+tdMono+'">'+day(d.day)+'</td>'
             +'<td style="'+td+'text-align:right;">'+num(d.logs_count)+'</td>'
             +'<td style="'+td+'text-align:right;font-family:var(--mono);font-size:11px;">'+num(d.tokens_sum)+'</td>'
@@ -3641,8 +3661,12 @@ async function loadLoginHistory(){
       const r=await api('/v1/invoices');
       if(r.ok){
         const inv=await r.json();
-        $('invBody').innerHTML=(Array.isArray(inv)&&inv.length)
-          ?inv.map(i=>'<tr>'
+        const _iAll=Array.isArray(inv)?inv:[];
+        const _iRows=window.foxPageSlice
+          ?window.foxPageSlice(_iAll,_invPage,'invPager',function(){loadBilling();},'Invoice pages')
+          :_iAll;
+        $('invBody').innerHTML=(_iAll.length)
+          ?_iRows.map(i=>'<tr>'
             +'<td style="'+tdMono+'">'+fmtD(i.created_at)+'</td>'
             +'<td style="'+td+'text-align:right;font-weight:700;">'+esc(money(i.amount_cents,i.currency))+'</td>'
             +'<td style="'+td+'"><span class="pill '+invPill(i.status)+'"><i></i>'+esc(i.status)+'</span></td>'
@@ -4393,13 +4417,26 @@ async function loadLoginHistory(){
     out.sort(function(x,y){ return (new Date(y.when).getTime()||0)-(new Date(x.when).getTime()||0); });
     return out;
   }
+  // §3 · the audit log is the seventh scrolling surface. It used to hard-cut at
+  // the newest 30 with nothing to say so — the rest of an org's history was
+  // simply unreachable from the UI.
+  var _feedPage={page:1,size:20};
   function renderFeed(box,list){
     if(!list.length){ box.innerHTML='<div style="padding:22px 6px;text-align:center;color:var(--muted);font-size:11.5px;">No account activity yet — key changes and sign-ins show up here as they happen.</div>'; return; }
-    box.innerHTML='<div class="afeed">'+list.slice(0,30).map(function(it){
+    var _slice=list;
+    if(window.foxPageSlice){
+      var host=document.createElement('div');
+      _slice=window.foxPageSlice(list,_feedPage,host,function(){ renderFeed(box,list); },'Account activity pages');
+      box.__pagerHost=host;
+    }
+    box.innerHTML='<div class="afeed">'+_slice.map(function(it){
       return '<div class="aitem"><div class="aic '+it.cls+'">'+(IC[it.kind]||IC.gear)+'</div>'
         +'<div class="atxt"><div class="at-t">'+esc(it.title)+'</div><div class="at-s">'+esc(it.sub)+'</div></div>'
         +'<span class="awhen" data-ago="'+esc(it.when||'')+'">'+esc(rel(it.when))+'</span></div>';
     }).join('')+'</div>';
+    // the pager was rendered into a detached node before innerHTML replaced the
+    // box's children, so re-attach it afterwards
+    if(box.__pagerHost&&box.__pagerHost.firstChild)box.appendChild(box.__pagerHost);
   }
   var _busy=false;
   window.loadGlobalActivity=function(){
