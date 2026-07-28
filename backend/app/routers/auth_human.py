@@ -177,7 +177,14 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=403, detail=blocked_org)
     if disabled_match:
         raise HTTPException(status_code=403, detail="Account disabled")
-    login_history.record(db, request, email, False)
+    # Attribute the failure to the org when the address resolves to exactly ONE
+    # account. Failures were always recorded with org_id NULL, so the admin
+    # login-history view — scoped to the org — never showed a single failed
+    # attempt, which is the half of login history worth reading. Left unattributed
+    # when the address exists in several tenants: guessing which one someone was
+    # trying to reach would leak the existence of the other.
+    attributed = candidates[0] if len(candidates) == 1 else None
+    login_history.record(db, request, email, False, attributed)
     raise HTTPException(status_code=401, detail="Invalid email or password")
 
 
@@ -472,6 +479,23 @@ def login_history_view(admin: User = Depends(require_role("admin")),
     """Recent login attempts for the admin's org (successes + attributed failures)."""
     rows = db.execute(
         select(LoginEvent).where(LoginEvent.org_id == admin.org_id)
+        .order_by(LoginEvent.created_at.desc()).limit(50)
+    ).scalars().all()
+    return [LoginHistoryItem(
+        email=r.email, ip=r.ip, user_agent=r.user_agent, success=r.success,
+        created_at=r.created_at.isoformat() if r.created_at else None) for r in rows]
+
+
+@router.get("/v1/auth/login-history/me", response_model=list[LoginHistoryItem])
+def my_login_history(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """YOUR OWN recent sign-in attempts (P3 §7.3).
+
+    The org-wide view above is admin-only, and rightly so — one member should not
+    read another's IP addresses. But that left a member with no way to check their
+    own account for a sign-in they do not recognise, which is the entire point of
+    surfacing login history. Scoped to this user's own events only."""
+    rows = db.execute(
+        select(LoginEvent).where(LoginEvent.user_id == user.id)
         .order_by(LoginEvent.created_at.desc()).limit(50)
     ).scalars().all()
     return [LoginHistoryItem(
