@@ -62,6 +62,14 @@ class EyeOverlay(QWidget):
         self._poll_timer.timeout.connect(self._poll_cursor)
         self._poll_timer.start(60)  # ~16fps is plenty for a subtle glance
 
+
+    def set_cell_size(self, width: int, height: int):
+        """Follow the fox when the size slider moves (D13). An overlay left at
+        the old cell either clips the sprite or floats past its edge."""
+        self.cell_w, self.cell_h = int(width), int(height)
+        self.setFixedSize(self.cell_w, self.cell_h)
+        self.update()
+
     def update_for_state(self, state: str, frame: int):
         """Call this once per animation tick from OmniAwareFox.update_frame()."""
         should_show = state in EYE_VISIBLE_STATES

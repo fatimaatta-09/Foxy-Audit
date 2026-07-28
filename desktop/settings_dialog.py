@@ -1,10 +1,16 @@
 """
 OmniAware Fox — Settings Dialog
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A premium settings UI in the app's fixed matte skin. Three tabs:
+A premium settings UI in the app's fixed matte skin. Four tabs:
   • AI Brain    — provider/key/model/URL with inline connection test
-  • Behaviour   — cooldown, pat sensitivity, roaming, glance toggles
+  • Companion   — startup, the fox's size/opacity/behaviour, where it sits
+  • Alerts      — what interrupts you, how, quiet hours, poll cadence
   • Foxy Audit  — org API key + backend URL with a live health probe
+
+D13 folded the old Behaviour tab into Companion rather than adding a fifth:
+§9.2 lists reaction cooldown and pat sensitivity under Fox, and keeping both
+tabs would have shipped two separate switches for roaming and for glance —
+two controls for one setting, guaranteed to disagree.
 
 Design rules
 ────────────
@@ -27,11 +33,14 @@ from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QSlider, QCheckBox,
     QComboBox, QScrollArea, QFrame, QGraphicsDropShadowEffect,
-    QSizePolicy, QStackedWidget,
+    QSizePolicy, QStackedWidget, QTimeEdit,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTime
 from PyQt6.QtGui import QColor, QFont
 
+import autostart as autostart_mod
+import companion_prefs as cp
+from autostart import Autostart
 from fox_settings import FoxSettings, AI_PROVIDERS
 from foxy_client import FoxyClient, shutdown_workers, spawn_worker
 from foxy_tokens import is_dark, matte_tokens as _matte_tokens
@@ -244,6 +253,20 @@ class ThemedCheckBox(QCheckBox):
                 background: {acc};
                 border-color: {tokens['accent_dark']};
             }}
+            /* Reachable by keyboard, so the box itself has to show it — the
+               label recolouring alone was invisible to anyone tabbing. */
+            QCheckBox::indicator:focus {{
+                border: 2px solid {acc};
+            }}
+            /* Disabled must not look available. This lives HERE and not in
+               the dialog-wide QSS because a per-widget stylesheet wins. */
+            QCheckBox:disabled {{
+                color: {tokens.get('text_muted', txt)};
+            }}
+            QCheckBox::indicator:disabled {{
+                border-color: {tokens['panel']};
+                background: {tokens.get('bg', tokens['panel'])};
+            }}
         """)
 
 
@@ -272,10 +295,16 @@ class SettingsDialog(QDialog):
     settings_saved = pyqtSignal()
 
     def __init__(self, settings: FoxSettings, parent=None,
-                 client: FoxyClient | None = None):
+                 client: FoxyClient | None = None,
+                 autostart: Autostart | None = None):
         super().__init__(parent)
         self.settings = settings
         self.client = client or FoxyClient(settings, parent=self)
+        # Injected in tests. Without this seam, ticking the autostart box in a
+        # test would add a real login item to the developer's machine — the
+        # exact class of accident the D3 round found in the shell tests, and a
+        # worse one, because this store is outside the app entirely.
+        self._autostart = autostart if autostart is not None else Autostart()
         self._conn_worker: _TestConnectionWorker | None = None
         self._workers: set = set()
 
@@ -287,6 +316,11 @@ class SettingsDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMinimumSize(460, 560)
         self.setMaximumSize(520, 680)
+        # Open at the full allowed height. D13's two tabs carry ~13 controls
+        # each; at the 560px minimum most of Companion sits below the fold on
+        # first open, and a settings screen you have to scroll before you can
+        # see what is in it reads as unfinished.
+        self.resize(500, 680)
 
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 0, 0, 0)
@@ -317,7 +351,7 @@ class SettingsDialog(QDialog):
 
         # Tab bar
         self._tab_bar = PillTabBar(
-            ["AI Brain", "Behaviour", "Foxy Audit"],
+            ["AI Brain", "Companion", "Alerts", "Foxy Audit"],
             _matte_tokens(),
         )
         tab_wrapper = QWidget()
@@ -334,8 +368,12 @@ class SettingsDialog(QDialog):
 
         # Build all tabs
         self._stack.addWidget(self._build_ai_tab())
-        self._stack.addWidget(self._build_behaviour_tab())
+        self._stack.addWidget(self._build_companion_tab())
+        self._stack.addWidget(self._build_alerts_tab())
         self._stack.addWidget(self._build_foxy_audit_tab())
+        #: The Foxy Audit tab moved from index 2 to 4 when D13 inserted two
+        #: tabs before it. `_show_secret_error` surfaces that tab by index.
+        self._foxy_tab_index = self._stack.count() - 1
 
         # Footer
         self._footer = QWidget()
@@ -544,13 +582,70 @@ class SettingsDialog(QDialog):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0;
             }}
+            /* D13: the two companion tabs scroll, and their body must not
+               paint an opaque default over the card. */
+            QWidget#scrollBody {{ background: transparent; }}
+            /* Time fields for quiet hours — QTimeEdit inherits none of the
+               QLineEdit rule above, so without this it renders as a bare
+               native spinbox inside a fully themed dialog. */
+            QTimeEdit {{
+                background-color: {panel};
+                color: {txt};
+                border: {in_bdr};
+                border-radius: {min(r, 10)}px;
+                padding: 6px 10px;
+                font-size: 13px;
+                font-family: '{font}';
+            }}
+            QTimeEdit:focus {{ border: 1px solid {acc}; }}
+            /* Explicit, because the `color:` above beats Qt's disabled
+               palette — without it the quiet-hours fields looked fully live
+               while the toggle above them was off. */
+            QTimeEdit:disabled {{
+                color: {txt_m}; border: 1px solid {panel};
+            }}
+            QLabel:disabled {{ color: {txt_m}; }}
+            /* No spin buttons. Styling them left two solid black rectangles
+               beside the fields — the default arrows disappear the moment the
+               sub-control is themed, and there is nothing to put back that
+               reads at 16px. Typing and the scroll wheel both still work,
+               which is how anyone actually sets a time. */
+            QTimeEdit::up-button, QTimeEdit::down-button {{
+                width: 0; height: 0; border: none;
+            }}
+            QPushButton#resetPosBtn {{
+                background-color: {panel};
+                color: {txt};
+                border: 1px solid {t.get('outline_focus', acc)};
+                border-radius: {min(r, 10)}px;
+                font-size: 12px; font-weight: 600;
+                font-family: '{font}';
+            }}
+            QPushButton#resetPosBtn:hover {{ border-color: {acc}; }}
+            QPushButton#resetPosBtn:focus {{
+                border-color: {acc}; background-color: {bg};
+            }}
+            QPushButton#resetPosBtn:disabled {{
+                color: {txt_m}; border-color: {panel};
+            }}
+            /* Explanatory text under a control: quieter than a label, but it
+               still has to clear the contrast floor against the card. */
+            QLabel#alertsNote, QLabel#autostartNote {{
+                color: {txt_m}; font-size: 11px;
+            }}
+            /* A disabled checkbox must not read as an available one — the
+               autostart box is disabled outright on an unsupported OS. */
+            QCheckBox:disabled {{ color: {txt_m}; }}
         """)
 
-        # Update sliders + checkboxes on behaviour tab
+        # Sliders and checkboxes carry per-widget stylesheets, which beat the
+        # dialog-wide QSS above — they have to be re-applied, not inherited.
         for child in self.findChildren(LabelledSlider):
             child.apply_tokens(t)
         for child in self.findChildren(ThemedCheckBox):
             child.apply_tokens(t)
+        if hasattr(self, "_autostart_note"):
+            self._restyle_autostart_note()
 
     # ─────────────────────────────── AI Brain tab ─────────────────
     def _build_ai_tab(self) -> QWidget:
@@ -706,66 +801,344 @@ class SettingsDialog(QDialog):
         self._test_status.setStyleSheet("color: #FF4C4C; font-size: 12px; font-weight: 600;")
         self._test_status.setText(f"✗ {err[:60]}")
 
-    # ─────────────────────────────── Behaviour tab ────────────────
-    def _build_behaviour_tab(self) -> QWidget:
-        tokens = _matte_tokens()
-        page   = QWidget()
-        page.setObjectName("behaviourPage")
-        layout = QVBoxLayout(page)
+    # ─────────────────────────────── Companion tab (D13 · §9.2) ───
+    @staticmethod
+    def _scroll_page(name: str) -> tuple[QWidget, QVBoxLayout]:
+        """A tab that can outgrow the dialog.
+
+        The two D13 tabs carry ~13 controls each and the dialog is capped at
+        680px tall, so without this the bottom third is simply unreachable —
+        the existing three tabs are short enough that nobody had needed it.
+        """
+        page = QWidget()
+        page.setObjectName(name)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        body.setObjectName("scrollBody")
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(20, 16, 20, 20)
-        layout.setSpacing(18)
+        layout.setSpacing(14)
+        scroll.setWidget(body)
+        outer.addWidget(scroll)
+        return page, layout
 
-        layout.addWidget(_section_label("Reaction controls", tokens))
+    def _check(self, label: str, checked: bool, tokens: dict) -> ThemedCheckBox:
+        box = ThemedCheckBox(label)
+        box.setChecked(bool(checked))
+        box.setMinimumHeight(28)
+        box.apply_tokens(tokens)
+        return box
+
+    def _combo(self, options, current: str, tokens: dict) -> QComboBox:
+        combo = QComboBox()
+        combo.setFixedHeight(34)
+        combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        for value, label in options:
+            combo.addItem(label, value)
+        index = combo.findData(current)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+        return combo
+
+    def _build_companion_tab(self) -> QWidget:
+        tokens = _matte_tokens()
+        page, layout = self._scroll_page("companionPage")
+        s = self.settings
+
+        layout.addWidget(_section_label("Startup", tokens))
         layout.addWidget(_divider(tokens))
 
-        self._cooldown_slider = LabelledSlider(
-            "Reaction cooldown",
-            minimum=0, maximum=50,
-            value=int(self.settings.reaction_cooldown() * 10),
-            suffix="×0.1s", tokens=tokens,
-        )
-        layout.addWidget(self._cooldown_slider)
+        # The one control on this page whose state is NOT ours: it lives in
+        # the OS, so it is read fresh here and therefore re-read every time
+        # the dialog opens (plan §9.2's "state drift").
+        self._autostart_check = self._check(
+            "Start Foxy when the PC starts",
+            self._autostart.is_enabled(), tokens)
+        self._autostart_check.setEnabled(self._autostart.supported)
+        self._autostart_check.toggled.connect(self._on_autostart_toggled)
+        layout.addWidget(self._autostart_check)
 
-        self._pat_slider = LabelledSlider(
-            "Pat sensitivity",
-            minimum=5, maximum=60,
-            value=self.settings.pat_sensitivity(),
-            suffix="px", tokens=tokens,
-        )
-        layout.addWidget(self._pat_slider)
+        self._autostart_note = QLabel(
+            self._autostart.location if self._autostart.supported
+            else autostart_mod.UNSUPPORTED)
+        self._autostart_note.setWordWrap(True)
+        self._autostart_note.setObjectName("autostartNote")
+        layout.addWidget(self._autostart_note)
 
-        layout.addSpacing(4)
-        layout.addWidget(_section_label("Autonomous behaviour", tokens))
+        self._start_hidden_check = self._check(
+            "Start hidden in the tray", s.start_hidden(), tokens)
+        layout.addWidget(self._start_hidden_check)
+        self._open_console_check = self._check(
+            "Open the console on launch", s.open_console_on_launch(), tokens)
+        layout.addWidget(self._open_console_check)
+        self._close_tray_check = self._check(
+            "Closing the console hides it instead of quitting",
+            s.close_to_tray(), tokens)
+        layout.addWidget(self._close_tray_check)
+
+        layout.addSpacing(2)
+        layout.addWidget(_section_label("The fox", tokens))
         layout.addWidget(_divider(tokens))
 
-        self._roam_check = ThemedCheckBox("Wander the desktop when idle")
-        self._roam_check.setChecked(self.settings.roaming_enabled())
-        self._roam_check.apply_tokens(tokens)
+        self._scale_slider = LabelledSlider(
+            "Size", cp.SCALE_MIN, cp.SCALE_MAX, s.fox_scale(), "%", tokens)
+        layout.addWidget(self._scale_slider)
+        self._opacity_slider = LabelledSlider(
+            "Opacity", cp.OPACITY_MIN, cp.OPACITY_MAX, s.fox_opacity(), "%",
+            tokens)
+        layout.addWidget(self._opacity_slider)
+
+        self._on_top_check = self._check(
+            "Always on top of other windows", s.always_on_top(), tokens)
+        layout.addWidget(self._on_top_check)
+        self._roam_check = self._check(
+            "Wander along the bottom of the screen", s.roaming_enabled(),
+            tokens)
         layout.addWidget(self._roam_check)
-
-        self._glance_check = ThemedCheckBox("Glance over when the cursor gets close")
-        self._glance_check.setChecked(self.settings.proximity_glance_enabled())
-        self._glance_check.apply_tokens(tokens)
+        self._roam_speed_slider = LabelledSlider(
+            "Wander speed", 1, 6, s.roam_speed(), " px/tick", tokens)
+        layout.addWidget(self._roam_speed_slider)
+        self._glance_check = self._check(
+            "Glance at the cursor when it comes close",
+            s.proximity_glance_enabled(), tokens)
         layout.addWidget(self._glance_check)
 
-        layout.addSpacing(4)
-        layout.addWidget(_section_label("Platform status", tokens))
+        # From the old Behaviour tab. §9.2 lists pat sensitivity and reaction
+        # cooldown under Fox, and keeping a second tab with its own roaming
+        # and glance switches would have shipped two controls for one setting.
+        self._cooldown_slider = LabelledSlider(
+            "Reaction cooldown", 0, 50,
+            int(s.reaction_cooldown() * 10), "×0.1s", tokens)
+        layout.addWidget(self._cooldown_slider)
+        self._pat_slider = LabelledSlider(
+            "Pat sensitivity", 5, 60, s.pat_sensitivity(), "px", tokens)
+        layout.addWidget(self._pat_slider)
+
+        self._idle_combo = self._combo(
+            [(k, l) for k, l, _r in cp.FREQUENCIES],
+            s.idle_break_frequency(), tokens)
+        layout.addWidget(self._make_field_row("Idle poses", self._idle_combo))
+        self._tip_combo = self._combo(
+            [(k, l) for k, l, _r in cp.FREQUENCIES], s.tip_frequency(), tokens)
+        layout.addWidget(self._make_field_row("Tip bubbles", self._tip_combo))
+        self._click_combo = self._combo(cp.CLICK_ACTIONS, s.click_action(),
+                                        tokens)
+        layout.addWidget(self._make_field_row("Click the fox",
+                                              self._click_combo))
+
+        self._input_react_check = self._check(
+            "React to typing and scrolling", s.input_reactions_enabled(),
+            tokens)
+        layout.addWidget(self._input_react_check)
+        self._hw_react_check = self._check(
+            "React to CPU, memory and battery", s.hardware_reactions_enabled(),
+            tokens)
+        layout.addWidget(self._hw_react_check)
+
+        layout.addSpacing(2)
+        layout.addWidget(_section_label("Where it sits", tokens))
         layout.addWidget(_divider(tokens))
 
+        self._remember_pos_check = self._check(
+            "Remember where I put it", s.remember_position(), tokens)
+        layout.addWidget(self._remember_pos_check)
+
+        self._monitor_combo = self._combo(self._monitor_options(),
+                                          str(s.monitor_index()), tokens)
+        layout.addWidget(self._make_field_row("Monitor", self._monitor_combo))
+
+        self._reset_pos_btn = QPushButton("Reset the fox's position")
+        self._reset_pos_btn.setObjectName("resetPosBtn")
+        self._reset_pos_btn.setFixedHeight(34)
+        self._reset_pos_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._reset_pos_btn.clicked.connect(self._reset_fox_position)
+        layout.addWidget(self._reset_pos_btn)
+
         tracking_ok = window_tracker.supports_window_tracking()
-        status_icon = "✓" if tracking_ok else "✗"
-        status_msg  = "Window tracking available" if tracking_ok \
-                      else "Needs extra package on this OS (see README)"
-        status_lbl  = QLabel(f"{status_icon}  {window_tracker.PLATFORM} — {status_msg}")
-        col = tokens["accent"] if tracking_ok else "#FF6B6B"
+        status_lbl = QLabel(
+            f"{'✓' if tracking_ok else '✗'}  {window_tracker.PLATFORM} — "
+            + ("window tracking available" if tracking_ok
+               else "needs an extra package on this OS (see README)"))
+        status_lbl.setWordWrap(True)
         status_lbl.setStyleSheet(
-            f"color: {col}; font-size: 12px;"
-            f"font-family: '{tokens.get('font','Segoe UI')}';"
-        )
+            f"color: {tokens['accent'] if tracking_ok else '#FF6B6B'};"
+            f"font-size: 11px; background: transparent;"
+            f"font-family: '{tokens.get('font', 'Segoe UI')}';")
         layout.addWidget(status_lbl)
 
         layout.addStretch()
         return page
+
+    @staticmethod
+    def _monitor_options() -> list[tuple[str, str]]:
+        """Real screens only. The default follows the primary screen, which is
+        what the fox did before there was a picker."""
+        options = [("-1", "Follow the primary screen")]
+        try:
+            screens = QApplication.screens()
+        except Exception:                       # noqa: BLE001
+            screens = []
+        for index, screen in enumerate(screens):
+            size = screen.geometry()
+            options.append((str(index),
+                            f"{index + 1}. {screen.name()} "
+                            f"({size.width()}×{size.height()})"))
+        return options
+
+    def _on_autostart_toggled(self, on: bool):
+        """Applied IMMEDIATELY, unlike every other control here.
+
+        Save/Cancel governs our own QSettings; this one writes to the OS. A
+        toggle that only took effect on Save would leave the checkbox and the
+        real login item disagreeing for as long as the dialog stayed open —
+        and Cancel could not undo an OS write anyway. If the write is refused
+        the box goes back, because a switch that shows a state the machine
+        does not have is worse than no switch.
+        """
+        if not self._autostart.supported:
+            return
+        if self._autostart.set_enabled(on):
+            self._autostart_note.setText(self._autostart.location)
+            self._autostart_note.setProperty("failed", False)
+        else:
+            self._autostart_check.blockSignals(True)
+            self._autostart_check.setChecked(not on)
+            self._autostart_check.blockSignals(False)
+            self._autostart_note.setText(autostart_mod.failure_message(on))
+            self._autostart_note.setProperty("failed", True)
+        self._restyle_autostart_note()
+
+    def _restyle_autostart_note(self):
+        tokens = _matte_tokens()
+        failed = bool(self._autostart_note.property("failed"))
+        colour = "#FF6B6B" if failed else tokens.get("text_muted",
+                                                     tokens["text"])
+        self._autostart_note.setStyleSheet(
+            f"color: {colour}; font-size: 11px; background: transparent;"
+            f"font-family: '{tokens.get('font', 'Segoe UI')}';")
+
+    def _reset_fox_position(self):
+        self.settings.clear_pet_pos()
+        self._reset_pos_btn.setText("Position cleared — restart or drag to set")
+        self._reset_pos_btn.setEnabled(False)
+
+    # ─────────────────────────────── Alerts tab (D13 · §9.2) ──────
+    def _build_alerts_tab(self) -> QWidget:
+        tokens = _matte_tokens()
+        page, layout = self._scroll_page("alertsPage")
+        s = self.settings
+
+        layout.addWidget(_section_label("What interrupts you", tokens))
+        layout.addWidget(_divider(tokens))
+
+        self._breach_alert_check = self._check(
+            "Policy breaches", s.breach_alerts_enabled(), tokens)
+        layout.addWidget(self._breach_alert_check)
+        self._risk_slider = LabelledSlider(
+            "Only at or above risk", 0, 100, s.alert_min_risk(), "", tokens)
+        layout.addWidget(self._risk_slider)
+        risk_note = QLabel(
+            "A breach below this is still recorded in the ledger — the fox "
+            "just doesn't interrupt for it.")
+        risk_note.setWordWrap(True)
+        risk_note.setObjectName("alertsNote")
+        layout.addWidget(risk_note)
+
+        self._quota_check = self._check(
+            "Running out of capture credits", s.quota_alerts_enabled(), tokens)
+        layout.addWidget(self._quota_check)
+        self._anchor_check = self._check(
+            "Chain head anchored", s.anchor_alerts_enabled(), tokens)
+        layout.addWidget(self._anchor_check)
+        self._grading_check = self._check(
+            "Gradings failing", s.grading_alerts_enabled(), tokens)
+        layout.addWidget(self._grading_check)
+        self._weekly_check = self._check(
+            "Weekly activity summary", s.weekly_summary_enabled(), tokens)
+        layout.addWidget(self._weekly_check)
+
+        layout.addSpacing(2)
+        layout.addWidget(_section_label("How it tells you", tokens))
+        layout.addWidget(_divider(tokens))
+
+        self._sound_check = self._check(
+            "Play a sound", s.alert_sound_enabled(), tokens)
+        layout.addWidget(self._sound_check)
+        self._toast_check = self._check(
+            "Show a desktop notification", s.native_toasts_enabled(), tokens)
+        layout.addWidget(self._toast_check)
+
+        layout.addSpacing(2)
+        layout.addWidget(_section_label("Quiet hours", tokens))
+        layout.addWidget(_divider(tokens))
+
+        self._quiet_check = self._check(
+            "Silence sounds and notifications overnight",
+            s.quiet_hours_enabled(), tokens)
+        layout.addWidget(self._quiet_check)
+        quiet_from, quiet_to = s.quiet_hours()
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        row_lay = QHBoxLayout(row)
+        row_lay.setContentsMargins(0, 0, 0, 0)
+        row_lay.setSpacing(10)
+        self._quiet_from = self._time_edit(quiet_from, "Quiet hours start")
+        self._quiet_to = self._time_edit(quiet_to, "Quiet hours end")
+        row_lay.addWidget(QLabel("from"))
+        row_lay.addWidget(self._quiet_from)
+        row_lay.addWidget(QLabel("to"))
+        row_lay.addWidget(self._quiet_to)
+        row_lay.addStretch()
+        layout.addWidget(row)
+        # The window only means something when quiet hours are ON. Leaving the
+        # fields live invited someone to set 22:00-07:00, close the dialog, and
+        # wonder why the fox still beeped — the times were saved and ignored.
+        self._quiet_row = row
+        row.setEnabled(self._quiet_check.isChecked())
+        self._quiet_check.toggled.connect(row.setEnabled)
+        quiet_note = QLabel(
+            "The fox still reacts on screen and every event is still "
+            "recorded — only the sound and the notification stop.")
+        quiet_note.setWordWrap(True)
+        quiet_note.setObjectName("alertsNote")
+        layout.addWidget(quiet_note)
+
+        layout.addSpacing(2)
+        layout.addWidget(_section_label("How often it checks", tokens))
+        layout.addWidget(_divider(tokens))
+
+        self._poll_slider = LabelledSlider(
+            "Check for breaches every", cp.POLL_MIN, cp.POLL_MAX,
+            s.breach_poll_seconds(), "s", tokens)
+        layout.addWidget(self._poll_slider)
+
+        self._alerts_status = QLabel("")
+        self._alerts_status.setWordWrap(True)
+        self._alerts_status.setObjectName("alertsNote")
+        self._alerts_status.hide()
+        layout.addWidget(self._alerts_status)
+
+        layout.addStretch()
+        return page
+
+    def _time_edit(self, value: str, accessible: str) -> QTimeEdit:
+        edit = QTimeEdit()
+        edit.setDisplayFormat("HH:mm")
+        parsed = cp.parse_time(value)
+        edit.setTime(QTime(*(parsed or (0, 0))))
+        edit.setAccessibleName(accessible)
+        edit.setFixedHeight(34)
+        edit.setFixedWidth(84)
+        # Matches the QSS above, which hides the sub-controls; without this Qt
+        # still reserves their width and the field sits off-centre in its box.
+        edit.setButtonSymbols(QTimeEdit.ButtonSymbols.NoButtons)
+        return edit
 
     # ─────────────────────────────── Foxy Audit tab ───────────────
     def _build_foxy_audit_tab(self) -> QWidget:
@@ -897,6 +1270,38 @@ class SettingsDialog(QDialog):
         self.settings.set_roaming_enabled(self._roam_check.isChecked())
         self.settings.set_proximity_glance_enabled(self._glance_check.isChecked())
 
+        # ── Companion (D13). Autostart is absent on purpose: it wrote to the
+        # OS the moment it was toggled — see `_on_autostart_toggled`.
+        s = self.settings
+        s.set_start_hidden(self._start_hidden_check.isChecked())
+        s.set_open_console_on_launch(self._open_console_check.isChecked())
+        s.set_close_to_tray(self._close_tray_check.isChecked())
+        s.set_fox_scale(self._scale_slider.value())
+        s.set_fox_opacity(self._opacity_slider.value())
+        s.set_always_on_top(self._on_top_check.isChecked())
+        s.set_roam_speed(self._roam_speed_slider.value())
+        s.set_idle_break_frequency(self._idle_combo.currentData())
+        s.set_tip_frequency(self._tip_combo.currentData())
+        s.set_click_action(self._click_combo.currentData())
+        s.set_input_reactions_enabled(self._input_react_check.isChecked())
+        s.set_hardware_reactions_enabled(self._hw_react_check.isChecked())
+        s.set_remember_position(self._remember_pos_check.isChecked())
+        s.set_monitor_index(int(self._monitor_combo.currentData() or -1))
+
+        # ── Alerts (D13 completes the tab D12 laid the keys for)
+        s.set_breach_alerts_enabled(self._breach_alert_check.isChecked())
+        s.set_alert_min_risk(self._risk_slider.value())
+        s.set_quota_alerts_enabled(self._quota_check.isChecked())
+        s.set_anchor_alerts_enabled(self._anchor_check.isChecked())
+        s.set_grading_alerts_enabled(self._grading_check.isChecked())
+        s.set_weekly_summary_enabled(self._weekly_check.isChecked())
+        s.set_alert_sound_enabled(self._sound_check.isChecked())
+        s.set_native_toasts_enabled(self._toast_check.isChecked())
+        s.set_quiet_hours_enabled(self._quiet_check.isChecked())
+        s.set_quiet_hours(self._quiet_from.time().toString("HH:mm"),
+                          self._quiet_to.time().toString("HH:mm"))
+        s.set_breach_poll_seconds(self._poll_slider.value())
+
         if not self.settings.set_org_api_key(self._org_key_field.text().strip()):
             failed.append("org API key")
         self.settings.set_backend_url(self._backend_url_field.text().strip())
@@ -914,8 +1319,8 @@ class SettingsDialog(QDialog):
             "color: #FF4C4C; font-size: 12px; font-weight: 600;")
         self._foxy_test_status.setText(
             f"✗ Couldn't store the {what} in the OS keychain — not saved.")
-        self._tab_bar._select(2)        # surface the Foxy Audit tab with the message
-        self._stack.setCurrentIndex(2)
+        self._tab_bar._select(self._foxy_tab_index)   # surface it with the message
+        self._stack.setCurrentIndex(self._foxy_tab_index)
 
     def done(self, result: int):
         # Every UI close path on this frameless dialog (X → reject, Cancel,

@@ -169,6 +169,113 @@ class FoxSettings:
     def set_proximity_glance_enabled(self, value: bool):
         self._s.setValue("behavior/glance", value)
 
+    # ── companion catalogue (D13 · plan §9.2) ──
+    # Every default below is what the app ALREADY did before the control
+    # existed, so adding the settings changes nothing until someone moves one.
+    # The two exceptions are called out where they appear.
+    #
+    # `alerts/*` keys live further down with the D12 batch; startup lives in
+    # the OS (see `autostart.py`) and deliberately has no key here — a copy
+    # would go stale the moment the user revoked it elsewhere.
+    def start_hidden(self) -> bool:
+        return self._s.value("startup/hidden", False, type=bool)
+
+    def set_start_hidden(self, value: bool):
+        self._s.setValue("startup/hidden", bool(value))
+
+    def open_console_on_launch(self) -> bool:
+        return self._s.value("startup/open_console", False, type=bool)
+
+    def set_open_console_on_launch(self, value: bool):
+        self._s.setValue("startup/open_console", bool(value))
+
+    def close_to_tray(self) -> bool:
+        """The close button hides rather than quits. True is what the app did:
+        `setQuitOnLastWindowClosed(False)` plus a tray icon."""
+        return self._s.value("startup/close_to_tray", True, type=bool)
+
+    def set_close_to_tray(self, value: bool):
+        self._s.setValue("startup/close_to_tray", bool(value))
+
+    def fox_scale(self) -> int:
+        from companion_prefs import SCALE_DEFAULT, SCALE_MAX, SCALE_MIN
+        raw = self._s.value("fox/scale", SCALE_DEFAULT, type=int)
+        return max(SCALE_MIN, min(SCALE_MAX, raw))
+
+    def set_fox_scale(self, percent: int):
+        self._s.setValue("fox/scale", int(percent))
+
+    def fox_opacity(self) -> int:
+        from companion_prefs import OPACITY_DEFAULT, OPACITY_MAX, OPACITY_MIN
+        raw = self._s.value("fox/opacity", OPACITY_DEFAULT, type=int)
+        return max(OPACITY_MIN, min(OPACITY_MAX, raw))
+
+    def set_fox_opacity(self, percent: int):
+        self._s.setValue("fox/opacity", int(percent))
+
+    def always_on_top(self) -> bool:
+        return self._s.value("fox/always_on_top", True, type=bool)
+
+    def set_always_on_top(self, value: bool):
+        self._s.setValue("fox/always_on_top", bool(value))
+
+    def roam_speed(self) -> int:
+        """Pixels per roam tick. 2 is what `_roaming_tick` hard-coded."""
+        return max(1, min(6, self._s.value("behavior/roam_speed", 2, type=int)))
+
+    def set_roam_speed(self, value: int):
+        self._s.setValue("behavior/roam_speed", int(value))
+
+    def idle_break_frequency(self) -> str:
+        from companion_prefs import DEFAULT_FREQUENCY
+        return self._s.value("behavior/idle_freq", DEFAULT_FREQUENCY, type=str)
+
+    def set_idle_break_frequency(self, key: str):
+        self._s.setValue("behavior/idle_freq", str(key))
+
+    def tip_frequency(self) -> str:
+        from companion_prefs import DEFAULT_FREQUENCY
+        return self._s.value("behavior/tip_freq", DEFAULT_FREQUENCY, type=str)
+
+    def set_tip_frequency(self, key: str):
+        self._s.setValue("behavior/tip_freq", str(key))
+
+    def input_reactions_enabled(self) -> bool:
+        """Typing and scroll reactions. Note these are already inert when
+        pynput could not bind an input backend (headless, Wayland, macOS
+        without accessibility) — this is the user's own switch, not that."""
+        return self._s.value("behavior/input_reactions", True, type=bool)
+
+    def set_input_reactions_enabled(self, value: bool):
+        self._s.setValue("behavior/input_reactions", bool(value))
+
+    def hardware_reactions_enabled(self) -> bool:
+        return self._s.value("behavior/hardware_reactions", True, type=bool)
+
+    def set_hardware_reactions_enabled(self, value: bool):
+        self._s.setValue("behavior/hardware_reactions", bool(value))
+
+    def click_action(self) -> str:
+        from companion_prefs import click_action
+        return click_action(self._s.value("behavior/click_action", "", type=str))
+
+    def set_click_action(self, key: str):
+        self._s.setValue("behavior/click_action", str(key))
+
+    def remember_position(self) -> bool:
+        return self._s.value("geometry/remember_pet", True, type=bool)
+
+    def set_remember_position(self, value: bool):
+        self._s.setValue("geometry/remember_pet", bool(value))
+
+    def monitor_index(self) -> int:
+        """Which screen the fox lives on. -1 = follow the primary screen,
+        which is what it did before there was a picker."""
+        return self._s.value("geometry/monitor", -1, type=int)
+
+    def set_monitor_index(self, index: int):
+        self._s.setValue("geometry/monitor", int(index))
+
     # ── window geometry (no secrets — plain coordinates) ──
     def pet_pos(self) -> QPoint | None:
         """Where the user last placed the fox, or None if never placed."""
@@ -269,6 +376,38 @@ class FoxSettings:
 
     def set_grading_alerts_enabled(self, value: bool):
         self._s.setValue("alerts/grading", bool(value))
+
+    # D13 completes the Alerts tab. `breach_poll_seconds` is the cadence the
+    # breach poller hard-coded at 10 s; the companion sweep stays at 90 s and
+    # is deliberately not exposed — it feeds nothing time-critical.
+    def breach_poll_seconds(self) -> int:
+        from companion_prefs import POLL_DEFAULT, poll_interval
+        return poll_interval(self._s.value("alerts/poll_seconds",
+                                           POLL_DEFAULT, type=int))
+
+    def set_breach_poll_seconds(self, seconds: int):
+        self._s.setValue("alerts/poll_seconds", int(seconds))
+
+    def weekly_summary_enabled(self) -> bool:
+        return self._s.value("alerts/weekly_summary", True, type=bool)
+
+    def set_weekly_summary_enabled(self, value: bool):
+        self._s.setValue("alerts/weekly_summary", bool(value))
+
+    def quiet_hours_enabled(self) -> bool:
+        return self._s.value("alerts/quiet_enabled", False, type=bool)
+
+    def set_quiet_hours_enabled(self, value: bool):
+        self._s.setValue("alerts/quiet_enabled", bool(value))
+
+    def quiet_hours(self) -> tuple[str, str]:
+        from companion_prefs import DEFAULT_QUIET_FROM, DEFAULT_QUIET_TO
+        return (self._s.value("alerts/quiet_from", DEFAULT_QUIET_FROM, type=str),
+                self._s.value("alerts/quiet_to", DEFAULT_QUIET_TO, type=str))
+
+    def set_quiet_hours(self, start: str, end: str):
+        self._s.setValue("alerts/quiet_from", str(start))
+        self._s.setValue("alerts/quiet_to", str(end))
 
     # ── weekly-summary counters (previously raw QSettings pokes) ──
     def weekly_breaches(self) -> int:

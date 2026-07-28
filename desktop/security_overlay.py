@@ -41,6 +41,13 @@ class SecurityOverlay(QWidget):
         self._alert_timer.setSingleShot(True)
         self._alert_timer.timeout.connect(self._end_alert)
 
+    def set_cell_size(self, width: int, height: int):
+        """Follow the fox when the size slider moves (D13). An overlay left at
+        the old cell either clips the sprite or floats past its edge."""
+        self.cell_w, self.cell_h = int(width), int(height)
+        self.setFixedSize(self.cell_w, self.cell_h)
+        self.update()
+
     # ── Qt Property for the animation ─────────────────────────────────────
     @pyqtProperty(float)
     def opacity_prop(self) -> float:

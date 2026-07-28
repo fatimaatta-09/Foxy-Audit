@@ -44,6 +44,7 @@ from sdk_bridge import SDKBridgeListener
 from dashboard import DashboardWindow
 from breach_poll import plan_reactions
 import companion_events as ce
+import companion_prefs as cprefs
 import companion_status as cstat
 
 
@@ -82,6 +83,9 @@ COMPLIANCE_TIPS = [
     "✓ Tamper-evidence: active",
 ]
 
+
+#: Room left under the fox for a taskbar / dock.
+_TASKBAR_MARGIN = 50
 
 #: `companion_events` returns a level word, not a Qt enum — it has no Qt in it.
 _TOAST_ICON = {
@@ -254,17 +258,20 @@ class OmniAwareFox(QWidget):
         self._me: dict = {}          # last /v1/auth/me payload (identity only)
 
         # ── Window flags ───────────────────────────────────────────────────
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
+        flags = (Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        if self.settings.always_on_top():
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAutoFillBackground(False)
         self.setWindowTitle("Foxy Audit")
 
-        # ── Fixed size = one sprite cell ──────────────────────────────────
-        self.setFixedSize(CELL_WIDTH, CELL_HEIGHT)
+        # ── Size = one sprite cell, scaled by the user's preference ───────
+        self._cell_w, self._cell_h = cprefs.scaled_size(
+            CELL_WIDTH, CELL_HEIGHT, self.settings.fox_scale())
+        self.setFixedSize(self._cell_w, self._cell_h)
+        self.setWindowOpacity(cprefs.opacity_fraction(
+            self.settings.fox_opacity()))
 
         # ── Spritesheet ────────────────────────────────────────────────────
         sheet_path = resource_path("ultimate_fox_spritesheet.png")
@@ -281,14 +288,15 @@ class OmniAwareFox(QWidget):
         self.label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.label.setAutoFillBackground(False)
         self.label.setStyleSheet("background: transparent; border: none;")
-        self.label.setFixedSize(CELL_WIDTH, CELL_HEIGHT)
+        self.label.setFixedSize(self._cell_w, self._cell_h)
 
         # ── Security overlay ──────────────────────────────────────────────
-        self.security_overlay = SecurityOverlay(self, cell_size=(CELL_WIDTH, CELL_HEIGHT))
+        self.security_overlay = SecurityOverlay(
+            self, cell_size=(self._cell_w, self._cell_h))
         self.security_overlay.raise_()
 
         # ── Eye overlay ───────────────────────────────────────────────────
-        self.eyes = EyeOverlay(self, cell_size=(CELL_WIDTH, CELL_HEIGHT))
+        self.eyes = EyeOverlay(self, cell_size=(self._cell_w, self._cell_h))
         self.eyes.raise_()
 
         # ── Speech bubble (compliance tips + PC health) ───────────────────
@@ -330,6 +338,7 @@ class OmniAwareFox(QWidget):
         self._pat_wiggle  = 0.0
         self._user_placed = False   # True after user drags fox somewhere
         self._is_hidden_in_tray = False
+        self._quitting = False   # True only inside the explicit Quit action
 
         # ── Debouncing for SDK events ─────────────────────────────────────
         self._last_evaluating = 0.0
@@ -342,33 +351,36 @@ class OmniAwareFox(QWidget):
         # ── Idle-break timer (random autonomous actions) ──────────────────
         # ~600-1200 ticks @ 100ms ≈ 60-120s between autonomous poses.  Kept
         # deliberately sparse so the fox feels calm/ambient rather than fidgety.
-        self._idle_break_countdown = random.randint(600, 1200)  # ticks
+        self._idle_break_countdown = cprefs.next_countdown(
+            self.settings.idle_break_frequency(), random.randint)
 
         # ── Compliance tip timer ──────────────────────────────────────────
-        self._tip_countdown = random.randint(600, 900)  # ticks (~60-90s)
+        self._tip_countdown = cprefs.next_countdown(
+            self.settings.tip_frequency(), random.randint)
 
         # ── Hardware cache ────────────────────────────────────────────────
         self.latest_hw = {"cpu": 0, "ram": 0, "battery": 100, "plugged": True}
 
         # ── Screen geometry ───────────────────────────────────────────────
-        self.screen_geom = QApplication.primaryScreen().geometry()
+        self.screen_geom = self._target_screen().geometry()
 
         # ── Initial position: where the user last placed the fox, clamped to
         # the current screen; default bottom-right, above the taskbar ──────
-        taskbar_margin = 50
-        self._bottom_y = self.screen_geom.height() - CELL_HEIGHT - taskbar_margin
-        saved_pos = self.settings.pet_pos()
+        self._bottom_y = (self.screen_geom.bottom() - self._cell_h
+                          - _TASKBAR_MARGIN)
+        saved_pos = (self.settings.pet_pos()
+                     if self.settings.remember_position() else None)
         if saved_pos is not None:
             self.move(
                 max(self.screen_geom.x(),
-                    min(saved_pos.x(), self.screen_geom.right() - CELL_WIDTH)),
+                    min(saved_pos.x(), self.screen_geom.right() - self._cell_w)),
                 max(self.screen_geom.y(),
-                    min(saved_pos.y(), self.screen_geom.bottom() - CELL_HEIGHT)),
+                    min(saved_pos.y(), self.screen_geom.bottom() - self._cell_h)),
             )
             self._user_placed = True   # a remembered spot counts as user-placed
         else:
             self.move(
-                self.screen_geom.width() - CELL_WIDTH - 80,
+                self.screen_geom.right() - self._cell_w - 80,
                 self._bottom_y,
             )
 
@@ -407,7 +419,9 @@ class OmniAwareFox(QWidget):
                          track=self._workers)
 
             # Poll the backend for real graded breaches → fox reacts (5A.1b).
-            self._breach_poller = BreachPollWorker(self.client, parent=self)
+            self._breach_poller = BreachPollWorker(
+                self.client, interval=self.settings.breach_poll_seconds(),
+                parent=self)
             self._breach_poller.breach_detected.connect(self._on_policy_breach)
             self._breach_poller.start()
 
@@ -523,6 +537,11 @@ class OmniAwareFox(QWidget):
         still toasts, still counts, and simply does not animate."""
         if not react:
             return
+        # Quiet hours take the NOISE out and leave everything else: the fox
+        # still animates, the overlay still flashes, the event is still
+        # recorded and still counted. Dropping the reaction would mean a
+        # breach at 3am left no trace on screen at all.
+        react = cprefs.silence(react, self._quiet_now())
         if react["toast"]:
             title, body, level = react["toast"]
             self._notify(title, body, _TOAST_ICON.get(
@@ -545,13 +564,58 @@ class OmniAwareFox(QWidget):
         if react["bubble"]:
             self._say(react["bubble"], react["duration"])
 
+    # ── D13: the settings that change what a reaction DOES ─────────────────
+    def _quiet_now(self) -> bool:
+        """Inside the user's quiet window right now.
+
+        Read per event rather than cached: it is a wall-clock rule and the app
+        runs for days, so a value computed at launch would be wrong for every
+        evening but the first.
+        """
+        start, end = self.settings.quiet_hours()
+        now = time.localtime()
+        return cprefs.in_quiet_hours(
+            (now.tm_hour, now.tm_min), start, end,
+            enabled=self.settings.quiet_hours_enabled())
+
+    def _do_click_action(self):
+        """Left click on the fox. The default stays the chat — a settings
+        catalogue is not a licence to change what a click already did for
+        everyone who never opens it."""
+        action = self.settings.click_action()
+        if action == "console":
+            self.open_dashboard()
+        elif action == "panel":
+            self.open_status_panel()
+        else:
+            self.open_chat()
+
+    def _remember_pos(self):
+        """Persist where the fox was dragged — unless the user asked us not
+        to, in which case the stored spot is also CLEARED. Leaving a stale one
+        behind would make "don't remember" mean "keep the last one forever"."""
+        if self.settings.remember_position():
+            self.settings.set_pet_pos(self.pos())
+        else:
+            self.settings.clear_pet_pos()
+
+    def _target_screen(self):
+        """The screen the fox should live on. An index that no longer exists —
+        the monitor was unplugged — falls back to primary rather than moving
+        the fox somewhere with no pixels."""
+        screens = QApplication.screens()
+        index = self.settings.monitor_index()
+        if 0 <= index < len(screens):
+            return screens[index]
+        return QApplication.primaryScreen()
+
     def _say(self, text: str, seconds: float = 3.0):
         """One speech bubble, positioned once. Five callbacks had their own
         copy of these six lines, which is why two of them centred differently."""
         self.speech_bubble.setText(text)
         self.speech_bubble.adjustSize()
         self.speech_bubble.move(
-            max(0, (CELL_WIDTH - self.speech_bubble.width()) // 2),
+            max(0, (self._cell_w - self.speech_bubble.width()) // 2),
             -self.speech_bubble.height() - 6)
         self.speech_bubble.show()
         QTimer.singleShot(int(max(1.0, seconds) * 1000), self._hide_speech)
@@ -688,7 +752,9 @@ class OmniAwareFox(QWidget):
             return
         if not self.settings.backend_url():
             return
-        self._breach_poller = BreachPollWorker(self.client, parent=self)
+        self._breach_poller = BreachPollWorker(
+            self.client, interval=self.settings.breach_poll_seconds(),
+            parent=self)
         self._breach_poller.breach_detected.connect(self._on_policy_breach)
         self._breach_poller.start()
 
@@ -800,6 +866,10 @@ class OmniAwareFox(QWidget):
         pix = self.sprite_sheet.copy(QRect(x, y, CELL_WIDTH, CELL_HEIGHT))
         if flip:
             pix = pix.transformed(QTransform().scale(-1, 1))
+        if (self._cell_w, self._cell_h) != (CELL_WIDTH, CELL_HEIGHT):
+            pix = pix.scaled(self._cell_w, self._cell_h,
+                             Qt.AspectRatioMode.IgnoreAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
 
         self._frame_cache[key] = pix
         return pix
@@ -830,11 +900,15 @@ class OmniAwareFox(QWidget):
                 self.current_frame = (self.current_frame + 1) % 6
 
             # Autonomous idle-break
-            self._idle_break_countdown -= 1
-            if self._idle_break_countdown <= 0:
-                row, dur = random.choice(self._IDLE_ACTIONS)
-                self._set_state("IDLE_BREAK", row, dur)
-                self._idle_break_countdown = random.randint(600, 1200)
+            # None = the user turned idle poses off, which is not the same
+            # as "very rare" and must not tick down to zero and fire.
+            if self._idle_break_countdown is not None:
+                self._idle_break_countdown -= 1
+                if self._idle_break_countdown <= 0:
+                    row, dur = random.choice(self._IDLE_ACTIONS)
+                    self._set_state("IDLE_BREAK", row, dur)
+                    self._idle_break_countdown = cprefs.next_countdown(
+                        self.settings.idle_break_frequency(), random.randint)
 
         elif self.state == "WALKING":
             self.current_frame = (self.current_frame + 1) % FRAMES_PER_ACTION
@@ -843,20 +917,29 @@ class OmniAwareFox(QWidget):
             self.current_frame = (self.current_frame + 1) % FRAMES_PER_ACTION
 
         # Show compliance tip periodically
-        self._tip_countdown -= 1
-        if self._tip_countdown <= 0 and self.state == "IDLE":
-            self._show_compliance_tip()
-            self._tip_countdown = random.randint(600, 1200)
+        if self._tip_countdown is not None:
+            self._tip_countdown -= 1
+            if self._tip_countdown <= 0 and self.state == "IDLE":
+                self._show_compliance_tip()
+                self._tip_countdown = cprefs.next_countdown(
+                    self.settings.tip_frequency(), random.randint)
 
         # Render the current frame
         flip = self._facing_left
         frame_pix = self._get_frame(self.current_row, self.current_frame, flip)
         self.label.setPixmap(frame_pix)
-        self.eyes.update_for_state(self.state, self.current_frame)
+        # `behavior/glance` was a dead key until D13. Off, the eyes hold a
+        # neutral pose instead of following the cursor.
+        if self.settings.proximity_glance_enabled():
+            self.eyes.update_for_state(self.state, self.current_frame)
+        else:
+            self.eyes.hide()
 
     # ── Bottom-of-screen roaming ───────────────────────────────────────────
     def _roaming_tick(self):
         """Gentle walk along the bottom of the screen."""
+        if not self.settings.roaming_enabled():
+            return          # the `behavior/roam` key was dead until D13
         if self.is_dragging or self._chat_open or self._user_placed:
             return
         if self.state not in ("IDLE", "WALKING"):
@@ -874,7 +957,7 @@ class OmniAwareFox(QWidget):
         if self.roam_target_x is None:
             margin = 60
             low  = self.screen_geom.x() + margin
-            high = self.screen_geom.width() - CELL_WIDTH - margin
+            high = self.screen_geom.right() - self._cell_w - margin
             if high <= low:
                 high = low + 1
             self.roam_target_x = random.randint(low, high)
@@ -896,7 +979,7 @@ class OmniAwareFox(QWidget):
             # Walk at a calm speed (2px per tick at 150ms ≈ 13px/s)
             self._facing_left = self.roam_target_x < cx
             direction = -1 if self._facing_left else 1
-            speed = 2
+            speed = self.settings.roam_speed()
             new_x = cx + direction * speed
 
             # Keep y locked to bottom
@@ -911,7 +994,12 @@ class OmniAwareFox(QWidget):
 
     # ── Hardware events ────────────────────────────────────────────────────
     def process_hardware(self, hw: dict):
+        # The reading is CACHED either way — the console's gauges and the
+        # "how's my PC" bubble read it on demand, and turning the fox's
+        # reaction off is not a request to stop measuring.
         self.latest_hw = hw
+        if not self.settings.hardware_reactions_enabled():
+            return
         if self.state in self._TIMED_STATES:
             return
         if hw["cpu"] > 90.0 or hw["ram"] > 92.0:
@@ -938,6 +1026,8 @@ class OmniAwareFox(QWidget):
 
     # ── Input listeners (heavily debounced) ────────────────────────────────
     def trigger_typing(self):
+        if not self.settings.input_reactions_enabled():
+            return
         now = time.time()
         if now - self._last_typing_trigger < 12.0:
             return
@@ -950,6 +1040,8 @@ class OmniAwareFox(QWidget):
         self._set_state("TYPING", ROW_PAWING, 2.0)
 
     def trigger_scrolling(self):
+        if not self.settings.input_reactions_enabled():
+            return
         now = time.time()
         if now - self._last_scroll_trigger < 15.0:
             return
@@ -1116,12 +1208,11 @@ class OmniAwareFox(QWidget):
                      - self._press_pos).manhattanLength()
 
             if moved < 6:
-                # Click — open chat
-                self.open_chat()
+                self._do_click_action()
             elif moved > 30:
                 # Significant drag — user placed the fox, stop auto-roaming
                 self._user_placed = True
-                self.settings.set_pet_pos(self.pos())   # remember for next launch
+                self._remember_pos()   # remember for next launch
                 self.roam_target_x = None
                 if self.state == "WALKING":
                     self.state       = "IDLE"
@@ -1335,6 +1426,13 @@ class OmniAwareFox(QWidget):
                     due = True
             if not due:
                 return
+            if not self.settings.weekly_summary_enabled():
+                # Still advance the stamp, so turning it back on next month
+                # does not immediately fire a summary for a window nobody
+                # was watching.
+                self.settings.set_weekly_last_summary(now.isoformat())
+                self.settings.reset_weekly_breaches()
+                return
             if last:   # skip the very first run — no full week has elapsed yet
                 breaches = self.settings.weekly_breaches()
                 self.tray_icon.showMessage(
@@ -1392,17 +1490,75 @@ class OmniAwareFox(QWidget):
             self.chat_popup.apply_theme(None)
         if self.dashboard is not None:
             self.dashboard.apply_theme(None)
+        self.apply_companion_settings()
+
+    def apply_companion_settings(self):
+        """Take the D13 catalogue live without a restart.
+
+        Most of §9.2 needs nothing here — the toggles, frequencies and quiet
+        hours are all read at the point of use, per event. The four that get
+        baked into a widget or a thread when it is created are the ones this
+        re-applies: size, opacity, always-on-top, and the breach cadence.
+        Telling someone to restart the app for a slider is what makes a
+        settings screen feel fake.
+        """
+        opacity = cprefs.opacity_fraction(self.settings.fox_opacity())
+        if abs(self.windowOpacity() - opacity) > 0.001:
+            self.setWindowOpacity(opacity)
+
+        want_top = self.settings.always_on_top()
+        has_top = bool(self.windowFlags()
+                       & Qt.WindowType.WindowStaysOnTopHint)
+        if want_top != has_top:
+            # setWindowFlags HIDES a visible window — without the re-show the
+            # fox vanishes the instant you untick "always on top".
+            visible = self.isVisible()
+            flags = self.windowFlags()
+            self.setWindowFlags(
+                flags | Qt.WindowType.WindowStaysOnTopHint if want_top
+                else flags & ~Qt.WindowType.WindowStaysOnTopHint)
+            if visible:
+                self.show()
+
+        width, height = cprefs.scaled_size(CELL_WIDTH, CELL_HEIGHT,
+                                           self.settings.fox_scale())
+        if (width, height) != (self._cell_w, self._cell_h):
+            self._cell_w, self._cell_h = width, height
+            self._frame_cache.clear()       # every cached frame is now wrong
+            self.setFixedSize(width, height)
+            self.label.setFixedSize(width, height)
+            self.security_overlay.set_cell_size(width, height)
+            self.eyes.set_cell_size(width, height)
+            self._bottom_y = (self.screen_geom.bottom() - height
+                              - _TASKBAR_MARGIN)
+
+        poller = getattr(self, "_breach_poller", None)
+        if poller is not None:
+            # The worker re-reads `interval` each loop, so this lands on the
+            # next tick without restarting the thread.
+            poller.interval = self.settings.breach_poll_seconds()
 
     # ── Shutdown ───────────────────────────────────────────────────────────
     def _quit_app(self):
         """Quit via close() so closeEvent's thread teardown actually runs —
         QApplication.quit() alone would skip it."""
+        # Set BEFORE close(): otherwise close-to-tray would swallow the one
+        # close that is genuinely meant to end the process.
+        self._quitting = True
         self.close()
         QApplication.instance().quit()
 
     def closeEvent(self, event):
+        # "Close hides it" is the default and what the app always did. When
+        # the user turns it off, the X really does quit — and the teardown
+        # below still runs, because `_quit_app` closes rather than quitting.
+        if (self.settings.close_to_tray() and not self._quitting
+                and self.isVisible()):
+            event.ignore()
+            self._hide_to_tray()
+            return
         if self._user_placed:
-            self.settings.set_pet_pos(self.pos())   # remember the fox's spot
+            self._remember_pos()   # remember the fox's spot
 
         # Close the sign-in window first: its done() joins the auth workers, so
         # quitting mid-login can't leave a live thread behind.
@@ -1457,5 +1613,13 @@ if __name__ == "__main__":
     app.setWindowIcon(QIcon(resource_path("logo.png")))
 
     pet = OmniAwareFox()
-    pet.show()
+    # D13 §9.2: two launch preferences. "Start hidden" leaves the fox in the
+    # tray — everything else (breach polling, the companion sweep, the SDK
+    # bridge) is already running, so hidden means hidden, not off.
+    if pet.settings.start_hidden():
+        pet._is_hidden_in_tray = True
+    else:
+        pet.show()
+    if pet.settings.open_console_on_launch():
+        QTimer.singleShot(600, pet.open_dashboard)
     sys.exit(app.exec())
