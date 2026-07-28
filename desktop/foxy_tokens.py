@@ -642,9 +642,38 @@ def paint_icon(p: QPainter, rect: QRectF, name: str, color: QColor,
             QPointF(rect.right() - w * 0.04, rect.top() + h * 0.04)]))
     p.restore()
 
-#: The shipped build number. EMPTY until D14 sets it at packaging time — the
-#: Settings card renders "Version unknown in this build" rather than a number
-#: nobody stamped, because an invented version is the same class of lie as
-#: invented data.
-APP_VERSION = ""
+def _read_version() -> str:
+    """The shipped build number, from the repo-root `VERSION` file.
+
+    One file, read — never computed. D14's brief was explicit: source it from
+    the tag or a single file, do not invent a number at runtime. So there is
+    no timestamp fallback and no "0.0.0-dev": when the file is missing the
+    constant stays EMPTY and the Settings card keeps saying "Version unknown
+    in this build", which is true. An invented version is the same class of
+    lie as invented data, and this one would end up in a bug report.
+
+    `VERSION` is bundled by `omni_fox.spec`, so the same read works frozen
+    (via `sys._MEIPASS`) and from a source checkout (repo root, one level up
+    from `desktop/`). The release workflow CHECKS the git tag against this
+    file rather than writing it, so the number in a build is always a number
+    somebody committed.
+    """
+    for candidate in (resource_path("VERSION"),
+                      os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   os.pardir, "VERSION")):
+        try:
+            with open(candidate, "r", encoding="utf-8") as handle:
+                text = handle.read().strip()
+        except OSError:
+            continue
+        # Trailing newline and whitespace are fine; anything longer than a
+        # version string or carrying newlines is not something to render.
+        if text and len(text) <= 32 and "\n" not in text:
+            return text
+    return ""
+
+
+#: The shipped build number, or "" when this build was not stamped — the
+#: Settings card then renders "Version unknown in this build".
+APP_VERSION = _read_version()
 

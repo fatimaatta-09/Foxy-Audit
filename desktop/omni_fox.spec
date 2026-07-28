@@ -2,7 +2,9 @@
 """PyInstaller spec for the Foxy Audit desktop pet.
 
 Build:   pyinstaller desktop/omni_fox.spec
-Output:  dist/FoxyAudit(.exe / .app)  — onefile, windowed (no console).
+Output:  Windows  dist/FoxyAudit.exe   — onefile, windowed
+         macOS    dist/FoxyAudit.app   — onefile binary wrapped in a bundle
+         Linux    dist/FoxyAudit       — onefile, plus foxy-audit.desktop
 
 Notes:
 - PyQt6 Qt plugins (platforms, imageformats) are the thing that most often
@@ -21,6 +23,13 @@ datas = [
     (os.path.join(HERE, "ultimate_fox_spritesheet.png"), "."),
     (os.path.join(HERE, "logo.png"), "."),          # window/dialog/taskbar icon at runtime
 ]
+
+# The single source of the build number. foxy_tokens._read_version() reads it
+# from sys._MEIPASS in a frozen build; without this line every shipped build
+# would say "Version unknown in this build".
+_VERSION_FILE = os.path.join(HERE, os.pardir, "VERSION")
+if os.path.isfile(_VERSION_FILE):
+    datas.append((_VERSION_FILE, "."))
 # Brand fonts (Unbounded / Space Mono) live at the repo root fonts/ dir;
 # an in-desktop fonts/ dir wins if one is ever added.
 for _fonts in (os.path.join(HERE, "fonts"), os.path.join(HERE, os.pardir, "fonts")):
@@ -34,6 +43,15 @@ if sys.platform.startswith("win") and os.path.exists(os.path.join(HERE, "foxy.ic
     _ICON = os.path.join(HERE, "foxy.ico")
 elif sys.platform == "darwin" and os.path.exists(os.path.join(HERE, "foxy.icns")):
     _ICON = os.path.join(HERE, "foxy.icns")
+elif os.path.exists(os.path.join(HERE, "logo.png")):
+    # Linux/BSD: PyInstaller accepts a PNG here, and the .desktop entry points
+    # at the same file once installed.
+    _ICON = os.path.join(HERE, "logo.png")
+
+_VERSION = "0.0.0"
+if os.path.isfile(_VERSION_FILE):
+    with open(_VERSION_FILE, "r", encoding="utf-8") as _fh:
+        _VERSION = _fh.read().strip() or _VERSION
 
 pyqt_datas, pyqt_binaries, pyqt_hidden = collect_all("PyQt6")
 datas += pyqt_datas
@@ -80,10 +98,21 @@ exe = EXE(
     icon=_ICON,
 )
 
-# macOS: also wrap the onefile binary in a .app bundle.
-app = BUNDLE(
-    exe,
-    name="FoxyAudit.app",
-    icon=_ICON,
-    bundle_identifier="tech.foxyaudit.desktop",
-)
+# macOS: also wrap the onefile binary in a .app bundle. Guarded by platform —
+# BUNDLE() on Windows or Linux emits a stray dist/FoxyAudit.app directory that
+# is not a runnable anything, and the release workflow would upload it.
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="FoxyAudit.app",
+        icon=_ICON,
+        bundle_identifier="tech.foxyaudit.desktop",   # matches autostart.BUNDLE_ID
+        info_plist={
+            "CFBundleShortVersionString": _VERSION,
+            "CFBundleVersion": _VERSION,
+            # The fox is a companion, not a document app: no Dock tile, no
+            # menu bar. It lives in the tray/menu-extra area.
+            "LSUIElement": True,
+            "NSHighResolutionCapable": True,
+        },
+    )

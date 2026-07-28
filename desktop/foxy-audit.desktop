@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Foxy Audit
+GenericName=Compliance companion
+Comment=Tamper-evident audit evidence for AI systems
+Exec=/opt/foxy-audit/FoxyAudit
+Icon=/opt/foxy-audit/logo.png
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=false
+Keywords=audit;compliance;AI;ledger;
