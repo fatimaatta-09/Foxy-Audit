@@ -80,7 +80,7 @@ from export_page import ExportSections, history_row
 import policy_page
 from policy_page import PolicySections
 from billing_page import BillingSections, invoice_row, usage_row
-from settings_page import SettingsSections, device_row
+from settings_page import SettingsSections, device_row, login_row
 from ledger_page import LedgerRow, LedgerSections
 from verify_page import VerifySections, anchor_row
 import access_data as ad
@@ -3664,6 +3664,7 @@ class DashboardWindow(QWidget):
                      parent=self, track=self._page_workers,
                      on_ok=self._on_devices,
                      on_err=lambda _e: self._on_devices(None, ok=False))
+        self.refresh_login_history()
 
     def _on_settings_me(self, data):
         view = sd.identity_view(data)
@@ -3709,6 +3710,7 @@ class DashboardWindow(QWidget):
         try:
             for key, row in self.pref_rows.items():
                 row.toggle.setChecked(values[key])
+                row.set_note("")        # confirmed by the server again
         finally:
             self._pref_loading = False
 
@@ -3732,7 +3734,16 @@ class DashboardWindow(QWidget):
                            what="preference")[0])
         spawn_worker(self.client, "GET", "/v1/account/preferences", timeout=12,
                      parent=self, track=self._page_workers,
-                     on_ok=self._on_preferences, on_err=lambda _e: None)
+                     on_ok=self._on_preferences,
+                     on_err=lambda _e: self._preference_unknown(key))
+
+    def _preference_unknown(self, key: str):
+        """The save failed AND the corrective re-read failed, so this switch
+        shows a value we could not confirm. Say so on the row rather than
+        leaving it looking settled."""
+        row = self.pref_rows.get(key)
+        if row is not None:
+            row.set_note(sd.PREF_UNCONFIRMED, tone="bad")
 
     def change_password(self):
         current = self.set_pw_fields["current"].text()
@@ -3850,6 +3861,28 @@ class DashboardWindow(QWidget):
                 self.ip_status, sd.save_result(status_of(err) or 0,
                                                detail_of(err))[0], "bad"))
 
+    def refresh_login_history(self):
+        """Admin-only (auth_human.py:437). A member gets the honest notice
+        rather than an error they can do nothing about."""
+        if not self._is_billing_admin():
+            self.login_rows_strip.set_state(
+                PanelState.EMPTY, empty_title="Visible to admins",
+                empty_body=sd.LOGINS_MEMBER)
+            self.login_rows_strip.show()
+            panel_state.clear_rows(self.login_rows)
+            return
+        spawn_worker(self.client, "GET", "/v1/auth/login-history", timeout=12,
+                     parent=self, track=self._page_workers,
+                     on_ok=self._on_login_history,
+                     on_err=lambda _e: self._on_login_history(None, ok=False))
+
+    def _on_login_history(self, data, ok: bool = True):
+        rows = sd.login_rows(data) if ok else []
+        self._fill_rows(self.login_rows, 0, self.login_rows_strip, rows,
+                        login_row, resolve(ok, bool(rows)),
+                        empty_title=sd.LOGINS_EMPTY[0],
+                        empty_body=sd.LOGINS_EMPTY[1])
+
     def _on_devices(self, data, ok: bool = True):
         rows = sd.device_rows(data) if ok else []
         self._fill_rows(
@@ -3884,10 +3917,22 @@ class DashboardWindow(QWidget):
                      on_ok=lambda _d: self._signed_out_everywhere(),
                      on_err=lambda _e: self._signed_out_everywhere())
 
-    def _signed_out_everywhere(self):
+    def _signed_out_everywhere(self, message: str = "Signed out of every device"):
+        """Actually sign out — not just drop the cookie.
+
+        This cleared the jar and toasted, so after "Log out everywhere" or a
+        workspace delete the console kept rendering as signed in, showing a
+        workspace that no longer existed. The real path is
+        `sign_out_requested` → `omni_fox.sign_out()` → `_after_sign_out()`,
+        which puts the login window back; `on_signed_out()` is called directly
+        as well so the console's own state is right even when nothing is
+        connected to the signal (a standalone window, or a test).
+        """
         self.client.http.clear_session()
-        self.toast.show_message("Signed out of every device")
+        self.toast.show_message(message)
         self._on_devices(None, ok=False)
+        self.on_signed_out()
+        self.sign_out_requested.emit()
 
     def mint_badge(self):
         self.badge_btn.setEnabled(False)
@@ -3905,7 +3950,11 @@ class DashboardWindow(QWidget):
         self.badge_btn.setEnabled(True)
         self._badge = sd.badge_view(data, self.settings.backend_url())
         has = bool(self._badge["token"])
-        self.badge_btn.setText("Regenerate badge" if has else "Generate badge")
+        # `POST /v1/account/badge` mints OR RETURNS THE EXISTING token
+        # (account.py:298-306) - it does not regenerate, so the button must
+        # not offer to.
+        self.badge_btn.setText("Badge active" if has else "Generate badge")
+        self.badge_btn.setEnabled(not has)
         self.badge_copy.setVisible(has)
         self.badge_revoke.setVisible(has)
         self.badge_link.setVisible(has)
@@ -3962,20 +4011,30 @@ class DashboardWindow(QWidget):
         self.toast.show_message("Saved to %s" % target)
 
     def delete_workspace(self):
+        """The server owns the name check (account.py:266).
+
+        `_org_name` comes from `/v1/health`, which is Bearer-only, so a user
+        signed in by email and password has no workspace name at all — and the
+        local match made the confirm button impossible to enable, with nothing
+        on screen explaining why. When the name IS known the dialog still
+        matches live as a helper; when it is not, any non-empty entry submits
+        and the server's own 400 is the answer.
+        """
         from settings_page import ConfirmNameDialog
-        name = self._org_name or ""
+        name = self._org_name or None
         dialog = ConfirmNameDialog(name, self)
         if not dialog.exec():
             return
         typed = dialog.typed()
-        if not sd.delete_confirmed(typed, name):
+        if name is not None and not sd.delete_confirmed(typed, name):
             self.toast.show_message("The name did not match - nothing changed")
             return
         spawn_worker(
             self.client, "POST", "/v1/account/delete",
             body=sd.delete_body(typed), timeout=30, parent=self,
             track=self._page_workers,
-            on_ok=lambda _d: self._signed_out_everywhere(),
+            on_ok=lambda _d: self._signed_out_everywhere(
+                "Workspace deleted - signing out"),
             on_err=lambda err: self.toast.show_message(
                 sd.save_result(status_of(err) or 0, detail_of(err))[0]))
 

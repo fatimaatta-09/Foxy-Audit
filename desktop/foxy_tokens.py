@@ -641,3 +641,10 @@ def paint_icon(p: QPainter, rect: QRectF, name: str, color: QColor,
             QPointF(rect.center().x(), rect.center().y() + h * 0.07),
             QPointF(rect.right() - w * 0.04, rect.top() + h * 0.04)]))
     p.restore()
+
+#: The shipped build number. EMPTY until D14 sets it at packaging time — the
+#: Settings card renders "Version unknown in this build" rather than a number
+#: nobody stamped, because an invented version is the same class of lie as
+#: invented data.
+APP_VERSION = ""
+

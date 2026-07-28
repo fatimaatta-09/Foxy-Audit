@@ -2,7 +2,8 @@
 
 The web's `#page-settings` (foxy-audit-premium.html:1546-1670), rebuilt with
 foxy_tokens: identity, password, two-factor, data & privacy, access control,
-devices, recent logins, trust badge, what-Foxy-stores, and the danger zone.
+devices, recent logins, trust badge, what-Foxy-stores, help & support and
+the danger zone.
 The admin half (team, account activity, webhooks, SSO) lands in D11b.
 
 **Not ported, on purpose:** the web's theme toggle and skin picker — the
@@ -71,6 +72,7 @@ class SettingsSections:
         right.addWidget(self._privacy())
         right.addWidget(self._devices())
         right.addWidget(self._badge())
+        right.addWidget(self._logins())
         right.addWidget(self._stores())
         right.addStretch()
         row.addLayout(left, 1)
@@ -352,6 +354,20 @@ class SettingsSections:
         lay.addWidget(o.badge_link)
         return card
 
+    def _logins(self) -> QWidget:
+        """Recent sign-ins for the workspace - admin-only on the server, so a
+        member gets the honest notice instead of a failed request."""
+        o = self.o
+        card, lay = _card()
+        lay.addWidget(_label("Recent logins", size=12, bold=True))
+        o.login_rows = QVBoxLayout()
+        o.login_rows.setSpacing(0)
+        lay.addLayout(o.login_rows)
+        o.login_rows_strip = StatusStrip(compact=True)
+        o.login_rows_strip.retry.connect(lambda: o.refresh_login_history())
+        lay.addWidget(o.login_rows_strip)
+        return card
+
     def _stores(self) -> QWidget:
         card, lay = _card()
         lay.addWidget(_label(sd.STORES_TITLE, size=12, bold=True))
@@ -364,6 +380,19 @@ class SettingsSections:
                              colour=OK_GREEN))
         lay.addWidget(_label(sd.DESKTOP_CARD[1], size=10.5,
                              colour=WEB["muted"], wrap=True))
+        from foxy_tokens import APP_VERSION
+        lay.addWidget(_label(sd.desktop_version_line(APP_VERSION), size=10,
+                             mono=True, colour=WEB["muted"]))
+        lay.addWidget(_divider())
+        lay.addWidget(_label(sd.HELP_TITLE, size=11, bold=True))
+        for text, href in sd.HELP_LINES:
+            link = QLabel(f'<a href="{href}" style="color:{WEB["fox2"]};">'
+                          f'{text} \u2197</a>')
+            link.setOpenExternalLinks(True)
+            link.setStyleSheet(
+                f"font-family: {chr(39)}{pick_font('disp')}{chr(39)};"
+                f" font-size: 11px; background: transparent;")
+            lay.addWidget(link)
         return card
 
     # ── danger zone ─────────────────────────────────────────────────────────
@@ -480,7 +509,7 @@ class ConfirmNameDialog(QDialog):
     typed name matches — so the gate cannot be passed by reflex.
     """
 
-    def __init__(self, workspace: str, parent=None):
+    def __init__(self, workspace: str | None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(sd.DELETE_TITLE)
         self.setModal(True)
@@ -495,6 +524,13 @@ class ConfirmNameDialog(QDialog):
                              colour=WEB["ink2"], wrap=True))
         lay.addWidget(_label(sd.DELETE_PROMPT, size=10.5,
                              colour=WEB["muted"], wrap=True))
+        if workspace is None:
+            # `_org_name` comes from /v1/health, which is Bearer-only, so a
+            # session-only user has no name to match against. Matching locally
+            # there made the button impossible to enable; the server compares
+            # it anyway (account.py:266), so it decides.
+            lay.addWidget(_label(sd.DELETE_UNKNOWN_NAME, size=10.5,
+                                 colour=WARN_AMBER, wrap=True))
         self.field = QLineEdit()
         self.field.setPlaceholderText(workspace or "workspace name")
         self.field.setAccessibleName("Workspace name, to confirm deletion")
@@ -525,7 +561,43 @@ class ConfirmNameDialog(QDialog):
         self.field.textChanged.connect(self._sync)
 
     def _sync(self, text: str):
-        self.confirm.setEnabled(sd.delete_confirmed(text, self._workspace))
+        if self._workspace is None:
+            self.confirm.setEnabled(bool((text or "").strip()))
+        else:
+            self.confirm.setEnabled(sd.delete_confirmed(text, self._workspace))
 
     def typed(self) -> str:
         return self.field.text().strip()
+
+
+def login_row(row: dict) -> QWidget:
+    """One sign-in attempt. A FAILURE is the reason this list exists, so it is
+    named and toned, never rendered like a success in a different colour."""
+    frame = QFrame()
+    frame.setObjectName("loginRow")
+    frame.setStyleSheet(
+        f"QFrame#loginRow {{ background: transparent; border: none;"
+        f" border-bottom: 2px solid {WEB['bc']}; }}")
+    lay = QHBoxLayout(frame)
+    lay.setContentsMargins(2, 8, 2, 8)
+    lay.setSpacing(10)
+    col = QVBoxLayout()
+    col.setSpacing(2)
+    who = _label(row["email"], size=11, bold=True)
+    who.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    col.addWidget(who)
+    from console_chrome import local_datetime
+    meta = " \u00b7 ".join(p for p in (row["ip"], local_datetime(row["when"]))
+                       if p)
+    col.addWidget(_label(meta, size=9.5, mono=True, colour=WEB["muted"]))
+    lay.addLayout(col, 1)
+    colour = OK_GREEN if row["success"] else BAD_RED
+    chip = QLabel(row["outcome"].upper())
+    chip.setObjectName("loginChip")
+    chip.setStyleSheet(
+        f"QLabel#loginChip {{ color: {colour}; background: {WEB['surf3']};"
+        f" border: 1.5px solid {colour}; border-radius: 10px;"
+        f" padding: 2px 8px; font-family: {chr(39)}{pick_font('mono')}{chr(39)};"
+        f" font-size: 9px; font-weight: 800; }}")
+    lay.addWidget(chip)
+    return frame

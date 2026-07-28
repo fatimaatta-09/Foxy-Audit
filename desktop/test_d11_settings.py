@@ -32,10 +32,12 @@ def test_an_unset_preference_shows_what_the_server_actually_does():
     values = sd.preference_values(None)
     assert values["notify_breach_alerts"] is True
     assert values["notify_weekly_digest"] is True
-    assert values["notify_security_alerts"] is True
     assert values["notify_key_rotation_reminders"] is False
     assert values["hide_sensitive_metadata"] is False
     assert values["notify_product_updates"] is False
+    # …and this one follows the WEB, whose checkbox is unchecked when the key
+    # is unset. Showing it ON here made one account read two ways.
+    assert values["notify_security_alerts"] is False
 
 
 def test_an_explicit_false_beats_the_default():
@@ -331,3 +333,130 @@ def test_the_desktop_card_replaces_the_download_prompt(console):
     # …and neither of the two things the desktop deliberately does not port
     assert not any("theme" in b or "skin" in b for b in labels)
     assert "theme" not in text.lower() and "skin picker" not in text.lower()
+
+
+# ══ TASK 016 · the three blockers, each previously untested ═════════════════
+def test_logging_out_everywhere_actually_signs_out(console, monkeypatch):
+    """It cleared the cookie and toasted, so the console kept rendering as
+    signed in. The real path is `sign_out_requested` -> omni_fox.sign_out()."""
+    import dashboard as dashboard_mod
+    monkeypatch.setattr(dashboard_mod, "spawn_worker", lambda *a, **k: None)
+    console._signed_in = True
+    emitted = []
+    console.sign_out_requested.connect(lambda: emitted.append(True))
+
+    console._signed_out_everywhere()
+    assert console._signed_in is False
+    assert console.user_val.text() == "not signed in"
+    assert emitted == [True], "nothing asked the app to show the login window"
+
+
+def test_deleting_the_workspace_signs_out_too(console, monkeypatch):
+    """After a delete the workspace no longer exists — continuing to render it
+    is the worst version of this bug."""
+    import dashboard as dashboard_mod
+    sent = {}
+
+    def fake(client, method, path, **kw):
+        sent["path"] = path
+        sent["body"] = kw.get("body")
+        kw["on_ok"]({})                       # the server accepted it
+        return None
+
+    monkeypatch.setattr(dashboard_mod, "spawn_worker", fake)
+    monkeypatch.setattr("settings_page.ConfirmNameDialog.exec", lambda self: 1)
+    monkeypatch.setattr("settings_page.ConfirmNameDialog.typed",
+                        lambda self: "Acme Corp")
+    console._org_name = "Acme Corp"
+    console._signed_in = True
+    emitted = []
+    console.sign_out_requested.connect(lambda: emitted.append(True))
+
+    console.delete_workspace()
+    assert sent["path"] == "/v1/account/delete"
+    assert sent["body"] == {"confirm_name": "Acme Corp"}
+    assert console._signed_in is False and emitted == [True]
+
+
+def test_a_session_only_user_can_still_confirm_the_delete(console):
+    """`_org_name` comes from /v1/health, which is Bearer-only — so an
+    email-and-password session has no name, `delete_confirmed(typed, "")` was
+    mathematically impossible, and the button could never enable. The server
+    compares it anyway (account.py:266), so it decides."""
+    from settings_page import ConfirmNameDialog
+    unknown = ConfirmNameDialog(None, console)
+    assert not unknown.confirm.isEnabled()
+    unknown.field.setText("Acme Corp")
+    assert unknown.confirm.isEnabled(), (
+        "a session-only user could never confirm the delete")
+    text = " ".join(lbl.text() for lbl in unknown.findChildren(type(console.mfa_state)))
+    assert "checked by the server" in text, "the dialog must say why"
+    unknown.deleteLater()
+
+    known = ConfirmNameDialog("Acme Corp", console)
+    known.field.setText("wrong")
+    assert not known.confirm.isEnabled()      # still matched live when known
+    known.deleteLater()
+
+
+def test_recent_logins_is_built_and_admin_gated(console, monkeypatch):
+    """The docstring claimed this card existed; it did not. Failures are
+    named, not just coloured."""
+    import dashboard as dashboard_mod
+    from panel_state import PanelState
+    monkeypatch.setattr(dashboard_mod, "spawn_worker", lambda *a, **k: None)
+    assert hasattr(console, "login_rows") and hasattr(console, "login_rows_strip")
+
+    console._on_login_history([
+        {"email": "ada@acme.co", "ip": "203.0.113.4", "success": True,
+         "created_at": "2026-07-28T09:00:00Z"},
+        {"email": "mallory@evil.co", "ip": "198.51.100.9", "success": False,
+         "created_at": "2026-07-28T08:00:00Z"}])
+    assert console.login_rows.count() == 2
+    rows = sd.login_rows([{"email": "x", "success": False}])
+    assert rows[0]["outcome"] == "failed" and rows[0]["tone"] == "bad"
+
+    console._on_login_history(None, ok=False)
+    assert console.login_rows_strip.state() is PanelState.ERROR
+
+    # a member is told, not shown an error they cannot act on
+    console.client.http._jar.clear()
+    console._role = "member"
+    console.refresh_login_history()
+    assert console.login_rows_strip.state() is PanelState.EMPTY
+    assert "admins" in console.login_rows_strip.body.text()
+
+
+def test_the_badge_button_does_not_offer_what_the_endpoint_cannot_do(console):
+    """POST /v1/account/badge mints OR returns the existing token
+    (account.py:298-306) — it never regenerates."""
+    console._on_badge({"token": "abc123"})
+    assert "regenerate" not in console.badge_btn.text().lower()
+    assert not console.badge_btn.isEnabled()
+    console._on_badge(None)
+    assert console.badge_btn.isEnabled()
+
+
+def test_the_badge_reads_the_key_the_server_actually_sends(console):
+    """`url` is what the route returns; reading `svg_url` worked only because
+    the fallback happened to build the same string."""
+    view = sd.badge_view({"token": "t", "url": "https://cdn.example/b.svg"},
+                         "https://app.example.com")
+    assert view["svg_url"] == "https://cdn.example/b.svg"
+
+
+def test_an_unconfirmed_toggle_says_so(console, monkeypatch):
+    """Save failed AND the corrective re-read failed: the switch on screen is
+    a value nobody confirmed, so the row says that rather than looking settled."""
+    row = console.pref_rows["notify_product_updates"]
+    console._preference_unknown("notify_product_updates")
+    assert not row.note.isHidden()
+    assert row.note.text() == sd.PREF_UNCONFIRMED
+    console._on_preferences({"preferences": {}})
+    assert row.note.isHidden(), "a confirmed read must clear the warning"
+
+
+def test_the_version_line_never_invents_a_build_number():
+    assert sd.desktop_version_line("1.1.4") == "Version 1.1.4"
+    assert "unknown" in sd.desktop_version_line("")
+    assert "unknown" in sd.desktop_version_line(None)

@@ -407,6 +407,11 @@ class SafeguardRow(QFrame):
         chip_row.addWidget(chip)
         chip_row.addStretch()
         col.addLayout(chip_row)
+        # An optional line under the description - D11 uses it to say a switch
+        # shows a value the server never confirmed.
+        self.note = _label("", size=10, colour=BAD_RED, wrap=True)
+        self.note.hide()
+        col.addWidget(self.note)
         lay.addLayout(col, 1)
 
         self.toggle = QPushButton()
@@ -420,6 +425,10 @@ class SafeguardRow(QFrame):
         self.toggle.toggled.connect(self._sync)
         lay.addWidget(self.toggle, 0, Qt.AlignmentFlag.AlignVCenter)
         self._sync(False)
+
+    def set_note(self, text: str, tone: str = "bad"):
+        self.note.setText(text)
+        self.note.setVisible(bool(text))
 
     def _sync(self, on: bool):
         self.toggle.setText("ON" if on else "OFF")

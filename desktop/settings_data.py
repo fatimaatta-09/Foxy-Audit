@@ -66,8 +66,11 @@ PREFERENCES = (
      "mask chain heads and org ids until you reveal them", False),
     ("notify_product_updates", "Product updates",
      "occasional email about new features", False),
+    # The web's checkbox is unchecked when the key is unset (html:prefNotify*
+    # set no `checked`), so showing ON here made one account read two ways.
+    # "Web wins" - the deliverer treats absent as opt-in for this one anyway.
     ("notify_security_alerts", "Security alerts",
-     "email about security-relevant account events", True),
+     "email about security-relevant account events", False),
 )
 
 PREF_KEYS = tuple(key for key, _t, _d, _v in PREFERENCES)
@@ -219,7 +222,10 @@ def badge_view(data: dict | None, base_url: str = "") -> dict:
     if not token:
         return blank
     root = (base_url or "").rstrip("/")
-    svg = str(d.get("svg_url") or (f"{root}/v1/badge/{token}.svg" if root else ""))
+    # `url` is the key the route actually returns; `svg_url` was a guess that
+    # happened to work only because the fallback built the same string.
+    svg = str(d.get("url") or d.get("svg_url")
+              or (f"{root}/v1/badge/{token}.svg" if root else ""))
     verify = str(d.get("verify_url") or (f"{root}/verify/{token}" if root else ""))
     if not svg or not verify:
         return blank            # no backend configured ⇒ no URL to promise
@@ -252,6 +258,14 @@ DELETE_WARNING = (
     "retained and support can reverse this, but nobody can sign in or capture "
     "anything until they do.")
 DELETE_PROMPT = "Type the workspace name to confirm:"
+
+#: Shown when this session has no way to know the workspace name. /v1/health
+#: carries it and is Bearer-only, so an email-and-password session simply does
+#: not have it — the server compares the typed name anyway (account.py:266),
+#: so it decides rather than us blocking the button forever.
+DELETE_UNKNOWN_NAME = (
+    "This session cannot look up the workspace name, so it will be checked by "
+    "the server. Type it exactly as it appears on your account.")
 
 
 def delete_confirmed(typed: str | None, name: str | None) -> bool:
@@ -298,3 +312,50 @@ def badge_link_html(badge: dict, colour: str) -> str:
     if not url:
         return ""
     return f'<a href="{url}" style="color:{escape(colour, quote=True)};">{url}</a>'
+
+
+#: Shown on a preference row when its save failed AND the corrective re-read
+#: also failed, so the switch on screen is a value nobody confirmed.
+PREF_UNCONFIRMED = "not saved - this switch may not match your account"
+
+
+# -- recent logins (admin-only: auth_human.py:437) ---------------------------
+LOGINS_EMPTY = ("No sign-ins recorded",
+                "Successful and failed sign-in attempts appear here.")
+LOGINS_MEMBER = ("Sign-in history for the workspace is visible to admins. "
+                 "Your own devices are listed above.")
+
+
+def login_rows(data) -> list[dict]:
+    """`GET /v1/auth/login-history` - newest first, as the server returns it.
+
+    A FAILED attempt is the point of this list, so it is toned and labelled,
+    never quietly rendered like a success.
+    """
+    rows = []
+    for item in dict_rows(data):
+        ok = bool(item.get("success"))
+        rows.append({
+            "email": str(item.get("email") or MISSING),
+            "ip": str(item.get("ip") or ""),
+            "agent": str(item.get("user_agent") or "")[:70],
+            "success": ok,
+            "outcome": "signed in" if ok else "failed",
+            "tone": "ok" if ok else "bad",
+            "when": item.get("created_at"),
+        })
+    return rows
+
+
+HELP_TITLE = "Help & support"
+HELP_LINES = (
+    ("Documentation", "https://foxyaudit.tech/docs"),
+    ("Email support", "mailto:support@foxyaudit.tech"),
+)
+
+
+def desktop_version_line(version: str | None) -> str:
+    """The web offers a download; we say which build you are already running.
+    An unknown version says so rather than inventing one."""
+    text = (version or "").strip()
+    return f"Version {text}" if text else "Version unknown in this build"
