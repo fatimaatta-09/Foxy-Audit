@@ -122,16 +122,23 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     # let one tenant's login silently resolve to another tenant's account.
     candidates = db.execute(select(User).where(User.email == email)).scalars().all()
     disabled_match = False
+    blocked_org: str | None = None
     for user in candidates:
         if bcrypt.checkpw(pw, user.password_hash.encode("utf-8")):
             if user.disabled:
                 disabled_match = True
                 continue                      # keep looking for an active account
             org = db.get(Organization, user.org_id)
+            # A dead or suspended workspace must NOT shadow a healthy account on the
+            # same address: remember why it was refused and keep scanning, exactly as
+            # the `disabled` branch above does. Raising here locked a user out of a
+            # good account because an unrelated stale org happened to match first.
             if org is not None and org.deleted_at is not None:
-                raise HTTPException(status_code=403, detail="This workspace has been deleted")
+                blocked_org = blocked_org or "This workspace has been deleted"
+                continue
             if org is not None and org.suspended:
-                raise HTTPException(status_code=403, detail="This workspace is suspended")
+                blocked_org = blocked_org or "This workspace is suspended"
+                continue
             # Opt-in email-OTP MFA: email a code and stop — no session until it's
             # verified at /v1/auth/mfa. (Phase 5 · 5B.5)
             if user.mfa_enabled:
@@ -142,6 +149,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
     if not candidates:
         bcrypt.checkpw(pw, _DUMMY_HASH)       # equalize timing vs. the valid-email path
+    if blocked_org:
+        raise HTTPException(status_code=403, detail=blocked_org)
     if disabled_match:
         raise HTTPException(status_code=403, detail="Account disabled")
     login_history.record(db, request, email, False)

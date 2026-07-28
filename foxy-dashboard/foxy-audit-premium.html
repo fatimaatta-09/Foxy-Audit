@@ -1560,9 +1560,21 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
           <div class="flabel">org id</div><input class="cin" id="setOrg" readonly style="opacity:.6;">
           <div style="border-top:2px dashed var(--line);margin:16px 0 4px;"></div>
           <div style="font-weight:700;font-size:12px;margin-bottom:2px;">Change password</div>
-          <div class="flabel" style="margin-top:8px;">current password</div><input class="cin" id="setCurPw" type="password" autocomplete="current-password">
-          <div class="flabel">new password</div><input class="cin" id="setNewPw" type="password" autocomplete="new-password">
-          <button class="btn pri" onclick="changePassword()">change password</button>
+          <!-- A REAL form, submitted normally: browser password managers only offer to update a
+               stored credential on a form submission (or an explicit navigator.credentials.store).
+               An onclick+fetch fires neither, so the manager kept re-filling the OLD password at
+               the login screen and locked people out of accounts they had just changed. -->
+          <form id="pwForm" autocomplete="on">
+            <!-- The manager needs a username in the same form to know which credential to update.
+                 Off-screen rather than display:none, which password managers skip. -->
+            <input id="pwUser" autocomplete="username" readonly tabindex="-1" aria-hidden="true"
+                   style="position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;">
+            <div class="flabel" style="margin-top:8px;">current password</div><input class="cin" id="setCurPw" type="password" autocomplete="current-password" required>
+            <div class="flabel">new password <span style="color:var(--muted);font-weight:400;">(at least 8 characters)</span></div><input class="cin" id="setNewPw" type="password" autocomplete="new-password" minlength="8" required>
+            <div class="flabel">confirm new password</div><input class="cin" id="setNewPw2" type="password" autocomplete="new-password" minlength="8" required>
+            <div id="setPwStatus" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:5px;min-height:12px;" role="status" aria-live="polite"></div>
+            <button class="btn pri" type="submit">change password</button>
+          </form>
         </div>
         <div>
           <div class="clay pad" style="margin-bottom:14px;">
@@ -2895,6 +2907,7 @@ async function loadLoginHistory(){
   window.loadSettings=async function(){
     try{ const r=await api('/v1/auth/me'); if(r.ok){ const me=await r.json();
       if($('setEmail'))$('setEmail').value=me.email||'';
+      if($('pwUser'))$('pwUser').value=me.email||'';   // the credential the manager must update
       if($('setRole'))$('setRole').value=me.role||'';
       if($('setOrg'))$('setOrg').value=me.org_id||'';
       if($('setName'))$('setName').value=me.full_name||'';
@@ -3161,14 +3174,34 @@ async function loadLoginHistory(){
       if(inp)inp.value=''; toast('Two-factor turned off'); loadSettings();
     }catch(e){ toast('Could not reach the server'); }
   };
+  // Tell the browser's password manager the credential changed. Without this the manager
+  // keeps the old password and re-fills it at the login screen — the lockout this fixes.
+  // Chromium implements PasswordCredential; elsewhere the form submit below is the signal.
+  async function _storeCredential(id,password){
+    try{
+      if(!window.PasswordCredential||!navigator.credentials||!id)return;
+      await navigator.credentials.store(new window.PasswordCredential({id:id,password:password}));
+    }catch(e){ /* manager declined or unsupported — the form submit still signals it */ }
+  }
   window.changePassword=async function(){
-    const cur=$('setCurPw'), nw=$('setNewPw'); if(!cur||!nw)return;
-    if(!cur.value||!nw.value){ toast('Enter current and new password'); return; }
+    const cur=$('setCurPw'), nw=$('setNewPw'), nw2=$('setNewPw2'), st=$('setPwStatus');
+    if(!cur||!nw||!nw2)return;
+    const say=(m,bad)=>{ if(st){ st.textContent=m; st.style.color=bad?'var(--breach-bg)':'var(--muted)'; } };
+    say('');
+    if(!cur.value||!nw.value){ say('Enter your current and new password',true); return; }
+    if(nw.value.length<8){ say('New password must be at least 8 characters',true); nw.focus(); return; }
+    // Catch the typo here. There is no way back from a mistyped password you only typed once.
+    if(nw.value!==nw2.value){ say('The two new passwords do not match',true); nw2.focus(); return; }
     try{ const r=await api('/v1/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:cur.value,new_password:nw.value})});
-      if(!r.ok){ toast('Change failed — '+await errText(r)); return; }
-      cur.value=''; nw.value=''; toast('Password changed');
-    }catch(e){ toast('Could not reach the server'); }
+      if(!r.ok){ const m=await errText(r); say('Change failed — '+m,true); toast('Change failed — '+m); return; }
+      await _storeCredential(($('pwUser')||{}).value||($('setEmail')||{}).value||'',nw.value);
+      cur.value=''; nw.value=''; nw2.value='';
+      say('Password changed. Make sure your password manager saved the new one.');
+      toast('Password changed');
+    }catch(e){ say('Could not reach the server',true); toast('Could not reach the server'); }
   };
+  const _pwForm=$('pwForm');
+  if(_pwForm)_pwForm.addEventListener('submit',function(e){ e.preventDefault(); window.changePassword(); });
 
   // ── lazy-load each page's live data on navigation ──
   const _go=window.go;
