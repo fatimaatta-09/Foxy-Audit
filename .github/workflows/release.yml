@@ -296,3 +296,66 @@ jobs:
           source: "out/*"
           target: "/home/devops/foxy-downloads/"
           strip_components: 1
+
+  # ── Publish a GitHub Release with all three desktop builds ─────────────────
+  # The VM copy above serves Windows + Linux under stable names, because the
+  # sale page's download buttons link straight to them. macOS has no such
+  # button and no VM copy, so before this job the .app was built on every
+  # release and then thrown away — it survived only as a 90-day workflow
+  # artifact that needs a GitHub login to reach. A Mac user had nothing to
+  # click. This attaches all three (plus the wheel) to the tag instead, which
+  # also gives the tag a real release page.
+  #
+  # Assets are versioned here, unlike the VM copies: a release page is an
+  # archive, so `FoxyAudit-1.2.0-Setup.exe` is the useful name, while the
+  # download buttons need the stable one that never changes.
+  publish-github-release:
+    needs: [build-sdk, build-desktop]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Stage release assets under versioned names
+        run: |
+          set -euo pipefail
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p rel
+          cp artifacts/FoxyAudit-Windows/*.exe      "rel/FoxyAudit-${V}-Setup.exe"
+          cp artifacts/FoxyAudit-Linux/*.AppImage   "rel/FoxyAudit-${V}-x86_64.AppImage"
+          cp artifacts/FoxyAudit-macOS/*.zip        "rel/FoxyAudit-${V}-macos.zip"
+          cp artifacts/sdk-dist/*                    rel/
+          ls -la rel
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${GITHUB_REF_NAME#v}"
+          NOTES=$(cat <<NOTE
+          Desktop companion and SDK \`${V}\`.
+
+          | Platform | Asset |
+          |---|---|
+          | Windows | \`FoxyAudit-${V}-Setup.exe\` |
+          | Linux | \`FoxyAudit-${V}-x86_64.AppImage\` |
+          | macOS | \`FoxyAudit-${V}-macos.zip\` |
+
+          Windows and Linux are also served under stable names at
+          https://foxyaudit.tech/download/ .
+
+          **macOS is unsigned and not notarized.** Gatekeeper will refuse to open
+          it on first launch: right-click the app and choose Open, then confirm.
+          Signing needs an Apple Developer ID, which this build does not have.
+
+          The SDK is on PyPI: \`pip install foxy-audit==${V}\`
+          NOTE
+          )
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" rel/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" rel/* \
+              --title "Foxy Audit ${GITHUB_REF_NAME}" \
+              --notes "$NOTES"
+          fi
