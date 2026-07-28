@@ -15,7 +15,10 @@ import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+import hashlib
+import uuid as _uuid
+
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
@@ -24,10 +27,12 @@ from sqlalchemy.orm import Session
 from ..anchor import latest_anchor
 from ..auth import resolve_org
 from ..chain import GENESIS_HASH, compute_chain_hash
+from ..config import get_settings
 from ..db import get_db
 from ..evidence_coverage import calculate_capture_coverage
-from ..models import AuditLog, Organization
+from ..models import AuditLog, Organization, User
 from ..policy_snapshot import policy_snapshot_hash
+from .badge import _explorer_tx
 
 log = logging.getLogger("foxy.passport")
 router = APIRouter()
@@ -41,8 +46,37 @@ _jinja_env = Environment(
 )
 
 
+def _issued_to(request: Request, org: Organization, db: Session) -> str:
+    """Who asked for this document — an auditor's first question about a report.
+
+    Session-authenticated means a named person clicked Generate; a Bearer key
+    means a machine produced it. Both are true answers and neither is guessed: if
+    the session user cannot be resolved we say so rather than naming somebody."""
+    try:
+        uid = request.session.get("user_id")
+    except Exception:                       # noqa: BLE001 — no session middleware
+        uid = None
+    if uid:
+        user = db.get(User, _uuid.UUID(str(uid)))
+        if user is not None and user.org_id == org.id:
+            return user.email
+        return "Dashboard session"
+    return "API key (SDK)"
+
+
+def _document_id(org_id: str, date_from: str, date_to: str, root_hash: str) -> str:
+    """A quotable reference for this document, derived from what it reports.
+
+    Deliberately excludes the generation timestamp: the same period over the same
+    chain is the same document and gets the same id, so two copies can be compared
+    by reference rather than by eye. Derived, never random — §12.6."""
+    material = f"{org_id}|{date_from}|{date_to}|{root_hash}".encode("utf-8")
+    return "FA-" + hashlib.sha256(material).hexdigest()[:12].upper()
+
+
 @router.post("/v1/passport")
 def generate_passport(
+    request: Request,
     org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
     days: int = Query(default=30, ge=1, le=365),
@@ -210,15 +244,36 @@ def generate_passport(
             if anchor.anchored_at else None,
         }
 
+    # ── Independent-verification routes (§12.4) ──────────────────────────
+    # Only URLs that genuinely exist and genuinely work for a third party. The
+    # public status page is the org's own badge token — omitted entirely when the
+    # workspace has not published one, rather than printing a link that 404s.
+    settings = get_settings()
+    site_root = (settings.dashboard_url or "").rsplit("/dashboard", 1)[0]
+    verify_url = (f"{site_root}/verify/{org.public_badge_token}"
+                  if getattr(org, "public_badge_token", None) and site_root else None)
+    # An anchored root is the ONE hash in this document a third party can check
+    # without any cooperation from us or the customer.
+    explorer_url = (_explorer_tx(anchor.chain, anchor.tx_hash)
+                    if anchor is not None and anchor.status == "confirmed" else None)
+
+    root = rows[-1].chain_hash if rows else GENESIS_HASH
+    generated_at = datetime.now(timezone.utc)
+
     # ── Render ───────────────────────────────────────────────────────────
     template = _jinja_env.get_template("compliance_passport.html")
     html_string = template.render(
+        document_id=_document_id(str(org.id), start.strftime("%Y-%m-%d"),
+                                 (end_day or now).strftime("%Y-%m-%d"), root),
+        generated_by=_issued_to(request, org, db),
+        verify_url=verify_url,
+        explorer_url=explorer_url,
         org_name=org.name,
         org_id=str(org.id),
         plan_tier=getattr(org, "plan_tier", None),
         date_from=start.strftime("%Y-%m-%d"),
         date_to=(end_day or now).strftime("%Y-%m-%d"),
-        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        generated_at=generated_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
         total_events=total_events,
         compliant_events=compliant_events,
         breach_events=breach_events,
@@ -238,7 +293,7 @@ def generate_passport(
         broken_seq=broken_seq,
         first_seq=rows[0].seq if rows else "—",
         last_seq=rows[-1].seq if rows else "—",
-        root_hash=rows[-1].chain_hash if rows else GENESIS_HASH,
+        root_hash=root,
         genesis_hash=GENESIS_HASH,
         anchor=anchor_ctx,
         coverage=coverage,

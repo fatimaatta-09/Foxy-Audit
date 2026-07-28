@@ -1,397 +1,527 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Foxy Audit — Compliance Passport</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page { size: A4; margin: 2cm; }
-        body {
-            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-            color: #1a1a2e; background: #ffffff; line-height: 1.6;
-        }
-        .passport {
-            max-width: 800px; margin: 0 auto; padding: 40px;
-        }
-        /* ── Header ────────────────────────────────────── */
-        .header {
-            display: flex; justify-content: space-between; align-items: flex-start;
-            border-bottom: 3px solid #1a1a2e; padding-bottom: 24px; margin-bottom: 32px;
-        }
-        .header-left h1 {
-            font-size: 28px; font-weight: 800; letter-spacing: -0.5px;
-            color: #1a1a2e;
-        }
-        .header-left .subtitle {
-            font-size: 13px; color: #6b7280; font-weight: 500;
-            letter-spacing: 1.5px; text-transform: uppercase; margin-top: 4px;
-        }
-        .badge {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 8px 16px; border-radius: 8px; font-weight: 700;
-            font-size: 14px; letter-spacing: 0.5px;
-        }
-        .badge-pass {
-            background: #dcfce7; color: #166534; border: 2px solid #22c55e;
-        }
-        .badge-fail {
-            background: #fee2e2; color: #991b1b; border: 2px solid #ef4444;
-        }
-        .badge-neutral {
-            background: #fef3c7; color: #92400e; border: 2px solid #f59e0b;
-        }
-        /* ── Section ───────────────────────────────────── */
-        .section {
-            margin-bottom: 28px;
-        }
-        .section h2 {
-            font-size: 14px; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 1.5px; color: #6b7280; margin-bottom: 12px;
-            border-bottom: 1px solid #e5e7eb; padding-bottom: 6px;
-        }
-        /* ── Key-value grid ────────────────────────────── */
-        .kv-grid {
-            display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px;
-        }
-        .kv-grid dt {
-            font-weight: 600; color: #374151; font-size: 13px;
-        }
-        .kv-grid dd {
-            font-family: 'Consolas', 'SF Mono', monospace; font-size: 13px;
-            color: #1a1a2e; word-break: break-all;
-        }
-        /* ── Stats cards ───────────────────────────────── */
-        .stats {
-            display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-            margin-bottom: 24px;
-        }
-        .stat-card {
-            background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-            padding: 16px; text-align: center;
-        }
-        .stat-card .value {
-            font-size: 28px; font-weight: 800; color: #1a1a2e;
-        }
-        .stat-card .label {
-            font-size: 11px; font-weight: 600; text-transform: uppercase;
-            letter-spacing: 1px; color: #6b7280; margin-top: 4px;
-        }
-        /* ── Policy breakdown table ────────────────────── */
-        table {
-            width: 100%; border-collapse: collapse; font-size: 13px;
-        }
-        th, td {
-            text-align: left; padding: 10px 12px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        th {
-            font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
-            font-size: 11px; color: #6b7280; background: #f8fafc;
-        }
-        td.mono {
-            font-family: 'Consolas', 'SF Mono', monospace; font-size: 12px;
-        }
-        .breach-yes { color: #dc2626; font-weight: 700; }
-        .breach-no  { color: #16a34a; font-weight: 700; }
-        /* ── Footer ────────────────────────────────────── */
-        .footer {
-            margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb;
-            font-size: 11px; color: #9ca3af; text-align: center;
-        }
-        .hash-block {
-            background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px;
-            padding: 12px 16px; font-family: 'Consolas', 'SF Mono', monospace;
-            font-size: 12px; word-break: break-all; margin-top: 8px;
-            color: #334155;
-        }
-        @media print {
-            .passport { padding: 0; }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foxy Audit — Compliance Passport {{ document_id }}</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Compliance Passport (P2 §12).
+
+   This is handed to an auditor, so it is designed as a PRINTED document, not a
+   dashboard screenshot: paper white, near-black ink, one restrained accent, and
+   a rule structure that carries the hierarchy instead of colour blocks. The dark
+   app theme is deliberately NOT ported onto paper.
+
+   It renders down TWO paths and has to hold up in both (passport.py prefers
+   weasyprint and degrades to HTML when the native libs are absent, which is the
+   documented production posture):
+
+     · PDF  — @page margin boxes give a running header and "Page n of m".
+     · HTML — @page is inert. Nothing here depends on pagination to make sense;
+              the cover is a masthead that flows, and the page-number line is
+              print-only so the HTML never shows an empty "Page  of ".
+
+   Font stacks all terminate in a generic family, because a weasyprint container
+   may have almost no fonts installed.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --ink:#211f1c;          /* P1's light-theme ink — warm near-black, not blue-black */
+  --ink-2:#4f4942;
+  --muted:#6a6158;        /* clears 4.5:1 on white */
+  --rule:#d8d2cc;
+  --rule-strong:#211f1c;
+  --paper:#ffffff;
+  --wash:#f7f5f3;
+  --fox:#f05700;          /* P1's light-theme accent; the only colour on the page */
+  --foxink:#1a0900;
+  --ok:#107435;
+  --bad:#c42020;
+  --warn:#8c5a06;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+
+@page{
+  size:A4;
+  margin:22mm 18mm 18mm;
+  @top-left{
+    content:"Foxy Audit — Compliance Passport";
+    font-family:Georgia,'Times New Roman',serif; font-size:8pt; color:#6a6158;
+  }
+  @top-right{
+    content:"{{ document_id }}";
+    font-family:'DejaVu Sans Mono',Consolas,monospace; font-size:8pt; color:#6a6158;
+  }
+  @bottom-left{
+    content:"{{ org_name }} · {{ date_from }} to {{ date_to }}";
+    font-family:Georgia,'Times New Roman',serif; font-size:8pt; color:#6a6158;
+  }
+  @bottom-right{
+    content:"Page " counter(page) " of " counter(pages);
+    font-family:Georgia,'Times New Roman',serif; font-size:8pt; color:#6a6158;
+  }
+}
+/* The cover carries its own identity block, so it does not repeat the running
+   header. §12.5 */
+@page :first{
+  margin:20mm 18mm 18mm;
+  @top-left{content:none} @top-right{content:none}
+  @bottom-left{content:none} @bottom-right{content:none}
+}
+
+body{
+  font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+  color:var(--ink); background:var(--paper);
+  font-size:10pt; line-height:1.55;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact;
+}
+.sheet{max-width:186mm;margin:0 auto;padding:14mm 10mm;}
+@media print{ .sheet{max-width:none;margin:0;padding:0;} }
+
+/* ── brand ─────────────────────────────────────────────────────────────── */
+.brand{display:flex;align-items:center;gap:10px;}
+.brand svg{display:block;flex:0 0 auto;}
+.brand .wordmark{
+  font-family:Georgia,'Times New Roman',serif;
+  font-size:15pt;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+}
+.brand .rule{font-size:7.5pt;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-top:1px;}
+
+/* ── cover ─────────────────────────────────────────────────────────────── */
+/* In the HTML branch there is no page break, so the cover needs a real gap or it
+   runs straight into section 01. In print the break makes the margin moot. */
+.cover{page-break-after:always;margin-bottom:16mm;}
+@media print{ .cover{margin-bottom:0;} }
+.cover-head{border-bottom:2.5pt solid var(--rule-strong);padding-bottom:12px;}
+.cover-title{
+  font-family:Georgia,'Times New Roman',serif;
+  font-size:30pt;line-height:1.12;font-weight:700;letter-spacing:-.01em;
+  margin:26mm 0 6px;
+}
+.cover-sub{font-size:10.5pt;color:var(--ink-2);max-width:120mm;}
+.cover-meta{margin-top:16mm;display:grid;grid-template-columns:44mm 1fr;gap:7px 14px;font-size:10pt;}
+.cover-meta dt{color:var(--muted);}
+.cover-meta dd{font-weight:600;}
+.cover-foot{margin-top:14mm;padding-top:10px;border-top:1px solid var(--rule);
+  font-size:8.5pt;color:var(--muted);}
+.cover-seal{margin-top:12mm;display:flex;align-items:center;gap:14px;}
+.cover-seal .caption{font-size:8.5pt;color:var(--muted);max-width:96mm;}
+
+/* ── sections ──────────────────────────────────────────────────────────── */
+.section{margin-bottom:9mm;page-break-inside:avoid;}
+.section > h2{
+  font-family:Georgia,'Times New Roman',serif;
+  font-size:11pt;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding-bottom:4px;margin-bottom:9px;border-bottom:1.5pt solid var(--rule-strong);
+}
+.section > h2 .n{color:var(--fox);margin-right:8px;}
+.note{font-size:9pt;color:var(--ink-2);margin-bottom:9px;max-width:150mm;}
+.fine{font-size:8.5pt;color:var(--muted);margin-top:8px;max-width:150mm;}
+
+/* ── key/value ─────────────────────────────────────────────────────────── */
+dl.kv{display:grid;grid-template-columns:58mm 1fr;gap:5px 12px;font-size:9.5pt;}
+dl.kv dt{color:var(--muted);}
+dl.kv dd{font-weight:600;}
+dl.kv dd.mono,.mono{font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace;
+  font-weight:400;word-break:break-all;}
+
+/* ── figures ───────────────────────────────────────────────────────────── */
+.figures{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--rule);}
+.fig{padding:9px 10px;border-right:1px solid var(--rule);}
+.fig:last-child{border-right:0;}
+.fig .v{font-family:Georgia,'Times New Roman',serif;font-size:19pt;font-weight:700;line-height:1.1;}
+.fig .l{font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:3px;}
+
+/* ── tables ────────────────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:9pt;}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top;}
+th{font-size:7.5pt;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  background:var(--wash);border-bottom:1px solid var(--rule-strong);font-weight:700;}
+tbody tr:last-child td{border-bottom:1px solid var(--rule-strong);}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+.yes{color:var(--bad);font-weight:700;}
+.no{color:var(--ok);font-weight:700;}
+.unknown{color:var(--warn);font-weight:700;}
+
+/* ── hash blocks ───────────────────────────────────────────────────────── */
+.hash{
+  font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace;
+  font-size:8.5pt;line-height:1.5;word-break:break-all;
+  background:var(--wash);border:1px solid var(--rule);border-left:2.5pt solid var(--fox);
+  padding:7px 9px;margin-top:5px;
+}
+.hash-label{font-size:8pt;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:10px;}
+
+/* ── the seal (§12.3) ──────────────────────────────────────────────────── */
+/* Straight text only — no text-on-a-path, which weasyprint renders unreliably. */
+.seal{flex:0 0 auto;}
+
+/* ── steps ─────────────────────────────────────────────────────────────── */
+ol.steps{margin:0 0 0 16px;font-size:9.5pt;}
+ol.steps li{margin-bottom:6px;padding-left:3px;}
+code.cmd{font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace;
+  font-size:8.5pt;background:var(--wash);border:1px solid var(--rule);padding:1px 4px;}
+
+/* ── document footer ───────────────────────────────────────────────────── */
+.docfoot{margin-top:12mm;padding-top:8px;border-top:2.5pt solid var(--rule-strong);
+  font-size:8.5pt;color:var(--muted);}
+
+/* ── branch-specific ───────────────────────────────────────────────────── */
+/* Shown only in the HTML degrade, where there are no pages to number. Without
+   this the reader gets a document that looks like it lost its footer. */
+.screen-only{display:block;}
+@media print{ .screen-only{display:none;} }
+.print-only{display:none;}
+@media print{ .print-only{display:block;} }
+.screen-note{
+  max-width:186mm;margin:0 auto 10mm;padding:8px 11px;
+  background:var(--wash);border:1px solid var(--rule);border-left:2.5pt solid var(--fox);
+  font-size:8.5pt;color:var(--ink-2);
+}
+</style>
 </head>
 <body>
-<div class="passport">
 
-    <!-- Header -->
-    <div class="header">
-        <div class="header-left">
-            <h1>🦊 Foxy Audit — Compliance Passport</h1>
-            <div class="subtitle">Cryptographically Verifiable Compliance Report</div>
-        </div>
+{# ── The HTML branch has no pages, so it says so instead of showing an empty
+      page counter. Print hides this entirely. ── #}
+<div class="screen-note screen-only">
+  <strong>Web rendering.</strong> This is the browser version of Compliance Passport
+  <span class="mono">{{ document_id }}</span>. Use your browser's Print → Save as PDF for a
+  paginated copy; the content, figures and hashes are identical in both.
+</div>
+
+<div class="sheet">
+
+  {# ══════════════════════════ COVER · §12.5 ══════════════════════════ #}
+  <section class="cover">
+    <div class="cover-head">
+      {# §12.1 — the shipped mark: a rounded tile in the accent carrying a shield,
+         matching the desktop console's monogram. Inline SVG, so it is sharp in
+         print and needs no network fetch (the app is CSP-locked and weasyprint
+         renders offline). #}
+      <div class="brand">
+        <svg width="34" height="34" viewBox="0 0 32 32" role="img" aria-label="Foxy Audit">
+          <rect x="1" y="1" width="30" height="30" rx="9.5"
+                fill="{{ '#f05700' }}" stroke="#1a0900" stroke-width="2"/>
+          <path d="M16 7.4 L23.2 10.1 V15.4 C23.2 19.6 20.2 23.1 16 24.6
+                   C11.8 23.1 8.8 19.6 8.8 15.4 V10.1 Z"
+                fill="none" stroke="#1a0900" stroke-width="2"
+                stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
         <div>
-            {% if chain_verification == "verified" %}
-            <span class="badge badge-pass">REPORT CHAIN VERIFIED</span>
-            {% elif chain_verification == "failed" %}
-            <span class="badge badge-fail">REPORT CHAIN BROKEN</span>
-            {% else %}
-            <span class="badge badge-neutral">NO REPORT EVENTS</span>
-            {% endif %}
+          <div class="wordmark">Foxy Audit</div>
+          <div class="rule">Content-blind audit evidence</div>
         </div>
+      </div>
     </div>
 
-    <!-- Organization Info -->
-    <div class="section">
-        <h2>Organization</h2>
-        <dl class="kv-grid">
-            <dt>Organization</dt>   <dd>{{ org_name }}</dd>
-            <dt>Organization ID</dt><dd class="mono">{{ org_id }}</dd>
-            <dt>Report Period</dt>  <dd>{{ date_from }} — {{ date_to }}</dd>
-            <dt>Generated At</dt>   <dd>{{ generated_at }}</dd>
-            <dt>Plan Tier</dt>      <dd>{{ plan_tier or "—" }}</dd>
-        </dl>
+    <h1 class="cover-title">Compliance<br>Passport</h1>
+    <p class="cover-sub">
+      A tamper-evident record of AI activity captured for {{ org_name }} during the period below.
+      Every figure in this document is computed from the audit ledger; none is estimated.
+    </p>
+
+    {# ── §12.2 · issued-by block ── #}
+    <dl class="cover-meta">
+      <dt>Issued to</dt>        <dd>{{ org_name }}</dd>
+      <dt>Workspace ID</dt>     <dd class="mono">{{ org_id }}</dd>
+      <dt>Period covered</dt>   <dd>{{ date_from }} &nbsp;to&nbsp; {{ date_to }}</dd>
+      <dt>Generated at</dt>     <dd>{{ generated_at }}</dd>
+      <dt>Generated by</dt>     <dd>{{ generated_by }}</dd>
+      <dt>Document reference</dt><dd class="mono">{{ document_id }}</dd>
+      {% if plan_tier %}<dt>Plan</dt><dd>{{ plan_tier }}</dd>{% endif %}
+    </dl>
+
+    {# ── §12.3 · the seal. Its colour and wording follow the chain result. There
+         is no green stamp on an unverified document. ── #}
+    <div class="cover-seal">
+      {% if chain_verification == "verified" %}
+        {% set seal_col = "#107435" %}{% set seal_top = "CHAIN" %}{% set seal_mid = "VERIFIED" %}
+      {% elif chain_verification == "failed" %}
+        {% set seal_col = "#c42020" %}{% set seal_top = "CHAIN" %}{% set seal_mid = "BROKEN" %}
+      {% else %}
+        {% set seal_col = "#8c5a06" %}{% set seal_top = "NO" %}{% set seal_mid = "EVENTS" %}
+      {% endif %}
+      <svg class="seal" width="104" height="104" viewBox="0 0 120 120" role="img"
+           aria-label="Chain verification seal: {{ seal_mid }}">
+        <circle cx="60" cy="60" r="56" fill="none" stroke="{{ seal_col }}" stroke-width="2.5"/>
+        <circle cx="60" cy="60" r="49" fill="none" stroke="{{ seal_col }}" stroke-width="1"/>
+        <circle cx="60" cy="60" r="46" fill="none" stroke="{{ seal_col }}" stroke-width="0.6"
+                stroke-dasharray="2 3"/>
+        <text x="60" y="40" text-anchor="middle" fill="{{ seal_col }}"
+              font-family="Georgia,serif" font-size="10" letter-spacing="2.2">{{ seal_top }}</text>
+        <text x="60" y="63" text-anchor="middle" fill="{{ seal_col }}"
+              font-family="Georgia,serif" font-size="16" font-weight="bold"
+              letter-spacing="1.2">{{ seal_mid }}</text>
+        <line x1="30" y1="72" x2="90" y2="72" stroke="{{ seal_col }}" stroke-width="0.8"/>
+        <text x="60" y="86" text-anchor="middle" fill="{{ seal_col }}"
+              font-family="Georgia,serif" font-size="8" letter-spacing="1">SEQ {{ first_seq }}–{{ last_seq }}</text>
+        <text x="60" y="97" text-anchor="middle" fill="{{ seal_col }}"
+              font-family="Georgia,serif" font-size="7" letter-spacing="0.8">{{ date_to }}</text>
+      </svg>
+      <p class="caption">
+        The seal reports one fact: whether the hash chain covering this period
+        recomputed intact when this document was generated. It is
+        not a certification of regulatory compliance, and Foxy Audit does not issue one.
+      </p>
     </div>
 
-    <!-- Summary Stats -->
-    <div class="section">
-        <h2>Audit Summary</h2>
-        <div class="stats">
-            <div class="stat-card">
-                <div class="value">{{ total_events }}</div>
-                <div class="label">Total Events</div>
-            </div>
-            <div class="stat-card">
-                <div class="value">{{ compliant_events }}</div>
-                <div class="label">Compliant</div>
-            </div>
-            <div class="stat-card">
-                <div class="value">{{ breach_events }}</div>
-                <div class="label">Breaches</div>
-            </div>
-            <div class="stat-card">
-                <div class="value">{{ compliance_rate }}%</div>
-                <div class="label">Compliance Rate</div>
-            </div>
-        </div>
+    <div class="cover-foot">
+      Root chain hash for the period
+      <div class="hash">{{ root_hash }}</div>
     </div>
+  </section>
 
-    <!-- Host-Side Enforcement -->
-    <div class="section">
-        <h2>Host-Side Enforcement</h2>
-        <p style="font-size: 13px; color: #374151; margin-bottom: 12px;">
-            Prompts prevented from leaving the host by policy — recorded as
-            tamper-evident evidence, not observations after the fact. Blocked and
-            redacted events are counted separately from model breaches: nothing
-            unsafe was allowed to egress, so they are prevented egress — never a breach.
-        </p>
-        <dl class="kv-grid">
-            <dt>Prompts Allowed to Proceed</dt><dd>{{ allowed_events }}</dd>
-            <dt>Prompts Blocked (prevented egress)</dt><dd>{{ blocked_events }}</dd>
-            <dt>Responses Redacted</dt><dd>{{ redacted_events }}</dd>
-            <dt>Evaluator Could Not Determine</dt><dd>{{ unknown_evaluator_events }}</dd>
-        </dl>
-        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">
-            "Evaluator Could Not Determine" is an honest unknown state — the AI judge
-            returned no usable verdict (unavailable, or quarantined as self-contradictory).
-            These events are <strong>never counted as a compliant pass</strong>.
-        </p>
-        {% if policies_enforced %}
-        <table style="margin-top: 14px;">
-            <thead>
-                <tr>
-                    <th>Policy Rule Enforced</th>
-                    <th>Times Fired</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for p in policies_enforced %}
-                <tr>
-                    <td class="mono">{{ p.rule }}</td>
-                    <td>{{ p.count }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p style="font-size: 13px; color: #6b7280; margin-top: 10px;">
-            No host-side enforcement events were recorded in this report period.
-        </p>
-        {% endif %}
+  {# ══════════════════════════ AUDIT SUMMARY ══════════════════════════ #}
+  <section class="section">
+    <h2><span class="n">01</span>Audit summary</h2>
+    <div class="figures">
+      <div class="fig"><div class="v">{{ total_events }}</div><div class="l">Total events</div></div>
+      <div class="fig"><div class="v">{{ compliant_events }}</div><div class="l">Compliant</div></div>
+      <div class="fig"><div class="v">{{ breach_events }}</div><div class="l">Breaches</div></div>
+      <div class="fig"><div class="v">{{ compliance_rate }}%</div><div class="l">Compliance rate</div></div>
     </div>
+    <p class="fine">
+      Compliance rate is compliant events divided by total events over the period covered.
+      Where no events were captured it reads 100% against a total of zero — read it with the
+      total beside it, never alone.
+    </p>
+  </section>
 
-    <!-- SDK Capture Coverage -->
-    <div class="section">
-        <h2>SDK Capture Coverage</h2>
-        <p style="font-size: 13px; color: #374151; margin-bottom: 12px;">
-            {{ coverage.message }} This is evidence about the SDK reporting boundary, not a claim that every model call was observed.
-        </p>
-        <dl class="kv-grid">
-            <dt>Coverage Status</dt>
-            <dd>
-                {% if coverage.status == "verified" %}
-                <span class="breach-no">{{ coverage.status|upper }}</span>
-                {% elif coverage.status == "partial" %}
-                <span class="breach-yes">{{ coverage.status|upper }}</span>
-                {% else %}
-                <span>{{ coverage.status|upper }}</span>
-                {% endif %}
-            </dd>
-            <dt>Evidence Scope</dt>       <dd>{{ coverage.scope }}</dd>
-            <dt>Observed Events</dt>      <dd>{{ coverage.total_events }}</dd>
-            <dt>With Client Identity</dt> <dd>{{ coverage.identified_events }}</dd>
-            <dt>Without Client Identity</dt><dd>{{ coverage.events_without_client_identity }}</dd>
-            <dt>SDK Clients Reporting</dt><dd>{{ coverage.instrumented_clients }}</dd>
-            <dt>Missing Client Sequence Events</dt><dd>{{ coverage.missing_events }}</dd>
-            <dt>Duplicate Client Sequences</dt><dd>{{ coverage.duplicate_client_sequences }}</dd>
-            <dt>Report Chain Check</dt>  <dd>{{ coverage.chain_verification|upper }}</dd>
-        </dl>
-        <p style="font-size: 12px; color: #6b7280; margin-top: 12px;">
-            <strong>Evidence boundary:</strong> {{ coverage.limitations[0] }}
-        </p>
-    </div>
-
-    <!-- Policy Breakdown -->
-    <div class="section">
-        <h2>Policy Breakdown</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Policy Tag</th>
-                    <th>Events</th>
-                    <th>Breaches</th>
-                    <th>Avg. Tokens</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for p in policies %}
-                <tr>
-                    <td class="mono">{{ p.tag }}</td>
-                    <td>{{ p.count }}</td>
-                    <td>
-                        {% if p.breaches > 0 %}
-                        <span class="breach-yes">{{ p.breaches }}</span>
-                        {% else %}
-                        <span class="breach-no">0</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ p.avg_tokens }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Policy Provenance -->
-    <div class="section">
-        <h2>Policy Configuration Evidence</h2>
-        {% if policy_snapshots %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Policy Snapshot Hash</th>
-                    <th>Events</th>
-                    <th>Applied Settings</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in policy_snapshots %}
-                <tr>
-                    <td class="mono">{{ item.hash }}</td>
-                    <td>{{ item.events }}</td>
-                    <td>
-                        PII {{ "on" if item.snapshot.pii_detection else "off" }};
-                        injection {{ "on" if item.snapshot.prompt_injection else "off" }};
-                        regulated mode {{ "on" if item.snapshot.regulated_data_mode else "off" }};
-                        max tokens {{ item.snapshot.max_token_threshold }}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">
-            Each digest is canonical JSON of the safe policy fields captured with its events and is bound into the V3 chain payload.
-        </p>
-        {% else %}
-        <p style="font-size: 13px; color: #6b7280;">
-            No policy snapshots were recorded in this report period. Historical records remain verifiable, but policy provenance was introduced with V3 evidence records.
-        </p>
-        {% endif %}
-    </div>
-
-    <!-- Chain Verification -->
-    <div class="section">
-        <h2>Cryptographic Chain Verification</h2>
-        <dl class="kv-grid">
-            <dt>Chain Length</dt>     <dd>{{ total_events }} blocks</dd>
-            <dt>First Seq</dt>       <dd>{{ first_seq }}</dd>
-            <dt>Last Seq</dt>        <dd>{{ last_seq }}</dd>
-            <dt>Chain Status</dt>
-            <dd>
-                {% if chain_verification == "verified" %}
-                <span class="breach-no">INTACT - report-period hashes verified</span>
-                {% elif chain_verification == "failed" %}
-                <span class="breach-yes">BROKEN at seq {{ broken_seq }}</span>
-                {% else %}
-                <span>NOT ASSESSED - no report-period events</span>
-                {% endif %}
-            </dd>
-        </dl>
-        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">{{ chain_detail }}</p>
-        <div style="margin-top: 16px;">
-            <strong style="font-size: 12px; color: #374151;">Root Chain Hash (latest):</strong>
-            <div class="hash-block">{{ root_hash }}</div>
-        </div>
-        <div style="margin-top: 12px;">
-            <strong style="font-size: 12px; color: #374151;">Genesis Hash:</strong>
-            <div class="hash-block">{{ genesis_hash }}</div>
-        </div>
-    </div>
-
-    <!-- Public Chain Anchor -->
-    {% if anchor %}
-    <div class="section">
-        <h2>Public Chain Anchor</h2>
-        <dl class="kv-grid">
-            <dt>Public Chain</dt>     <dd>{{ anchor.chain }}</dd>
-            <dt>Status</dt>
-            <dd>
-                {% if anchor.status == "confirmed" %}
-                <span class="breach-no">CONFIRMED on-chain</span>
-                {% else %}
-                <span class="breach-yes">{{ anchor.status|upper }}</span>
-                {% endif %}
-            </dd>
-            <dt>Anchored Head Seq</dt><dd>{{ anchor.last_seq }}</dd>
-            {% if anchor.tx_hash %}<dt>Transaction</dt><dd class="mono">{{ anchor.tx_hash }}</dd>{% endif %}
-            {% if anchor.block_number is not none %}<dt>Block</dt><dd>{{ anchor.block_number }}</dd>{% endif %}
-            <dt>Anchored At</dt>      <dd>{{ anchor.anchored_at or "—" }}</dd>
-        </dl>
-        <div style="margin-top: 12px;">
-            <strong style="font-size: 12px; color: #374151;">Anchored Root Hash:</strong>
-            <div class="hash-block">{{ anchor.root_hash }}</div>
-        </div>
-        <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">
-            This root was published to a public chain, so its existence at that block is
-            independently checkable — tampering with any earlier record is detectable by a
-            third party, not only by the system operator.
-        </p>
-    </div>
+  {# ══════════════════════════ ENFORCEMENT ══════════════════════════ #}
+  <section class="section">
+    <h2><span class="n">02</span>Host-Side Enforcement</h2>
+    <p class="note">
+      Prompts prevented from leaving the host by policy — recorded as tamper-evident evidence,
+      not observations after the fact. Blocked and redacted events are counted separately from
+      model breaches: nothing unsafe was allowed to egress, so they are prevented egress, never
+      a breach.
+    </p>
+    <dl class="kv">
+      <dt>Prompts Allowed to Proceed</dt><dd>{{ allowed_events }}</dd>
+      <dt>Prompts Blocked (prevented egress)</dt><dd>{{ blocked_events }}</dd>
+      <dt>Responses Redacted</dt><dd>{{ redacted_events }}</dd>
+      <dt>Enforced in Total</dt><dd>{{ enforced_events }}</dd>
+      <dt>Evaluator Could Not Determine</dt><dd>{{ unknown_evaluator_events }}</dd>
+    </dl>
+    <p class="fine">
+      “Evaluator could not determine” is an honest unknown — the AI judge returned no usable
+      verdict (unavailable, or quarantined as self-contradictory). These events are
+      <strong>never counted as a compliant pass</strong>.
+    </p>
+    {% if policies_enforced %}
+    <table style="margin-top:9px;">
+      <thead><tr><th>Policy rule enforced</th><th class="num">Times fired</th></tr></thead>
+      <tbody>
+        {% for p in policies_enforced %}
+        <tr><td class="mono">{{ p.rule }}</td><td class="num">{{ p.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="fine">No host-side enforcement events were recorded in this report period.</p>
     {% endif %}
+  </section>
 
-    <!-- Trust Statement -->
-    <div class="section">
-        <h2>Trust Model</h2>
-        <p style="font-size: 13px; color: #374151;">
-            Every audit event in this report is anchored to the event before it via a
-            sequential SHA-256 hash chain:
-            <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 12px;">
-                H<sub>n</sub> = SHA256(data<sub>n</sub> ‖ H<sub>n-1</sub>)
-            </code>.
-            A modification that does not also rewrite every later chain value breaks the chain at
-            the changed row. To make a full rewrite independently detectable, retain a copy of the
-            root hash outside the system or confirm a public-chain anchor shown in this report.
-        </p>
-    </div>
+  {# ══════════════════════════ COVERAGE ══════════════════════════ #}
+  <section class="section">
+    <h2><span class="n">03</span>SDK Capture Coverage</h2>
+    <p class="note">
+      {{ coverage.message }} This is evidence about the SDK reporting boundary, not a claim that
+      every model call was observed.
+    </p>
+    <dl class="kv">
+      <dt>Coverage status</dt>
+      <dd>{% if coverage.status == "verified" %}<span class="no">{{ coverage.status|upper }}</span>
+          {% elif coverage.status == "partial" %}<span class="yes">{{ coverage.status|upper }}</span>
+          {% else %}<span class="unknown">{{ coverage.status|upper }}</span>{% endif %}</dd>
+      <dt>Evidence Scope</dt>       <dd>{{ coverage.scope }}</dd>
+      <dt>Observed Events</dt>      <dd>{{ coverage.total_events }}</dd>
+      <dt>With Client Identity</dt> <dd>{{ coverage.identified_events }}</dd>
+      <dt>Without Client Identity</dt><dd>{{ coverage.events_without_client_identity }}</dd>
+      <dt>SDK Clients Reporting</dt><dd>{{ coverage.instrumented_clients }}</dd>
+      <dt>Missing Client Sequence Events</dt><dd>{{ coverage.missing_events }}</dd>
+      <dt>Duplicate Client Sequences</dt><dd>{{ coverage.duplicate_client_sequences }}</dd>
+      <dt>Report Chain Check</dt>  <dd>{{ coverage.chain_verification|upper }}</dd>
+    </dl>
+    <p class="fine"><strong>Evidence boundary:</strong> {{ coverage.limitations[0] }}</p>
+  </section>
 
-    <!-- Footer -->
-    <div class="footer">
-        <p>
-            Generated by Foxy Audit v0.1.0 — Governance-as-Code for AI Applications<br>
-            This report contains content-blind chain evidence. Run
-            <code>GET /v1/verify</code> against the API to recheck the current ledger; a confirmed
-            public-chain anchor provides independent historical timestamp evidence.
-        </p>
+  {# ══════════════════════════ POLICY BREAKDOWN ══════════════════════════ #}
+  <section class="section">
+    <h2><span class="n">04</span>Policy breakdown</h2>
+    {% if policies %}
+    <table>
+      <thead><tr><th>Policy tag</th><th class="num">Events</th><th class="num">Breaches</th>
+                 <th class="num">Avg. tokens</th></tr></thead>
+      <tbody>
+        {% for p in policies %}
+        <tr>
+          <td class="mono">{{ p.tag }}</td>
+          <td class="num">{{ p.count }}</td>
+          <td class="num">{% if p.breaches > 0 %}<span class="yes">{{ p.breaches }}</span>
+                          {% else %}<span class="no">0</span>{% endif %}</td>
+          <td class="num">{{ p.avg_tokens }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="fine">No events were captured in this report period, so there is nothing to break down.</p>
+    {% endif %}
+  </section>
+
+  {# ══════════════════════════ POLICY PROVENANCE ══════════════════════════ #}
+  <section class="section">
+    <h2><span class="n">05</span>Policy Configuration Evidence</h2>
+    {% if policy_snapshots %}
+    <table>
+      <thead><tr><th>Policy snapshot hash</th><th class="num">Events</th><th>Applied settings</th></tr></thead>
+      <tbody>
+        {% for item in policy_snapshots %}
+        <tr>
+          <td class="mono">{{ item.hash }}</td>
+          <td class="num">{{ item.events }}</td>
+          <td>PII {{ "on" if item.snapshot.pii_detection else "off" }};
+              injection {{ "on" if item.snapshot.prompt_injection else "off" }};
+              regulated mode {{ "on" if item.snapshot.regulated_data_mode else "off" }};
+              max tokens {{ item.snapshot.max_token_threshold }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="fine">
+      Each digest is canonical JSON of the safe policy fields captured with its
+      events, bound into the V3 chain payload.
+    </p>
+    {% else %}
+    <p class="fine">
+      No policy snapshots were recorded in this report period. Historical records remain
+      verifiable, but policy provenance was introduced with V3 evidence records.
+    </p>
+    {% endif %}
+  </section>
+
+  {# ══════════════ VERIFICATION RECORD · §12.3 ══════════════ #}
+  <section class="section">
+    <h2><span class="n">06</span>Verification record</h2>
+    <dl class="kv">
+      <dt>Chain length</dt>  <dd>{{ total_events }} blocks</dd>
+      <dt>First sequence</dt><dd class="mono">{{ first_seq }}</dd>
+      <dt>Last sequence</dt> <dd class="mono">{{ last_seq }}</dd>
+      <dt>Chain status</dt>
+      <dd>{% if chain_verification == "verified" %}<span class="no">INTACT — report-period hashes verified</span>
+          {% elif chain_verification == "failed" %}<span class="yes">BROKEN at seq {{ broken_seq }}</span>
+          {% else %}<span class="unknown">NOT ASSESSED — no report-period events</span>{% endif %}</dd>
+      <dt>Checked at</dt>    <dd>{{ generated_at }}</dd>
+    </dl>
+    <p class="fine">{{ chain_detail }}</p>
+
+    <div class="hash-label">Root chain hash (latest in period)</div>
+    <div class="hash">{{ root_hash }}</div>
+    <div class="hash-label">Genesis hash</div>
+    <div class="hash">{{ genesis_hash }}</div>
+
+    <p class="fine">
+      These two values are the document's verification signature. Any change to any record in
+      the period produces a different root hash, so a copy of this page is enough to detect a
+      later rewrite — provided the root hash is retained somewhere outside this system.
+    </p>
+  </section>
+
+  {# ══════════════ PUBLIC ANCHOR ══════════════ #}
+  {% if anchor %}
+  <section class="section">
+    <h2><span class="n">07</span>Public chain anchor</h2>
+    <dl class="kv">
+      <dt>Public chain</dt>     <dd>{{ anchor.chain }}</dd>
+      <dt>Status</dt>
+      <dd>{% if anchor.status == "confirmed" %}<span class="no">CONFIRMED on-chain</span>
+          {% else %}<span class="unknown">{{ anchor.status|upper }}</span>{% endif %}</dd>
+      <dt>Anchored head sequence</dt><dd class="mono">{{ anchor.last_seq }}</dd>
+      {% if anchor.tx_hash %}<dt>Transaction</dt><dd class="mono">{{ anchor.tx_hash }}</dd>{% endif %}
+      {% if anchor.block_number is not none %}<dt>Block</dt><dd class="mono">{{ anchor.block_number }}</dd>{% endif %}
+      <dt>Anchored at</dt>      <dd>{{ anchor.anchored_at or "—" }}</dd>
+    </dl>
+    <div class="hash-label">Anchored root hash</div>
+    <div class="hash">{{ anchor.root_hash }}</div>
+    <p class="fine">
+      This root was published to a public chain, so its existence at that block is checkable by
+      a third party without our cooperation — tampering with any earlier record is detectable by
+      someone other than the system operator.
+    </p>
+  </section>
+  {% endif %}
+
+  {# ══════════════ INDEPENDENT VERIFICATION · §12.4 ══════════════ #}
+  <section class="section">
+    <h2><span class="n">{% if anchor %}08{% else %}07{% endif %}</span>How to verify this independently</h2>
+    <p class="note">
+      Verification does not require trusting Foxy Audit, and does not require our servers to be
+      reachable. Only routes that actually work for a third party are listed below.
+    </p>
+    <ol class="steps">
+      <li>
+        Ask {{ org_name }} for a ledger export covering
+        <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong>.
+      </li>
+      <li>
+        Run the standalone verifier, which has no dependencies and makes no network calls:
+        <br><code class="cmd">python foxy_verify.py logs.json</code>
+      </li>
+      <li>
+        Compare the root hash it prints with the value recorded in section
+        {% if anchor %}06{% else %}06{% endif %} of this document. They must match exactly.
+      </li>
+      {% if explorer_url %}
+      <li>
+        Confirm the anchored root against the public blockchain record:
+        <br><span class="mono">{{ explorer_url }}</span>
+      </li>
+      {% endif %}
+      {% if verify_url %}
+      <li>
+        Check this workspace's live status page (aggregate status only — no records or hashes):
+        <br><span class="mono">{{ verify_url }}</span>
+      </li>
+      {% endif %}
+    </ol>
+    {% if not explorer_url %}
+    <p class="fine">
+      No confirmed public-chain anchor covers this period, so the strongest available check is
+      the recomputation in step 2. That detects any edit to the records; it cannot by itself
+      prove when they were written.
+    </p>
+    {% endif %}
+  </section>
+
+  {# ══════════════ TRUST MODEL ══════════════ #}
+  <section class="section">
+    <h2><span class="n">{% if anchor %}09{% else %}08{% endif %}</span>Trust model</h2>
+    <p class="note">
+      Every audit event is anchored to the one before it by a sequential SHA-256 hash chain,
+      <code class="cmd">H&#8345; = SHA256(data&#8345; ‖ H&#8345;&#8331;&#8321;)</code>.
+      A modification that does not also rewrite every later chain value breaks the chain at the
+      changed row. Records are content-blind: the ledger holds hashes and bounded metadata, never
+      prompt or response text, so this document discloses no customer content.
+    </p>
+  </section>
+
+  <div class="docfoot">
+    <div style="display:flex;justify-content:space-between;gap:16px;">
+      <div>
+        Compliance Passport <span class="mono">{{ document_id }}</span> ·
+        {{ org_name }} · {{ date_from }} to {{ date_to }}<br>
+        Generated {{ generated_at }} by {{ generated_by }}.
+      </div>
+      <div class="print-only" style="text-align:right;white-space:nowrap;">
+        Foxy&nbsp;Audit
+      </div>
     </div>
+    <p class="screen-only" style="margin-top:6px;">
+      End of document. Printed copies carry a page number on every page.
+    </p>
+  </div>
 
 </div>
 </body>
