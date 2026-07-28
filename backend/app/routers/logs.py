@@ -13,7 +13,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -427,13 +427,36 @@ def export_logs(
     org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
     format: str = Query(default="json", pattern="^(json|csv)$"),
+    date_from: str | None = Query(default=None, description="ISO date YYYY-MM-DD, inclusive"),
+    date_to: str | None = Query(default=None, description="ISO date YYYY-MM-DD, inclusive"),
 ):
-    """Download the org's ENTIRE audit-log ledger (its own data) as JSON or CSV —
-    data portability for the tenant. Scoped by org_id (+ RLS). Declared BEFORE
-    /v1/logs/{seq} so the literal path isn't captured as a seq int."""
-    rows = db.execute(
-        select(AuditLog).where(AuditLog.org_id == org.id).order_by(AuditLog.seq.asc())
-    ).scalars().all()
+    """Download the org's audit-log ledger (its own data) as JSON or CSV — data
+    portability for the tenant. Scoped by org_id (+ RLS). Declared BEFORE
+    /v1/logs/{seq} so the literal path isn't captured as a seq int.
+
+    The date range is optional and, with neither bound, this is still the whole
+    ledger. It exists because the dashboard's Export page has always shown two
+    date pickers, sent them to /v1/passport, and then handed the log download a
+    URL with no range on it at all — so the user picked a window and silently
+    got everything. The bounds match the passport's semantics exactly
+    (routers/passport.py): `date_to` is inclusive of that whole day."""
+    def _parse(value: str | None):
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="date must be ISO YYYY-MM-DD")
+
+    start = _parse(date_from)
+    end_day = _parse(date_to)
+
+    query = select(AuditLog).where(AuditLog.org_id == org.id)
+    if start is not None:
+        query = query.where(AuditLog.created_at >= start)
+    if end_day is not None:
+        query = query.where(AuditLog.created_at < end_day + timedelta(days=1))
+    rows = db.execute(query.order_by(AuditLog.seq.asc())).scalars().all()
 
     if format == "csv":
         buf = io.StringIO()
@@ -449,11 +472,16 @@ def export_logs(
             content=buf.getvalue(), media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="foxy-audit-logs.csv"'})
 
+    # indent=2, because this is evidence someone has to READ. Without it the
+    # whole ledger arrives as a single enormous line, which is valid JSON and
+    # useless to the auditor who opens it. Formatting cannot affect
+    # verification: verifier/foxy_verify.py json.load()s this and recomputes
+    # from the parsed fields, never from the raw bytes.
     body = json.dumps(
         {"org_id": str(org.id), "count": len(rows),
          "anchor": _anchor_export(latest_anchor(db, org.id)),
          "logs": [_export_row(r) for r in rows]},
-        default=str)
+        default=str, indent=2)
     return Response(
         content=body, media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="foxy-audit-logs.json"'})

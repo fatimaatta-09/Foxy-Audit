@@ -935,6 +935,8 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 .lvbar i{display:block;height:100%;border-radius:8px;width:0;background:var(--muted);
   transition:width .4s cubic-bezier(.3,1.1,.5,1),background .4s;}
 .lvdesc{font-size:11px;color:var(--muted);line-height:1.5;margin-top:9px;}
+.lvcustom{font-family:var(--mono);font-size:10px;line-height:1.5;margin-top:8px;padding:8px 10px;
+  border-radius:10px;background:var(--surf2);color:var(--warn-ink);}
 
 /* ── status colours used as BARE TEXT read from the *-ink tokens, never from
    the pill-fill tokens: #16A34A is a fine pill but 2.90:1 as a word on the
@@ -1455,13 +1457,22 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
         </div>
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Judge sensitivity</div></div></div>
-          <div class="flabel" style="margin-top:0;">max tokens per interaction</div>
-          <input class="cin" id="polMaxTokens" type="number" min="1" step="1000" value="50000">
+          <div class="flabel" style="margin-top:0;">judge sensitivity</div>
+          <input id="polMaxTokens" type="hidden" value="50000">
+          <div class="lvseg" id="polTokenSeg" role="radiogroup" aria-label="Judge sensitivity">
+            <button type="button" role="radio" aria-checked="false" data-lv="low" data-val="200000">Low</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="medium" data-val="50000">Medium</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="high" data-val="20000">High</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="ultra" data-val="8000">Ultra</button>
+          </div>
+          <div class="lvbar" aria-hidden="true"><i id="polTokenBar"></i></div>
+          <div class="lvdesc" id="polTokenDesc">—</div>
+          <div class="lvcustom" id="polTokenCustom" hidden></div>
           <div class="flabel">enforcement mode</div>
-          <select id="polEnforcement"><option value="block">block on breach — highest protection</option><option value="flag">flag only, allow through</option><option value="monitor">silent monitor (log only)</option></select>
-          <div class="flabel">judge sensitivity</div>
+          <select id="polEnforcement"><option value="block">block on breach</option><option value="flag">flag only, allow through</option><option value="monitor">silent monitor (log only)</option></select>
+          <div class="flabel">confidence threshold</div>
           <select id="polConfidence" hidden><option value="high">high — fewer false positives</option><option value="balanced">balanced (default)</option><option value="low">low — catch every edge case</option></select>
-          <div class="lvseg" id="polConfidenceSeg" role="radiogroup" aria-label="Judge sensitivity">
+          <div class="lvseg" id="polConfidenceSeg" role="radiogroup" aria-label="Confidence threshold">
             <button type="button" role="radio" aria-checked="false" data-lv="low" data-val="high">Low</button>
             <button type="button" role="radio" aria-checked="false" data-lv="medium" data-val="balanced">Medium</button>
             <button type="button" role="radio" aria-checked="false" data-lv="high" data-val="low">High</button>
@@ -1561,9 +1572,6 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div class="erow"><span class="elabel">chain head</span><span class="eval mono" id="metaHead">—</span></div>
           <div class="erow"><span class="elabel">org id</span><span class="eval mono" id="metaOrg">—</span></div>
           <div class="erow"><span class="elabel">anchor SLA</span><span class="eval" id="metaSLA">—</span></div>
-          <div style="margin-top:16px;border-top:2px dashed var(--line);padding-top:14px;font-size:11px;color:var(--muted);line-height:1.6;">
-            Passports are generated on demand and open in a new tab — the server doesn't keep a download archive.
-          </div>
         </div>
       </div>
       <!-- P11 · export history -->
@@ -3030,6 +3038,7 @@ async function loadLoginHistory(){
       if($('polInjection'))$('polInjection').checked=!!p.prompt_injection;
       if($('polRegulated'))$('polRegulated').checked=!!p.regulated_data_mode;
       if($('polMaxTokens'))$('polMaxTokens').value=p.max_token_threshold;
+      if(window.syncTokenSeg)window.syncTokenSeg();
       if($('polEnforcement')&&p.enforcement_mode)$('polEnforcement').value=p.enforcement_mode;
       if($('polConfidence')&&p.confidence_threshold)$('polConfidence').value=p.confidence_threshold;
       if(window.syncConfidenceSeg)window.syncConfidenceSeg();
@@ -4093,7 +4102,11 @@ async function loadLoginHistory(){
     if(type==='passport'){ if(window.runExport)window.runExport(); }
     else {
       var fmt=(type==='logs_csv')?'csv':'json';
-      var a=document.createElement('a'); a.href='/v1/logs/export?format='+fmt; a.download='foxy-audit-logs.'+fmt;
+      // the pickers above are not decoration: send the window the user chose
+      var q='/v1/logs/export?format='+fmt;
+      if(from)q+='&date_from='+encodeURIComponent(from);
+      if(to)q+='&date_to='+encodeURIComponent(to);
+      var a=document.createElement('a'); a.href=q; a.download='foxy-audit-logs.'+fmt;
       document.body.appendChild(a); a.click(); a.remove();
       try{ showToast('Logs export ('+fmt.toUpperCase()+') started'); }catch(e){}
     }
@@ -4518,6 +4531,103 @@ async function loadLoginHistory(){
   /* a radiogroup is one tab stop; the arrows move between its options */
   document.addEventListener('keydown',function(e){
     var b=e.target.closest&&e.target.closest('#polConfidenceSeg button');
+    if(!b)return;
+    var all=Array.prototype.slice.call(b.parentNode.querySelectorAll('button'));
+    var i=all.indexOf(b), next=null;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown')next=all[(i+1)%all.length];
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp')next=all[(i-1+all.length)%all.length];
+    if(next){ e.preventDefault(); pick(next); }
+  });
+  if(document.readyState!=='loading')sync(); else document.addEventListener('DOMContentLoaded',sync);
+})();
+</script>
+
+<!-- ═══ P2 §7.2 · judge sensitivity as four presets ═══
+     The owner: "tokens per interaction should not be user-editable — change it
+     to preset levels". The field is max_token_threshold, an INT
+     (routers/policies.py:39, Integer in models.py:286), so four presets over it
+     are four numbers behind four labels. No Literal, no migration.
+
+     ⚠ THE SENSE IS INVERTED. policy_engine.py:63 is
+         if token_count > max_tokens: flag
+     so a LOWER threshold flags MORE. Ultra is the STRICTEST level and therefore
+     carries the SMALLEST number. Reading this backwards would make "Ultra" the
+     most permissive setting in the product, which is worse than the raw box it
+     replaces — hence the ordering assertion below, which runs in the browser
+     and shouts in the console rather than failing silently.
+
+     Medium is 50,000: the exact current default (policies.py:39,
+     models.py:286), so an org that never touches this control keeps the policy
+     it already had. -->
+<script>
+(function(){
+  var LV=[
+    {val:200000, lv:'low',    label:'Low',    w:'25%',  c:'var(--lv-low)',
+     d:'Flags an interaction only above 200,000 tokens — outliers, and little else.'},
+    {val:50000,  lv:'medium', label:'Medium', w:'50%',  c:'var(--lv-med)',
+     d:'Flags above 50,000 tokens. The default.'},
+    {val:20000,  lv:'high',   label:'High',   w:'75%',  c:'var(--lv-high)',
+     d:'Flags above 20,000 tokens.'},
+    {val:8000,   lv:'ultra',  label:'Ultra',  w:'100%', c:'var(--lv-ultra)',
+     d:'Flags above 8,000 tokens. Expect most long interactions to be flagged.'}
+  ];
+  /* the guard for the inversion: strictness ascends, the number must descend */
+  for(var i=1;i<LV.length;i++){
+    if(LV[i].val>=LV[i-1].val&&window.console&&console.error){
+      console.error('foxy: judge-sensitivity presets are not strictly '+
+        'descending — "'+LV[i].label+'" is not stricter than "'+LV[i-1].label+
+        '". policy_engine flags when token_count > threshold, so a stricter '+
+        'level needs a SMALLER number.');
+    }
+  }
+  function fld(){ return document.getElementById('polMaxTokens'); }
+  function nearest(v){
+    var best=LV[1], bd=Infinity;
+    for(var i=0;i<LV.length;i++){ var d=Math.abs(LV[i].val-v); if(d<bd){bd=d;best=LV[i];} }
+    return best;
+  }
+  function fmt(v){ return String(v).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+  function sync(){
+    var f=fld(), seg=document.getElementById('polTokenSeg');
+    if(!f||!seg)return;
+    var v=parseInt(f.value,10); if(!(v>0))v=50000;
+    var exact=null;
+    for(var i=0;i<LV.length;i++)if(LV[i].val===v)exact=LV[i];
+    var shown=exact||nearest(v);
+    Array.prototype.forEach.call(seg.querySelectorAll('button'),function(b){
+      b.setAttribute('aria-checked', (parseInt(b.getAttribute('data-val'),10)===shown.val)?'true':'false');
+    });
+    var bar=document.getElementById('polTokenBar');
+    if(bar){ bar.style.width=shown.w; bar.style.background=shown.c; }
+    var d=document.getElementById('polTokenDesc');
+    if(d)d.textContent=shown.d;
+    /* An org that already stores a hand-set number keeps it. The nearest preset
+       is only HIGHLIGHTED — the hidden field still holds their value, so saving
+       without touching this control cannot silently rewrite their policy. */
+    var note=document.getElementById('polTokenCustom');
+    if(note){
+      if(exact){ note.hidden=true; note.textContent=''; }
+      else{
+        note.hidden=false;
+        note.textContent='Currently '+fmt(v)+' tokens — no preset matches. '+
+          'Closest is '+shown.label+'. Saving keeps '+fmt(v)+' until you pick a level.';
+      }
+    }
+  }
+  window.syncTokenSeg=sync;
+  function pick(btn){
+    var f=fld(); if(!f||!btn)return;
+    f.value=btn.getAttribute('data-val');
+    sync();
+    f.dispatchEvent(new Event('change'));
+    btn.focus();
+  }
+  document.addEventListener('click',function(e){
+    var b=e.target.closest&&e.target.closest('#polTokenSeg button');
+    if(b)pick(b);
+  });
+  document.addEventListener('keydown',function(e){
+    var b=e.target.closest&&e.target.closest('#polTokenSeg button');
     if(!b)return;
     var all=Array.prototype.slice.call(b.parentNode.querySelectorAll('button'));
     var i=all.indexOf(b), next=null;
