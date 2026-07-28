@@ -219,6 +219,57 @@ class FoxSettings:
         data[str(ident)] = 1
         self._s.setValue("chrome/ann_dismissed", json.dumps(data))
 
+    # ── companion alerts (D12; D13 gives these their Settings UI) ──
+    # Every default is what the companion ALREADY did before the toggles
+    # existed: react to every breach, with a beep and a native toast. The
+    # three new sources default on for the same reason the web's breach-alert
+    # preference does — a compliance companion that stays quiet about running
+    # out of capture credits is not doing its job. Adding the keys changes no
+    # behaviour on its own; D13 adds the UI that can turn them off.
+    def breach_alerts_enabled(self) -> bool:
+        return self._s.value("alerts/breach", True, type=bool)
+
+    def set_breach_alerts_enabled(self, value: bool):
+        self._s.setValue("alerts/breach", bool(value))
+
+    def alert_min_risk(self) -> int:
+        """Below this a breach is still real and still in the ledger — the fox
+        simply does not interrupt for it. 0 = interrupt for all."""
+        return max(0, min(100, self._s.value("alerts/min_risk", 0, type=int)))
+
+    def set_alert_min_risk(self, value: int):
+        self._s.setValue("alerts/min_risk", max(0, min(100, int(value))))
+
+    def alert_sound_enabled(self) -> bool:
+        return self._s.value("alerts/sound", True, type=bool)
+
+    def set_alert_sound_enabled(self, value: bool):
+        self._s.setValue("alerts/sound", bool(value))
+
+    def native_toasts_enabled(self) -> bool:
+        return self._s.value("alerts/toasts", True, type=bool)
+
+    def set_native_toasts_enabled(self, value: bool):
+        self._s.setValue("alerts/toasts", bool(value))
+
+    def quota_alerts_enabled(self) -> bool:
+        return self._s.value("alerts/quota", True, type=bool)
+
+    def set_quota_alerts_enabled(self, value: bool):
+        self._s.setValue("alerts/quota", bool(value))
+
+    def anchor_alerts_enabled(self) -> bool:
+        return self._s.value("alerts/anchor", True, type=bool)
+
+    def set_anchor_alerts_enabled(self, value: bool):
+        self._s.setValue("alerts/anchor", bool(value))
+
+    def grading_alerts_enabled(self) -> bool:
+        return self._s.value("alerts/grading", True, type=bool)
+
+    def set_grading_alerts_enabled(self, value: bool):
+        self._s.setValue("alerts/grading", bool(value))
+
     # ── weekly-summary counters (previously raw QSettings pokes) ──
     def weekly_breaches(self) -> int:
         return self._s.value("weekly/breaches", 0, type=int)

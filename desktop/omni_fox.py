@@ -43,6 +43,8 @@ from security_overlay import SecurityOverlay
 from sdk_bridge import SDKBridgeListener
 from dashboard import DashboardWindow
 from breach_poll import plan_reactions
+import companion_events as ce
+import companion_status as cstat
 
 
 # ── Spritesheet layout ─────────────────────────────────────────────────────
@@ -79,6 +81,14 @@ COMPLIANCE_TIPS = [
     "📝 Ready for audit review",
     "✓ Tamper-evidence: active",
 ]
+
+
+#: `companion_events` returns a level word, not a Qt enum — it has no Qt in it.
+_TOAST_ICON = {
+    "critical": QSystemTrayIcon.MessageIcon.Critical,
+    "warning": QSystemTrayIcon.MessageIcon.Warning,
+    "info": QSystemTrayIcon.MessageIcon.Information,
+}
 
 
 # ── Background sensor thread ───────────────────────────────────────────────
@@ -410,6 +420,199 @@ class OmniAwareFox(QWidget):
         self.roam_tick_timer = QTimer(self)
         self.roam_tick_timer.timeout.connect(self._roaming_tick)
         self.roam_tick_timer.start(150)
+
+        # ── Companion event sweep (D12) ───────────────────────────────────
+        self._init_companion()
+
+    # ── Companion event layer (D12 · plan §9.1) ────────────────────────────
+    def _init_companion(self):
+        """One sweep, one router, one place a reaction is carried out.
+
+        Before this the fox reacted to exactly two things — a breach and the
+        SDK bridge — and every decision lived inline in its own callback. The
+        rest of §9.1 (anchors, quota, grading failures, connectivity) needs
+        three more endpoints, and putting four more inline callbacks next to
+        the first two is how the reaction rules stop agreeing with each other.
+        `companion_events` decides; this carries out.
+        """
+        self._companion_workers: set = set()
+        self._org_name = ""             # real name from /v1/health, never faked
+        self._anchor_seen = ""          # last confirmed anchor already cheered
+        self._quota_warned = False      # latched while over the line
+        self._grading_failed = None     # last measured failure count
+        self._grading_streak = 0
+        self._online = None             # None = never checked, no baseline yet
+        self._status_panel = None
+        self._status = {"verify": None, "usage": None, "notifications": None,
+                        "verify_ok": False, "usage_ok": False,
+                        "notifications_ok": False, "asked": False}
+        self._companion_timer = QTimer(self)
+        self._companion_timer.timeout.connect(self._companion_sweep)
+        # 90 s: gentle next to the 10 s breach poll, which is the one that has
+        # to be fast. Nothing here is time-critical — an anchor confirming a
+        # minute late is still news.
+        self._companion_timer.start(90_000)
+        QTimer.singleShot(4000, self._companion_sweep)
+
+    def _can_poll(self) -> bool:
+        return bool(self.settings.backend_url()
+                    and (self.settings.org_api_key()
+                         or self.client.has_session()))
+
+    def _companion_sweep(self):
+        """Re-read the three feeds §9.1 reacts to. Skipped entirely without a
+        credential: firing them signed out would paint "backend unreachable"
+        at someone who is simply not signed in."""
+        if not self._can_poll() or self._companion_workers:
+            return          # never stack sweeps; the guard is worker-driven
+        self._spawn_companion("GET", "/v1/stats", self._on_companion_stats)
+        self._spawn_companion("GET", "/v1/usage?days=14",
+                              self._on_companion_usage)
+        self._spawn_companion("GET", "/v1/anchors?limit=5",
+                              self._on_companion_anchors)
+
+    def _spawn_companion(self, method: str, path: str, handler):
+        """`finished`-driven tracking, never a hand-counted latch — the D3.2
+        lesson: a counter only decremented on success freezes forever on the
+        first failed leg."""
+        spawn_worker(self.client, method, path, timeout=10, parent=self,
+                     track=self._companion_workers,
+                     on_ok=lambda data: handler(data, True),
+                     on_err=lambda _e: handler(None, False))
+
+    def _on_companion_stats(self, data, ok: bool):
+        # `/v1/stats` is the sweep's canary: it is the one leg every credential
+        # can make, so whether IT answered is what "online" means here.
+        self._apply(ce.on_connectivity(ok, self._online))
+        self._online = ok
+        if not ok:
+            return
+        react, self._grading_streak, self._grading_failed = ce.on_grading(
+            data, prev_failed=self._grading_failed,
+            streak=self._grading_streak,
+            enabled=self.settings.grading_alerts_enabled())
+        self._apply(react)
+
+    def _on_companion_usage(self, data, ok: bool):
+        self._status_note("usage", data, ok)
+        if not ok:
+            return
+        react, self._quota_warned = ce.on_quota(
+            data, enabled=self.settings.quota_alerts_enabled(),
+            already_warned=self._quota_warned)
+        self._apply(react)
+
+    def _on_companion_anchors(self, data, ok: bool):
+        if not ok:
+            return
+        react, self._anchor_seen = ce.on_anchors(
+            data, self._anchor_seen,
+            enabled=self.settings.anchor_alerts_enabled())
+        self._apply(react)
+
+    def _status_note(self, key: str, data, ok):
+        self._status[key] = data
+        self._status[f"{key}_ok"] = bool(ok)
+        self._status["asked"] = True
+        if self._status_panel is not None and self._status_panel.isVisible():
+            self._status_panel.set_view(self._panel_view())
+
+    def _apply(self, react: dict | None):
+        """Carry out one reaction. The router never decides WHETHER the fox is
+        on screen — that is this side's business, and a fox hidden in the tray
+        still toasts, still counts, and simply does not animate."""
+        if not react:
+            return
+        if react["toast"]:
+            title, body, level = react["toast"]
+            self._notify(title, body, _TOAST_ICON.get(
+                level, QSystemTrayIcon.MessageIcon.Information))
+        if react["sound"]:
+            QApplication.beep()
+        if self._is_hidden_in_tray:
+            return
+        row = globals().get(react["row"])
+        if row is None:                 # a state name with no sprite row
+            return
+        self._set_state(react["state"], row, react["duration"])
+        overlay = react["overlay"]
+        if overlay == "red":
+            self.security_overlay.flash_red(int(react["duration"] * 1000))
+        elif overlay == "green":
+            self.security_overlay.flash_green()
+        elif overlay == "amber":
+            self.security_overlay.flash_amber()
+        if react["bubble"]:
+            self._say(react["bubble"], react["duration"])
+
+    def _say(self, text: str, seconds: float = 3.0):
+        """One speech bubble, positioned once. Five callbacks had their own
+        copy of these six lines, which is why two of them centred differently."""
+        self.speech_bubble.setText(text)
+        self.speech_bubble.adjustSize()
+        self.speech_bubble.move(
+            max(0, (CELL_WIDTH - self.speech_bubble.width()) // 2),
+            -self.speech_bubble.height() - 6)
+        self.speech_bubble.show()
+        QTimer.singleShot(int(max(1.0, seconds) * 1000), self._hide_speech)
+
+    # ── quick status panel ─────────────────────────────────────────────────
+    def _panel_view(self) -> dict:
+        s = self._status
+        if not self._can_poll():
+            # Not "loading": nothing is in flight and nothing is going to be.
+            return cstat.panel_view(signed_out=True)
+        if not s["asked"]:
+            return cstat.panel_view(loading=True)
+        return cstat.panel_view(
+            s["verify"], s["usage"], s["notifications"],
+            verify_ok=s["verify_ok"], usage_ok=s["usage_ok"],
+            notifications_ok=s["notifications_ok"])
+
+    def open_status_panel(self):
+        """Middle-click on the fox, or a left click on the tray icon."""
+        from companion_panel import QuickStatusPanel
+        if self._status_panel is None:
+            self._status_panel = QuickStatusPanel(self)
+            self._status_panel.route_requested.connect(self._panel_route)
+            self._status_panel.refresh_requested.connect(self._refresh_status)
+        signed_out = not self._can_poll()
+        self._status_panel.set_notice(*(cstat.PANEL_SIGNED_OUT if signed_out
+                                        else ("", "")))
+        self._status_panel.set_view(self._panel_view())
+        self._status_panel.popup_near(self)
+        if not signed_out:
+            self._refresh_status()
+
+    def _refresh_status(self):
+        """The panel's own reads. `/v1/verify` and `/v1/notifications` are not
+        on the sweep — verify recomputes the whole chain and notifications is
+        session-only, so both are asked for when someone is actually looking."""
+        if not self._can_poll():
+            return
+        self._spawn_companion("GET", "/v1/verify", self._on_status_verify)
+        self._spawn_companion("GET", "/v1/usage?days=14",
+                              self._on_companion_usage)
+        if self.client.has_session():
+            self._spawn_companion("GET", "/v1/notifications?limit=30",
+                                  self._on_status_notifications)
+        else:
+            # A key-only user cannot have notifications at all. Saying "none
+            # unread" would be a claim about an inbox we cannot see.
+            self._status_note("notifications", None, False)
+
+    def _on_status_verify(self, data, ok: bool):
+        self._status_note("verify", data, ok)
+
+    def _on_status_notifications(self, data, ok: bool):
+        self._status_note("notifications", data, ok)
+
+    def _panel_route(self, section: str):
+        if self._status_panel is not None:
+            self._status_panel.hide()
+        self.open_dashboard()
+        if self.dashboard is not None:
+            self.dashboard.go(section)
 
     # ── Sign-in / session (D1) ─────────────────────────────────────────────
     def show_login(self, *, reason: str = "", ok: bool = False):
@@ -760,17 +963,7 @@ class OmniAwareFox(QWidget):
 
     # ── Compliance tips ────────────────────────────────────────────────────
     def _show_compliance_tip(self):
-        tip = random.choice(COMPLIANCE_TIPS)
-        self.speech_bubble.setText(tip)
-        self.speech_bubble.adjustSize()
-        # Position above the fox
-        bw = self.speech_bubble.width()
-        self.speech_bubble.move(
-            max(0, (CELL_WIDTH - bw) // 2),
-            -self.speech_bubble.height() - 6,
-        )
-        self.speech_bubble.show()
-        QTimer.singleShot(4000, self._hide_speech)
+        self._say(random.choice(COMPLIANCE_TIPS), 4.0)
 
     def _hide_speech(self):
         self.speech_bubble.hide()
@@ -789,54 +982,35 @@ class OmniAwareFox(QWidget):
         ram_icon = "🟢" if hw["ram"] < 70 else "🟡" if hw["ram"] < 85 else "🔴"
         batt = hw.get("battery", 100)
         msg = f"{cpu_icon} CPU {hw['cpu']:.0f}%  {ram_icon} RAM {hw['ram']:.0f}%  🔋{batt:.0f}%"
-        self.speech_bubble.setText(msg)
-        self.speech_bubble.adjustSize()
-        bw = self.speech_bubble.width()
-        self.speech_bubble.move(
-            max(0, (CELL_WIDTH - bw) // 2),
-            -self.speech_bubble.height() - 6,
-        )
-        self.speech_bubble.show()
         self._set_state("SPEAKING", ROW_STANDING, 5.0)
-        QTimer.singleShot(5000, self._hide_speech)
+        self._say(msg, 5.0)
 
     # ── Compliance check ───────────────────────────────────────────────────
     def show_compliance_status(self):
         self._set_state("STANDING", ROW_STANDING, 4.0)
-        self.speech_bubble.setText("📋 Foxy Audit: All systems compliant ✓")
-        self.speech_bubble.adjustSize()
-        bw = self.speech_bubble.width()
-        self.speech_bubble.move(
-            max(0, (CELL_WIDTH - bw) // 2),
-            -self.speech_bubble.height() - 6,
-        )
-        self.speech_bubble.show()
-        QTimer.singleShot(4000, self._hide_speech)
+        self._say("📋 Foxy Audit: All systems compliant ✓", 4.0)
 
     # ── Startup Health Check Callbacks ─────────────────────────────────────
     def _on_health_ok(self, _data=None):
+        # The payload carries the real workspace name and was being discarded;
+        # the tray tooltip is the one place the fox can show it.
+        org = str((_data or {}).get("org") or "").strip() \
+            if isinstance(_data, dict) else ""
+        if org:
+            self._org_name = org
+            self._sync_tray_tooltip()
         if self.dashboard is not None:
             self.dashboard.set_connected(True)
         self._set_state("CHEERING", ROW_CHEERING, 2.0)
         self.security_overlay.flash_green()
-        self.speech_bubble.setText("✓ Connected to Foxy Audit")
-        self.speech_bubble.adjustSize()
-        bw = self.speech_bubble.width()
-        self.speech_bubble.move(max(0, (CELL_WIDTH - bw) // 2), -self.speech_bubble.height() - 6)
-        self.speech_bubble.show()
-        QTimer.singleShot(3000, self._hide_speech)
+        self._say("✓ Connected to Foxy Audit", 3.0)
 
     def _on_health_fail(self, err: str):
         if self.dashboard is not None:
             self.dashboard.set_connected(False)
         self._set_state("ALERTING", ROW_ALERT, 3.0)
         self.security_overlay.flash_amber()
-        self.speech_bubble.setText("⚠ Backend unreachable")
-        self.speech_bubble.adjustSize()
-        bw = self.speech_bubble.width()
-        self.speech_bubble.move(max(0, (CELL_WIDTH - bw) // 2), -self.speech_bubble.height() - 6)
-        self.speech_bubble.show()
-        QTimer.singleShot(3000, self._hide_speech)
+        self._say("⚠ Backend unreachable", 3.0)
 
     # ── SDK Bridge Callbacks ───────────────────────────────────────────────
     def _on_sdk_evaluating(self, payload: dict):
@@ -847,52 +1021,43 @@ class OmniAwareFox(QWidget):
         if now - self._last_evaluating < 5.0:
             return  # debounce without suppressing the following hash_ok
         self._last_evaluating = now
-        if self._is_hidden_in_tray:
-            return
-        self._set_state("THINKING", ROW_THINKING, 1.5)
+        self._apply(ce.on_sdk_evaluating())
 
     def _on_sdk_hash_ok(self, payload: dict):
         now = time.time()
         if now - self._last_hash_ok < 5.0:
             return  # Debounce busy SDKs
         self._last_hash_ok = now
-        
-        # Don't interrupt if in tray, unless we want to glow in tray (we can't).
-        if self._is_hidden_in_tray:
-            return
-
-        self._set_state("STANDING", ROW_STANDING, 1.5)
-        self.security_overlay.flash_green()
-        delivery = payload.get("delivery")
-        status = "local hash queued" if delivery == "queued" else "local hash only"
-        self.speech_bubble.setText(f"Foxy: {status}")
-        self.speech_bubble.adjustSize()
-        bw = self.speech_bubble.width()
-        self.speech_bubble.move(max(0, (CELL_WIDTH - bw) // 2),
-                                -self.speech_bubble.height() - 6)
-        self.speech_bubble.show()
-        QTimer.singleShot(2200, self._hide_speech)
+        self._apply(ce.on_sdk_hash(payload))
 
     def _on_policy_breach(self, payload: dict):
-        # Force pop-back if hidden
+        """A REAL graded breach, from the poller or the SDK bridge.
+
+        The decision — does this one clear the user's risk threshold, does it
+        beep, does it toast — belongs to `companion_events`; what is left here
+        is the part that is genuinely this window's: coming back from the
+        tray, the weekly tally, and putting the detail in the chat.
+        """
+        react = ce.on_breach(
+            payload,
+            threshold=self.settings.alert_min_risk(),
+            alerts_enabled=self.settings.breach_alerts_enabled(),
+            sound=self.settings.alert_sound_enabled(),
+            toasts=self.settings.native_toasts_enabled())
+        # The tally counts BREACHES, not interruptions: a breach under the
+        # threshold still happened, and the weekly summary would understate
+        # the week if a quiet one went uncounted.
+        self.settings.bump_weekly_breaches()
+        if react is None:
+            return
+        # Force pop-back if hidden — done before `_apply`, which does not
+        # animate a fox that is in the tray.
         if self._is_hidden_in_tray:
             self._show_from_tray()
-
-        self._set_state("ALERTING", ROW_ALERT, 5.0)
-        self.security_overlay.flash_red(5000)
+        self._apply(react)
 
         reason = payload.get("reason", "Unknown injection")
         score = payload.get("risk_score", 100)
-
-        # 5L: audible cue + a native tray popup, and a tally for the weekly summary.
-        QApplication.beep()
-        try:
-            self.tray_icon.showMessage(
-                "🚨 Policy Breach", f"{reason} (risk {score}/100)",
-                QSystemTrayIcon.MessageIcon.Critical, 6000)
-        except Exception:
-            pass
-        self.settings.bump_weekly_breaches()
 
         if self.chat_popup is None:
             self.chat_popup = ChatPopup(self, settings=self.settings)
@@ -919,6 +1084,11 @@ class OmniAwareFox(QWidget):
             self.drag_offset    = (event.globalPosition().toPoint()
                                    - self.frameGeometry().topLeft())
             self.last_interaction_time = time.time()
+        elif event.button() == Qt.MouseButton.MiddleButton:
+            # Middle-click is the quick status panel (plan §9.1). Left-click
+            # stays the chat; the two must not compete for the same gesture.
+            self.last_interaction_time = time.time()
+            self.open_status_panel()
 
     def mouseMoveEvent(self, event):
         if not self.is_dragging:
@@ -1130,7 +1300,7 @@ class OmniAwareFox(QWidget):
         pixmap = self._get_frame(ROW_SLEEP, 0)
         icon = QIcon(pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         self.tray_icon.setIcon(icon)
-        self.tray_icon.setToolTip("Foxy Audit — Compliance Officer")
+        self._sync_tray_tooltip()
 
         tray_menu = QMenu(self)
         tray_menu.setStyleSheet(_matte_menu_qss())
@@ -1176,9 +1346,28 @@ class OmniAwareFox(QWidget):
         except Exception:
             pass
 
+    def _sync_tray_tooltip(self):
+        """The workspace the fox is actually watching, when it knows it.
+
+        The name comes from `GET /v1/health` (`{"org": …}`, health.py:50) —
+        the startup probe the fox already makes and was throwing away.
+        `/v1/auth/me` does NOT carry it: a password-only session has `org_id`
+        and nothing else, and health is Bearer-only, so a session-only user
+        genuinely cannot learn the name (the same gap D11a hit on delete). It
+        keeps the generic line rather than showing an id or a placeholder.
+        """
+        org = str(getattr(self, "_org_name", "") or "").strip()
+        self.tray_icon.setToolTip(
+            f"Foxy Audit — {org}" if org else "Foxy Audit — Compliance Officer")
+
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self._show_from_tray()
+        elif reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # Single left click → the quick status panel (plan §9.1). Anchored
+            # to the fox when it is on screen, to the cursor when it is not —
+            # a popover beside a hidden 192×208 widget lands in dead space.
+            self.open_status_panel()
 
     def _hide_to_tray(self):
         self.hide()
@@ -1220,6 +1409,16 @@ class OmniAwareFox(QWidget):
         if self._login_win is not None:
             self._login_win.reject()
             self._login_win = None
+
+        # D12: the companion sweep is a timer plus its own worker bucket, and
+        # the status panel is a top-level popup — a floating popover outliving
+        # the app it reports on is the D3 teardown lesson in a new place.
+        if hasattr(self, "_companion_timer"):
+            self._companion_timer.stop()
+        if getattr(self, "_status_panel", None) is not None:
+            self._status_panel.hide()
+            self._status_panel = None
+        shutdown_workers(getattr(self, "_companion_workers", ()), wait_ms=600)
 
         shutdown_workers(self._workers, wait_ms=600)
 
