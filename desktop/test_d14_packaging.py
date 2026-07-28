@@ -1,13 +1,15 @@
 """D14 — packaging prep: the version stamp and what the bundle carries.
 
 The owner runs the actual builds, so what is testable here is the part that
-has silently gone wrong before: a build that ships without its assets, or one
-that reports a version nobody set.
+has silently gone wrong before: a build that ships without its assets, one
+that reports a version nobody set, or — as this branch first shipped it — two
+workflows racing to build the same release.
 """
 
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 _SPEC = (_HERE / "omni_fox.spec").read_text(encoding="utf-8")
+_WORKFLOWS = _ROOT / ".github" / "workflows"
+_RELEASE = _WORKFLOWS / "release.yml"
 
 
 @pytest.fixture(scope="module")
@@ -109,8 +113,19 @@ def test_the_linux_desktop_entry_is_shipped_and_well_formed():
 # ══ the release workflow ════════════════════════════════════════════════════
 def _workflow() -> dict:
     yaml = pytest.importorskip("yaml")
-    path = _ROOT / ".github" / "workflows" / "desktop-release.yml"
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return yaml.safe_load(_RELEASE.read_text(encoding="utf-8"))
+
+
+def test_exactly_one_workflow_builds_the_desktop_app():
+    """D14 first shipped its own `desktop-release.yml` on `tags: ["v*"]` —
+    the trigger `release.yml` was already running a three-OS PyInstaller
+    matrix on. One tag push would have run two of them and raced for the same
+    release assets. The check is the file list, not a comment, because the
+    failure mode here was writing a new workflow without reading the old one.
+    """
+    builders = sorted(p.name for p in _WORKFLOWS.glob("*.y*ml")
+                      if "pyinstaller" in p.read_text(encoding="utf-8").lower())
+    assert builders == ["release.yml"]
 
 
 def test_the_release_workflow_never_runs_on_a_plain_commit():
@@ -123,16 +138,43 @@ def test_the_release_workflow_never_runs_on_a_plain_commit():
 
 
 def test_all_three_platforms_are_built():
-    matrix = _workflow()["jobs"]["build"]["strategy"]["matrix"]["include"]
-    assert {row["os"] for row in matrix} == {
+    matrix = _workflow()["jobs"]["build-desktop"]["strategy"]["matrix"]
+    assert set(matrix["os"]) == {
         "windows-latest", "macos-latest", "ubuntu-latest"}
 
 
 def test_one_platform_failing_still_yields_the_other_two():
-    assert _workflow()["jobs"]["build"]["strategy"]["fail-fast"] is False
+    assert _workflow()["jobs"]["build-desktop"]["strategy"]["fail-fast"] is False
 
 
 def test_the_tag_is_checked_against_the_version_before_anything_is_built():
     jobs = _workflow()["jobs"]
     assert "check-version" in jobs
-    assert jobs["build"]["needs"] == "check-version"
+    for job in ("build-sdk", "build-desktop"):
+        assert jobs[job]["needs"] == "check-version", job
+
+
+def test_the_consolidation_kept_every_piece_that_only_existed_in_one_file():
+    """The union the two workflows had to preserve between them. Pinned so a
+    future tidy-up cannot quietly drop the half that was only in the other
+    file — which is how the duplicate arose in the first place."""
+    text = _RELEASE.read_text(encoding="utf-8")
+    for needle, why in (
+        ("contents: write", "needed to attach assets to a release"),
+        ("desktop/installer.iss", "the Inno Setup installer"),
+        ("WINDOWS_CERT_BASE64", "the optional Windows signing hook"),
+        ("foxy-audit.desktop", "the Linux desktop entry"),
+        ("Analysis-00.toc", "the bundle asset verification"),
+    ):
+        assert needle in text, why
+
+
+def test_the_two_committed_versions_agree():
+    """One tag namespace releases both artefacts, so `VERSION` (the desktop
+    app) and `sdk/pyproject.toml` must carry the same number — `check-version`
+    refuses the tag otherwise, and failing here is cheaper than failing there.
+    """
+    version = (_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    pyproject = (_ROOT / "sdk" / "pyproject.toml").read_text(encoding="utf-8")
+    sdk = re.search(r'^version = "([^"]+)"', pyproject, re.M)
+    assert sdk and sdk.group(1) == version

@@ -1,8 +1,20 @@
 name: Release
 
-# Version-tagged releases. Push a tag like `v1.0.0` to build (and, when the token
-# is configured, publish) the SDK. The desktop installer build matrix is added to
-# this workflow in Phase 3.
+# Version-tagged releases. Push a tag like `v1.1.2` and this ONE workflow builds
+# everything that tag stands for: the SDK sdist + wheel (published to PyPI) and
+# the three desktop binaries (Windows installer, Linux AppImage, macOS .app),
+# then copies the installers to the VM the download buttons point at.
+#
+# ONE workflow on `tags: ["v*"]`, deliberately. A second desktop workflow on the
+# same trigger would run a second three-platform PyInstaller matrix per tag,
+# double the artefact volume, and race this one for the release assets.
+#
+# ONE tag namespace therefore means ONE version: `VERSION` (repo root, read at
+# runtime by `foxy_tokens.APP_VERSION`) and `sdk/pyproject.toml` must both equal
+# the tag. `check-version` fails the run in seconds when they don't — a binary
+# whose Settings card contradicts its own filename, or a wheel labelled 1.1.1
+# published under a v1.1.2 tag, is exactly what that check exists to stop.
+# **Bump both files in the commit you tag.**
 on:
   push:
     tags: ["v*"]
@@ -13,9 +25,48 @@ permissions:
   id-token: write        # allow switching to PyPI Trusted Publishing later
 
 jobs:
+  # Gate everything on the version being consistent and readable, BEFORE four
+  # runners spend ten minutes each. Every artefact below is named from this
+  # job's output, so no later step invents a number of its own.
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d ' \t\r\n' < VERSION)"
+          if [ -z "$VERSION" ]; then
+            echo "::error::VERSION is empty — a build would ship 'Version unknown in this build'."
+            exit 1
+          fi
+          SDK="$(awk -F'"' '/^version = /{print $2; exit}' sdk/pyproject.toml)"
+          if [ -z "$SDK" ]; then
+            echo "::error::could not read a version from sdk/pyproject.toml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION says $VERSION · sdk/pyproject.toml says $SDK"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            if [ "$TAG" != "$VERSION" ]; then
+              echo "::error::tag v$TAG does not match VERSION ($VERSION). Update VERSION in the same commit as the tag."
+              exit 1
+            fi
+            if [ "$TAG" != "$SDK" ]; then
+              echo "::error::tag v$TAG does not match sdk/pyproject.toml ($SDK). One tag releases both artefacts, so both must carry the tag's number."
+              exit 1
+            fi
+            echo "tag, VERSION and the SDK all agree: $VERSION"
+          fi
+
   # Build the SDK sdist + wheel. Always runs (tag or manual) so a bad build is
   # caught before any publish step.
   build-sdk:
+    needs: check-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,22 +114,36 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
 
-  # ── Desktop installers (Phase 3) ───────────────────────────────────────────
+  # ── Desktop installers ─────────────────────────────────────────────────────
   # Windows .exe + Linux AppImage now; macOS .app is built but STUBBED (no
   # notarization until an Apple Developer ID is provided). Every build is
   # UNSIGNED unless the matching cert secret is present — unsigned builds warn
   # and must NOT be handed to real clients as-is.
   build-desktop:
+    needs: check-version
     strategy:
-      fail-fast: false
-      matrix:
+      fail-fast: false        # one platform's toolchain breaking must not deny
+      matrix:                 # the owner the other two binaries
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # The committed number, already checked against the tag. Not derived from
+      # the ref, so an installer's filename can never disagree with the version
+      # the app itself reports out of the same VERSION file.
+      VER: ${{ needs.check-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # PyQt6 links against these at import time and PyInstaller imports the
+      # package to analyse it, so a bare ubuntu runner trips over libEGL.so.1 —
+      # the same dependency ci.yml's desktop job needs.
+      - name: Install Qt runtime libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
       - name: Install deps + PyInstaller
         run: |
           python -m pip install --upgrade pip
@@ -86,13 +151,54 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller desktop/omni_fox.spec
 
+      # A build that produced no runnable file must fail here rather than upload
+      # an empty artefact the owner discovers three days later.
+      - name: Check PyInstaller produced a runnable file
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Windows) BIN=dist/FoxyAudit.exe ;;
+            macOS)   BIN=dist/FoxyAudit.app ;;
+            *)       BIN=dist/FoxyAudit ;;
+          esac
+          test -e "$BIN" || { echo "::error::$BIN was not produced"; exit 1; }
+          echo "built: $BIN"
+
+      # The assets the app resolves through foxy_tokens.resource_path(). A past
+      # spec bug meant fonts/ was never bundled and the shipped build silently
+      # fell back to system fonts; onefile hides that until runtime, so read the
+      # build-time TOC rather than trusting the spec.
+      - name: Verify the bundle carries its assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, sys
+          # PyInstaller onefile appends a CArchive, not a zip — the reliable
+          # check is the build-time TOC that Analysis wrote.
+          toc = pathlib.Path("build/omni_fox/Analysis-00.toc")
+          if not toc.exists():
+              candidates = list(pathlib.Path("build").rglob("Analysis-00.toc"))
+              toc = candidates[0] if candidates else None
+          if toc is None:
+              print("::error::no Analysis TOC found — cannot verify the bundle")
+              sys.exit(1)
+          text = toc.read_text(encoding="utf-8", errors="replace")
+          required = ["ultimate_fox_spritesheet.png", "logo.png", "VERSION",
+                      "Unbounded-700.ttf", "SpaceMono-400.ttf"]
+          missing = [name for name in required if name not in text]
+          if missing:
+              print(f"::error::these assets are not in the bundle: {missing}")
+              sys.exit(1)
+          print("bundle carries:", ", ".join(required))
+          PY
+
       # ---- Windows: Inno Setup installer (+ optional signing) ----
       - name: Build Windows installer
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          case "$GITHUB_REF" in refs/tags/*) VER="${GITHUB_REF_NAME#v}";; *) VER="0.0.0-dev";; esac
-          echo "VER=$VER" >> "$GITHUB_ENV"
           choco install innosetup -y --no-progress
           "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "//DAppVersion=$VER" desktop/installer.iss
           # Inno Setup's OutputDir is relative to the .iss file, so it lands in desktop/Output.
@@ -117,17 +223,22 @@ jobs:
         with:
           name: FoxyAudit-Windows
           path: desktop/Output/*.exe
+          if-no-files-found: error
 
       # ---- Linux: AppImage ----
       - name: Package Linux AppImage
         if: runner.os == 'Linux'
         run: |
-          case "$GITHUB_REF" in refs/tags/*) VER="${GITHUB_REF_NAME#v}";; *) VER="0.0.0-dev";; esac
           APPDIR=FoxyAudit.AppDir
           mkdir -p "$APPDIR/usr/bin"
           cp dist/FoxyAudit "$APPDIR/usr/bin/FoxyAudit"
           cp desktop/logo.png "$APPDIR/foxyaudit.png"
-          printf '%s\n' '[Desktop Entry]' 'Name=Foxy Audit' 'Exec=FoxyAudit' 'Icon=foxyaudit' 'Type=Application' 'Categories=Utility;' > "$APPDIR/foxyaudit.desktop"
+          # desktop/foxy-audit.desktop is the one committed entry (it also ships
+          # in the artefact, for installing the raw binary under /opt). Only the
+          # two path keys are rewritten here: inside an AppDir, Exec and Icon
+          # must be AppDir-relative names, never absolute install paths.
+          sed -e 's|^Exec=.*|Exec=FoxyAudit|' -e 's|^Icon=.*|Icon=foxyaudit|' \
+            desktop/foxy-audit.desktop > "$APPDIR/foxyaudit.desktop"
           printf '%s\n' '#!/bin/sh' 'HERE="$(dirname "$(readlink -f "$0")")"' 'exec "$HERE/usr/bin/FoxyAudit" "$@"' > "$APPDIR/AppRun"
           chmod +x "$APPDIR/AppRun"
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
@@ -139,7 +250,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FoxyAudit-Linux
-          path: "*.AppImage"
+          path: |
+            *.AppImage
+            desktop/foxy-audit.desktop
+          if-no-files-found: error
 
       # ---- macOS: STUBBED (build only; unsigned, not notarized) ----
       - name: Package macOS (stubbed)
@@ -153,8 +267,9 @@ jobs:
         with:
           name: FoxyAudit-macOS
           path: dist/FoxyAudit-macos.zip
+          if-no-files-found: error
 
-  # ── Publish installers to the VM download dir (Phase 4) ─────────────────────
+  # ── Publish installers to the VM download dir ──────────────────────────────
   # Copies the Windows + Linux builds to /home/devops/foxy-downloads on the prod
   # VM under STABLE names, so the sales-page download buttons never change per
   # release. Served by host nginx at https://foxyaudit.tech/download/.
