@@ -380,7 +380,11 @@ def test_the_alert_defaults_are_what_the_fox_already_did():
     from fox_settings import FoxSettings
     from foxy_client import MemorySecretStore
     import tempfile, os
-    QApplication.instance() or QApplication([])
+    # HELD, not discarded — see test_qt_lifecycle.py. A bare
+    # `QApplication.instance() or QApplication([])` drops the only Python
+    # reference and the interpreter dies at shutdown with exit 127.
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
     path = os.path.join(tempfile.mkdtemp(), "s.ini")
     s = FoxSettings(QSettings(path, QSettings.Format.IniFormat),
                     MemorySecretStore())

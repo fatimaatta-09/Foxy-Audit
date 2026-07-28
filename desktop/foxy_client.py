@@ -444,6 +444,16 @@ class FoxyClient(QObject):
     - workspace_unavailable(str)       → terminal error state
     """
 
+    # `step_up_required` carries the StepUpRequired EXCEPTION, because the UI
+    # needs the original method/path/body to replay the call after the code is
+    # confirmed. That was long suspected of being this build's exit-127
+    # interpreter kill ("bisected to the payload, not the signal type") — it
+    # is not. Measured directly: a QThread emitting an exception instance
+    # across `pyqtSignal(object)` to a main-thread receiver, 200 times, exits
+    # 0 with every payload delivered; so does a live QWidget. The real cause
+    # was a test dropping its only reference to the QApplication, which is
+    # pinned by `test_qt_lifecycle.py`. Do not narrow this signal on the
+    # strength of the old report.
     step_up_required = pyqtSignal(object)
     session_expired = pyqtSignal(str)
     workspace_unavailable = pyqtSignal(str)
