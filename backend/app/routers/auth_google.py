@@ -27,7 +27,7 @@ from ..auth import hash_key
 from ..config import get_settings
 from ..db import get_db
 from ..models import ApiKey, MarketingLead, Organization, User
-from .auth_human import _establish_session
+from .auth_human import _establish_session, _record_login_and_alert
 from .logs import limiter
 
 router = APIRouter()
@@ -126,6 +126,6 @@ def google_auth(payload: GoogleAuthRequest, request: Request, db: Session = Depe
         raise HTTPException(status_code=403, detail="This workspace is suspended")
 
     db.commit()
-    _establish_session(request, user, db)            # no email OTP for verified Google
-    login_history.record(db, request, email, True, user)
+    sid = _establish_session(request, user, db)      # no email OTP for verified Google
+    _record_login_and_alert(request, user, db, email, sid)
     return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}

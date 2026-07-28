@@ -30,7 +30,7 @@ from ..auth import require_role
 from ..config import get_settings
 from ..db import get_db
 from ..models import Organization, SsoConnection, User
-from .auth_human import _establish_session
+from .auth_human import _establish_session, _record_login_and_alert
 
 router = APIRouter()
 
@@ -192,5 +192,9 @@ def sso_callback(request: Request, code: str = "", state: str = "",
     if org is not None and org.deleted_at is not None:
         raise HTTPException(status_code=403, detail="This workspace has been deleted")
     db.commit()
-    _establish_session(request, user, db)
+    # SSO sign-ins were not being recorded in login history at all, so they were
+    # invisible to the admin history view AND could never be recognised as a known
+    # device. Record them like every other successful sign-in (P3 §3).
+    sid = _establish_session(request, user, db)
+    _record_login_and_alert(request, user, db, user.email, sid)
     return RedirectResponse(url=get_settings().dashboard_url or "/dashboard", status_code=303)

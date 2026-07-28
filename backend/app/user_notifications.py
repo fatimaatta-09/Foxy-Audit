@@ -58,6 +58,10 @@ KEY_ROTATION_REMINDER_EVERY_DAYS = 30
 # Bounded so a breach storm can never grow memory without limit; overflow is
 # logged and dropped (the in-app notification + ledger still record everything).
 _BREACH_QUEUE: queue.Queue = queue.Queue(maxsize=2000)
+# New-device sign-in alerts (P3 §3). Same shape as the breach queue: the login
+# request only enqueues plain values and this module's thread does the sending,
+# so a slow mail provider can never add latency to — or fail — a sign-in.
+_DEVICE_QUEUE: queue.Queue = queue.Queue(maxsize=2000)
 
 
 def _dashboard_url() -> str:
@@ -208,6 +212,118 @@ def send_breach_alert(db: Session, item: dict) -> int:
                 html=html, text=plain):
             sent += 1
     return sent
+
+
+# ── (a2) new-device sign-in alerts (P3 §3) ──────────────────────────────────
+# Deliberately NOT gated on a user preference. A sign-in from an unrecognised
+# device is the one notification that tells you your account is being used by
+# somebody else; a switch that turns it off is a switch that helps an attacker
+# stay quiet. The ops kill switch (user_notifications_enabled) still applies,
+# because that exists to stop the mailer, not to configure the product.
+
+_UA_BROWSERS = (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"),
+                ("Chrome/", "Chrome"), ("Safari/", "Safari"))
+_UA_PLATFORMS = (("Windows NT", "Windows"), ("Android", "Android"),
+                 ("iPhone", "iPhone"), ("iPad", "iPad"), ("Mac OS X", "macOS"),
+                 ("CrOS", "ChromeOS"), ("Linux", "Linux"))
+
+
+def describe_device(user_agent: str | None) -> str:
+    """'Chrome on Windows' from a user-agent, or the raw string when we cannot
+    tell. Never invents a device — an unrecognised agent is shown verbatim so the
+    reader can judge it themselves."""
+    ua = (user_agent or "").strip()
+    if not ua:
+        return "an unrecognised device"
+    browser = next((name for token, name in _UA_BROWSERS if token in ua), None)
+    platform = next((name for token, name in _UA_PLATFORMS if token in ua), None)
+    if browser and platform:
+        return f"{browser} on {platform}"
+    if browser or platform:
+        return browser or platform
+    return ua[:80]
+
+
+def enqueue_new_device_alert(*, user_id, org_id, email: str, ip: str | None,
+                             user_agent: str | None, session_id=None) -> None:
+    """Called from the login path. Copies plain values only (nothing ORM- or
+    session-bound crosses the thread boundary), never blocks, never raises into
+    a sign-in — an alert that breaks logins is worse than no alert."""
+    if not get_settings().user_notifications_enabled:
+        return
+    try:
+        _DEVICE_QUEUE.put_nowait({
+            "user_id": str(user_id), "org_id": str(org_id), "email": email,
+            "ip": ip, "user_agent": user_agent,
+            "session_id": (str(session_id) if session_id else None),
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+    except queue.Full:
+        log.warning("new-device queue full — dropping alert for user %s", user_id)
+    except Exception as exc:                # noqa: BLE001 — never break a login
+        log.warning("could not queue new-device alert: %s", exc)
+
+
+def drain_new_device_alerts(db: Session, *, limit: int = 200) -> int:
+    """Send every queued new-device alert (up to `limit`). Returns emails sent."""
+    sent = 0
+    for _ in range(limit):
+        try:
+            item = _DEVICE_QUEUE.get_nowait()
+        except queue.Empty:
+            break
+        try:
+            sent += send_new_device_alert(db, item)
+        except Exception as exc:            # noqa: BLE001 — one alert must not stop the drain
+            db.rollback()
+            log.warning("new-device alert failed for user %s: %s", item.get("user_id"), exc)
+    return sent
+
+
+def send_new_device_alert(db: Session, item: dict) -> int:
+    """Email one user that their account was signed into from a new device."""
+    org = db.get(Organization, uuid.UUID(str(item["org_id"])))
+    if org is None or org.suspended or org.deleted_at is not None:
+        return 0
+    user = db.get(User, uuid.UUID(str(item["user_id"])))
+    if user is None or user.disabled:
+        return 0
+    to = user.email
+
+    when = item.get("at") or ""
+    try:
+        when = datetime.fromisoformat(when).strftime("%d %b %Y at %H:%M UTC")
+    except ValueError:
+        when = "just now"
+    ip = (item.get("ip") or "").strip()
+    rows = [("When", when), ("Device", describe_device(item.get("user_agent")))]
+    # No geo-IP provider is configured, so there is no location to give. Say that
+    # rather than guessing one — a wrong city in a security email is worse than a
+    # missing one, and this product does not ship invented data.
+    rows.append(("IP address", ip or "not recorded"))
+    rows.append(("Approximate location", "not available"))
+
+    # Release the read transaction BEFORE the network send (see send_breach_alert).
+    db.commit()
+
+    html, plain = et.layout(
+        title="New sign-in to your Foxy Audit account",
+        preheader=f"A new device signed in to {to}.",
+        blocks=[
+            et.paragraph(f"Your Foxy Audit account ({to}) was just signed into from a "
+                         f"device we have not seen before."),
+            et.info_rows(rows),
+            et.callout("If this was you, no action is needed. If it was not, open your "
+                       "device list and revoke the session, then change your password.",
+                       tone="warn"),
+            et.muted("Security alerts like this one cannot be switched off."),
+        ],
+        cta={"label": "Review your devices", "url": _dashboard_url()},
+        surface="customer",
+    )
+    return 1 if email_mod.send_email(
+        to=to, subject="New sign-in to your Foxy Audit account",
+        html=html, text=plain) else 0
 
 
 # ── (b) weekly digest — Mondays, once per ISO week ──────────────────────────
@@ -415,6 +531,7 @@ def user_notifications_loop(stopping: dict, s) -> None:
         db = SessionLocal()
         try:
             drain_breach_alerts(db)
+            drain_new_device_alerts(db)
             now = time.monotonic()
             if now - last_sweep >= s.user_notifications_interval:
                 last_sweep = now

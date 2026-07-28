@@ -20,7 +20,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import account_audit, email as email_mod, email_templates as et, login_history, mfa, password_reset
+from .. import (account_audit, email as email_mod, email_templates as et, login_history, mfa,
+                password_reset, user_notifications)
 from ..auth import (_scope_org, grant_step_up, hash_session_token, require_role,
                     require_step_up_user, require_user, resolve_org)
 from ..config import get_settings
@@ -88,7 +89,7 @@ _DUMMY_HASH = b"$2b$12$Rz1JAD5efasLHu5D.kolz.QagN8aF7XSazm89wlVY8DJ/cjvNXsrm"
 
 
 def _establish_session(request: Request, user: User, db: Session,
-                       remember: bool = False) -> None:
+                       remember: bool = False) -> uuid.UUID:
     request.session.clear()   # rotate: drop any pre-existing (planted) session
     request.session["user_id"] = str(user.id)
     request.session["org_id"] = str(user.org_id)
@@ -100,8 +101,9 @@ def _establish_session(request: Request, user: User, db: Session,
     token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc)
     _scope_org(db, user.org_id)
+    session_id = uuid.uuid4()
     db.add(UserSession(
-        id=uuid.uuid4(), user_id=user.id, org_id=user.org_id,
+        id=session_id, user_id=user.id, org_id=user.org_id,
         token_hash=hash_session_token(token),
         ip=(client_ip(request) or "")[:64] or None,
         user_agent=(request.headers.get("user-agent") or "")[:400] or None,
@@ -109,6 +111,28 @@ def _establish_session(request: Request, user: User, db: Session,
     ))
     db.commit()
     request.session["session_token"] = token
+    return session_id
+
+
+def _record_login_and_alert(request: Request, user: User, db: Session, email: str,
+                            session_id: uuid.UUID | None = None) -> None:
+    """Record the successful attempt, then queue a new-device alert if warranted.
+
+    The new-device question is asked BEFORE the attempt is recorded — otherwise
+    this login is already in the history and matches itself, and no device is
+    ever new. The alert is only ENQUEUED here; it is sent from the notifications
+    thread, so a slow mail provider cannot delay or fail a sign-in (P3 §3)."""
+    ua = (request.headers.get("user-agent") or "")[:256]
+    try:
+        new_device = login_history.is_new_device(db, user, ua)
+    except Exception:                       # noqa: BLE001 — never break a login
+        db.rollback()
+        new_device = False
+    login_history.record(db, request, email, True, user)
+    if new_device:
+        user_notifications.enqueue_new_device_alert(
+            user_id=user.id, org_id=user.org_id, email=user.email,
+            ip=client_ip(request), user_agent=ua, session_id=session_id)
 
 
 @router.post("/v1/auth/login")
@@ -144,8 +168,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             if user.mfa_enabled:
                 mfa.issue_code(db, user, user.email)
                 return {"mfa_required": True, "email": user.email}
-            _establish_session(request, user, db, payload.remember_me)
-            login_history.record(db, request, email, True, user)
+            sid = _establish_session(request, user, db, payload.remember_me)
+            _record_login_and_alert(request, user, db, email, sid)
             return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
     if not candidates:
         bcrypt.checkpw(pw, _DUMMY_HASH)       # equalize timing vs. the valid-email path
@@ -177,8 +201,8 @@ def mfa_verify(payload: MfaRequest, request: Request, db: Session = Depends(get_
                 raise HTTPException(status_code=403, detail="This workspace is suspended")
             mfa.clear_code(user)
             db.commit()
-            _establish_session(request, user, db, payload.remember_me)
-            login_history.record(db, request, user.email, True, user)
+            sid = _establish_session(request, user, db, payload.remember_me)
+            _record_login_and_alert(request, user, db, user.email, sid)
             return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
     raise HTTPException(status_code=401, detail="Invalid or expired code")
 
@@ -422,8 +446,8 @@ def redeem_handoff(payload: HandoffRedeemRequest, request: Request,
         raise HTTPException(status_code=403, detail="This workspace has been deleted")
     row.used_at = now
     db.commit()
-    _establish_session(request, user, db)
-    login_history.record(db, request, user.email, True, user)
+    sid = _establish_session(request, user, db)
+    _record_login_and_alert(request, user, db, user.email, sid)
     return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
 
 
