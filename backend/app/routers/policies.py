@@ -20,6 +20,7 @@ from ..auth import require_role, resolve_org
 from ..crypto_secrets import SecretsNotConfigured, encrypt_secret
 from ..db import get_db
 from ..judge_routing import platform_keys_allowed
+from ..config import get_settings
 from ..models import OrgPolicy, Organization, User
 
 router = APIRouter()
@@ -56,6 +57,13 @@ class PolicyConfig(BaseModel):
     openai_key_set: bool = False
     plan_tier: str | None = None
     platform_keys_allowed: bool = False
+    # §7.6 · read-only. Which model each provider will actually grade with, so
+    # the dashboard can name it instead of guessing. There is NO per-org model
+    # column — the model is deployment config (settings.gemini_model /
+    # settings.openai_model), so this reports rather than offers a choice.
+    # Additive: the desktop reads this endpoint (desktop/dashboard.py:3177) and
+    # takes named keys, so a new key is inert there.
+    judge_models: dict[str, str] = {}
 
 
 def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig":
@@ -77,6 +85,8 @@ def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig
         openai_key_set=bool((row.openai_key_enc or "").strip()),
         plan_tier=tier,
         platform_keys_allowed=platform_keys_allowed(tier),
+        judge_models={"gemini": get_settings().gemini_model,
+                      "openai": get_settings().openai_model},
     )
 
 

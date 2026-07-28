@@ -1516,9 +1516,9 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Content safeguards</div></div></div>
           <input class="cin" id="polSearch" placeholder="Search safeguards…" style="margin:0 0 12px;" oninput="filterPolicies()" autocomplete="off">
           <div id="polNoMatch" style="display:none;font-size:11px;color:var(--muted);padding:8px 0;">No safeguard matches your search.</div>
-          <div class="prow"><div><div class="pname">Block PII — names, SSNs, emails</div><div class="pdesc">Judge rejects prompts/responses with detectable personal identifiers</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polPii" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-          <div class="prow"><div><div class="pname">Flag prompt injections</div><div class="pdesc">marks jailbreak and indirect injection attempts for review</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polInjection" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
-          <div class="prow"><div><div class="pname">Regulated data mode — HIPAA / financial</div><div class="pdesc">stricter grading for regulated workloads (PHI, cardholder, account data)</div><span class="sev med">medium severity</span></div><label class="toggle"><input type="checkbox" id="polRegulated"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
+          <div class="prow"><div><div class="pname">Block PII — names, SSNs, emails</div><div class="pdesc">A local PII signal from the SDK is enough on its own: the deterministic rule marks the interaction a breach before the judge is asked.</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polPii" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
+          <div class="prow"><div><div class="pname">Flag prompt injections</div><div class="pdesc">Tells the judge to flag repeated hashes in one session (replay) and token spikes over 10x the average for that policy tag.</div><span class="sev high">high severity</span></div><label class="toggle"><input type="checkbox" id="polInjection" checked><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
+          <div class="prow"><div><div class="pname">Regulated data mode — HIPAA / financial</div><div class="pdesc">Any interaction tagged pci, sox, hipaa, gdpr or eu_ai_act is risk-scored 60 or higher unless it is clearly compliant.</div><span class="sev med">medium severity</span></div><label class="toggle"><input type="checkbox" id="polRegulated"><div class="ttrack" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked"></div></label></div>
         </div>
         <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Judge sensitivity</div></div></div>
@@ -1533,7 +1533,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div class="lvbar" aria-hidden="true"><i id="polTokenBar"></i></div>
           <div class="lvdesc" id="polTokenDesc">—</div>
           <div class="lvcustom" id="polTokenCustom" hidden></div>
-          <div class="flabel">enforcement mode</div>
+          <div class="flabel" style="margin-top:16px;">enforcement mode</div>
           <select id="polEnforcement"><option value="block">block on breach</option><option value="flag">flag only, allow through</option><option value="monitor">silent monitor (log only)</option></select>
           <div class="flabel">confidence threshold</div>
           <select id="polConfidence" hidden><option value="high">high — fewer false positives</option><option value="balanced">balanced (default)</option><option value="low">low — catch every edge case</option></select>
@@ -1544,8 +1544,11 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           </div>
           <div class="lvbar" aria-hidden="true"><i id="polConfidenceBar"></i></div>
           <div class="lvdesc" id="polConfidenceDesc">—</div>
-          <details class="polgroup" open>
-            <summary>Alerts &amp; webhooks <span style="color:var(--muted);font-weight:400;">· where breach alerts go</span></summary>
+        </div>
+        <div class="clay pad" style="margin-top:16px;">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 9.8a5.8 5.8 0 10-11.6 0c0 5.6-2.2 7-2.2 7h16s-2.2-1.4-2.2-7z"/><path d="M13.7 20a2 2 0 01-3.4 0"/></svg></span></div><div class="txt">Where breach alerts go</div></div></div>
+          <details class="polgroup" open style="margin-top:0;border-top:0;">
+            <summary style="display:none;">Alerts</summary>
             <div class="flabel">notification on breach</div>
             <select id="polNotify"><option value="immediate">immediate alert</option><option value="digest">batch — hourly digest</option><option value="none">no notification</option></select>
             <div class="flabel">alert email <span style="color:var(--muted);font-weight:400;">(blank = workspace contact)</span></div>
@@ -1569,6 +1572,11 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
               <option value="openai">OpenAI</option>
               <option value="both">Both — graded twice, any breach wins</option>
             </select>
+            <!-- §7.6 · the real model each provider will use, read from the
+                 backend rather than guessed. There is no per-org model FIELD to
+                 pick from (see the report) — the model is deployment config, so
+                 what the page can honestly show is which one will grade you. -->
+            <div id="polJudgeModels" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);line-height:1.6;margin-top:7px;"></div>
             <div class="flabel">whose API key pays for grading</div>
             <div class="seg" id="polKeyMode" role="group" aria-label="Judge key source">
               <button type="button" data-mode="own" aria-pressed="true" onclick="setJudgeKeyMode('own')">my own key</button>
@@ -1596,8 +1604,15 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           </div>
         </div>
       </div>
-      <div class="clay pad" style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.65;">
-        These preferences are saved to your workspace as part of your compliance policy. Foxy Audit stores only a tamper-proof hash and the verdict of each interaction — <b>never the raw prompt or response</b>. See our <a href="https://foxyaudit.tech/privacy.html" style="color:var(--fox2);" target="_blank" rel="noopener">Privacy Policy</a> for how your data is handled.
+      <div class="clay pad" style="margin-top:16px;position:relative;overflow:hidden;">
+        <svg class="dglyph" aria-hidden="true" style="opacity:.10;"><use href="#dg-lock"/></svg>
+        <div class="stitle" style="margin-bottom:10px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.4"/><path d="M8.2 10.5V7.2a3.8 3.8 0 017.6 0v3.3"/></svg></span></div><div class="txt">What leaves your workspace</div></div></div>
+        <div style="position:relative;font-size:11.5px;color:var(--ink2);line-height:1.7;max-width:62ch;">
+          <div><b>Stored:</b> a tamper-proof hash of each interaction, its verdict, token counts and policy tags.</div>
+          <div style="margin-top:5px;"><b>Never stored:</b> the raw prompt or the raw response — neither reaches Foxy, and neither appears in an export or on the chain.</div>
+          <div style="margin-top:5px;"><b>Sent to the judge:</b> those same hashes and counts. The judge grades metadata; it never sees content.</div>
+          <div style="margin-top:9px;"><a href="https://foxyaudit.tech/privacy.html" style="color:var(--fox2);" target="_blank" rel="noopener">Privacy Policy</a></div>
+        </div>
       </div>
     </div>
 
@@ -3188,6 +3203,16 @@ async function loadLoginHistory(){
     JUDGE.clear.gemini=false; JUDGE.clear.openai=false;
     JUDGE.mode=(p.judge_key_mode==='platform'&&JUDGE.platformAllowed)?'platform':'own';
     if($('polJudgeProvider'))$('polJudgeProvider').value=p.judge_provider||'gemini';
+    // §7.6 · name the model that will actually grade, per provider. The backend
+    // reports these because there is no per-org model to choose; an absent map
+    // means an older server, so say nothing rather than guess.
+    const jm=$('polJudgeModels');
+    if(jm){
+      const m=p.judge_models||{};
+      jm.textContent=(m.gemini||m.openai)
+        ? ('grades with · gemini: '+(m.gemini||'—')+'  ·  openai: '+(m.openai||'—'))
+        : '';
+    }
     ['polGeminiKey','polOpenaiKey'].forEach(function(id){ const el=$(id); if(el)el.value=''; });
     const plat=$('polKeyModePlatform');
     if(plat){
