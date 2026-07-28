@@ -29,3 +29,4 @@ deploy/backups/
 # OS / editor
 .DS_Store
 Thumbs.db
+logo/build/
