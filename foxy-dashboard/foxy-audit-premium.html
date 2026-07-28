@@ -133,6 +133,7 @@
   --c-6: var(--dec2);
   /* paper token used by the shown-once secret input */
   --paper: #fff;
+  color-scheme: dark;
 }
 
 /* ═══════════════ P1 §2 · ONE SKIN, TWO THEMES ═══════════════
@@ -165,6 +166,7 @@ html[data-theme="light"]{
   --dk: rgba(178,166,152,.58);
   --bc: rgba(120,105,90,.13);
   --bloom: radial-gradient(60% 80% at 100% 0%, rgba(255,122,46,.10), transparent 70%);
+  color-scheme: light;
 }
 
 /* ── theme toggle ── */
@@ -528,6 +530,11 @@ select{font-family:var(--mono);font-size:11.5px;cursor:pointer;}
    and 4.92). Same call the desktop app already made deliberately in
    auth_windows.py; the two surfaces now agree. */
 .cin::placeholder{color:var(--muted);}
+input[type="date"]::-webkit-calendar-picker-indicator{
+  cursor:pointer;opacity:.65;transition:opacity .14s;
+  filter:invert(52%) sepia(72%) saturate(2400%) hue-rotate(347deg) brightness(101%) contrast(101%);}
+input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
+html[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:.55;}
 
 /* ── password reveal (P3 §2.2) ──────────────────────────────────────────────
    The field keeps its sunken clay look, so the button is transparent and sits
@@ -587,7 +594,7 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .btn:active{transform:none;box-shadow:var(--sink-sm);}
 .btn:focus-visible{outline:2px solid var(--fox);outline-offset:3px;}
 .btn.pri{background:linear-gradient(145deg,var(--fox),var(--fox-grad));color:var(--foxink);
-  box-shadow:var(--raise-sm),inset 0 1px 0 rgba(255,255,255,.28);}
+  box-shadow:var(--raise-sm);}
 .btn.ghost{background:var(--surf3);color:var(--ink);}
 .btn.danger{background:var(--breach-bg);color:var(--breach-tx);}
 .btn.sm{padding:8px 14px;font-size:11px;margin-top:0;width:auto;border-radius:10px;}
@@ -822,6 +829,30 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .ldg-row{cursor:pointer;}
 .ldg-row:hover{background:var(--surf2);}
 .ldg-row:focus-visible{outline:2px solid var(--fox);outline-offset:-2px;}
+
+/* ════════════════ P2 §8.2 · THE PASSPORT CARD ════════════════
+   The page's one signature element: the artefact it produces, shown as an
+   object rather than described in a sentence. Dark ink on the fox gradient,
+   which is the pair P1 §9 measured at 8.12:1 and 5.15:1. */
+.passcard{
+  position:relative;border-radius:var(--r-lg);padding:clamp(15px,2vw,19px);
+  background:linear-gradient(145deg,var(--fox),var(--fox-grad));color:var(--foxink);
+  box-shadow:var(--raise);overflow:hidden;min-height:150px;
+  display:flex;flex-direction:column;justify-content:space-between;gap:12px;
+}
+.passcard-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
+.passcard-kind{font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;opacity:.75;}
+.passcard-brand{font-family:var(--disp);font-weight:900;font-size:13px;letter-spacing:.08em;opacity:.5;}
+.passcard-org{font-weight:800;font-size:clamp(15px,2vw,19px);letter-spacing:-.4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.passcard-head{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;opacity:.82;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.passcard-foot{display:flex;gap:22px;flex-wrap:wrap;}
+.passcard-foot span{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.passcard-foot i{font-family:var(--mono);font-size:8.5px;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;font-style:normal;opacity:.7;}
+.passcard-foot b{font-family:var(--mono);font-size:11.5px;font-weight:800;}
 
 /* ════════════════ P2 §3 · PAGINATION ════════════════
    One component on every surface that scrolls. A count you can trust beats
@@ -1646,7 +1677,22 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           </div>
         </div>
         <div class="clay pad">
-          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Chain metadata</div></div></div>
+          <!-- §8.2 · the passport is the artefact this page produces, so the
+               page shows it as one. Every value below is the same live figure
+               the metadata rows carry — nothing here is decorative filler. -->
+          <div class="passcard" id="passCard">
+            <div class="passcard-top">
+              <span class="passcard-kind">Compliance passport</span>
+              <span class="passcard-brand">FOXY</span>
+            </div>
+            <div class="passcard-org" id="passOrg">—</div>
+            <div class="passcard-head" id="passHead">—</div>
+            <div class="passcard-foot">
+              <span><i>records</i><b id="passRecords">—</b></span>
+              <span><i>period</i><b id="passPeriod">—</b></span>
+            </div>
+          </div>
+          <div class="stitle" style="margin-top:16px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Chain metadata</div></div></div>
           <div class="erow"><span class="elabel">records</span><span class="eval" id="metaRecords">—</span></div>
           <div class="erow"><span class="elabel">chain integrity</span><span class="eval ok" id="metaIntegrity">100% — no gaps</span></div>
           <div class="erow"><span class="elabel">chain head</span><span class="eval mono" id="metaHead">—</span></div>
@@ -2867,6 +2913,8 @@ async function loadLoginHistory(){
       const v=await (await api('/v1/verify')).json();
       paintChainRing(v);
       const rec=$('metaRecords'); if(rec)rec.textContent=v.count+' hash entries';
+      // §8.2 · the passport card carries the SAME figures as the rows below it
+      const pr=$('passRecords'); if(pr)pr.textContent=(v.count==null?'—':String(v.count));
       // Same three outcomes as verifyChain: this line rendered "broken at seq
     // null" for a ledger nothing was ever checked against.
     const integ=$('metaIntegrity');
@@ -2877,8 +2925,14 @@ async function loadLoginHistory(){
     }
       const l=await (await api('/v1/logs?limit=1')).json();
       const head=$('metaHead'); if(head&&l.items&&l.items[0])window.foxMask(head, l.items[0].chain_hash, {label:'chain head'});
+      const ph=$('passHead');
+      if(ph&&l.items&&l.items[0]&&l.items[0].chain_hash){
+        const h=String(l.items[0].chain_hash);
+        ph.textContent=h.slice(0,12)+'…'+h.slice(-6);
+      }
       const me=await (await api('/v1/auth/me')).json();
       const org=$('metaOrg'); if(org&&me.org_id)window.foxMask(org, me.org_id, {label:'organization ID'});
+      const po=$('passOrg'); if(po)po.textContent=(me.org_name||me.email||'Your workspace');
       try{ const sla=await (await api('/v1/anchors/sla')).json();
         const sl=$('metaSLA'); if(sl&&sla.cadence_human) sl.textContent='every '+sla.cadence_human+(sla.plan_tier?' · '+sla.plan_tier:''); }catch(_){}
     }catch(e){}
@@ -2997,12 +3051,26 @@ async function loadLoginHistory(){
     if(btn)btn.disabled=false;
   }
   // set the export from/to pickers to a rolling window (0 = all time → open-ended)
+  function paintPassPeriod(){
+    const el=document.getElementById('passPeriod'); if(!el)return;
+    const f=((document.getElementById('expFrom')||{}).value||'').trim();
+    const t=((document.getElementById('expTo')||{}).value||'').trim();
+    el.textContent = (!f&&!t) ? 'all time'
+      : (f&&t) ? (f+' → '+t)
+      : f ? (f+' → now')
+      : ('up to '+t);
+  }
+  window.paintPassPeriod=paintPassPeriod;
+  document.addEventListener('change',function(e){
+    if(e.target&&(e.target.id==='expFrom'||e.target.id==='expTo'))paintPassPeriod();
+  });
   window.setExportRange=function(days){
     const from=$('expFrom'), to=$('expTo'); if(!from||!to)return;
     const iso=d=>d.toISOString().slice(0,10);
     to.value=iso(new Date());
-    if(days===0){ from.value=''; }
+    if(days===0){ from.value=''; to.value=''; }
     else { const f=new Date(); f.setDate(f.getDate()-days); from.value=iso(f); }
+    paintPassPeriod();          // assigning .value fires no change event
   };
   // Real Passport export: POST /v1/passport (honouring the date range) -> open the PDF.
   window.runExport=async function(){
