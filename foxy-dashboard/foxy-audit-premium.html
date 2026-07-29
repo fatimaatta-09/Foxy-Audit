@@ -1246,6 +1246,10 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
               Devices &amp; sessions
             </button>
+            <button class="usermenu-item" type="button" id="userMenuTour" onclick="closeMenus();if(window.foxTourStart)window.foxTourStart();">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.4"/><path d="M12 17h.01"/></svg>
+              Take the product tour
+            </button>
             <div class="usermenu-sep"></div>
             <button class="usermenu-item danger" type="button" onclick="foxLogout()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
@@ -2234,7 +2238,10 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
       // the reveal was refused rather than copying an empty string.
       {kw:'copy organization id org workspace', label:'Copy organization ID', act:()=>{ close(); window.foxOrgId().then(id=>{ if(id){ try{navigator.clipboard.writeText(id);}catch(e){} try{showToast('Copied organization ID');}catch(e){} } else { try{showToast('Organization ID not revealed');}catch(e){} } }); }},
       {kw:'verify a record hash paste', label:'Verify a record by hash…', act:()=>{ close(); window.go('verify',null); const el=$('vLedgerHash'); if(el)el.focus(); }},
-      {kw:'keyboard shortcuts help hotkeys cheat sheet', label:'Keyboard shortcuts', act:()=>{ close(); if(window.openShortcuts)window.openShortcuts(); }}
+      {kw:'keyboard shortcuts help hotkeys cheat sheet', label:'Keyboard shortcuts', act:()=>{ close(); if(window.openShortcuts)window.openShortcuts(); }},
+      // §5.3 · the tour stays reachable after it is skipped or finished. This
+      // palette is the product's help menu — there is no other one.
+      {kw:'tour tutorial walkthrough guide help onboarding show me around', label:'Take the product tour', act:()=>{ close(); if(window.foxTourStart)window.foxTourStart(); }}
     ];
     ACTIONS.forEach(a=>{ if(!norm||a.label.toLowerCase().includes(lc)||a.kw.indexOf(lc)>=0) out.push({label:a.label, act:a.act}); });
     return out;
@@ -5679,6 +5686,274 @@ async function loadLoginHistory(scope){
     if(next){ e.preventDefault(); pick(next); }
   });
   sync('');
+})();
+</script>
+
+<!-- ═══ P3 §5 · first-run walkthrough — a spotlight that points at real controls ═══
+     This is NOT the #firstRun checklist card on Home; that is a separate feature
+     and it keeps working. This is the arrow tour §5.1 asks for.
+
+     Deliberately not the blocking tutorial the original request described (§5.2):
+     Esc exits from every step and a Skip control is rendered on every step, so a
+     user who hits a bug mid-flow is never trapped. Near-blocking completion comes
+     from §5.3 instead — a skipped tour is offered again on the next login, which
+     persuades rather than imprisons.
+
+     The dim is one element's box-shadow spread rather than four masking divs or a
+     clip-path: the "hole" is the only thing that has to be positioned, so there is
+     one rect to keep in sync with the target instead of four. -->
+<style>
+  #tourOverlay{display:none;position:fixed;inset:0;z-index:9998;}
+  #tourOverlay.on{display:block;}
+  /* Below #authGate (9999) on purpose: if the session drops mid-tour the sign-in
+     gate must cover this, never the other way round. */
+  #tourHole{position:fixed;border-radius:14px;pointer-events:none;
+    box-shadow:0 0 0 9999px rgba(6,5,4,.72);outline:2px solid var(--fox);outline-offset:3px;}
+  #tourBubble{position:fixed;width:310px;max-width:calc(100vw - 24px);background:var(--surf);
+    border-radius:var(--r-lg);box-shadow:var(--raise-lg);padding:15px 16px 13px;pointer-events:auto;}
+  #tourBubble:focus{outline:2px solid var(--fox);outline-offset:3px;}
+  #tourArrow{position:absolute;width:12px;height:12px;background:var(--surf);transform:rotate(45deg);}
+  .tour-count{font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.5px;
+    text-transform:uppercase;color:var(--fox2);}
+  .tour-t{font-weight:800;font-size:14px;letter-spacing:-.2px;margin-top:5px;color:var(--ink);}
+  .tour-b{font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:6px;}
+  .tour-acts{display:flex;align-items:center;gap:7px;margin-top:13px;}
+  .tour-acts .btn{margin-top:0;}
+  #tourSkip{margin-right:auto;background:none;border:none;padding:8px 2px;cursor:pointer;
+    font-family:var(--disp);font-size:11px;font-weight:700;color:var(--muted);text-decoration:underline;}
+  #tourSkip:hover{color:var(--ink);}
+  #tourSkip:focus-visible,#tourBack:focus-visible,#tourNext:focus-visible{outline:2px solid var(--fox);outline-offset:2px;}
+  .tour-hint{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:9px;text-align:right;}
+  /* 44px minimum touch target on the two real buttons (§5.4 / WCAG 2.5.5). */
+  #tourBack,#tourNext{min-height:44px;}
+  #tourSkip{min-height:44px;}
+  @media(prefers-reduced-motion:no-preference){
+    #tourHole{transition:top .2s ease-out,left .2s ease-out,width .2s ease-out,height .2s ease-out;}
+    #tourOverlay.on #tourBubble{animation:afade .18s ease both;}
+  }
+  /* The FIRST placement must not animate. The hole's untouched position is the
+     top-left corner, so transitioning into step 1 slid a lit rectangle across
+     the whole screen — it read as a rendering fault rather than as motion. Only
+     step-to-step movement is meant to be animated. */
+  #tourHole.tour-jump{transition:none;}
+  /* When the tour opens the dock itself, it must land instantly. Measuring a
+     rect mid-slide is what put the first mobile spotlight on a stat tile, and
+     "wait 300ms and hope" is not a fix — removing the transition makes the
+     layout final on the very next read. */
+  #app.tour-dock .dock{transition:none;}
+</style>
+<div id="tourOverlay">
+  <div id="tourHole"></div>
+  <!-- role=dialog + a per-step aria-label is what announces "step n of m" (§5.4):
+       focus lands here on every step, and a screen reader reads the label then the
+       description. A separate aria-live region would say it all a second time. -->
+  <div id="tourBubble" role="dialog" aria-modal="true" tabindex="-1" aria-describedby="tourBody">
+    <div id="tourArrow" aria-hidden="true"></div>
+    <div class="tour-count" id="tourCount" aria-hidden="true"></div>
+    <div class="tour-t" id="tourTitle"></div>
+    <div class="tour-b" id="tourBody"></div>
+    <div class="tour-acts">
+      <button type="button" id="tourSkip">Skip tour</button>
+      <button type="button" class="btn ghost sm" id="tourBack">Back</button>
+      <button type="button" class="btn pri sm" id="tourNext">Next</button>
+    </div>
+    <div class="tour-hint" aria-hidden="true">Esc to exit</div>
+  </div>
+</div>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+
+  /* Every step points at a control that already exists in this page. Each entry
+     lists more than one selector because the same destination is a dock item on
+     a wide screen and a bottom-nav button on a narrow one — the tour points at
+     whichever is really on screen, and drops a step whose target is genuinely
+     absent rather than inventing somewhere to point. */
+  var STEPS=[
+    /* "Access", not "Keys" — that is what this dock item is actually labelled,
+       and copy that names a control the reader cannot see is its own small lie. */
+    {sel:['.dock-item[data-page="keys"]'],
+     t:'Start in Access',
+     b:'Mint an API key for your app or the SDK. It is shown once, so put it somewhere safe.'},
+    {sel:['.dock-item[data-page="ledger"]','.mnbtn[data-page="ledger"]'],
+     t:'Watch the evidence land',
+     b:'Every call your SDK wraps appends one hash-chained record here. Prompt and response text never leave your machine — only hashes and bounded metadata.'},
+    {sel:['.dock-item[data-page="verify"]','.mnbtn[data-page="verify"]'],
+     t:'Prove it without trusting us',
+     b:'Recompute the whole chain from an export. Change a single record and the maths stops matching — that is the tamper-evidence.'},
+    {sel:['.dock-item[data-page="policy"]','.mnbtn[data-page="policy"]'],
+     t:'Decide what counts as a breach',
+     b:'PHI, PII, secrets, prompt injection. The AI judge grades each event against the rules you set here.'},
+    {sel:['.dock-item[data-page="export"]'],
+     t:'Take the evidence with you',
+     b:'A Compliance Passport, or the raw ledger as CSV or JSON — in a form your auditor can verify without asking us for anything.'},
+    {sel:['.topbar-actions .topbtn[aria-label^="Search"]'],
+     t:'Jump anywhere',
+     b:'Ctrl K opens the command palette from any page. You can restart this tour from there whenever you like.'}
+  ];
+
+  var steps=[], idx=0, live=false, offered=false, dockOpened=false;
+  var reduce=(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)||false;
+
+  function onScreen(el){
+    if(!el)return false;
+    var r=el.getBoundingClientRect();
+    if(r.width<=0||r.height<=0)return false;
+    /* The dock is translated off-canvas below 1180px rather than hidden, so a
+       size check alone would call an invisible target visible. */
+    return r.right>0&&r.bottom>0&&r.left<window.innerWidth&&r.top<window.innerHeight;
+  }
+  function findTarget(step){
+    for(var i=0;i<step.sel.length;i++){
+      var el=document.querySelector(step.sel[i]);
+      if(onScreen(el))return el;
+    }
+    return null;
+  }
+  function save(body){
+    try{ fetch('/v1/onboarding',{method:'PUT',credentials:'same-origin',
+      headers:{'content-type':'application/json'},body:JSON.stringify(body)}); }catch(e){}
+  }
+
+  function place(el){
+    var r=el.getBoundingClientRect(), pad=6;
+    var hole=$('tourHole');
+    hole.style.left=(r.left-pad)+'px'; hole.style.top=(r.top-pad)+'px';
+    hole.style.width=(r.width+pad*2)+'px'; hole.style.height=(r.height+pad*2)+'px';
+
+    var bub=$('tourBubble'), arrow=$('tourArrow');
+    bub.style.left='0px'; bub.style.top='0px';           // measure unclamped
+    var bw=bub.offsetWidth, bh=bub.offsetHeight, gap=16, m=12;
+    var left, top, side;
+    if(r.right+gap+bw<=window.innerWidth-m){ side='left'; left=r.right+gap; top=r.top+r.height/2-bh/2; }
+    else if(r.left-gap-bw>=m){ side='right'; left=r.left-gap-bw; top=r.top+r.height/2-bh/2; }
+    else if(r.bottom+gap+bh<=window.innerHeight-m){ side='top'; left=r.left+r.width/2-bw/2; top=r.bottom+gap; }
+    else { side='bottom'; left=r.left+r.width/2-bw/2; top=r.top-gap-bh; }
+    left=Math.max(m,Math.min(left,window.innerWidth-bw-m));
+    top=Math.max(m,Math.min(top,window.innerHeight-bh-m));
+    bub.style.left=left+'px'; bub.style.top=top+'px';
+
+    /* The arrow points back at the target from wherever the bubble ended up. */
+    var cx=r.left+r.width/2-left, cy=r.top+r.height/2-top;
+    arrow.style.left=arrow.style.top=arrow.style.right=arrow.style.bottom='auto';
+    if(side==='left'){ arrow.style.left='-6px'; arrow.style.top=Math.max(10,Math.min(cy-6,bh-22))+'px'; }
+    else if(side==='right'){ arrow.style.left=(bw-6)+'px'; arrow.style.top=Math.max(10,Math.min(cy-6,bh-22))+'px'; }
+    else if(side==='top'){ arrow.style.top='-6px'; arrow.style.left=Math.max(10,Math.min(cx-6,bw-22))+'px'; }
+    else { arrow.style.top=(bh-6)+'px'; arrow.style.left=Math.max(10,Math.min(cx-6,bw-22))+'px'; }
+  }
+
+  function render(){
+    var step=steps[idx], el=step&&step.el;
+    if(!el||!onScreen(el)){ el=findTarget(step||{sel:[]}); }
+    if(!el){ finish(false); return; }   // the page changed under us — leave cleanly
+    step.el=el;
+    var n=idx+1, m=steps.length;
+    $('tourCount').textContent='Step '+n+' of '+m;
+    $('tourTitle').textContent=step.t;
+    $('tourBody').textContent=step.b;
+    $('tourBubble').setAttribute('aria-label','Step '+n+' of '+m+': '+step.t);
+    $('tourBack').disabled=(idx===0);
+    $('tourNext').textContent=(idx===m-1)?'Finish':'Next';
+    place(el);
+    $('tourBubble').focus();            // §5.4 · focus follows the highlight
+    /* One correction on the next frame: the bubble's own height is only known
+       after its text is in, and a step whose copy wraps to an extra line would
+       otherwise sit half a line off its target. */
+    if(window.requestAnimationFrame)requestAnimationFrame(function(){ if(live&&steps[idx]&&steps[idx].el)place(steps[idx].el); });
+  }
+
+  function open(){
+    if(live)return;
+    /* Below 1180px the dock is off-canvas, so slide it in for the duration —
+       otherwise half the steps would have nothing on screen to point at. */
+    var app=$('app');
+    if(app&&!app.classList.contains('dock-open')&&
+       !onScreen(document.querySelector('.dock-item[data-page="keys"]'))){
+      /* tour-dock kills the .25s slide so the dock is where it will stay by the
+         time begin() measures. Reading rects mid-slide is what put the first
+         mobile spotlight on a stat tile and silently dropped two steps. */
+      app.classList.add('tour-dock');
+      app.classList.add('dock-open');
+      dockOpened=true;
+      void app.offsetWidth;             // force the layout before measuring
+    }
+    begin();
+  }
+  function begin(){
+    steps=[];
+    for(var i=0;i<STEPS.length;i++){
+      var el=findTarget(STEPS[i]);
+      if(el)steps.push({sel:STEPS[i].sel,t:STEPS[i].t,b:STEPS[i].b,el:el});
+    }
+    if(!steps.length){ close(); return; }   // nothing real to point at → no tour
+    idx=0; live=true;
+    $('tourOverlay').classList.add('on');
+    var hole=$('tourHole');
+    hole.classList.add('tour-jump');        // land on step 1, do not fly to it
+    render();
+    void hole.offsetWidth;                  // commit the jump before re-arming
+    hole.classList.remove('tour-jump');
+  }
+  function close(){
+    live=false;
+    $('tourOverlay').classList.remove('on');
+    var app=$('app');
+    if(dockOpened&&app){
+      app.classList.remove('dock-open');
+      /* Drop tour-dock only after the close has been committed, so the dock does
+         not animate back out on a transition the tour disabled. */
+      void app.offsetWidth;
+      app.classList.remove('tour-dock');
+      dockOpened=false;
+    }
+  }
+  function finish(completed){
+    if(!live)return;
+    close();
+    save(completed?{tutorial_completed:true}:{tutorial_skipped:true});
+    if(completed){ try{ showToast('Tour complete'); }catch(e){} }
+  }
+
+  $('tourNext').onclick=function(){ if(idx>=steps.length-1)finish(true); else { idx++; render(); } };
+  $('tourBack').onclick=function(){ if(idx>0){ idx--; render(); } };
+  $('tourSkip').onclick=function(){ finish(false); };
+
+  /* Esc exits from EVERY step, and Tab is trapped inside the three controls so a
+     keyboard user cannot wander into the dimmed page behind. */
+  document.addEventListener('keydown',function(e){
+    if(!live)return;
+    if(e.key==='Escape'){ e.preventDefault(); finish(false); return; }
+    if(e.key==='Tab'){
+      var f=[$('tourSkip'),$('tourBack'),$('tourNext')].filter(function(b){return !b.disabled;});
+      var i=f.indexOf(document.activeElement);
+      e.preventDefault();
+      var nx=e.shiftKey?(i<=0?f.length-1:i-1):(i<0||i>=f.length-1?0:i+1);
+      f[nx].focus();
+    }
+  });
+
+  var rt;
+  window.addEventListener('resize',function(){
+    if(!live)return;
+    clearTimeout(rt); rt=setTimeout(render,reduce?0:120);
+  });
+
+  window.foxTourStart=open;             // palette + user menu entry point (§5.3)
+
+  /* §5.3 · offered again on every login until it is completed. `enabled` is the
+     §5.5 kill switch, read from the server on a response the page already has a
+     reason to fetch — this file is static and cannot see Settings itself. */
+  window.foxTourMaybeOffer=async function(){
+    if(offered||live)return; offered=true;
+    try{
+      var r=await fetch('/v1/onboarding',{credentials:'same-origin'});
+      if(!r.ok)return;                                  // signed out → no tour
+      var d=await r.json(), t=(d&&d.tutorial)||{};
+      if(t.enabled&&!t.completed)open();
+    }catch(e){}
+  };
+  if(document.readyState!=='loading')window.foxTourMaybeOffer();
+  else document.addEventListener('DOMContentLoaded',window.foxTourMaybeOffer);
 })();
 </script>
 </body>

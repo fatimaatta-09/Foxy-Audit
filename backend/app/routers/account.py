@@ -480,6 +480,12 @@ def invoice_link(
 # ─────────────────────────── onboarding checklist (P4) ───────────────────────
 class OnboardingUpdate(BaseModel):
     dismissed: bool | None = None
+    # P3 §5 · the walkthrough's own state, kept separate from the checklist's
+    # `dismissed`. Two fields rather than one status string because they answer
+    # different questions: `completed` retires the tutorial for good, `skipped`
+    # only defers it — and §5.3 requires a skipped tour to come BACK next login.
+    tutorial_completed: bool | None = None
+    tutorial_skipped: bool | None = None
 
 
 def _onboarding_state(user: User, db: Session) -> dict:
@@ -513,6 +519,20 @@ def _onboarding_state(user: User, db: Session) -> dict:
         "total": len(steps),
         "complete": has_key and logged,          # essentials live → the checklist retires
         "dismissed": bool(state.get("dismissed")),
+        # P3 §5 · the walkthrough, ADDITIVE. Every key above is untouched: the
+        # desktop console reads this same payload (dashboard.py `_on_onboarding`)
+        # and a renamed or dropped key would break a shipped client.
+        #
+        # `enabled` is the server-side kill switch (§5.5) — the dashboard is a
+        # static file and cannot read Settings, so the flag has to reach it on a
+        # response it already fetches. `completed` is the per-user, per-account
+        # record that survives a new device (§5.6); `skipped` is why a deferred
+        # tour is offered again on the next login (§5.3).
+        "tutorial": {
+            "enabled": bool(get_settings().first_run_tutorial_enabled),
+            "completed": bool(state.get("tutorial_completed")),
+            "skipped": bool(state.get("tutorial_skipped")),
+        },
     }
 
 
@@ -529,6 +549,14 @@ def put_onboarding(body: OnboardingUpdate, user: User = Depends(require_user),
     state = dict(user.onboarding_state or {})
     if body.dismissed is not None:
         state["dismissed"] = bool(body.dismissed)
+    if body.tutorial_completed is not None:
+        state["tutorial_completed"] = bool(body.tutorial_completed)
+        # Finishing clears the deferral: a completed tour is not also a pending
+        # one, and leaving both set would re-offer it for ever (§5.3).
+        if body.tutorial_completed:
+            state["tutorial_skipped"] = False
+    if body.tutorial_skipped is not None:
+        state["tutorial_skipped"] = bool(body.tutorial_skipped)
     user.onboarding_state = state
     resp = _onboarding_state(user, db)   # compute BEFORE commit — require_user's RLS GUC is still set
     db.commit()

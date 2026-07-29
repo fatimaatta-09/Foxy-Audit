@@ -106,6 +106,15 @@ class Settings(BaseSettings):
     # so turning this on locks every current customer out of their dashboard until
     # they complete a card setup. That is a business decision, not a deploy.
     require_card_on_file: bool = False
+    # P3 §5 · the first-run walkthrough. ON by default, unlike the gate directly
+    # above, because the blast radius is the opposite shape: the worst this can
+    # do is put an overlay in front of someone, and Esc — or the Skip control
+    # that is visible on every step — dismisses it. A tutorial that ships dark
+    # helps nobody, and §5.3 ("re-offer on next login until completed") only
+    # means anything if it actually runs. So this is a kill switch, not a launch
+    # gate: set FIRST_RUN_TUTORIAL_ENABLED=false and it is gone from every
+    # dashboard on the next page load, no deploy required.
+    first_run_tutorial_enabled: bool = True
     # ── The grandfather clause (P3 §4) ───────────────────────────────────────
     # Organisations created BEFORE this instant are permanently exempt from the
     # card gate. UNSET (the default) exempts every organisation, whenever it was
