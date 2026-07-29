@@ -590,6 +590,33 @@ def billing_plan(org: Organization = Depends(resolve_org)):
     )
 
 
+@router.get("/v1/billing/plans")
+def billing_plans(org: Organization = Depends(resolve_org)):
+    """The plans this deployment can actually sell, for the in-dashboard upgrade
+    page (P2 §10.2 — it must not bounce anyone to the marketing site).
+
+    A tier only appears if its Stripe price id is configured here, so a
+    half-configured deployment offers nothing it cannot complete. NO PRICES are
+    returned: the amount lives in Stripe and is confirmed at checkout, and
+    inventing one in the dashboard would be exactly the fake data this project
+    forbids. Quota and anchor cadence DO come from config, so they are real.
+    """
+    s = get_settings()
+    current = (org.plan_tier or "free").strip().lower()
+    out = []
+    for tier, (price_attr, mode) in _PLANS.items():
+        if not getattr(s, price_attr, ""):
+            continue                       # not sellable on this deployment
+        out.append({
+            "tier": tier,
+            "mode": mode,                  # subscription | payment (one-time)
+            "monthly_log_quota": s.quota_for(tier),
+            "anchor_cadence_hours": s.anchor_cadence_for(tier),
+            "current": tier == current,
+        })
+    return {"current_tier": current, "plans": out}
+
+
 @router.post("/v1/billing/portal")
 @limiter.limit("10/minute")
 def billing_portal(request: Request, admin: User = Depends(require_role("admin")),

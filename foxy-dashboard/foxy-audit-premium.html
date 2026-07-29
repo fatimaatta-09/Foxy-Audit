@@ -980,6 +980,15 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 .k-violet .face{background:linear-gradient(145deg,#a89bff,#8172d1);}
 .k-pink   .face{background:linear-gradient(145deg,#ff7fb4,#ce5586);}
 .stat.kpi .v{position:relative;z-index:2;}
+/* A bare .btn declares no background, so on a decorative face it rendered as a
+   muddy grey slab. On these cards the ink is dark, so the button inverts:
+   near-black plate, white label — 18:1, and it reads as the primary action. */
+.stat.kpi .face .btn{position:relative;z-index:2;background:var(--foxink);color:#fff;
+  box-shadow:none;border:0;font-size:11.5px;padding:9px 12px;}
+.stat.kpi .face .btn:hover{transform:none;opacity:.88;}
+.stat.kpi .face .btn:active{transform:none;opacity:.8;box-shadow:none;}
+.stat.kpi .face .btn:focus-visible{outline:2px solid var(--foxink);outline-offset:2px;}
+.stat.kpi .face .btn:disabled{opacity:.6;cursor:not-allowed;}
 .stat.kpi .l{position:relative;z-index:2;color:var(--foxink);opacity:.82;}
 
 /* ════════════════ P1 §8 · THE DUOTONE GLYPH SET ════════════════
@@ -1788,12 +1797,27 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
         <button class="btn ghost sm" onclick="loadBilling()">↻ refresh</button>
       </div>
       <div class="stats" style="margin-bottom:22px;">
-        <div class="stat"><div class="v fox" id="bilUsed">—</div><div class="l">Credits used</div></div>
-        <div class="stat"><div class="v" id="bilQuota">—</div><div class="l">Credits included</div></div>
-        <div class="stat"><div class="v" id="bilRemaining">—</div><div class="l">Remaining</div></div>
-        <div class="stat"><div class="v" id="bilTokens">—</div><div class="l">Tokens · 30d</div></div>
+        <div class="stat kpi k-fox"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-quota"/></svg>
+          <div class="v" id="bilUsed">—</div><div class="l">Credits used</div></div></div>
+        <div class="stat kpi k-blue"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-billing"/></svg>
+          <div class="v" id="bilQuota">—</div><div class="l">Credits included</div></div></div>
+        <!-- Remaining is the one number here that can turn BAD, so it is a
+             status card, not a decorative one — same rule as Home's open
+             alerts. .is-raised is applied when the balance runs out. -->
+        <div class="stat kpi k-status" id="bilRemainingCard"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-chart"/></svg>
+          <div class="v" id="bilRemaining">—</div><div class="l">Remaining</div>
+          <div class="kpi-trend" id="bilRemainingTrend"></div></div></div>
+        <div class="stat kpi k-violet"><span class="beam" aria-hidden="true"></span><div class="face">
+          <svg class="dglyph" aria-hidden="true"><use href="#dg-agent"/></svg>
+          <div class="v" id="bilTokens">—</div><div class="l">Tokens · 30d</div></div></div>
       </div>
-      <div id="bilEntitlements" style="margin:-8px 0 18px;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surf2);color:var(--muted);font-size:11px;line-height:1.6;"></div>
+      <div class="clay pad" id="bilEntitlementsCard" style="margin-bottom:18px;display:none;">
+        <div class="stitle" style="margin-bottom:8px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7.6 4.1v9.8L12 21l-7.6-4.1V7.1z"/><path d="M9 12l2 2 4-4.4"/></svg></span></div><div class="txt">What your plan includes</div></div></div>
+        <div id="bilEntitlements" style="font-size:11.5px;color:var(--ink2);line-height:1.7;"></div>
+      </div>
       <div id="bilWarn" style="display:none;margin-bottom:18px;padding:12px 16px;border:var(--border);border-radius:12px;background:#ffb020;color:#000;font-weight:800;font-size:12.5px;box-shadow:var(--shadow-sm);">Over your included credits. New captures are paused until the plan is upgraded or the next billing period begins.</div>
       <div class="g2">
         <div>
@@ -1823,7 +1847,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <div class="erow"><span class="elabel">included / month</span><span class="eval" id="planQuota">—</span></div>
             <div class="erow" id="planTrialRow" style="display:none;"><span class="elabel">trial ends</span><span class="eval" id="planTrial">—</span></div>
             <button class="btn pri" id="managePlanBtn" onclick="openBillingPortal(this)" style="margin-top:12px;display:none;">Manage billing ↗</button>
-            <a class="btn" id="upgradePlanBtn" href="https://foxyaudit.tech/pricing.html" target="_blank" rel="noopener" style="margin-top:12px;display:none;text-decoration:none;">Upgrade plan ↗</a>
+            <button class="btn" id="upgradePlanBtn" type="button" onclick="go('upgrade',null)" style="margin-top:12px;display:none;">See upgrade options</button>
           </div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="2" fill="#000"/><path d="M8 8h8M8 12h8M8 16h5" stroke="var(--fox)" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="txt">Invoice history</div></div></div>
           <div class="clay pad" style="overflow-x:auto;">
@@ -1842,6 +1866,22 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             </table>
             <div id="invPager"></div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═════════════ UPGRADE ═════════════ -->
+    <div class="page" id="page-upgrade">
+      <div class="pg-head"><span class="pg-wm" aria-hidden="true">PLANS</span>
+        <div></div>
+        <button class="btn ghost sm" type="button" onclick="go('billing',null)">Back to billing</button>
+      </div>
+      <div class="clay pad">
+        <div id="upgradeList">
+          <div class="skel-row"><div class="skel circ"></div><div class="grow"><div class="skel h" style="width:38%"></div><div class="skel line" style="width:64%;margin-top:6px"></div></div></div>
+        </div>
+        <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:14px;border-top:2px dashed var(--line);padding-top:11px;">
+          Credits and anchor cadence are your plan's contracted limits. The amount is confirmed by Stripe at checkout — Foxy does not hold a copy of the price.
         </div>
       </div>
     </div>
@@ -3856,6 +3896,15 @@ async function loadLoginHistory(){
         $('bilUsed').textContent=num(q.used_this_month);
         $('bilQuota').textContent=q.monthly_log_quota==null?'∞':num(q.monthly_log_quota);
         $('bilRemaining').textContent=q.remaining==null?'∞':num(q.remaining);
+        // Remaining is the only number on this page that can turn bad
+        const remCard=$('bilRemainingCard'), remTrend=$('bilRemainingTrend');
+        if(remCard){
+          const out=(q.remaining!=null&&q.remaining<=0);
+          remCard.classList.toggle('is-raised',out);
+          remCard.classList.toggle('is-clear',!out);
+          if(remTrend)remTrend.textContent=(q.remaining==null)?'unlimited plan'
+            :(out?'capture paused':'this billing period');
+        }
         $('bilTokens').textContent=num(days.reduce((a,d)=>a+(d.tokens_sum||0),0));
         const pct=q.monthly_log_quota?Math.min(100,Math.round((q.used_this_month||0)/q.monthly_log_quota*100)):0;
         $('bilGaugeLbl').textContent=q.monthly_log_quota==null?'unlimited plan':(pct+'% of '+num(q.monthly_log_quota));
@@ -3868,6 +3917,8 @@ async function loadLoginHistory(){
           const seats=q.seat_limit==null?'custom seats':(q.active_seats+' / '+q.seat_limit+' seats');
           const keys=q.api_key_limit==null?'custom keys':(q.active_api_keys+' / '+q.api_key_limit+' active keys');
           entitlement.textContent='Credits: '+num(q.credits_used)+' used of '+(q.credits_included==null?'unlimited':num(q.credits_included))+' · '+seats+' · '+keys+' · '+trial;
+          const card=$('bilEntitlementsCard');
+          if(card)card.style.display='';     // §10.4 · promoted out of the grey strip
         }
         const warn=$('bilWarn'); if(warn)warn.style.display=q.over_quota?'block':'none';
         const gf=$('bilGaugeFill'); if(gf)gf.style.background=q.over_quota?'#ff6b6b':'';
@@ -5193,6 +5244,90 @@ async function loadLoginHistory(){
       (inputs[0]||yes).focus();
     });
   };
+})();
+</script>
+
+<!-- ═══ P2 §10.2 · in-dashboard upgrade options ═══
+     The button used to be an <a> to foxyaudit.tech/pricing.html, which is the
+     bounce the plan forbids. Plans come from GET /v1/billing/plans, which lists
+     only the tiers this deployment has a Stripe price configured for — so the
+     page never offers something checkout cannot complete. It shows NO price:
+     the amount lives in Stripe and is confirmed at checkout, and a number
+     invented here would be exactly the fake data this project forbids. -->
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var api=function(p,o){return fetch(p,Object.assign({credentials:'same-origin'},o||{}));};
+  var esc=function(x){return String(x==null?'':x).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+  var num=function(v){return (v==null)?'—':String(v).replace(/\B(?=(\d{3})+(?!\d))/g,',');};
+  var TONE=['k-fox','k-blue','k-violet','k-pink'];
+
+  function cadence(hours){
+    if(hours==null)return null;
+    if(hours<1)return 'continuous anchoring';
+    if(hours===1)return 'anchored hourly';
+    if(hours<24)return 'anchored every '+hours+'h';
+    var d=Math.round(hours/24);
+    return 'anchored '+(d===1?'daily':('every '+d+' days'));
+  }
+
+  window.loadUpgrade=async function(){
+    var box=$('upgradeList'); if(!box)return;
+    var d=null;
+    try{ var r=await api('/v1/billing/plans'); if(r.ok)d=await r.json(); }catch(e){}
+    if(!d){
+      box.innerHTML='<div class="empty"><div class="empty-t">Could not reach the server</div>'
+        +'<div class="empty-d">Your plan is unchanged — this is a connection problem.</div></div>';
+      return;
+    }
+    var plans=Array.isArray(d.plans)?d.plans:[];
+    if(!plans.length){
+      box.innerHTML='<div class="empty"><div class="empty-t">No upgrade options available</div>'
+        +'<div class="empty-d">This workspace is billed outside self-serve checkout. '
+        +'Talk to us and we will move you across.</div></div>';
+      return;
+    }
+    box.innerHTML='<div class="stats" style="margin-bottom:0;">'+plans.map(function(pl,i){
+      var q=pl.monthly_log_quota;
+      var cad=cadence(pl.anchor_cadence_hours);
+      return '<div class="stat kpi '+TONE[i%TONE.length]+'"><span class="beam" aria-hidden="true"></span><div class="face">'
+        +'<svg class="dglyph" aria-hidden="true"><use href="#dg-passport"/></svg>'
+        +'<div class="v" style="font-size:clamp(15px,2vw,20px);text-transform:capitalize;">'+esc(pl.tier)+'</div>'
+        +'<div class="l">'+(q==null?'unlimited credits':(num(q)+' credits / month'))+'</div>'
+        +(cad?'<div class="kpi-trend">'+esc(cad)+'</div>':'')
+        +(pl.current
+          ? '<div class="kpi-trend" style="opacity:1;font-weight:800;">your plan</div>'
+          : '<button class="btn sm" style="margin-top:10px;width:100%;" type="button" data-plan="'+esc(pl.tier)+'">'
+            +(pl.mode==='payment'?'Buy once':'Choose')+'</button>')
+        +'</div></div>';
+    }).join('')+'</div>';
+  };
+
+  document.addEventListener('click',async function(e){
+    var b=e.target.closest&&e.target.closest('#upgradeList button[data-plan]');
+    if(!b)return;
+    var tier=b.getAttribute('data-plan');
+    b.disabled=true; b.textContent='opening checkout…';
+    try{
+      var r=await api('/v1/billing/checkout-session',{method:'POST',
+        headers:{'content-type':'application/json'},body:JSON.stringify({plan:tier})});
+      if(!r.ok){
+        b.disabled=false; b.textContent='Choose';
+        try{ showToast('Could not start checkout ('+r.status+')'); }catch(_){}
+        return;
+      }
+      var j=await r.json();
+      if(j&&j.checkout_url)location.href=j.checkout_url;
+      else { b.disabled=false; b.textContent='Choose'; }
+    }catch(_){
+      b.disabled=false; b.textContent='Choose';
+      try{ showToast('Could not reach the server'); }catch(e2){}
+    }
+  });
+
+  var g=window.go;
+  if(typeof g==='function')window.go=function(pg,el){ g(pg,el); if(pg==='upgrade')window.loadUpgrade(); };
 })();
 </script>
 </body>

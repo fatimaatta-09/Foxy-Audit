@@ -156,7 +156,7 @@ def test_native_confirm_and_prompt_are_gone_from_destructive_flows():
 
 @pytest.mark.parametrize("page", [
     "dashboard", "analytics", "ledger", "verify", "policy",
-    "export", "keys", "billing", "notifications", "settings",
+    "export", "keys", "billing", "upgrade", "notifications", "settings",
 ])
 def test_every_page_still_balances_its_divs(page):
     """Cheap structural canary. Several P2 sections move whole blocks between
