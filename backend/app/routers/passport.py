@@ -312,5 +312,10 @@ def generate_passport(
             headers={"Content-Disposition": "attachment; filename=passport.pdf"},
         )
     except Exception as exc:
-        log.warning("weasyprint unavailable — returning HTML passport: %s", exc)
+        # Type name only, never str(exc). This is an authenticated request, and a
+        # weasyprint/native-lib failure carries library paths and system detail in
+        # its message. The type is enough to tell "no PDF renderer installed"
+        # apart from "the template blew up", which is all this line is for.
+        log.warning("weasyprint unavailable — returning HTML passport: %s",
+                    type(exc).__name__)
         return HTMLResponse(content=html_string)

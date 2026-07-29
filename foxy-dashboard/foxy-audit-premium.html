@@ -434,6 +434,17 @@ body{
 /* ════════ GRID HELPERS ════════ */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:clamp(12px,1.8vw,16px);}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:clamp(10px,1.4vw,14px);}
+/* P2 §2 · A grid item's implicit min-width is `auto`, so it refuses to shrink
+   below its content's min-content width. Billing puts a `min-width:380px` table
+   inside a `.g2` cell, and that 380px propagated out through the item and past
+   the viewport — 66px of horizontal BODY scroll at 375px, even though the card
+   around the table already had `overflow-x:auto` to contain it. The overflow
+   never got the chance: the item would not narrow, so there was nothing to
+   scroll. `min-width:0` lets the item shrink and hands the job back to the card,
+   which is what §2 means by "wide content scrolls inside its own container". The
+   ledger's WIDER (480px) table never had the bug, because its card is a direct
+   page child rather than a grid item. */
+.g2>*,.g3>*{min-width:0;}
 
 /* ════════ SECTION TITLE ════════ */
 .stitle{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;gap:8px;}
