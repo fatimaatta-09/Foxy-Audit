@@ -2087,8 +2087,6 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div class="lvbar" aria-hidden="true"><i id="polTokenBar"></i></div>
           <div class="lvdesc" id="polTokenDesc">—</div>
           <div class="lvcustom" id="polTokenCustom" hidden></div>
-          <div class="flabel" style="margin-top:16px;">enforcement mode</div>
-          <select id="polEnforcement"><option value="block">block on breach</option><option value="flag">flag only, allow through</option><option value="monitor">silent monitor (log only)</option></select>
           <div class="flabel">confidence threshold</div>
           <select id="polConfidence" hidden><option value="high">high — fewer false positives</option><option value="balanced">balanced (default)</option><option value="low">low — catch every edge case</option></select>
           <div class="lvseg" id="polConfidenceSeg" role="radiogroup" aria-label="Confidence threshold">
@@ -2098,6 +2096,60 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           </div>
           <div class="lvbar" aria-hidden="true"><i id="polConfidenceBar"></i></div>
           <div class="lvdesc" id="polConfidenceDesc">—</div>
+        </div>
+<div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span></div><div class="txt">After grading — what happens to a verdict</div></div></div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:10px;">
+            Applies <strong>after</strong> the AI judge has graded an interaction that already
+            happened. It does not stop anything from reaching a model.
+          </div>
+          <div class="flabel" style="margin-top:0;">verdict handling</div>
+          <select id="polEnforcement"><option value="block">block on breach</option><option value="flag">flag only, allow through</option><option value="monitor">silent monitor (log only)</option></select>
+          <div class="lvcustom" id="polEnforcementNote" style="margin-top:10px;">
+            Recorded, not yet acted on. This setting is stored and written into your evidence
+            snapshot so an auditor can see what you had configured, but nothing in the grading
+            pipeline reads it today. To prevent a prompt from reaching a model, use the SDK
+            enforcement setting below.
+          </div>
+        </div>
+<div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/><path d="M9 12l2 2 4-4" stroke="var(--fox)" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Before the call — what the SDK does</div></div></div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:10px;">
+            Applies <strong>before</strong> a prompt reaches a model, on your own machines, inside
+            the SDK. This is the only setting on this page that can stop a call from happening.
+          </div>
+          <div class="flabel" style="margin-top:0;">workspace SDK enforcement</div>
+          <div class="lvseg" id="polSdkSeg" role="radiogroup" aria-label="Workspace SDK enforcement">
+            <button type="button" role="radio" aria-checked="true" data-val="">Not set</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="low" data-val="observe">Observe</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="medium" data-val="redact">Redact</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="high" data-val="block">Block</button>
+          </div>
+          <div class="lvbar" aria-hidden="true"><i id="polSdkBar"></i></div>
+          <div class="lvdesc" id="polSdkDesc">—</div>
+          <details class="polgroup" style="margin-top:12px;">
+            <summary style="font-size:11px;font-weight:700;cursor:pointer;">How this combines with your code</summary>
+            <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:8px;">
+              Enforcement really lives in your code — the <span style="font-family:var(--mono);">mode=</span>
+              argument on <span style="font-family:var(--mono);">@foxy.audit()</span>. This setting
+              is resolved against it on every call, and it can only ever do three things:
+              <ul style="margin:8px 0 0 16px;padding:0;">
+                <li style="margin-bottom:5px;"><strong>Tighten to block.</strong> Set Block here and every
+                  decorated call blocks, whatever the code says.</li>
+                <li style="margin-bottom:5px;"><strong>Fill a gap.</strong> Where the code passes no
+                  <span style="font-family:var(--mono);">mode=</span> and no
+                  <span style="font-family:var(--mono);">FOXY_MODE</span>, this supplies the default.</li>
+                <li style="margin-bottom:5px;"><strong>Nothing else.</strong> It can never weaken what the
+                  code asked for — code that says block keeps blocking — and it can never introduce
+                  redaction into code that did not ask for it. Blocking raises an error a developer
+                  can see; redaction silently rewrites the prompt, and nobody finds out.</li>
+              </ul>
+              <div style="margin-top:8px;">A deployment can opt out entirely with
+              <span style="font-family:var(--mono);">FOXY_ORG_POLICY=off</span>, which only ever
+              lands on what the code already said. Changes reach running processes within five
+              minutes.</div>
+            </div>
+          </details>
         </div>
 <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 9.8a5.8 5.8 0 10-11.6 0c0 5.6-2.2 7-2.2 7h16s-2.2-1.4-2.2-7z"/><path d="M13.7 20a2 2 0 01-3.4 0"/></svg></span></div><div class="txt">Where breach alerts go</div></div></div>
@@ -3418,6 +3470,11 @@ async function loadLoginHistory(scope){
       if($('polEnforcement')&&p.enforcement_mode)$('polEnforcement').value=p.enforcement_mode;
       if($('polConfidence')&&p.confidence_threshold)$('polConfidence').value=p.confidence_threshold;
       if(window.syncConfidenceSeg)window.syncConfidenceSeg();
+      // sdk_enforcement is NULLABLE and null is meaningful, so it is painted from
+      // the response rather than defaulted. No hidden field and no `.value=`: the
+      // radiogroup's own aria-checked IS the state, which keeps this off the
+      // watched-field path entirely.
+      if(window.syncSdkSeg)window.syncSdkSeg(p.sdk_enforcement,true);
       if($('polNotify')&&p.notify_on_breach)$('polNotify').value=p.notify_on_breach;
       if($('polNotifyEmail'))$('polNotifyEmail').value=p.notify_email||'';
       if($('polNotifyWebhook'))$('polNotifyWebhook').value=p.notify_webhook_url||'';
@@ -3522,6 +3579,11 @@ async function loadLoginHistory(scope){
     const body={ pii_detection:!!($('polPii')||{}).checked, prompt_injection:!!($('polInjection')||{}).checked,
       regulated_data_mode:!!($('polRegulated')||{}).checked, max_token_threshold:(mt>0?mt:50000),
       enforcement_mode:($('polEnforcement')||{}).value||'block', confidence_threshold:($('polConfidence')||{}).value||'balanced',
+      // ALWAYS present, never omitted. The server reads absence as "keep what you
+      // have" (policies.py, model_fields_set), so "Not set" has to travel as an
+      // explicit null — dropping the key would silently retain the old value and
+      // the control would appear not to work.
+      sdk_enforcement:(window.readSdkSeg?window.readSdkSeg():null),
       notify_on_breach:($('polNotify')||{}).value||'immediate',
       notify_email:em||null, notify_webhook_url:wh||null,
       judge_provider:($('polJudgeProvider')||{}).value||'gemini',
@@ -5443,6 +5505,81 @@ async function loadLoginHistory(scope){
     var b=document.getElementById('setOrgToggle');
     window.renderOrgId(b?b.getAttribute('aria-pressed')!=='true':true);
   };
+})();
+</script>
+<!-- ═══ P4 §C · workspace SDK enforcement — four states, one of them null ═══
+     Mirrors the confidence segment, with one difference that matters: this
+     setting is NULLABLE and "Not set" is a real, selectable state, not just the
+     value it happens to start on. An owner who picks Block has to be able to go
+     back to having no opinion.
+
+     There is deliberately no hidden input behind it. The radiogroup's own
+     aria-checked is the state, so nothing here assigns a watched field and the
+     load path needs no setFieldValue exemption. -->
+<script>
+(function(){
+  var LV={
+    '':       {w:'0%',   c:'var(--muted)',
+               d:'This workspace has no opinion. Every service uses the mode in its own code — exactly as if this setting did not exist.'},
+    observe:  {w:'33%',  c:'var(--lv-low)',
+               d:'Where code sets no mode, interactions are recorded after they happen and nothing is blocked. Code that asks for redact or block is unaffected.'},
+    redact:   {w:'66%',  c:'var(--lv-med)',
+               d:'Where code sets no mode, matched values are scrubbed from the prompt before it is sent. Code that states its own mode is never switched to redaction.'},
+    block:    {w:'100%', c:'var(--lv-high)',
+               d:'Every decorated call blocks on a policy match, whatever the code says. The SDK raises FoxyPolicyBlocked and the model is never called.'}
+  };
+  function seg(){ return document.getElementById('polSdkSeg'); }
+  /* Has the SERVER's value been applied yet? The control paints "Not set" at
+     init, and loadPolicy is async — so between the two there is a window where
+     saving would send an explicit null and CLEAR a value the owner had set.
+     Until the server has spoken (or the user has picked), current() returns
+     undefined, which JSON.stringify drops from the body — and an omitted key is
+     exactly how the server is told to keep what it has. */
+  var known=false;
+  function current(){
+    if(!known)return undefined;
+    var g=seg(); if(!g)return null;
+    var on=g.querySelector('button[aria-checked="true"]');
+    var v=on?on.getAttribute('data-val'):'';
+    return v||null;                       // '' is the null state, on the wire too
+  }
+  function sync(value,fromServer){
+    if(fromServer)known=true;
+    var g=seg(); if(!g)return;
+    var v=(value===null||value===undefined)?'':String(value);
+    if(!LV.hasOwnProperty(v))v='';
+    Array.prototype.forEach.call(g.querySelectorAll('button'),function(b){
+      b.setAttribute('aria-checked',(b.getAttribute('data-val')||'')===v?'true':'false');
+    });
+    var bar=document.getElementById('polSdkBar');
+    if(bar){ bar.style.width=LV[v].w; bar.style.background=LV[v].c; }
+    var d=document.getElementById('polSdkDesc');
+    if(d)d.textContent=LV[v].d;
+  }
+  window.syncSdkSeg=sync;
+  window.readSdkSeg=current;
+  function pick(btn){
+    if(!btn)return;
+    known=true;                           // an explicit choice is always sendable
+    sync(btn.getAttribute('data-val')||'');
+    if(window.markPolicyDirty)window.markPolicyDirty();
+    btn.focus();
+  }
+  document.addEventListener('click',function(e){
+    var b=e.target.closest&&e.target.closest('#polSdkSeg button');
+    if(b)pick(b);
+  });
+  /* a radiogroup is one tab stop; the arrows move between its options */
+  document.addEventListener('keydown',function(e){
+    var b=e.target.closest&&e.target.closest('#polSdkSeg button');
+    if(!b)return;
+    var all=Array.prototype.slice.call(b.parentNode.querySelectorAll('button'));
+    var i=all.indexOf(b), next=null;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown')next=all[(i+1)%all.length];
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp')next=all[(i-1+all.length)%all.length];
+    if(next){ e.preventDefault(); pick(next); }
+  });
+  sync('');
 })();
 </script>
 </body>
