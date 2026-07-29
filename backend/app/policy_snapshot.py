@@ -56,10 +56,22 @@ def policy_snapshot_hash(snapshot: dict) -> str:
 
 
 def judge_policy_config(snapshot: object) -> dict | None:
-    """Convert a validated stored snapshot to the policy flags consumed by judges."""
+    """Convert a validated stored snapshot to the policy flags consumed by judges.
+
+    `confidence_threshold` is carried through but NOT required. Snapshots written
+    before it was surfaced do not have the key, and rejecting them would stop
+    grading historical evidence — so an absent value reads as "balanced", which is
+    the behaviour those rows were graded under in the first place (P4 §A).
+
+    The projection is deliberate: only fields a judge should act on cross this
+    boundary. Adding one here is what makes it reachable at all — the field was
+    stored, snapshotted and displayed for months while being dropped on this line.
+    """
     if not isinstance(snapshot, dict) or snapshot.get("schema") != POLICY_SNAPSHOT_SCHEMA:
         return None
     required = ("pii_detection", "prompt_injection", "regulated_data_mode", "max_token_threshold")
     if any(key not in snapshot for key in required):
         return None
-    return {key: snapshot[key] for key in required}
+    config = {key: snapshot[key] for key in required}
+    config["confidence_threshold"] = snapshot.get("confidence_threshold") or "balanced"
+    return config

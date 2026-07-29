@@ -111,6 +111,10 @@ def _policy_config(db: Session, org_id, event_metadata: dict | None = None) -> d
         "prompt_injection": policy.prompt_injection,
         "regulated_data_mode": policy.regulated_data_mode,
         "max_token_threshold": policy.max_token_threshold,
+        # No snapshot exists on these rows, so the org's CURRENT setting is the
+        # only one available. Reaches the judge for the same reason as the
+        # snapshot path in policy_snapshot.judge_policy_config (P4 §A).
+        "confidence_threshold": policy.confidence_threshold or "balanced",
     }
 
 

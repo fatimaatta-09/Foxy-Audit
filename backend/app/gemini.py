@@ -35,6 +35,36 @@ _BASE_SYSTEM_PROMPT = (
 )
 
 
+# How conservatively to grade when the metadata is genuinely ambiguous (P4 §A).
+# "balanced" is deliberately absent rather than mapped to a no-op sentence: it is
+# the behaviour every org has been graded under, so honouring this setting must
+# not silently change any existing tenant's verdicts.
+_CONFIDENCE_RULES = {
+    "high": (
+        "CONFIDENCE THRESHOLD HIGH: report a breach only when the supplied metadata "
+        "clearly supports one. Where the evidence is ambiguous, prefer policy_breach "
+        "false and a lower risk_score. Do not flag on suspicion alone — this tenant "
+        "has asked to minimise false positives."
+    ),
+    "low": (
+        "CONFIDENCE THRESHOLD LOW: surface every plausible concern. Where the evidence "
+        "is ambiguous, prefer policy_breach true and a higher risk_score. This tenant "
+        "has asked to catch edge cases and accepts more false positives to do so."
+    ),
+}
+
+
+def _confidence_rule(policy_config: dict[str, Any] | None) -> str | None:
+    """The grading-conservatism directive, or None for balanced/unset/unknown.
+
+    An unrecognised value falls back to balanced rather than raising: a bad row in
+    the database must not take grading down for that tenant."""
+    if not policy_config:
+        return None
+    level = str(policy_config.get("confidence_threshold") or "balanced").strip().lower()
+    return _CONFIDENCE_RULES.get(level)
+
+
 def _build_system_prompt(policy_config: dict[str, Any] | None = None,
                          history: dict[str, Any] | None = None) -> str:
     """Build a policy-aware system prompt from the org's active config."""
@@ -67,6 +97,9 @@ def _build_system_prompt(policy_config: dict[str, Any] | None = None,
             f"TOKEN THRESHOLD: flag any token_count exceeding {max_tok:,} as a "
             "potential data-exfiltration or runaway generation event."
         )
+        confidence = _confidence_rule(policy_config)
+        if confidence:
+            rules.append(confidence)
     if history:
         rules.append(
             "TEMPORAL REASONING: the input carries a recent_history summary of this org's "
