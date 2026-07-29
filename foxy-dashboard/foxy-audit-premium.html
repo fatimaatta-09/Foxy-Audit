@@ -1946,14 +1946,6 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
               <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Mask sensitive metadata</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">hide org id, chain head &amp; anchor roots by default (reveal per-field)</div></div>
               <span class="toggle"><input type="checkbox" id="prefHideSensitive" onchange="savePref('hide_sensitive_metadata',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
             </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:2px dashed var(--line);cursor:pointer;">
-              <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Product update emails</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">occasional emails about new features</div></div>
-              <span class="toggle"><input type="checkbox" id="prefNotifyProduct" onchange="savePref('notify_product_updates',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:2px dashed var(--line);cursor:pointer;">
-              <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Security alert emails</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">breach &amp; sign-in alerts to your inbox</div></div>
-              <span class="toggle"><input type="checkbox" id="prefNotifySecurity" onchange="savePref('notify_security_alerts',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
-            </label>
           </div>
 <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Trust badge</div>
@@ -2024,9 +2016,15 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <div id="devicesList"><div class="skel line" style="width:70%"></div><div class="skel line" style="width:55%;margin-top:8px"></div></div>
           </div>
 <div class="clay pad" style="margin-bottom:14px;">
-            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Recent logins</div>
-            <button class="btn" onclick="loadLoginHistory()">Load login history</button>
-            <div id="loginHistOut" style="margin-top:10px;font-size:11px;"></div>
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Recent sign-ins</div>
+            <div style="font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.4;">Sign-in attempts on your account, successful and failed. A sign-in you do not recognise is worth acting on — revoke the device above and change your password.</div>
+            <button class="btn" onclick="loadLoginHistory('me')">Load sign-ins</button>
+            <!-- Org-wide is admin-only on the server. Members used to hit that
+                 endpoint and get "load failed (403)" — a control that looked
+                 broken rather than one that was not theirs. -->
+            <button class="btn ghost" id="loginHistOrgBtn" onclick="loadLoginHistory('org')" style="display:none;margin-left:8px;">Everyone in the workspace</button>
+            <div id="loginHistScope" style="margin-top:8px;font-size:10px;color:var(--muted);"></div>
+            <div id="loginHistOut" style="margin-top:6px;font-size:11px;"></div>
             <div id="loginHistPager"></div>
           </div>
 <div class="clay pad" id="auditCard" style="margin-top:14px;display:none;">
@@ -2448,20 +2446,44 @@ async function revokeBadge(){
 }
 // per-org login history (5K)
 const _loginHistPage={page:1,size:20};
-async function loadLoginHistory(){
+let _loginHistScope='me';
+// 'me' is every user's own history and needs no role; 'org' is the whole
+// workspace and is admin-only on the server (P3 §7.3).
+const _LOGIN_HIST_URL={me:'/v1/auth/login-history/me',org:'/v1/auth/login-history'};
+// Same summariser as the new-device alert email, so a device reads the same way
+// wherever the user meets it.
+function _histDevice(ua){
+  if(!ua)return 'unknown device';
+  const b=[['Edg/','Edge'],['OPR/','Opera'],['Firefox/','Firefox'],['Chrome/','Chrome'],['Safari/','Safari']].find(p=>ua.indexOf(p[0])>=0);
+  const p=[['Windows NT','Windows'],['Android','Android'],['iPhone','iPhone'],['iPad','iPad'],['Mac OS X','macOS'],['CrOS','ChromeOS'],['Linux','Linux']].find(x=>ua.indexOf(x[0])>=0);
+  if(b&&p)return b[1]+' on '+p[1];
+  return (b&&b[1])||(p&&p[1])||ua.slice(0,40);
+}
+async function loadLoginHistory(scope){
+  if(scope)_loginHistScope=scope;
+  const el=document.getElementById('loginHistOut');
+  const note=document.getElementById('loginHistScope');
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   try{
-    const r=await fetch('/v1/auth/login-history',{credentials:'same-origin'});
-    if(!r.ok){ showToast('load failed ('+r.status+')'); return; }
-    const allRows=await r.json(); const el=document.getElementById('loginHistOut');
+    const r=await fetch(_LOGIN_HIST_URL[_loginHistScope]||_LOGIN_HIST_URL.me,{credentials:'same-origin'});
+    if(!r.ok){
+      // Say which thing failed and why, rather than a bare status code.
+      const why=r.status===403?'Only workspace admins can see everyone’s sign-ins.':'Could not load sign-ins ('+r.status+').';
+      if(note)note.textContent=why;
+      if(el)el.innerHTML='';
+      showToast(why); return;
+    }
+    const allRows=await r.json();
+    if(note)note.textContent=_loginHistScope==='org'
+      ? 'Showing every member of this workspace.' : 'Showing your account only.';
     const rows=window.foxPageSlice
       ?window.foxPageSlice(allRows,_loginHistPage,'loginHistPager',loadLoginHistory,'Login history pages')
       :allRows;
-    const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-    el.innerHTML = allRows.length ? rows.map(e=>`<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);">
-      <b style="color:${e.success?'#2e7d32':'#c62828'};">${e.success?'✓':'✗'}</b>
-      ${esc(e.email)} · ${esc(e.ip||'—')} · ${e.created_at?new Date(e.created_at).toLocaleString():''}</div>`).join('')
-      : '<div style="color:var(--muted);">no login events yet</div>';
-  }catch(e){ showToast('Could not reach the server'); }
+    el.innerHTML = allRows.length ? rows.map(e=>`<div style="padding:5px 0;border-bottom:1px solid rgba(0,0,0,.06);">
+      <b style="color:${e.success?'var(--safe-ink)':'var(--breach-ink)'};">${e.success?'✓':'✗'}</b>
+      ${_loginHistScope==='org'?esc(e.email)+' · ':''}${esc(_histDevice(e.user_agent))} · ${esc(e.ip||'no IP recorded')} · ${e.created_at?new Date(e.created_at).toLocaleString():''}</div>`).join('')
+      : '<div style="color:var(--muted);">No sign-ins recorded yet.</div>';
+  }catch(e){ if(note)note.textContent=''; showToast('Could not reach the server'); }
 }
 </script>
 
@@ -3635,8 +3657,6 @@ async function loadLoginHistory(){
       if($('setName'))$('setName').value=me.full_name||'';
       const prefs=me.preferences||{}; window.__foxPrefs=prefs;
       if($('prefHideSensitive'))$('prefHideSensitive').checked=!!prefs.hide_sensitive_metadata;
-      if($('prefNotifyProduct'))$('prefNotifyProduct').checked=!!prefs.notify_product_updates;
-      if($('prefNotifySecurity'))$('prefNotifySecurity').checked=!!prefs.notify_security_alerts;
       // Breach alerts + weekly digest default ON (an unset pref means deliver — same gate
       // as app/user_notifications.py); key-rotation reminders are opt-in.
       if($('prefNotifyBreach'))$('prefNotifyBreach').checked=prefs.notify_breach_alerts!==false;
@@ -3648,6 +3668,9 @@ async function loadLoginHistory(){
     }}catch(e){}
     const card=$('teamCard'); if(card)card.style.display=_isAdmin?'':'none';
     const ac=$('auditCard'); if(ac)ac.style.display=_isAdmin?'':'none';
+    // The org-wide sign-in view is admin-only server-side; only offer it to admins
+    // rather than letting a member click into a 403.
+    const lh=$('loginHistOrgBtn'); if(lh)lh.style.display=_isAdmin?'':'none';
     const wc=$('webhookCard'); if(wc)wc.style.display=_isAdmin?'':'none';
     if(_isAdmin){ loadTeam(); loadAccountAudit(); loadWebhooks(); loadSso(); }
     if(window.loadDevices)window.loadDevices();

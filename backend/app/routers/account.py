@@ -590,7 +590,12 @@ def update_profile(body: ProfileUpdate, user: User = Depends(require_user),
     return {"full_name": user.full_name}
 
 
-_ALLOWED_PREFS = {"hide_sensitive_metadata", "notify_product_updates", "notify_security_alerts",
+# Every key here must be READ by something. notify_product_updates and
+# notify_security_alerts were removed with their switches (P3 §6): nothing sent
+# product updates, and after P3 §3 new-device alerts are deliberately not
+# opt-out-able, so a switch offering to silence them would have been a lie.
+# test_pref_switches_are_real.py fails if a key without a consumer is added back.
+_ALLOWED_PREFS = {"hide_sensitive_metadata",
                   # Settings → Notifications (D-S). Consumed by app/user_notifications.py:
                   # breach alerts + weekly digest default ON (absent = deliver), key-rotation
                   # reminders are opt-in (absent = don't deliver) — matching the UI defaults.

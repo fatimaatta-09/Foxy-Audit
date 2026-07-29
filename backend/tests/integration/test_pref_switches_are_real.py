@@ -37,12 +37,14 @@ _BACKEND = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 _REPO = os.path.dirname(_BACKEND)
 _DASH = os.path.join(_REPO, "foxy-dashboard", "foxy-audit-premium.html")
 
-# Switches known to store a value nobody reads. Both are removed — from the UI
-# markup and from _ALLOWED_PREFS together — in the dashboard-UI phase of P3;
-# removing the key while the toggle still renders would leave the switch even
-# more broken than it is now (silently rejected instead of silently ignored).
-# This set must only ever shrink. Adding to it is the bug this file exists to stop.
-KNOWN_DEAD = {"notify_product_updates", "notify_security_alerts"}
+# Switches known to store a value nobody reads. EMPTY, and it stays empty:
+# notify_product_updates and notify_security_alerts were deleted with their
+# switches once P2 §11's Settings restructure landed. Every remaining key in
+# _ALLOWED_PREFS is now exercised by the guard below, with no exemptions.
+#
+# This set must only ever shrink. If you are adding to it, you are shipping a
+# control that does nothing — make it real or delete it instead.
+KNOWN_DEAD: set[str] = set()
 
 
 def _strip_comment(line: str) -> str:
@@ -98,20 +100,36 @@ def test_every_accepted_preference_is_read_by_something(key):
         f"does nothing.")
 
 
-@pytest.mark.parametrize("key", sorted(KNOWN_DEAD))
-def test_known_dead_switches_are_still_dead(key):
-    """If someone wires one of these up, this fails and they remove it from
-    KNOWN_DEAD — so the ledger cannot silently go stale."""
-    assert not (_backend_consumers(key) + _dashboard_consumers(key)), (
-        f"'{key}' now has a consumer — take it out of KNOWN_DEAD.")
+# There used to be a companion test asserting each KNOWN_DEAD key was STILL dead,
+# so the ledger could not go stale. With the ledger empty it parametrised over
+# nothing and reported a permanent skip, which reads like coverage that is not
+# there. The property it guarded is now covered by
+# test_the_deleted_switches_left_nothing_behind. Restore it if KNOWN_DEAD ever
+# has to come back — and prefer that it does not.
 
 
-def test_the_dead_list_only_shrinks():
-    """A tripwire for the next person: this set is a debt, not a category."""
-    assert KNOWN_DEAD <= {"notify_product_updates", "notify_security_alerts"}, (
-        "a new dead switch was added — §6 says make it real or delete it")
+def test_the_dead_list_is_empty_and_stays_empty():
+    """A tripwire for the next person: this set was a debt, and the debt is paid.
+
+    Re-populating it is not a way to make this file pass — it is a declaration
+    that the product ships a control which does nothing."""
+    assert KNOWN_DEAD == set(), (
+        f"a dead switch was reintroduced: {sorted(KNOWN_DEAD)}. §6 says make it "
+        f"real or delete it — the exemption list is not an option.")
     assert KNOWN_DEAD <= _ALLOWED_PREFS, (
         "a key in KNOWN_DEAD is already gone from _ALLOWED_PREFS — drop it here too")
+
+
+def test_the_deleted_switches_left_nothing_behind():
+    """Both halves went together. A key the backend still accepts with no switch
+    to set it is dead weight; a switch with no key silently fails to save."""
+    for gone in ("notify_product_updates", "notify_security_alerts"):
+        assert gone not in _ALLOWED_PREFS, f"{gone} is still accepted by the API"
+    with open(_DASH, encoding="utf-8") as fh:
+        markup = fh.read()
+    for gone in ("prefNotifyProduct", "prefNotifySecurity",
+                 "notify_product_updates", "notify_security_alerts"):
+        assert gone not in markup, f"{gone} still appears in the dashboard"
 
 
 def test_hide_sensitive_metadata_actually_masks(make_org, login):
