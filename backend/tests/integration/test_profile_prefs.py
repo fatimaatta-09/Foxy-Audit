@@ -31,9 +31,15 @@ def test_preferences_merge_allowed_only(make_org, login):
     p = c.put("/v1/account/preferences",
               json={"preferences": {"hide_sensitive_metadata": True, "evil": "x"}}).json()["preferences"]
     assert p["hide_sensitive_metadata"] is True and "evil" not in p        # unknown key dropped
+    # notify_security_alerts was DELETED with its dead switch (P3 §6): security
+    # alerts are deliberately not silenceable. Merging is now proved with a key
+    # that is really allowed, so this tests the merge rather than a ghost.
     p2 = c.put("/v1/account/preferences",
-               json={"preferences": {"notify_security_alerts": True}}).json()["preferences"]
-    assert p2["hide_sensitive_metadata"] is True and p2["notify_security_alerts"] is True  # merged
+               json={"preferences": {"notify_weekly_digest": True}}).json()["preferences"]
+    assert p2["hide_sensitive_metadata"] is True and p2["notify_weekly_digest"] is True  # merged
+    assert "notify_security_alerts" not in c.put(
+        "/v1/account/preferences",
+        json={"preferences": {"notify_security_alerts": True}}).json()["preferences"]
     assert c.get("/v1/auth/me").json()["preferences"]["hide_sensitive_metadata"] is True
 
 
