@@ -15,7 +15,10 @@ def test_login_and_me(make_org, login):
     me = c.get("/v1/auth/me").json()
     assert me["email"] == org["admin_email"]
     assert me["role"] == "admin"
-    assert me["org_id"] == org["org_id"]
+    # P3 §7.1: the workspace id is no longer part of the identity payload — it
+    # comes only from the step-up-gated reveal (the `login` fixture grants one).
+    assert "org_id" not in me
+    assert c.post("/v1/account/org-id").json()["org_id"] == org["org_id"]
 
 
 def test_login_wrong_password_401(make_org, client):
@@ -146,12 +149,14 @@ def test_cross_tenant_login_password_selects_org(make_org, add_user, login):
     add_user(a["org_id"], "dup@test.dev", "passAAA111", role="admin")
     add_user(b["org_id"], "dup@test.dev", "passBBB222", role="admin")
 
+    # The reveal endpoint answers "which tenant is this session?" now that
+    # /v1/auth/me no longer does (P3 §7.1); `login` grants the step-up.
     ca = login("dup@test.dev", "passAAA111")
-    assert ca.get("/v1/auth/me").json()["org_id"] == a["org_id"]
+    assert ca.post("/v1/account/org-id").json()["org_id"] == a["org_id"]
     cb = login("dup@test.dev", "passBBB222")
-    assert cb.get("/v1/auth/me").json()["org_id"] == b["org_id"]
+    assert cb.post("/v1/account/org-id").json()["org_id"] == b["org_id"]
     # org A's session must stay scoped to A after B logs in with the same email.
-    assert ca.get("/v1/auth/me").json()["org_id"] == a["org_id"]
+    assert ca.post("/v1/account/org-id").json()["org_id"] == a["org_id"]
 
 
 def test_login_is_rate_limited(make_org, client):

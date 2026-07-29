@@ -198,7 +198,9 @@ def test_identity_fills_and_stays_read_only(console):
     assert console.set_name.text() == "Ada Lovelace"
     assert console.set_readonly["email"].text() == "ada@acme.co"
     assert console.set_readonly["role"].text() == "admin"
-    assert console.set_readonly["org_id"].text() == "org_123"
+    # P3 §7.1 · org_id no longer comes from /v1/auth/me, so loading the page
+    # must leave the mask in place even though this payload still carries one.
+    assert console.set_readonly["org_id"].text() == sd.ORG_ID_MASK
     for field in console.set_readonly.values():
         assert field.isReadOnly()
 

@@ -152,6 +152,30 @@ def step_up_user():
 
 
 @pytest.fixture
+def revealed_org_id(step_up_user):
+    """The workspace id, from behind the P3 §7.1 step-up gate.
+
+    Now that `/v1/auth/me` — and login, MFA, SSO and handoff — no longer carry
+    org_id, this is the only way a session can answer "which tenant did I land
+    in?", which is the question a good few tenant-isolation tests are really
+    asking.
+
+    Echoes the double-submit CSRF token first: a client built by `login` already
+    has one, a client that authenticated any other way does not, and CSRF
+    refuses the POST before authentication is even considered."""
+    def _reveal(client) -> str:
+        csrf = client.cookies.get("foxy_csrf")
+        if csrf:
+            client.headers.update({"X-CSRF-Token": csrf})
+        step_up_user(client)
+        r = client.post("/v1/account/org-id")
+        assert r.status_code == 200, f"org-id reveal failed: {r.status_code} {r.text}"
+        return r.json()["org_id"]
+
+    return _reveal
+
+
+@pytest.fixture
 def login(step_up_user):
     """Factory: a fresh TestClient logged in as (email, password) AND granted step-up by default (P15),
     so the many existing danger-mutation tests keep working. Pass with_step_up=False for the no-grant

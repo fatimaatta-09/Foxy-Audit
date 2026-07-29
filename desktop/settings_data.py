@@ -31,15 +31,26 @@ MISSING = "—"
 NAME_MAX = 120          # the web's maxlength on #setName
 
 
-def identity_view(me: dict | None) -> dict:
-    """The four identity rows from `/v1/auth/me`. Three are read-only here:
-    email and role are changed by an admin, org id never."""
+#: What the org-id field shows before anyone asks for it. Byte-identical to the
+#: web's mask (html §11.4) so the two products read the same.
+ORG_ID_MASK = "••••••••-••••-••••-••••-••••••••••••"
+
+
+def identity_view(me: dict | None, *, org_id: str = "") -> dict:
+    """The four identity rows. Three come from `/v1/auth/me`; the fourth does
+    not any more, and that is the point.
+
+    P3 §7.1 took org_id out of that payload — it comes only from the step-up-
+    gated POST /v1/account/org-id now — so this is whatever a completed reveal
+    has already produced, and the mask otherwise. Deliberately NOT `MISSING`:
+    the id is withheld, not unavailable, and a dash would read as "we could not
+    load it" and invite a retry that would never help."""
     d = me if isinstance(me, dict) else {}
     return {
         "full_name": str(d.get("full_name") or ""),
         "email": str(d.get("email") or MISSING),
         "role": str(d.get("role") or MISSING),
-        "org_id": str(d.get("org_id") or MISSING),
+        "org_id": org_id or ORG_ID_MASK,
         "mfa_enabled": bool(d.get("mfa_enabled")),
         "known": bool(d),
     }

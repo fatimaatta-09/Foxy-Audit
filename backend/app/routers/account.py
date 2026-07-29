@@ -272,6 +272,28 @@ def delete_workspace(
     return {"status": "workspace_deleted", "org_id": str(org.id)}
 
 
+@router.post("/v1/account/org-id", dependencies=[Depends(require_step_up_user)])
+def reveal_org_id(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """The workspace's organisation ID, behind an emailed step-up code (P3 §7.1).
+
+    This is the ONLY place a session can learn its org id. `/v1/auth/me` — and
+    login, MFA and the desktop handoff — deliberately no longer carry it. The
+    old design shipped the id in the `me` payload and masked it in the DOM,
+    which protected nothing: devtools showed it in two clicks. A reveal control
+    over a value the browser already holds is decoration, and on a product that
+    sells tamper-evidence a decorative security control is worse than none.
+
+    A read, not a mutation, so it is POST purely because that is what
+    `require_step_up_user` guards elsewhere in this file — and it is audited
+    like the other step-up actions, because "who un-masked the workspace id,
+    and when" is exactly the kind of question the account trail exists for."""
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email,
+        action="account.org_id_reveal")
+    db.commit()
+    return {"org_id": str(user.org_id)}
+
+
 class IpAllowlistRequest(BaseModel):
     allowlist: str = ""              # comma-separated IPs/CIDRs; empty clears the restriction
 

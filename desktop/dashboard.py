@@ -594,6 +594,11 @@ class DashboardWindow(QWidget):
         self._flagged_total  = 0
         self._connected      = None
         self._org_name       = ""       # real org from /v1/health — never faked
+        # P3 §7.1 · the workspace id, empty until a step-up-gated reveal fills
+        # it. `/v1/auth/me` stopped carrying it: the web used to ship it in that
+        # payload and mask it in the DOM, which protected nothing. Cached here
+        # so one confirmation serves the palette, the export card and settings.
+        self._org_id         = ""
         self._signed_in      = False    # session state, pushed in by the shell
         self._drag_pos       = QPoint()
         # Live ApiWorkers, tracked so replaced polls can't leak threads and
@@ -1922,7 +1927,10 @@ class DashboardWindow(QWidget):
         self.user_btn.setAccessibleName(
             ("Account menu for %s" % who) if who else "Account menu")
         if hasattr(self, "cmd_palette"):
-            self.cmd_palette.set_org_id((me or {}).get("org_id"))
+            # NOT from `me` — it stopped carrying org_id (P3 §7.1). This is the
+            # cache a completed reveal filled, so the palette can copy without
+            # a second confirmation inside the same grant.
+            self.cmd_palette.set_org_id(self._org_id or None)
 
     def _show_user_menu(self):
         from PyQt6.QtWidgets import QMenu
@@ -1954,13 +1962,65 @@ class DashboardWindow(QWidget):
         elif kind == "verify-focus":
             self.go("verify")
         elif kind == "copy-org":
-            if arg:
-                QApplication.clipboard().setText(str(arg))
-                self.show_toast("Copied organization ID")
-            else:
-                self.show_toast("Organization ID not loaded yet")
+            self.reveal_org_id(self._copy_org_id, "copy the organization ID")
         elif kind == "shortcuts":
             self.shortcuts.show_centered(self)
+
+    # ── org ID reveal, behind step-up (P3 §7.1) ────────────────────────────
+    def reveal_org_id(self, on_ok, purpose: str = "reveal the organization ID",
+                      on_fail=None):
+        """Hand the workspace id to `on_ok`, fetching it if we do not have it.
+
+        `/v1/auth/me` no longer carries the id, so this is the only way the
+        desktop can learn it — POST /v1/account/org-id, gated by
+        `require_step_up_user`. The palette entry was kept rather than deleted
+        because the client already has every piece this needs: FoxyClient turns
+        the 403 into `step_up_required`, omni_fox opens the D1 dialog, and the
+        request is replayed. Dropping a working feature to avoid wiring one
+        endpoint would have been the bigger regression.
+
+        On a step-up challenge this says so and stops. The central handler's
+        replay reports through `_on_retry_ok`, not back here, so the honest
+        answer is "confirm, then ask again" rather than a copy that silently
+        never happens — the same shape `_on_revoke_error` already uses."""
+        if self._org_id:
+            on_ok(self._org_id)
+            return
+        spawn_worker(self.client, "POST", "/v1/account/org-id", timeout=12,
+                     parent=self, track=self._workers,
+                     on_ok=lambda d: self._on_org_id(d, on_ok, on_fail),
+                     on_err=lambda e: self._on_org_id_error(e, purpose, on_fail))
+
+    def _on_org_id(self, data, on_ok, on_fail=None):
+        org_id = str((data or {}).get("org_id") or "")
+        if not org_id:
+            self.show_toast("Organization ID unavailable")
+            if on_fail is not None:
+                on_fail("unavailable")
+            return
+        self._org_id = org_id
+        # Keep the palette's own copy in step so a second Ctrl+K is instant.
+        if hasattr(self, "cmd_palette"):
+            self.cmd_palette.set_org_id(org_id)
+        on_ok(org_id)
+
+    def _on_org_id_error(self, err, purpose: str, on_fail=None):
+        if status_of(err) == 403 and "step_up" in str(err):
+            self.show_toast(f"Confirm your identity to {purpose}")
+            if on_fail is not None:
+                on_fail("step_up")
+            return
+        # The status code, never the server's message: this is an authenticated
+        # call and its error text is not ours to paint onto the screen.
+        code = status_of(err)
+        self.show_toast("Could not reveal the organization ID"
+                        + (f" (HTTP {code})" if code else ""))
+        if on_fail is not None:
+            on_fail("error")
+
+    def _copy_org_id(self, org_id: str):
+        QApplication.clipboard().setText(org_id)
+        self.show_toast("Copied organization ID")
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -2880,7 +2940,10 @@ class DashboardWindow(QWidget):
 
     def _on_export_org(self, data):
         me = data if isinstance(data, dict) else {}
-        self._export_org = str(me.get("org_id") or "")
+        # P3 §7.1 · `me` no longer carries org_id. The card shows the mask until
+        # the reveal toggle asks for it, at which point on_reveal_metadata()
+        # fetches it through the step-up gate.
+        self._export_org = self._org_id
         # The web drives the initial mask state off this preference
         # (html:2170 `masked = !!prefs.hide_sensitive_metadata`, fed by
         # /v1/auth/me). We were fetching the payload and discarding
@@ -2896,6 +2959,16 @@ class DashboardWindow(QWidget):
 
     def on_reveal_metadata(self, revealed: bool):
         self.exp_reveal.setText("hide" if revealed else "reveal")
+        # Revealing the card is now the moment we go and GET the org id — it is
+        # no longer sitting in memory from page load waiting to be un-hidden.
+        # The chain head is unaffected: it is not a workspace identifier and was
+        # never gated.
+        if revealed and not self._org_id:
+            self.reveal_org_id(self._on_export_org_revealed)
+        self._render_export_metadata()
+
+    def _on_export_org_revealed(self, org_id: str):
+        self._export_org = org_id
         self._render_export_metadata()
 
     def _render_export_metadata(self):
@@ -3698,8 +3771,36 @@ class DashboardWindow(QWidget):
                      on_err=lambda _e: self._on_devices(None, ok=False))
         self.refresh_login_history()
 
+    def reveal_settings_org_id(self):
+        """The Settings identity card's reveal button (P3 §7.1).
+
+        The field holds a mask, not a hidden value, so this genuinely goes and
+        asks the server — and says so while it waits, because a step-up prompt
+        arriving after a silent button press looks like a bug."""
+        if self._org_id:
+            self._on_settings_org_id(self._org_id)
+            return
+        self._set_status(self.set_org_status, "confirming your identity...", "mute")
+        self.reveal_org_id(self._on_settings_org_id,
+                           "reveal the organization id",
+                           on_fail=self._on_settings_org_id_refused)
+
+    def _on_settings_org_id(self, org_id: str):
+        self.set_readonly["org_id"].setText(org_id)
+        self.set_org_reveal.setEnabled(False)
+        self._set_status(self.set_org_status, "", "mute")
+
+    def _on_settings_org_id_refused(self, reason: str):
+        # The mask stays. Never a blank field, never a placeholder id.
+        self.set_readonly["org_id"].setText(sd.ORG_ID_MASK)
+        self._set_status(
+            self.set_org_status,
+            "not revealed — identity was not confirmed"
+            if reason == "step_up" else "not revealed — please try again",
+            "warn")
+
     def _on_settings_me(self, data):
-        view = sd.identity_view(data)
+        view = sd.identity_view(data, org_id=self._org_id)
         if not view["known"]:
             # A failed /v1/auth/me tells us nothing new about identity — but it
             # does mean the role is unknown, and the admin cards must not claim

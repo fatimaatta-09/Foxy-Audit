@@ -23,17 +23,21 @@ def _mint(client, org) -> str:
     return body["token"]
 
 
-def test_handoff_mint_and_redeem_logs_in(make_org, client):
+def test_handoff_mint_and_redeem_logs_in(make_org, client, revealed_org_id):
     org = make_org()
     token = _mint(client, org)
     # Redeem with NO Bearer/session — the token is the credential. Establishes a cookie.
     r = client.post("/v1/auth/handoff/redeem", json={"token": token})
     assert r.status_code == 200, r.text
-    assert r.json()["org_id"] == org["org_id"]
+    # P3 §7.1: neither redeem nor /v1/auth/me hands back the workspace id.
+    assert "org_id" not in r.json()
     assert r.json()["role"] == "admin"
     # The session now works for a cookie-only call:
     me = client.get("/v1/auth/me")
-    assert me.status_code == 200 and me.json()["org_id"] == org["org_id"]
+    assert me.status_code == 200 and "org_id" not in me.json()
+    # …and the id is reachable only after a step-up, which proves the redeemed
+    # session really is this org's.
+    assert revealed_org_id(client) == org["org_id"]
 
 
 def test_handoff_is_single_use(make_org, client):
@@ -70,10 +74,11 @@ def test_handoff_mint_requires_org_key(client):
     assert client.post("/v1/auth/handoff").status_code == 401
 
 
-def test_handoff_is_org_scoped(make_org, client):
+def test_handoff_is_org_scoped(make_org, client, revealed_org_id):
     """A token minted for org A logs into org A, never org B."""
     a, b = make_org(), make_org()
     token = _mint(client, a)
     r = client.post("/v1/auth/handoff/redeem", json={"token": token})
     assert r.status_code == 200
-    assert r.json()["org_id"] == a["org_id"] != b["org_id"]
+    # Which tenant the session landed in is now a step-up-gated question (§7.1).
+    assert revealed_org_id(client) == a["org_id"] != b["org_id"]

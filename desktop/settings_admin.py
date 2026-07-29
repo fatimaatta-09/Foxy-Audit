@@ -189,6 +189,10 @@ AUDIT_LABELS = {
     # P3 §4.5 added this action server-side; without a label the desktop would
     # show the raw action id to a customer reading their own account history.
     "billing.cancel": "Cancelled the subscription",
+    # P3 §7.1 · the workspace id left /v1/auth/me and became a step-up-gated
+    # reveal, which is audited — so "who un-masked it, and when" reads as a
+    # sentence here rather than as a raw action id.
+    "account.org_id_reveal": "Revealed the organization id",
 }
 
 AUDIT_EMPTY = ("No account changes recorded yet",

@@ -67,7 +67,8 @@ def test_staff_login_rejects_customer_credentials(make_org, client):
 
 # ───────────────────────── cross-org visibility vs isolation ─────────────────
 
-def test_staff_sees_all_orgs_customer_sees_one(make_org, make_staff, staff_login, login):
+def test_staff_sees_all_orgs_customer_sees_one(make_org, make_staff, staff_login,
+                                               login, revealed_org_id):
     a = make_org()
     b = make_org()
     s = make_staff(role="viewer")
@@ -77,10 +78,10 @@ def test_staff_sees_all_orgs_customer_sees_one(make_org, make_staff, staff_login
     ids = {o["id"] for o in orgs}
     assert a["org_id"] in ids and b["org_id"] in ids and len(orgs) >= 2
 
-    # The customer meanwhile still sees exactly its own org via the dashboard.
+    # The customer meanwhile still sees exactly its own org via the dashboard —
+    # and only after confirming identity, since §7.1 moved the id behind step-up.
     ca = login(a["admin_email"], a["admin_password"])
-    me = ca.get("/v1/auth/me").json()
-    assert me["org_id"] == a["org_id"]
+    assert revealed_org_id(ca) == a["org_id"]
 
 
 def test_staff_org_detail_counts(make_org, make_staff, staff_login, client):

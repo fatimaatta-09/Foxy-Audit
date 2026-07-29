@@ -49,7 +49,13 @@ class LoginRequest(BaseModel):
 class MeResponse(BaseModel):
     email: str
     role: str
-    org_id: str
+    # NO org_id. P3 §7.1: the workspace id is a sensitive reveal, and it used to
+    # ride along here while the dashboard merely masked it in the DOM — the
+    # value was already on the wire, so the mask protected nothing. It now comes
+    # only from POST /v1/account/org-id, behind an emailed step-up code. The
+    # login, MFA and handoff responses dropped it for the same reason: leaving
+    # it on any un-gated path would let a client cache it at sign-in and make
+    # the gate theatre again.
     mfa_enabled: bool = False
     full_name: str | None = None       # P14: identity — avatar/greeting use this once set
     preferences: dict | None = None    # P14: hide_sensitive_metadata + notification prefs
@@ -170,7 +176,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
                 return {"mfa_required": True, "email": user.email}
             sid = _establish_session(request, user, db, payload.remember_me)
             _record_login_and_alert(request, user, db, email, sid)
-            return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
+            return {"email": user.email, "role": user.role}
     if not candidates:
         bcrypt.checkpw(pw, _DUMMY_HASH)       # equalize timing vs. the valid-email path
     if blocked_org:
@@ -210,7 +216,7 @@ def mfa_verify(payload: MfaRequest, request: Request, db: Session = Depends(get_
             db.commit()
             sid = _establish_session(request, user, db, payload.remember_me)
             _record_login_and_alert(request, user, db, user.email, sid)
-            return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
+            return {"email": user.email, "role": user.role}
     raise HTTPException(status_code=401, detail="Invalid or expired code")
 
 
@@ -455,12 +461,12 @@ def redeem_handoff(payload: HandoffRedeemRequest, request: Request,
     db.commit()
     sid = _establish_session(request, user, db)
     _record_login_and_alert(request, user, db, user.email, sid)
-    return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
+    return {"email": user.email, "role": user.role}
 
 
 @router.get("/v1/auth/me", response_model=MeResponse)
 def me(user: User = Depends(require_user)):
-    return MeResponse(email=user.email, role=user.role, org_id=str(user.org_id),
+    return MeResponse(email=user.email, role=user.role,
                       mfa_enabled=bool(user.mfa_enabled),
                       full_name=user.full_name, preferences=user.preferences or {})
 

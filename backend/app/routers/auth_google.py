@@ -128,4 +128,7 @@ def google_auth(payload: GoogleAuthRequest, request: Request, db: Session = Depe
     db.commit()
     sid = _establish_session(request, user, db)      # no email OTP for verified Google
     _record_login_and_alert(request, user, db, email, sid)
-    return {"email": user.email, "role": user.role, "org_id": str(user.org_id)}
+    # No org_id — same rule as password login and MFA (P3 §7.1). Any sign-in
+    # path that still handed it back would let the client cache it at sign-in
+    # and make the step-up gate on POST /v1/account/org-id decorative.
+    return {"email": user.email, "role": user.role}

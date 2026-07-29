@@ -62,13 +62,17 @@ def test_new_user_provisions_org_and_logs_in(client, monkeypatch):
         db.close()
 
 
-def test_existing_user_links_and_logs_in(make_org, client, monkeypatch):
+def test_existing_user_links_and_logs_in(make_org, client, monkeypatch,
+                                         revealed_org_id):
     org = make_org()
     _configure(monkeypatch, {"sub": "g-existing-1", "email": org["admin_email"],
                              "email_verified": True, "name": "Admin"})
     r = client.post("/v1/auth/google", json={"credential": "tok"})
     assert r.status_code == 200
-    assert r.json()["org_id"] == org["org_id"]           # existing org, not a new one
+    # SSO drops org_id from its response like every other sign-in path (§7.1);
+    # the reveal still proves it landed in the EXISTING org, not a new one.
+    assert "org_id" not in r.json()
+    assert revealed_org_id(client) == org["org_id"]
     db = SessionLocal()
     try:
         rows = db.execute(select(User).where(User.email == org["admin_email"])).scalars().all()

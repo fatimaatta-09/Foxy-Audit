@@ -152,9 +152,30 @@ class SettingsSections:
                 + f"QLineEdit {{ background: {WEB["surf3"]};"
                   f" color: {WEB["muted"]}; border-style: dashed; }}")
             o.set_readonly[key] = field
-            lay.addWidget(field)
+            if key != "org_id":
+                lay.addWidget(field)
+                continue
+            # P3 §7.1 · the org id is withheld, not merely masked: the app does
+            # not hold it until this button fetches it through the step-up gate.
+            # It gets its own row so the reveal control sits beside the value it
+            # governs, the way the web's eye button does.
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(8)
+            row.addWidget(field, 1)
+            o.set_org_reveal = QPushButton("reveal")
+            o.set_org_reveal.setMinimumHeight(44)
+            o.set_org_reveal.setCursor(Qt.CursorShape.PointingHandCursor)
+            o.set_org_reveal.setAccessibleName("Reveal the organization id")
+            o.set_org_reveal.clicked.connect(lambda: o.reveal_settings_org_id())
+            row.addWidget(o.set_org_reveal)
+            lay.addLayout(row)
+            o.set_org_status = _label("", size=10, mono=True,
+                                      colour=WEB["muted"], wrap=True)
+            lay.addWidget(o.set_org_status)
         lay.addWidget(_label("Email, role and organization are set by a "
-                             "workspace admin.", size=10,
+                             "workspace admin. Revealing the organization id "
+                             "asks you to confirm your identity.", size=10,
                              colour=WEB["muted"], wrap=True))
         return card
 

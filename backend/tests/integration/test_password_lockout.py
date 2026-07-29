@@ -105,7 +105,8 @@ def test_step_up_grant_survives_the_password_change(make_org):
                         "new_password": "third-password-9"}).status_code == 200
 
 
-def test_suspended_org_does_not_shadow_a_healthy_account(make_org, add_user):
+def test_suspended_org_does_not_shadow_a_healthy_account(make_org, add_user,
+                                                         revealed_org_id):
     """Same address in a suspended workspace and a healthy one. The suspended
     match must not deny the healthy account — it must keep scanning."""
     dead, alive = make_org(), make_org()
@@ -116,12 +117,15 @@ def test_suspended_org_does_not_shadow_a_healthy_account(make_org, add_user):
         s.get(Organization, uuid.UUID(dead["org_id"])).suspended = True
         s.commit()
 
-    r = TestClient(app).post("/v1/auth/login", json={"email": email, "password": pw})
-    assert r.status_code == 200, r.text
-    assert r.json()["org_id"] == alive["org_id"]
+    c = TestClient(app)
+    assert c.post("/v1/auth/login",
+                  json={"email": email, "password": pw}).status_code == 200
+    # Which org the session landed in is a step-up-gated question now (§7.1).
+    assert revealed_org_id(c) == alive["org_id"]
 
 
-def test_deleted_org_does_not_shadow_a_healthy_account(make_org, add_user):
+def test_deleted_org_does_not_shadow_a_healthy_account(make_org, add_user,
+                                                       revealed_org_id):
     from datetime import datetime, timezone
     dead, alive = make_org(), make_org()
     email, pw = "shadow2@test.dev", "same-pass-998"
@@ -131,9 +135,10 @@ def test_deleted_org_does_not_shadow_a_healthy_account(make_org, add_user):
         s.get(Organization, uuid.UUID(dead["org_id"])).deleted_at = datetime.now(timezone.utc)
         s.commit()
 
-    r = TestClient(app).post("/v1/auth/login", json={"email": email, "password": pw})
-    assert r.status_code == 200, r.text
-    assert r.json()["org_id"] == alive["org_id"]
+    c = TestClient(app)
+    assert c.post("/v1/auth/login",
+                  json={"email": email, "password": pw}).status_code == 200
+    assert revealed_org_id(c) == alive["org_id"]
 
 
 def test_suspended_org_alone_still_refuses_with_its_reason(make_org, add_user):
