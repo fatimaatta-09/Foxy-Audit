@@ -17,16 +17,22 @@ def capture_policy_snapshot(policy: OrgPolicy) -> dict:
     difference matters because the snapshot travels inside an evidence export.
     Of the seven fields here:
 
-    * ``pii_detection``, ``prompt_injection``, ``regulated_data_mode`` and
-      ``max_token_threshold`` DO govern the assessment. They are exactly the set
-      :func:`judge_policy_config` projects for the judges, and the first and last
-      are also read directly by :mod:`policy_engine`.
+    * ``pii_detection``, ``prompt_injection``, ``regulated_data_mode``,
+      ``max_token_threshold`` and ``confidence_threshold`` DO govern the
+      assessment. They are exactly the set :func:`judge_policy_config` projects
+      for the judges; ``pii_detection`` and ``max_token_threshold`` are also read
+      directly by :mod:`policy_engine`, and ``confidence_threshold`` tunes how
+      conservatively the judge grades an ambiguous event (P4 Phase A).
     * ``notify_on_breach`` governs alerting, not the verdict — it decides whether
       a breach emails anyone, after the grading is already done.
-    * ``enforcement_mode`` and ``confidence_threshold`` are RECORDED SETTINGS.
-      Nothing in the grading path reads either one today. They are captured so an
-      auditor can see what the tenant had configured at the time; they are not
-      evidence of how the interaction was judged.
+    * ``enforcement_mode`` is the one RECORDED-ONLY setting left. Nothing in the
+      grading path reads it today; it is captured so an auditor can see what the
+      tenant had configured at the time, and it is not evidence of how the
+      interaction was judged. Phase B makes it real.
+
+    That distinction is the point of this docstring, so keep it accurate. A
+    snapshot field described as inert while the judge acts on it — or the reverse
+    — misleads whoever reads the evidence, which is worse than no note at all.
 
     Do not drop the recorded-only fields to "tidy" this. ``foxy-policy-v1`` has to
     stay structurally stable or new snapshots stop being comparable with every
