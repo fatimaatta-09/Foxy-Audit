@@ -23,7 +23,7 @@ import logging
 import re
 import uuid
 
-from . import dispatch, hashing, pii, udp
+from . import dispatch, hashing, org_policy, pii, udp
 from . import policy as policy_engine
 from .adapters import response_metadata
 from .config import FoxyConfig
@@ -119,6 +119,10 @@ class FoxyClient:
         if self.cfg.enabled:
             # Resume any events left in the local spool after a prior process exit.
             dispatch.resume(self.cfg)
+            # Seed the org policy from the on-disk cache and make it eligible for
+            # background refresh. Reads a small JSON file; performs no network I/O
+            # and cannot fail into the caller (P4 §B2/§B3).
+            org_policy.register(self.cfg)
 
     @property
     def enabled(self) -> bool:
@@ -137,7 +141,16 @@ class FoxyClient:
         return await asyncio.to_thread(self.log_interaction, *args, **kwargs)
 
     # ── preflight guard ───────────────────────────────────────────────────────
-    def _evaluate_preflight(self, args, kwargs, policy: str, effective_mode: str):
+    def _resolve_mode(self, decorator_mode: str | None) -> tuple[str, bool]:
+        """The effective mode for THIS call, plus whether the org tightened it.
+
+        Called once per invocation rather than captured at decoration time, so a
+        workspace tightening reaches a long-running process without a restart
+        (P4 §B1). Cost is a dict read; org_policy never performs I/O here."""
+        return org_policy.resolve(self.cfg, decorator_mode)
+
+    def _evaluate_preflight(self, args, kwargs, policy: str, effective_mode: str,
+                            org_tightened: bool = False):
         """Run policy BEFORE the wrapped fn. Pure (no side effects): returns a
         plan dict the wrappers act on, or ``None`` for the observe path.
 
@@ -145,6 +158,9 @@ class FoxyClient:
           "block"  — raise after emitting a blocked event (fn must not run)
           "redact" — call fn with plan["args"]/["kwargs"] (redacted prompt)
           "allow"  — clean prompt seen under block/redact mode; record decision
+
+        ``org_tightened`` rides along so the block message and the emitted event
+        can say WHY a service whose code reads `observe` refused a prompt (§B6).
         """
         if effective_mode == "observe":
             return None
@@ -153,11 +169,12 @@ class FoxyClient:
         if not decision.triggered:
             return {"kind": "allow", "hash_prompt": prompt, "args": args, "kwargs": kwargs,
                     "decision": "allowed", "rules": list(decision.rules),
-                    "signals": None, "reason": None, "event_type": None}
+                    "signals": None, "reason": None, "event_type": None,
+                    "org_tightened": org_tightened}
         if effective_mode == "block":
             return {"kind": "block", "hash_prompt": prompt,
                     "rules": list(decision.rules), "signals": list(decision.signals),
-                    "reason": decision.reason}
+                    "reason": decision.reason, "org_tightened": org_tightened}
         # redact_value scrubs string leaves in a prompt of ANY shape (str or a
         # structured messages= list/dict), so the wrapped fn receives a redacted
         # prompt of the same shape — never the raw original.
@@ -166,15 +183,20 @@ class FoxyClient:
         return {"kind": "redact", "hash_prompt": prompt, "args": new_args, "kwargs": new_kwargs,
                 "decision": "redacted", "rules": list(decision.rules),
                 "signals": list(decision.signals), "reason": decision.reason,
-                "event_type": "redacted"}
+                "event_type": "redacted", "org_tightened": org_tightened}
 
     def _emit_block(self, plan: dict, policy: str, agent: str | None) -> None:
         """Emit the blocked audit event and fire the desktop policy_breach ping.
 
         prompt_hash = commitment of the ORIGINAL prompt; response_hash =
         commitment of "" (the fn never ran, so there is no response)."""
+        # "blocked_by_org_policy" when the workspace tightened the mode, so the
+        # ledger records WHERE the decision came from and an auditor reading the
+        # event later does not have to guess (§B6).
         self.log_interaction(plan["hash_prompt"], "", policy, agent,
-                             event_type="blocked", decision="blocked",
+                             event_type="blocked",
+                             decision=("blocked_by_org_policy"
+                                       if plan.get("org_tightened") else "blocked"),
                              policy_rules=plan["rules"], signals=plan["signals"],
                              blocked_reason=plan["reason"])
         if self.cfg.desktop_ping:
@@ -201,16 +223,26 @@ class FoxyClient:
         if not _POLICY_RE.match(policy):
             log.warning("foxy-audit: invalid policy tag %r; falling back to 'default'", policy)
             policy = "default"
-        effective_mode = str(mode if mode is not None else self.cfg.mode or "observe").strip().lower()
-        if effective_mode not in _MODES:
-            log.warning("foxy-audit: invalid mode %r; falling back to 'observe'", effective_mode)
-            effective_mode = "observe"
+        # The decorator argument is validated ONCE, at import, where a typo should
+        # be noisy. The effective mode is NOT resolved here: decorators run at
+        # import, so anything captured in this closure is frozen for the life of
+        # the process and an org tightening could never reach it. Each wrapper
+        # resolves per call instead — a dict read (P4 §B1).
+        decorator_mode = mode
+        if decorator_mode is not None:
+            checked = str(decorator_mode).strip().lower()
+            if checked not in _MODES:
+                log.warning("foxy-audit: invalid mode %r; falling back to 'observe'", mode)
+                checked = "observe"
+            decorator_mode = checked
 
         def decorator(fn):
             if inspect.iscoroutinefunction(fn):
                 @functools.wraps(fn)
                 async def awrapper(*args, **kwargs):
-                    plan = self._evaluate_preflight(args, kwargs, policy, effective_mode)
+                    effective_mode, org_tightened = self._resolve_mode(decorator_mode)
+                    plan = self._evaluate_preflight(args, kwargs, policy, effective_mode,
+                                                    org_tightened)
                     if plan and plan["kind"] == "block":
                         await asyncio.to_thread(self._emit_block, plan, policy, agent)
                         raise FoxyPolicyBlocked(_block_message(policy, plan))
@@ -240,7 +272,9 @@ class FoxyClient:
             if inspect.isasyncgenfunction(fn):
                 @functools.wraps(fn)
                 async def agen_wrapper(*args, **kwargs):
-                    plan = self._evaluate_preflight(args, kwargs, policy, effective_mode)
+                    effective_mode, org_tightened = self._resolve_mode(decorator_mode)
+                    plan = self._evaluate_preflight(args, kwargs, policy, effective_mode,
+                                                    org_tightened)
                     if plan and plan["kind"] == "block":
                         await asyncio.to_thread(self._emit_block, plan, policy, agent)
                         raise FoxyPolicyBlocked(_block_message(policy, plan))
@@ -272,7 +306,9 @@ class FoxyClient:
 
             @functools.wraps(fn)
             def wrapper(*args, **kwargs):
-                plan = self._evaluate_preflight(args, kwargs, policy, effective_mode)
+                effective_mode, org_tightened = self._resolve_mode(decorator_mode)
+                plan = self._evaluate_preflight(args, kwargs, policy, effective_mode,
+                                                org_tightened)
                 if plan and plan["kind"] == "block":
                     self._emit_block(plan, policy, agent)
                     raise FoxyPolicyBlocked(_block_message(policy, plan))
@@ -405,9 +441,19 @@ class FoxyClient:
 
 
 def _block_message(policy: str, plan: dict) -> str:
-    """Content-blind exception message: policy tag + short reason label only."""
-    return (f"Foxy Audit blocked a prompt under policy '{policy}' "
+    """Content-blind exception message: policy tag + short reason label only.
+
+    When the workspace tightened the mode, SAY SO. A developer reading
+    FoxyPolicyBlocked from code that says `observe` would otherwise have no way
+    to discover the cause, and would go looking in the wrong place (§B6)."""
+    base = (f"Foxy Audit blocked a prompt under policy '{policy}' "
             f"(reason: {plan['reason']}). The wrapped function was not called.")
+    if plan.get("org_tightened"):
+        base += (" This block came from your Foxy Audit workspace policy "
+                 "(enforcement_mode=block), not from this code's own mode. "
+                 "Change it in Settings, or set FOXY_ORG_POLICY=off to ignore "
+                 "workspace policy in this deployment.")
+    return base
 
 
 def _metadata(kwargs: dict, response=None) -> dict:

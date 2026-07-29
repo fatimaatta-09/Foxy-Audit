@@ -23,6 +23,15 @@ DEFAULT_TIMEOUT = 5.0
 DEFAULT_MODE = "observe"
 _VALID_MODES = ("observe", "block", "redact")
 
+# Org policy (P4 §B). ON by default: a workspace that tightens to block should
+# reach every deployment without waiting for a redeploy. FOXY_ORG_POLICY=off
+# stops the fetch entirely — for air-gapped installs, or teams who want code to
+# be the only source of truth. Switching it off can only make enforcement
+# weaker-or-equal to what the code already says, so it is not a way around local
+# blocking.
+DEFAULT_ORG_POLICY_TTL = 300.0        # 5 minutes ≈ 12 requests/hour per process
+_FALSEY = {"0", "false", "no", "off"}
+
 
 @dataclass(frozen=True)
 class FoxyConfig:
@@ -37,6 +46,14 @@ class FoxyConfig:
     client_id: str = ""
     audit_required: bool = False
     mode: str = DEFAULT_MODE
+    # Whether `mode` was CHOSEN or is just the default. Load-bearing for P4 §B:
+    # an org may fill in a mode where the code specified none, but must not
+    # override a mode the code stated explicitly. Collapsing the two — which is
+    # what `mode` alone does, since it always resolves to a concrete string —
+    # would silently hand the org override rights it must not have.
+    mode_is_explicit: bool = False
+    org_policy_enabled: bool = True
+    org_policy_ttl: float = DEFAULT_ORG_POLICY_TTL
 
     @classmethod
     def resolve(
@@ -52,13 +69,31 @@ class FoxyConfig:
         client_id: str | None = None,
         audit_required: bool | None = None,
         mode: str | None = None,
+        org_policy: bool | None = None,
+        org_policy_ttl: float | None = None,
     ) -> "FoxyConfig":
         key = api_key if api_key is not None else os.getenv("FOXY_API_KEY", "")
         ep = endpoint if endpoint is not None else os.getenv("FOXY_BACKEND_URL", DEFAULT_ENDPOINT)
-        raw_mode = (mode if mode is not None else os.getenv("FOXY_MODE", DEFAULT_MODE))
+        env_mode = os.getenv("FOXY_MODE")
+        raw_mode = mode if mode is not None else (env_mode if env_mode is not None else DEFAULT_MODE)
         resolved_mode = str(raw_mode).strip().lower()
+        # "Explicit" means a human said so — a kwarg or FOXY_MODE. An invalid
+        # value still counts: they meant to choose something, and falling back to
+        # observe should not hand the org override rights they did not intend.
+        explicit = mode is not None or env_mode is not None
         if resolved_mode not in _VALID_MODES:
             resolved_mode = DEFAULT_MODE
+        env_org = os.getenv("FOXY_ORG_POLICY")
+        org_on = (org_policy if org_policy is not None
+                  else (env_org.strip().lower() not in _FALSEY if env_org is not None else True))
+        raw_ttl = (org_policy_ttl if org_policy_ttl is not None
+                   else os.getenv("FOXY_ORG_POLICY_TTL"))
+        try:
+            ttl = float(raw_ttl) if raw_ttl is not None else DEFAULT_ORG_POLICY_TTL
+        except (TypeError, ValueError):
+            ttl = DEFAULT_ORG_POLICY_TTL
+        if ttl <= 0:
+            ttl = DEFAULT_ORG_POLICY_TTL
         return cls(
             api_key=key.strip(),
             endpoint=ep.rstrip("/"),
@@ -75,6 +110,9 @@ class FoxyConfig:
             audit_required=(audit_required if audit_required is not None
                             else os.getenv("FOXY_AUDIT_REQUIRED", "false").lower() in {"1", "true", "yes"}),
             mode=resolved_mode,
+            mode_is_explicit=explicit,
+            org_policy_enabled=bool(org_on),
+            org_policy_ttl=ttl,
         )
 
     @property

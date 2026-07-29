@@ -78,6 +78,14 @@ class AsyncDispatcher:
             except queue.Empty:
                 pass
             self._flush_spool()
+            # Org policy rides THIS thread rather than getting its own (P4 §B2).
+            # It is TTL-gated, so ~12 requests an hour per process, and it is
+            # wrapped because a policy problem must never stop event delivery.
+            try:
+                from . import org_policy
+                org_policy.tick()
+            except Exception as exc:         # noqa: BLE001 — type name only
+                log.debug("foxy-audit: org policy tick failed (%s)", type(exc).__name__)
 
     def _flush_spool(self, paths: set[str | None] | None = None) -> None:
         for path in (paths or self._paths or {None}):

@@ -107,14 +107,44 @@ Beside the spool (`cfg.spool_path`), so a restarted process honours org policy i
 than reverting to local defaults for the first TTL. Same durability argument as the spool itself.
 Cache the fetched mode plus a fetched-at timestamp; a stale cache is still better than no policy.
 
-### B4 · Strictest-wins resolution
+### B4 · Resolution — the org may tighten to BLOCK, never to REDACT
+
+**Superseded 2026-07-29 (owner decision).** This section previously specified strictest-wins over
+`observe < redact < block`. That was wrong, and the reason is worth keeping rather than just
+deleting:
+
+`block` raises `FoxyPolicyBlocked` — loud, visible, impossible to miss. `redact` **rewrites the
+prompt before the model sees it**. An org silently turning on redaction for a service whose code
+says `observe` changes what that model receives, degrades its output, and raises nothing at all.
+Nobody finds out. Those two are not points on one scale, so `max()` over a rank is the wrong shape.
+
+Implement this table, not the phrase "strictest wins":
+
+| local | org | effective |
+|---|---|---|
+| anything | `block` | **block** — the org may always tighten |
+| **unset** | anything | **the org's value** — filling a gap, not overriding code |
+| anything explicit | not `block` | **the local value** |
+
+Worked cases:
 
 ```
-RANK = {"observe": 0, "redact": 1, "block": 2}
-effective = max(local_mode, org_mode, key=RANK.get)
+local=observe  org=block   -> block
+local=observe  org=redact  -> observe     <- the case that matters
+local=redact   org=block   -> block
+local=block    org=observe -> block       <- never weakens
+local=UNSET    org=redact  -> redact      <- gap-filling is still allowed
 ```
 
-Where `local_mode` is the existing decorator-arg → client-config → `"observe"` chain, unchanged.
+"Unset locally" means **no decorator `mode` AND no `FOXY_MODE`**. `FoxyConfig.mode` always resolves
+to a concrete string, so that distinction needs its own flag (`mode_is_explicit`) — collapsing the
+two hands the org override rights it must not have.
+
+Note the org's own vocabulary is `block | flag | monitor`, not the SDK's `observe | redact | block`.
+`flag` and `monitor` both mean "let it through and record it", i.e. `observe`. **An org cannot
+express `redact` at all**, so the dangerous row above is structurally impossible today; the rule is
+written to keep it impossible if that vocabulary ever grows.
+
 If there is no cached org policy, `effective == local_mode` — today's behaviour exactly.
 
 ### B5 · Fail posture
