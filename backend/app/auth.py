@@ -138,7 +138,8 @@ def _grandfathered(org: Organization) -> bool:
       turn on. `card_on_file` is false on every row written before that column
       existed, so without a date exemption, enabling the gate locks out every
       customer the product already has — all at once, for a card they were never
-      asked for. The cutoff defaults to the moment the gate was built.
+      asked for. The cutoff is UNSET by default, which exempts everyone: a date
+      baked into config is wrong the moment it passes.
 
     * **Has a Stripe subscription.** A paying customer demonstrably has a card at
       Stripe; `card_on_file` only tracks the newer $0-authorisation flow and so
