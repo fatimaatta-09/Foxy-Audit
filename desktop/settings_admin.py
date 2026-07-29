@@ -186,6 +186,9 @@ AUDIT_LABELS = {
     "sso.remove": "Removed SSO",
     "webhook.create": "Added a webhook",
     "webhook.delete": "Removed a webhook",
+    # P3 §4.5 added this action server-side; without a label the desktop would
+    # show the raw action id to a customer reading their own account history.
+    "billing.cancel": "Cancelled the subscription",
 }
 
 AUDIT_EMPTY = ("No account changes recorded yet",

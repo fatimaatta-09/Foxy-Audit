@@ -64,13 +64,11 @@ PREFERENCES = (
      "nudge after 90 days unrotated", False),
     ("hide_sensitive_metadata", "Hide sensitive metadata by default",
      "mask chain heads and org ids until you reveal them", False),
-    ("notify_product_updates", "Product updates",
-     "occasional email about new features", False),
-    # The web's checkbox is unchecked when the key is unset (html:prefNotify*
-    # set no `checked`), so showing ON here made one account read two ways.
-    # "Web wins" - the deliverer treats absent as opt-in for this one anyway.
-    ("notify_security_alerts", "Security alerts",
-     "email about security-relevant account events", False),
+    # notify_product_updates and notify_security_alerts were removed here when the
+    # web deleted them (P3 §6): nothing ever sent product updates, and new-device
+    # alerts are deliberately not opt-out-able, so a switch offering to silence
+    # them was a lie. The server no longer accepts either key — offering them here
+    # would be a control that silently fails to save. "Web wins."
 )
 
 PREF_KEYS = tuple(key for key, _t, _d, _v in PREFERENCES)

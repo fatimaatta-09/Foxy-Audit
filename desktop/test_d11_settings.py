@@ -34,10 +34,9 @@ def test_an_unset_preference_shows_what_the_server_actually_does():
     assert values["notify_weekly_digest"] is True
     assert values["notify_key_rotation_reminders"] is False
     assert values["hide_sensitive_metadata"] is False
-    assert values["notify_product_updates"] is False
-    # …and this one follows the WEB, whose checkbox is unchecked when the key
-    # is unset. Showing it ON here made one account read two ways.
-    assert values["notify_security_alerts"] is False
+    # notify_product_updates and notify_security_alerts used to be asserted here.
+    # Both were deleted from the product in P3 §6 — nothing read either one — so
+    # the server no longer accepts them and the desktop no longer offers them.
 
 
 def test_an_explicit_false_beats_the_default():
@@ -448,8 +447,8 @@ def test_the_badge_reads_the_key_the_server_actually_sends(console):
 def test_an_unconfirmed_toggle_says_so(console, monkeypatch):
     """Save failed AND the corrective re-read failed: the switch on screen is
     a value nobody confirmed, so the row says that rather than looking settled."""
-    row = console.pref_rows["notify_product_updates"]
-    console._preference_unknown("notify_product_updates")
+    row = console.pref_rows["notify_key_rotation_reminders"]
+    console._preference_unknown("notify_key_rotation_reminders")
     assert not row.note.isHidden()
     assert row.note.text() == sd.PREF_UNCONFIRMED
     console._on_preferences({"preferences": {}})
