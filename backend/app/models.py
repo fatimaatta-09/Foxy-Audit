@@ -295,6 +295,12 @@ class OrgPolicy(Base):
     max_token_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=50000)
     # Judge sensitivity (Phase 5) — persisted policy preferences surfaced on the dashboard.
     enforcement_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default="block")
+    # SDK preflight enforcement (P4 §B, migration 0056) — a DIFFERENT vocabulary
+    # from enforcement_mode above: observe|redact|block, applied before the model
+    # is called, versus block|flag|monitor applied to a verdict after grading.
+    # NULL means the workspace has expressed no opinion and the SDK ignores org
+    # policy entirely, which is what every org reads until an owner chooses.
+    sdk_enforcement: Mapped[str | None] = mapped_column(String(16), nullable=True)
     confidence_threshold: Mapped[str] = mapped_column(String(16), nullable=False, server_default="balanced")
     notify_on_breach: Mapped[str] = mapped_column(String(16), nullable=False, server_default="immediate")
     # Optional destinations for the breach notifier (P2 · §F). NULL email falls

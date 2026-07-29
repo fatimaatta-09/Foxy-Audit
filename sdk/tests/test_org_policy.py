@@ -99,12 +99,15 @@ def test_org_block_does_tighten_an_observe_service(tmp_path):
     assert org_policy.resolve(cfg, None) == ("block", True)
 
 
-def test_the_org_vocabulary_cannot_even_express_redact():
-    """Structural, not incidental: the workspace picks block / flag / monitor.
-    Nothing maps to redact, so the dangerous case above cannot arise today — and
-    the resolution rule keeps it impossible if that vocabulary ever grows."""
-    assert set(org_policy.ORG_TO_SDK) == {"block", "flag", "monitor"}
-    assert "redact" not in org_policy.ORG_TO_SDK.values()
+def test_the_sdk_reads_its_own_field_not_the_judge_one():
+    """enforcement_mode (block|flag|monitor) is what to do with a VERDICT after
+    grading. sdk_enforcement (observe|redact|block) is what to do BEFORE the model
+    is called. They are different settings that share a word, and reading the
+    wrong one is an upgrade incident, not a bug — see
+    test_an_existing_org_upgrading_sees_no_change_at_all."""
+    assert org_policy.SDK_ENFORCEMENT_FIELD == "sdk_enforcement"
+    assert not hasattr(org_policy, "ORG_TO_SDK"), (
+        "the judge-vocabulary mapping is gone; the SDK reads its own field")
 
 
 # ══ 3 · gap-filling still works ════════════════════════════════════════════
@@ -427,14 +430,14 @@ class _Resp:
         return self._p
 
 
-@pytest.mark.parametrize("org_value,expected", [
-    ("block", "block"), ("flag", "observe"), ("monitor", "observe"),
-    ("BLOCK", "block"), ("  flag  ", "observe"),
+@pytest.mark.parametrize("value,expected", [
+    ("block", "block"), ("redact", "redact"), ("observe", "observe"),
+    ("BLOCK", "block"), ("  redact  ", "redact"),
 ])
-def test_the_fetch_maps_the_org_vocabulary(tmp_path, monkeypatch, org_value, expected):
+def test_the_fetch_reads_sdk_enforcement(tmp_path, monkeypatch, value, expected):
     """Parametrised rather than looped: a loop shares one tmp_path, so the disk
     cache written by the first value seeds the next iteration and the fetch is
-    correctly skipped as fresh — which looks like a mapping bug and is not."""
+    correctly skipped as fresh — which looks like a bug and is not."""
     cfg = _cfg(tmp_path)
     org_policy.register(cfg)
     captured = {}
@@ -443,23 +446,157 @@ def test_the_fetch_maps_the_org_vocabulary(tmp_path, monkeypatch, org_value, exp
         @staticmethod
         def get(url, headers=None, timeout=None):
             captured["url"], captured["headers"] = url, headers
-            return _Resp({"enforcement_mode": org_value})
+            return _Resp({"enforcement_mode": "block", "sdk_enforcement": value})
 
     monkeypatch.setitem(__import__("sys").modules, "requests", _R)
     org_policy.tick()
-    assert org_policy.org_mode(cfg) == expected, org_value
+    assert org_policy.org_mode(cfg) == expected
     assert captured["url"].endswith("/v1/policies")
     assert captured["headers"]["Authorization"].startswith("Bearer ")
 
 
-def test_an_unknown_org_value_is_ignored_rather_than_guessed(tmp_path, monkeypatch):
+# ══ the upgrade incident this field exists to prevent ══════════════════════
+
+def test_a_null_sdk_enforcement_is_the_same_as_no_org_policy(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     org_policy.register(cfg)
 
     class _R:
         @staticmethod
         def get(*a, **kw):
-            return _Resp({"enforcement_mode": "something_new"})
+            return _Resp({"enforcement_mode": "block", "sdk_enforcement": None})
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", _R)
+    org_policy.tick()
+    assert org_policy.org_mode(cfg) is None
+    assert org_policy.resolve(cfg, None) == ("observe", False)
+    assert org_policy.resolve(cfg, "block") == ("block", False)
+
+
+def test_a_null_answer_is_cached_rather_than_refetched_every_tick(tmp_path, monkeypatch):
+    """"No opinion" is an ANSWER, not a failure to get one.
+
+    If it is not cached, the org falls through to the unrecognised-value path,
+    the cache stays empty, and the TTL check has nothing to compare against — so
+    the dispatcher refetches /v1/policies on every tick, once a second, forever.
+    For the NULL state that every workspace starts in, that is every customer."""
+    cfg = _cfg(tmp_path)
+    org_policy.register(cfg)
+    calls = []
+
+    class _R:
+        @staticmethod
+        def get(*a, **kw):
+            calls.append(1)
+            return _Resp({"enforcement_mode": "block", "sdk_enforcement": None})
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", _R)
+    org_policy.tick()
+    assert calls == [1]
+    org_policy.tick()
+    org_policy.tick()
+    assert calls == [1], (
+        "a null policy was refetched inside its TTL — every tick hits the API")
+    assert org_policy.org_mode(cfg) is None
+
+
+def test_a_null_answer_also_survives_a_restart(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    org_policy.register(cfg)
+
+    class _R:
+        @staticmethod
+        def get(*a, **kw):
+            return _Resp({"sdk_enforcement": None})
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", _R)
+    org_policy.tick()
+    org_policy._reset_for_tests()
+    org_policy.register(cfg)
+    with org_policy._lock:
+        assert org_policy._key(cfg) in org_policy._cache,             "the cached no-opinion answer was lost on restart"
+
+
+def test_an_existing_org_upgrading_sees_no_change_at_all(tmp_path, monkeypatch):
+    """THE INCIDENT TEST, and the most important one on this branch.
+
+    enforcement_mode defaults to "block" and a default policy row is written on
+    first read, so EVERY existing workspace stores "block" whether or not a human
+    ever chose it. Had the SDK honoured that field, every customer running the
+    default `observe` would have started raising FoxyPolicyBlocked the moment
+    they installed this version — a production incident on upgrade, for everyone
+    at once, caused by a setting nobody touched.
+
+    This is exactly that org: enforcement_mode=block, sdk_enforcement NULL."""
+    client = FoxyClient(api_key="foxy_sk_test", spool_path=str(tmp_path / "s.sqlite3"),
+                        desktop_ping=False)
+
+    class _R:
+        @staticmethod
+        def get(*a, **kw):
+            return _Resp({"enforcement_mode": "block", "confidence_threshold": "balanced",
+                          "sdk_enforcement": None})
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", _R)
+    org_policy.tick()
+
+    @client.audit(policy="hipaa")
+    def call(prompt):
+        return "ok"
+
+    assert call(prompt=PHI) == "ok", (
+        "an org that never chose an SDK mode started blocking on upgrade")
+    assert org_policy.resolve(client.cfg, None) == ("observe", False)
+
+
+def test_a_deliberate_choice_does_take_effect(tmp_path, monkeypatch):
+    """The other half: once an owner actually picks one, it works."""
+    client = FoxyClient(api_key="foxy_sk_test", spool_path=str(tmp_path / "s.sqlite3"),
+                        desktop_ping=False)
+
+    class _R:
+        @staticmethod
+        def get(*a, **kw):
+            return _Resp({"enforcement_mode": "monitor", "sdk_enforcement": "block"})
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", _R)
+    org_policy.tick()
+
+    @client.audit(policy="hipaa")
+    def call(prompt):
+        return "ok"
+
+    with pytest.raises(FoxyPolicyBlocked):
+        call(prompt=PHI)
+
+
+def test_the_two_fields_are_independent(tmp_path, monkeypatch):
+    """enforcement_mode moving must not move sdk_enforcement, in either
+    direction — they answer different questions at different moments."""
+    cfg = _cfg(tmp_path, org_policy_ttl=0.0001)
+    org_policy.register(cfg)
+    for judge_value in ("block", "flag", "monitor"):
+        class _R:
+            @staticmethod
+            def get(*a, _j=judge_value, **kw):
+                return _Resp({"enforcement_mode": _j, "sdk_enforcement": None})
+
+        monkeypatch.setitem(__import__("sys").modules, "requests", _R)
+        with org_policy._lock:
+            org_policy._cache.pop(org_policy._key(cfg), None)
+        org_policy.tick()
+        assert org_policy.org_mode(cfg) is None, (
+            f"enforcement_mode={judge_value} leaked into SDK enforcement")
+
+
+def test_an_unknown_value_is_ignored_rather_than_guessed(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    org_policy.register(cfg)
+
+    class _R:
+        @staticmethod
+        def get(*a, **kw):
+            return _Resp({"sdk_enforcement": "something_new"})
 
     monkeypatch.setitem(__import__("sys").modules, "requests", _R)
     org_policy.tick()

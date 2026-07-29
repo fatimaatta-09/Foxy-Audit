@@ -40,6 +40,17 @@ class PolicyConfig(BaseModel):
     max_token_threshold: int = Field(default=50_000, ge=1, le=10_000_000)
     # Judge sensitivity (Phase 5) — how strictly the Judge acts + how you're notified.
     enforcement_mode: Literal["block", "flag", "monitor"] = "block"
+    # SDK PREFLIGHT enforcement — a different vocabulary from enforcement_mode
+    # above, and a different moment: before the model is called, not after a
+    # verdict. None means the workspace has expressed no opinion and the SDK
+    # ignores org policy entirely (P4 §B, migration 0056).
+    #
+    # OMITTING this key on a PUT means "keep what is stored", the same contract
+    # the provider keys already use. That is load-bearing: the desktop and the
+    # dashboard both build their PUT body from a fixed key list that predates
+    # this field, so treating absent as None would let either of them silently
+    # wipe an owner's choice on an unrelated save.
+    sdk_enforcement: Literal["observe", "redact", "block"] | None = None
     confidence_threshold: Literal["high", "balanced", "low"] = "balanced"
     notify_on_breach: Literal["immediate", "digest", "none"] = "immediate"
     # Optional destinations for the breach notifier (P2 · §F).
@@ -75,6 +86,7 @@ def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig
         regulated_data_mode=row.regulated_data_mode,
         max_token_threshold=row.max_token_threshold,
         enforcement_mode=row.enforcement_mode,
+        sdk_enforcement=row.sdk_enforcement,
         confidence_threshold=row.confidence_threshold,
         notify_on_breach=row.notify_on_breach,
         notify_email=row.notify_email,
@@ -160,6 +172,10 @@ def update_policies(
     row.regulated_data_mode = body.regulated_data_mode
     row.max_token_threshold = body.max_token_threshold
     row.enforcement_mode = body.enforcement_mode
+    # Absent means "leave it alone"; present-and-null means "clear it". Anything
+    # else would let a client that has never heard of this field erase it.
+    if "sdk_enforcement" in body.model_fields_set:
+        row.sdk_enforcement = body.sdk_enforcement
     row.confidence_threshold = body.confidence_threshold
     row.notify_on_breach = body.notify_on_breach
     email = (body.notify_email or "").strip() or None
@@ -186,6 +202,7 @@ def update_policies(
         db, org_id=admin.org_id, actor_email=admin.email, action="policy.update",
         # Records THAT a key changed, never the key itself.
         detail={"enforcement_mode": body.enforcement_mode,
+                "sdk_enforcement": row.sdk_enforcement,
                 "notify_on_breach": body.notify_on_breach,
                 "judge_provider": body.judge_provider,
                 "judge_key_mode": body.judge_key_mode,

@@ -77,7 +77,56 @@ greps the prompt for the word "high" passes even if the model ignores it.
 
 ---
 
-## Phase B — `enforcement_mode` (SDK, the real work)
+## Phase B — SDK preflight enforcement (`sdk_enforcement`)
+
+### The two vocabularies — read this before anything else
+
+An earlier draft of this plan said "make `enforcement_mode` true". That was an
+error, and it would have shipped as an incident rather than a feature.
+
+`enforcement_mode` and the SDK's mode are **different settings that happen to
+share a word**:
+
+| field | values | when it applies |
+|---|---|---|
+| `enforcement_mode` | `block \| flag \| monitor` | what to do with a **verdict**, after the judge grades an interaction |
+| `sdk_enforcement` | `observe \| redact \| block` | what to do **before the model is called** |
+
+Why conflating them was dangerous, concretely: `enforcement_mode` has
+`server_default="block"`, and `_get_or_create` writes a default policy row the
+first time anyone reads the endpoint. So **every existing workspace already
+stores "block"**, whether or not a human ever chose it. Had the SDK honoured that
+field, every customer running the default `observe` would have begun raising
+`FoxyPolicyBlocked` the moment they installed the release — all of them at once,
+from a setting nobody touched.
+
+So Phase B adds a **separate, nullable, SDK-facing field** (migration 0056):
+
+```
+sdk_enforcement   nullable, observe | redact | block, DEFAULT NULL
+
+NULL     -> the SDK ignores org policy entirely. Every existing org reads this
+            on upgrade, so the release changes nothing until an owner chooses.
+"block"  -> the org tightens to block (see B4)
+other    -> supplies the default ONLY where the code specifies no mode
+```
+
+`enforcement_mode` is left exactly as it is — judge-facing, in the evidence
+snapshot, in admin. It is **not** migrated and its stored values are **not**
+rewritten: those values are already recorded inside policy snapshots that have
+been handed to auditors, and rewriting recorded policy in a compliance product is
+the wrong instinct even when the new value would be "better".
+
+`foxy-policy-v1` is unchanged. `sdk_enforcement` is deliberately absent from the
+snapshot: it governs the SDK, not the assessment.
+
+Omitting `sdk_enforcement` from a `PUT /v1/policies` body means **keep what is
+stored**, the same contract the provider keys already use. The desktop and the
+dashboard both build their PUT body from a fixed key list that predates this
+field, so "absent means null" would let either of them silently erase an owner's
+choice during an unrelated save.
+
+
 
 ### B1 · Move mode resolution out of the closure
 

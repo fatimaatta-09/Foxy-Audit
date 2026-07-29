@@ -37,17 +37,23 @@ log = logging.getLogger("foxy_audit.org_policy")
 SDK_MODES = ("observe", "redact", "block")
 DEFAULT_MODE = "observe"
 
-# The workspace picks from "block on breach" / "flag only, allow through" /
-# "silent monitor (log only)" — a judge-response vocabulary, not the SDK's
-# preflight one. Only "block" asks for egress to be prevented; the other two ask
-# for the interaction to proceed and be recorded, which is `observe`.
+# The SDK reads `sdk_enforcement`, NOT `enforcement_mode`. They are different
+# settings that happen to share a word:
 #
-# Note what this mapping makes structurally impossible: an org CANNOT express
-# "redact". That matters, because a remote setting that silently rewrites a
-# prompt before the model sees it would degrade output and raise nothing —
-# nobody would find out. resolve() refuses it anyway, so the guarantee survives
-# even if the org vocabulary gains a redact value later.
-ORG_TO_SDK = {"block": "block", "flag": "observe", "monitor": "observe"}
+#   enforcement_mode   block|flag|monitor   what to do with a verdict AFTER the
+#                                           judge grades an interaction
+#   sdk_enforcement    observe|redact|block what to do BEFORE the model is called
+#
+# Conflating them would have been an upgrade incident rather than a feature:
+# enforcement_mode defaults to "block" and a default row is written on first
+# read, so every org already stores "block" whether or not a human chose it.
+# Honouring that field would have started blocking prompts for every customer
+# running the default `observe` the moment they upgraded.
+#
+# sdk_enforcement is nullable with no default. NULL — which is what every
+# existing workspace reads — means "no opinion", and the SDK ignores org policy
+# entirely. Nothing changes for anyone until an owner deliberately chooses.
+SDK_ENFORCEMENT_FIELD = "sdk_enforcement"
 
 _lock = threading.Lock()
 _cache: dict[tuple[str, str], dict] = {}      # (endpoint, api_key) -> {mode, fetched_at}
@@ -123,6 +129,9 @@ def org_mode(cfg: FoxyConfig) -> str | None:
     if not entry:
         return None
     mode = entry.get("mode")
+    # A cached None means the workspace expressed no opinion; that is the same
+    # answer as "nothing known" for every caller, and both mean the SDK behaves
+    # exactly as it did before org policy existed.
     return mode if mode in SDK_MODES else None
 
 
@@ -145,9 +154,12 @@ def _load_from_disk(cfg: FoxyConfig) -> None:
     try:
         raw = json.loads(_cache_file(cfg).read_text(encoding="utf-8"))
         entry = raw.get(_disk_key(cfg))
-        if isinstance(entry, dict) and entry.get("mode") in SDK_MODES:
+        # None is a legitimate cached value — "this workspace has no opinion" —
+        # and is as worth restoring as a mode, so a restart does not re-ask.
+        if isinstance(entry, dict) and (entry.get("mode") in SDK_MODES
+                                        or entry.get("mode") is None):
             with _lock:
-                _cache.setdefault(_key(cfg), {"mode": entry["mode"],
+                _cache.setdefault(_key(cfg), {"mode": entry.get("mode"),
                                               "fetched_at": float(entry.get("fetched_at") or 0.0)})
     except Exception as exc:                 # noqa: BLE001 — a bad cache is not fatal
         log.debug("foxy-audit: org policy cache unreadable (%s)", type(exc).__name__)
@@ -160,7 +172,7 @@ def _disk_key(cfg: FoxyConfig) -> str:
     return f"{cfg.endpoint}|{digest}"
 
 
-def _save_to_disk(cfg: FoxyConfig, mode: str, fetched_at: float) -> None:
+def _save_to_disk(cfg: FoxyConfig, mode: str | None, fetched_at: float) -> None:
     path = _cache_file(cfg)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -215,16 +227,27 @@ def _refresh(cfg: FoxyConfig, now: float) -> None:
         if resp.status_code != 200:
             log.debug("foxy-audit: org policy fetch returned %s", resp.status_code)
             return
-        raw = str((resp.json() or {}).get("enforcement_mode") or "").strip().lower()
+        payload = resp.json() or {}
+        value = payload.get(SDK_ENFORCEMENT_FIELD)
+        if value is None:
+            # An explicit "no opinion" is a RESULT, not a failure to get one.
+            # Cache it, or the TTL check has nothing to compare against and the
+            # dispatcher refetches on every tick — once a second, forever, for
+            # the NULL state that every workspace starts in.
+            with _lock:
+                _cache[_key(cfg)] = {"mode": None, "fetched_at": now}
+            _save_to_disk(cfg, None, now)
+            return
+        raw = str(value).strip().lower()
     except Exception as exc:                 # noqa: BLE001
         # Type name only. The key is a Bearer header here rather than a URL
         # param, but the habit holds — an exception message can carry the
         # request, and this one is authenticated.
         log.debug("foxy-audit: org policy fetch failed (%s)", type(exc).__name__)
         return
-    mode = ORG_TO_SDK.get(raw)
+    mode = raw if raw in SDK_MODES else None
     if mode is None:
-        log.debug("foxy-audit: unrecognised org enforcement_mode; ignoring")
+        log.debug("foxy-audit: unrecognised sdk_enforcement value; ignoring")
         return
     with _lock:
         _cache[_key(cfg)] = {"mode": mode, "fetched_at": now}
