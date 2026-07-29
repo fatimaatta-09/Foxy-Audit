@@ -25,7 +25,15 @@ from app.models import Organization
 
 @pytest.fixture
 def gate_on(monkeypatch):
+    """Turning the gate on is TWO decisions, not one (P3 §4 grandfather clause).
+
+    The flag alone is deliberately a no-op: with no cutoff chosen, every org is
+    grandfathered, so enabling the flag by itself can never lock anybody out. A
+    cutoff in the past is what actually brings orgs into scope, and these tests
+    create their orgs now, so they land after it."""
     monkeypatch.setattr(get_settings(), "require_card_on_file", True)
+    monkeypatch.setattr(get_settings(), "card_gate_grandfather_before",
+                        "2020-01-01T00:00:00+00:00")
 
 
 def _set_card(org_id, on: bool, brand="visa", last4="4242"):

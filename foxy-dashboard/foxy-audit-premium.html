@@ -1836,8 +1836,13 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <div class="erow"><span class="elabel">status</span><span class="eval" id="planStatus">—</span></div>
             <div class="erow"><span class="elabel">included / month</span><span class="eval" id="planQuota">—</span></div>
             <div class="erow" id="planTrialRow" style="display:none;"><span class="elabel">trial ends</span><span class="eval" id="planTrial">—</span></div>
+            <div class="erow" id="planCancelRow" style="display:none;"><span class="elabel">access until</span><span class="eval" id="planCancelUntil">—</span></div>
             <button class="btn pri" id="managePlanBtn" onclick="openBillingPortal(this)" style="margin-top:12px;display:none;">Manage billing ↗</button>
             <button class="btn" id="upgradePlanBtn" type="button" onclick="go('upgrade',null)" style="margin-top:12px;display:none;">See upgrade options</button>
+            <!-- §4.5 · cancellation has to be reachable without contacting support.
+                 Ghost, not primary: it is available, not encouraged. -->
+            <button class="btn ghost" id="cancelPlanBtn" type="button" onclick="cancelSubscription(this)" style="margin-top:8px;display:none;">Cancel subscription</button>
+            <div id="cancelPlanNote" style="font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:8px;display:none;">You keep everything you have paid for until the end of the current period. Your evidence and ledger are not deleted.</div>
           </div>
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="2" fill="#000"/><path d="M8 8h8M8 12h8M8 16h5" stroke="var(--fox)" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="txt">Invoice history</div></div></div>
           <div class="clay pad" style="overflow-x:auto;">
@@ -4171,7 +4176,38 @@ async function loadLoginHistory(scope){
       const manage=$('managePlanBtn'), up=$('upgradePlanBtn');
       if(p.has_billing_account){ if(manage)manage.style.display=''; if(up)up.style.display='none'; }
       else { if(manage)manage.style.display='none'; if(up)up.style.display=''; }
+      // Cancellation follows the same condition as Manage billing. /v1/billing/plan
+      // reports no subscription id, so an org with a customer but no subscription
+      // still sees the button and gets the endpoint's own 400 — which says exactly
+      // that. Better a truthful refusal than a button hidden by a guess.
+      const cancel=$('cancelPlanBtn'), note=$('cancelPlanNote');
+      const show=!!p.has_billing_account;
+      if(cancel)cancel.style.display=show?'':'none';
+      if(note)note.style.display=show?'':'none';
     }catch(e){}
+  };
+  window.cancelSubscription=async function(btn){
+    // Irreversible-feeling, so it asks first. The wording says what actually
+    // happens — cancel at period end — rather than implying instant loss.
+    if(!window.confirm('Cancel your Foxy Audit subscription?\n\nYou keep access until the end of the period you have already paid for. Your evidence and ledger are not deleted.'))return;
+    if(btn){ btn.disabled=true; btn.textContent='cancelling…'; }
+    try{ const r=await api('/v1/billing/cancel',{method:'POST'});
+      if(r.ok){ const d=await r.json();
+        showToast('Subscription cancelled — access continues until the end of the period');
+        // Show the date the SERVER returned. Never compute or guess one.
+        const until=d&&d.access_until;
+        const row=$('planCancelRow'), val=$('planCancelUntil');
+        if(until&&row&&val){ val.textContent=fmtD(until); row.style.display=''; }
+        else if(row){ row.style.display='none'; }
+        if(btn)btn.style.display='none';
+        loadPlan();
+      }
+      else if(r.status===400){ showToast('There is no active subscription to cancel'); }
+      else if(r.status===403){ showToast('Only a workspace admin can cancel the subscription'); }
+      else if(r.status===503){ showToast('Billing isn’t enabled on this workspace yet'); }
+      else { showToast('Could not cancel the subscription ('+r.status+')'); }
+    }catch(e){ showToast('Could not reach the server'); }
+    if(btn&&btn.style.display!=='none'){ btn.disabled=false; btn.textContent='Cancel subscription'; }
   };
   window.openBillingPortal=async function(btn){
     if(btn){ btn.disabled=true; btn.textContent='opening…'; }

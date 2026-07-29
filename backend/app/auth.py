@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -22,6 +23,8 @@ from . import ip_allow
 from .config import get_settings
 from .db import get_db
 from .models import ApiKey, Organization, StaffSession, StaffUser, User, UserSession
+
+log = logging.getLogger("foxy.auth")
 
 
 def _bearer_token(authorization: str) -> str:
@@ -126,6 +129,53 @@ def require_org(
 _CARD_GATE_EXEMPT = ("/v1/auth/", "/v1/billing/", "/v1/account/preferences")
 
 
+def _grandfathered(org: Organization) -> bool:
+    """True when this org must never be card-gated, whatever the flag says.
+
+    Two independent exemptions, and both are needed:
+
+    * **Created before the cutoff.** This is the rule that makes the flag safe to
+      turn on. `card_on_file` is false on every row written before that column
+      existed, so without a date exemption, enabling the gate locks out every
+      customer the product already has — all at once, for a card they were never
+      asked for. The cutoff defaults to the moment the gate was built.
+
+    * **Has a Stripe subscription.** A paying customer demonstrably has a card at
+      Stripe; `card_on_file` only tracks the newer $0-authorisation flow and so
+      under-reports reality for anyone who subscribed before it existed. Locking
+      a paying customer out over a flag that post-dates their payment would be
+      absurd, and it stays true for anyone who subscribes through Checkout rather
+      than the setup session.
+
+    The date rule alone satisfies "flipping the flag locks nobody out today". The
+    subscription rule is what keeps that true tomorrow.
+    """
+    if getattr(org, "stripe_subscription_id", None):
+        return True
+    raw = (get_settings().card_gate_grandfather_before or "").strip()
+    if not raw:
+        # No cutoff chosen, so nobody has decided which orgs are new enough to
+        # gate. Exempt everyone rather than guess — the alternative is locking
+        # out every existing customer on a config nobody set.
+        return True
+    created = getattr(org, "created_at", None)
+    if created is None:
+        # A row with no creation stamp predates the columns we could judge it by;
+        # exempt it rather than lock somebody out on missing data.
+        return True
+    try:
+        cutoff = datetime.fromisoformat(raw)
+    except ValueError:
+        log.warning("card_gate_grandfather_before is not an ISO datetime; "
+                    "treating every org as grandfathered")
+        return True
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return created < cutoff
+
+
 def _enforce_card_gate(request: Request, org: Organization) -> None:
     """402 when the deployment requires a card on file and this org has none.
 
@@ -134,6 +184,8 @@ def _enforce_card_gate(request: Request, org: Organization) -> None:
     should render the locked state rather than bouncing to the login screen.
     """
     if not get_settings().require_card_on_file or org.card_on_file:
+        return
+    if _grandfathered(org):
         return
     if request.url.path.startswith(_CARD_GATE_EXEMPT):
         return

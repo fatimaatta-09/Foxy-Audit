@@ -106,6 +106,25 @@ class Settings(BaseSettings):
     # so turning this on locks every current customer out of their dashboard until
     # they complete a card setup. That is a business decision, not a deploy.
     require_card_on_file: bool = False
+    # ── The grandfather clause (P3 §4) ───────────────────────────────────────
+    # Organisations created BEFORE this instant are permanently exempt from the
+    # card gate. UNSET (the default) exempts every organisation, whenever it was
+    # created — the fail-safe direction, and the thing that makes
+    # `require_card_on_file` flippable at all. Without an exemption, enabling the
+    # gate locks out every customer the product already has, all at once, for a
+    # card none of them were ever asked for: `card_on_file` is false on every row
+    # written before that column existed.
+    #
+    # Deliberately NOT a hardcoded ship date. A date baked in here is wrong the
+    # moment it passes — an org created an hour after midnight on that date would
+    # be gated, which is precisely the lockout this exists to prevent. Absence of
+    # configuration means "no cutoff has been chosen", and choosing one is the
+    # deliberate act of narrowing the exemption.
+    #
+    # Turning the gate on therefore means TWO decisions: set this to the moment
+    # you enable it, then set require_card_on_file. One without the other is
+    # either a no-op or an outage.
+    card_gate_grandfather_before: str = ""
     # Days of warning before a billing change. The owner asked for "3-4 days before
     # anything changes"; 4 leaves a working day of slack.
     billing_change_notice_days: int = 4
