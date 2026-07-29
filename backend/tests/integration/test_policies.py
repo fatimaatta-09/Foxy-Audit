@@ -67,6 +67,10 @@ def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch, conf
     assert captured["policy_config"] == {
         "pii_detection": False, "prompt_injection": False,
         "regulated_data_mode": True, "max_token_threshold": 777,
+        # P4 §A: judge_policy_config now projects this too, so it reaches the
+        # judge. Asserting it here is what proves the wiring — the old 4-key
+        # assertion would pass even if the field were dropped again.
+        "confidence_threshold": "balanced",
     }
 
 
@@ -115,6 +119,9 @@ def test_policy_snapshot_is_bound_and_used_after_a_later_policy_change(
     assert captured["policy_config"] == {
         "pii_detection": False, "prompt_injection": True,
         "regulated_data_mode": True, "max_token_threshold": 777,
+        # The BOUND snapshot carries it too, so the judge grades this event
+        # under the policy in force when it was recorded — not the later one.
+        "confidence_threshold": "balanced",
     }
 
     with engine.begin() as conn:
