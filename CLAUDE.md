@@ -63,7 +63,7 @@ Three tiers plus the human surfaces:
 |---|---|
 | `sdk/src/foxy_audit/` | SDK: `client.py` (decorator + guard), `policy.py`, `pii.py`, `dispatch.py`, `spool.py`, `hashing.py` |
 | `backend/app/` | FastAPI app: `main.py` (3-ASGI), `chain.py`, `worker.py`, `gemini.py`, `openai_judge.py`, `judge.py`, `judge_routing.py`, `crypto_secrets.py`, `routers/`, `models.py` |
-| `backend/migrations/versions/` | Alembic (linear, head **0053**) |
+| `backend/migrations/versions/` | Alembic (linear, head **0056**; 55 files — the number `0023` was never used) |
 | `foxy-dashboard/` · `foxy-adminpage/` · `foxy-sale-page/` | Web UIs (CSP-safe: inline SVG charts, embedded fonts, no CDN; token-driven theming) |
 | `verifier/` · `demo/` · `contracts/` | Standalone verifier · demos (`mock_llm.py`, `offline_demo.py`, `live_openai_client.py`) · `AnchorRegistry.sol` |
 | `deploy/` · `.github/workflows/` | Prod compose + `.env.example` · `ci.yml` / `deploy.yml` / `release.yml` |
@@ -90,6 +90,34 @@ python verifier/foxy_verify.py logs.json
 
 ## Reference
 
-- **Deep product knowledge base** (architecture, security, AI judge, data model, deploy, market, build history): the Obsidian vault at `G:\My Drive\Life\03 Projects\Foxy Audit` — start at `Foxy Audit — Full Reference`.
-- In-repo: `README.md`, `docs/`, `JUDGES.pdf`.
+**Deep per-area detail lives in the Obsidian vault at
+`G:\My Drive\Life\03 Projects\Foxy Audit\`.** Rewritten 2026-07-30 from this
+codebase; every note carries a `verified-against:` commit SHA, so you can
+`git diff <sha> HEAD` to see what it has not caught up with.
+
+**Start at `Foxy Audit\CLAUDE.md`** (rules, mandatory skills, the section map, and
+a what-breaks-what matrix), then open the note for your area:
+
+| Working on | Read |
+|---|---|
+| `backend/app/` | `Backend\CLAUDE.md` — 76 modules, 183 routes, the judge pipeline |
+| `models.py`, `migrations/` | `Database\CLAUDE.md` — per-table usage map, the 3 RLS postures |
+| `sdk/` | `SDK\CLAUDE.md` — the wire contract, the two enforcement vocabularies |
+| `desktop/` | `Desktop\CLAUDE.md` — 44 modules, Qt lifecycle, companion layer |
+| `foxy-dashboard/` | `Dashboard\CLAUDE.md` — the token system, the two `fetch` patches |
+| `foxy-adminpage/` | `Admin Console\CLAUDE.md` — **read its phase-stacking rule first** |
+| `foxy-sale-page/` | `Sale Page\CLAUDE.md` — plus a note per page under `Sale Page\<Page>\` |
+| `verifier/`, `contracts/` | `Verifier\CLAUDE.md`, `Contracts\CLAUDE.md` |
+| `deploy/`, `.github/` | `Deploy & CI\CLAUDE.md` |
+| `demo/`, `docs/` | `Demo & Docs\CLAUDE.md` |
+
+Two registers worth checking before you report anything:
+`Worth Noting — Issues.md` (known product defects, with what was already ruled
+out) and `Where Claude Was Wrong.md` (Claude's own recurring error patterns).
+
+Narrative/history: `Foxy Audit — Full Reference.md` and
+`Devlogs\YYYY-MM-DD.md` (one file per date).
+
+- In-repo: `README.md`, `docs/plans/` (live work only), `docs/done/` (archive),
+  `JUDGES.pdf`.
 - Naming note: the desktop code still uses the older "OmniAware Fox" / `omni_fox` naming (QSettings keys `OmniAwareFox` / `DesktopPet`).
