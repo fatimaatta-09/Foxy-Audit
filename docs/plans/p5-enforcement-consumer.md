@@ -70,30 +70,96 @@ Resolution: the org's `enforcement_mode`, defaulting to today's behaviour when u
 >
 > Caught by an executor while shipping TASK 4, not by review.
 
-| mode | verdict written | breach notices | webhooks |
-|---|---|---|---|
-| `monitor` | yes, unchanged | **suppressed** | still fire |
-| `flag` | yes, unchanged | per existing preferences | still fire |
-| `block` | yes, unchanged | sent, and marked severe so digest batching cannot delay them | still fire |
+> ### OWNER DECISION, 2026-07-30 — migrate the default, then escalate
+>
+> Chosen from the three options below: **`block` becomes a deliberate opt-in first, and only then
+> is it allowed to change email behaviour.** The naming question is already settled by shipped
+> code — `foxy-audit-premium.html:2150` relabels in the UI only (Urgent / Notify / Silent) with the
+> stored values untouched, which was option 2. Nothing left to decide there.
+
+### A.1 — make `block` a deliberate choice (migration `0057`)
+
+Today `block` is what an org is stored as because it is the column default, not because anyone
+chose it. Escalating email for that population would be an alert storm from a feature nobody
+enabled. So the default moves first:
+
+```sql
+UPDATE org_policies p SET enforcement_mode = 'flag'
+ WHERE p.enforcement_mode = 'block'
+   AND NOT EXISTS (SELECT 1 FROM account_actions a
+                    WHERE a.org_id = p.org_id
+                      AND a.action = 'policy.update'
+                      AND a.detail->>'enforcement_mode' = 'block');
+```
+
+`account_actions` is why this is safe to do at all: `policies.py:201` has recorded every
+`policy.update` with the chosen `enforcement_mode` in its JSONB `detail`, so an org that
+*deliberately* selected `block` is distinguishable from one that merely inherited it, and a real
+choice is never overwritten.
+
+**This does not contradict migration `0056`.** That migration's docstring refuses to rewrite
+`enforcement_mode` because its values "are already recorded inside historical policy snapshots that
+have been handed to auditors". That objection is about *recorded evidence*, and it is honored: this
+UPDATE touches only the live `org_policies` row. `audit_logs.event_metadata.policy_snapshot` is
+never read, never written, never rewritten — a guard test asserts existing snapshots and their
+hashes are byte-identical after the migration runs.
+
+The server default moves with it, or new orgs land on `block` again and the opt-in evaporates:
+
+| site | today | after |
+|---|---|---|
+| `models.py:297` `server_default` | `"block"` | `"flag"` (via `0057` `alter_column`) |
+| `routers/policies.py:42` schema default | `"block"` | `"flag"` |
+| `foxy-dashboard/foxy-audit-premium.html:3674` | `\|\|'block'` | `\|\|'flag'` |
+| `desktop/policy_data.py:121, :221` `_choice` fallback | `"block"` | `"flag"` |
+| `desktop/test_d7_policy.py:32, :41` | asserts `"block"` | asserts `"flag"` |
+| `sdk/src/foxy_audit/org_policy.py:48` comment | "defaults to `block`" | describe the new default + why it moved |
+
+Also in scope, because it is the same class of lie this plan exists to kill:
+`sdk/src/foxy_audit/client.py:453` tells a blocked developer the block came from
+`enforcement_mode=block`. **It did not** — the SDK reads `sdk_enforcement`
+(`org_policy.py:40` says so explicitly). The message names the wrong field and sends them to the
+wrong control. Fix the string to say `sdk_enforcement`.
+
+### A.2 — the consumer
+
+| mode | org + per-seat breach emails | `notify_webhook_url` POST | webhook subscriptions | verdict / chain |
+|---|---|---|---|---|
+| `monitor` | **suppressed**, whatever `notify_on_breach` says | unchanged (still fires) | still fire | unchanged |
+| `flag` | today's behaviour — only when `notify_on_breach == "immediate"` | unchanged | still fire | unchanged |
+| `block` | `"digest"` is escalated to immediate; `"immediate"` unchanged; **`"none"` still means none** | unchanged | still fire | unchanged |
+
+`notify_on_breach = "digest"` currently sends *nothing* — both senders early-return unless the value
+is `"immediate"`, and `send_weekly_digests` is driven by a per-user preference, not by this field.
+That is what `block` escalates: a value that today silently drops breach mail starts delivering it
+immediately for orgs that deliberately asked for the loudest setting. `"none"` is an explicit
+"do not email me" and is never bypassed — an escalation that overrides an off switch is a dark
+pattern, not a feature.
 
 Three rules that are not negotiable:
 
-1. **`block` must be byte-identical to today**, because `block` is what every existing org is
-   stored as. Today nothing reads this field, so *every* org currently gets ordinary notification
-   behaviour. If `block` starts meaning "severe and un-batchable", the default path changes for the
-   entire customer base at once.
-   **Decide before building:** either `block` keeps today's ordinary behaviour and only `monitor`
-   changes anything, or the column is migrated to a deliberate default first. A test must prove an
-   org that has never touched the setting sees no change on the day this ships.
-2. **Webhooks always fire, in every mode.** They are a machine contract a customer has built
-   against; silently dropping them because of a UI setting breaks integrations invisibly. Only
-   *notifications to humans* are modulated.
+1. **`flag` must be byte-identical to today**, and after `0057` `flag` is what the un-chosen
+   population is stored as. A test must prove an org that has never touched the setting sees no
+   change in notification behaviour on the day this ships.
+2. **Machine contracts always fire, in every mode.** `webhook_delivery.enqueue_grading` is already
+   unconditional — leave it that way. `org_notifications.send_breach_notice` also POSTs the org's
+   `notify_webhook_url`; under `monitor` the **email** is skipped and that POST still happens, so
+   the early return has to be split rather than widened. Only *notifications to humans* are
+   modulated.
 3. **`monitor` suppresses delivery, never recording.** The verdict, the `AuditEvent`, and the chain
    entry are all written regardless. Monitor means "do not email me", not "do not look".
 
-Read the mode where the policy config is already loaded in `_grade_one` — do not add a second
-fetch, and do not read it inside the notification threads (they receive plain values across the
-queue boundary by design; `org_notifications.py:56` documents why).
+**Where to read the mode — corrected 2026-07-30.** An earlier version of this plan said to read it
+in `_grade_one` and *not* in the notification threads. That was wrong on both counts.
+`org_notifications.send_breach_notice:80` and `user_notifications.send_breach_alert:175` already
+`db.get(OrgPolicy, oid)` at send time, deliberately: *"a tenant who turns breach notices off
+between the grade and the send should not receive one."* Gate there. It costs no new query, it
+follows the documented precedent, and it is semantically right — delivery follows the tenant's
+**current** setting, not one frozen into an evidence snapshot months ago. The queue boundary rule is
+untouched: `enqueue_*` still copies plain values and nothing ORM-bound crosses it.
+
+`judge_policy_config` must keep dropping `enforcement_mode` on its projection line. Nothing about
+this field may reach a judge.
 
 ## Phase B — the page stops apologising
 
@@ -102,9 +168,11 @@ one concrete line each, in the shape P2 §7.4 asked for: state the consequence, 
 
 Whatever the owner decides about naming lands here too.
 
-## Owner decision required — do not start without it
+## Owner decision — ANSWERED 2026-07-30 (kept for the record)
 
-**`block` cannot block. What should the control be called?**
+**`block` cannot block. What should the control be called?** → **relabel in the UI only**, and that
+is already shipped (`foxy-audit-premium.html:2150`, commit `98e1399`). The stored values, the wire
+contract and `foxy-policy-v1` are untouched. The options as they were put:
 
 - **Keep the names, fix the copy** — the values stay `block|flag|monitor` (no migration, no wire
   change, `judge_policy_config` untouched), and the page explains that these describe the *response*
@@ -138,14 +206,20 @@ PYTHONDONTWRITEBYTECODE=1 python -m pytest desktop -q
 
 Every guard must fail when the rule it protects is removed — re-break each:
 
-1. **`flag` is unchanged** — an org on `flag` produces the same notices as before the change.
+1. **`flag` is unchanged** — an org on `flag` produces exactly the notices it produced before, and
+   after `0057` that is the whole un-chosen population.
 2. **`monitor` suppresses both notice paths** — org-level *and* per-seat.
 3. **`monitor` still writes the verdict, the `AuditEvent` and the chain entry.** This is the one
    that matters: suppression must never touch evidence.
-4. **Webhooks fire in all three modes**, including `monitor`.
-5. **Unset behaves as `flag`** — an org that never touched the setting sees no change.
+4. **Machine contracts fire in all three modes**, including `monitor`: `enqueue_grading`, and the
+   org's own `notify_webhook_url` POST.
+5. **`block` escalates `digest` → sent, and leaves `none` silent.** Both halves asserted.
 6. **The verdict is identical across all three modes** for the same input. Assert on the persisted
    verdict, not on a notification count.
+7. **`0057` leaves recorded evidence alone** — existing `audit_logs.event_metadata.policy_snapshot`
+   values and their `policy_snapshot_hash` are byte-identical before and after.
+8. **`0057` does not overwrite a deliberate `block`** — an org with a `policy.update` action
+   recording `block` still reads `block` afterwards.
 
 ## MAIN ↔ EXECUTOR protocol
 
