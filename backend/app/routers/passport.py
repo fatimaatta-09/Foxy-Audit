@@ -4,8 +4,14 @@ Queries the last 30 days (or a custom range) of audit logs for the calling org,
 recomputes the chain to verify integrity, aggregates stats by policy tag, and
 renders the ``compliance_passport.html`` Jinja2 template.
 
-Returns **HTML** — the caller (dashboard or browser) can print-to-PDF or render
-directly.  This avoids heavy native dependencies like weasyprint in production.
+Returns **PDF** (``application/pdf``), rendered from that template by weasyprint.
+The production image installs pango/cairo/gdk-pixbuf for exactly this.
+
+There is no HTML fallback. This is an evidence artefact, so a caller that asked
+for a PDF and cannot be given one gets a 500 rather than a substitute document
+under a success status — a hard failure gets retried, a silent substitute gets
+filed. The weasyprint import stays inside the handler so a host without it can
+still boot the app and serve every other route.
 """
 
 from __future__ import annotations
@@ -18,8 +24,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -299,23 +305,38 @@ def generate_passport(
         coverage=coverage,
     )
     
-    # Prefer PDF, but degrade to HTML if weasyprint's native libraries
-    # aren't installed (the review flagged weasyprint as a deploy risk — a missing
-    # lib must not take down the endpoint, and the import stays lazy so the app
-    # still boots without it).
+    # A PDF or an honest error — never HTML wearing a 200.
+    #
+    # This used to fall back to HTMLResponse on any failure, so a caller asking
+    # for a PDF could be handed a different document type under a success status
+    # and have no way to tell. For an evidence artefact that is the worst of the
+    # three outcomes: a hard failure gets retried or escalated, a substitute gets
+    # filed. The image installs pango/cairo/gdk-pixbuf precisely so this path
+    # stays dead (verified: the container renders application/pdf), which is also
+    # why making it loud costs nothing in practice.
+    #
+    # 500, not 502 or 503. 502 would claim an upstream service failed — weasyprint
+    # is in-process. 503 would imply "try again shortly", but the realistic cause
+    # is a missing native library, which no amount of retrying fixes. A renderer
+    # that cannot render is this server failing at its own job.
+    #
+    # The import stays INSIDE the handler so the app still boots without
+    # weasyprint installed.
     try:
         from weasyprint import HTML
         pdf_bytes = HTML(string=html_string).write_pdf()
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=passport.pdf"},
-        )
     except Exception as exc:
         # Type name only, never str(exc). This is an authenticated request, and a
         # weasyprint/native-lib failure carries library paths and system detail in
         # its message. The type is enough to tell "no PDF renderer installed"
         # apart from "the template blew up", which is all this line is for.
-        log.warning("weasyprint unavailable — returning HTML passport: %s",
-                    type(exc).__name__)
-        return HTMLResponse(content=html_string)
+        log.error("passport PDF render failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=500,
+            detail="could not render the passport PDF",
+        ) from None
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=passport.pdf"},
+    )

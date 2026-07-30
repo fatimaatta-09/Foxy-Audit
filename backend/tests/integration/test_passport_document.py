@@ -6,11 +6,13 @@ stamps". test_passport.py already covers the data window and the coverage
 figures; this file covers the things that make it an artefact somebody is willing
 to hand to an auditor, and the two traps in doing so:
 
-  · It is not always a PDF. weasyprint degrades to HTML when its native libs are
-    missing, which is the documented production posture. Both branches must be
-    complete documents.
-  · Page numbering is a @page counter that exists only in the PDF. The HTML must
-    not look broken for lacking a feature it cannot have.
+  · The response is a PDF, so the document's HTML is never on the wire. It is
+    CAPTURED from the renderer's input instead (see `_html`), which keeps every
+    assertion below pointed at the real template output assembled by the real
+    route. There used to be an HTML degrade to read it from; that was removed
+    because a caller asking for a PDF must not be handed HTML under a 200.
+  · Page numbering is a @page counter that only takes effect in the PDF, so it is
+    asserted as a declaration in the CSS rather than as rendered text.
 
 Above all §12.6: this is evidence. Every figure traces to a passport.py counter.
 """
@@ -39,11 +41,33 @@ def _flat(doc: str) -> str:
     return re.sub(r"\s+", " ", doc)
 
 
+def _stub_renderer(monkeypatch) -> dict:
+    """Install a weasyprint stand-in that RECORDS the html it is handed.
+
+    The route returns a PDF and nothing else, so this is how the document's HTML
+    is inspected — from the renderer's input rather than from a response body.
+    It exercises the real context assembly; only the native rendering is faked."""
+    captured: dict = {}
+
+    class _FakeHTML:
+        def __init__(self, string=None, **kw):
+            captured["html"] = string
+
+        def write_pdf(self):
+            return b"%PDF-1.7\nstub\n%%EOF"
+
+    fake = type(sys)("weasyprint")
+    fake.HTML = _FakeHTML
+    monkeypatch.setitem(sys.modules, "weasyprint", fake)
+    return captured
+
+
 def _html(client, org, monkeypatch, **params) -> str:
-    monkeypatch.setitem(sys.modules, "weasyprint", None)   # force the HTML branch
+    captured = _stub_renderer(monkeypatch)
     r = client.post("/v1/passport", headers=org["auth"], params=params)
     assert r.status_code == 200, r.text
-    return r.text
+    assert r.headers["content-type"] == "application/pdf"
+    return captured["html"]
 
 
 # ══ §12.1 · branding ═══════════════════════════════════════════════════════
@@ -98,12 +122,13 @@ def test_generated_by_names_the_person_when_a_person_asked(make_org, login, clie
     """A named requester is the first thing an auditor asks about a report."""
     org = make_org()
     _ingest(client, org, 2)
-    monkeypatch.setitem(sys.modules, "weasyprint", None)
+    captured = _stub_renderer(monkeypatch)
     c = login(org["admin_email"], org["admin_password"])
     r = c.post("/v1/passport")
     assert r.status_code == 200, r.text
-    assert org["admin_email"] in r.text
-    assert "API key (SDK)" not in r.text
+    doc = captured["html"]
+    assert org["admin_email"] in doc
+    assert "API key (SDK)" not in doc
 
 
 # ══ §12.6 · determinism — the rule that matters ════════════════════════════
@@ -278,47 +303,34 @@ def test_the_cover_is_a_cover(make_org, client, monkeypatch):
     assert "Compliance<br>Passport" in doc
 
 
-# ══ both branches are complete documents ═══════════════════════════════════
+# ══ the document is complete, and the route is a PDF or an error ════════════
 
-def test_the_html_degrade_is_a_complete_document(make_org, client, monkeypatch):
-    """Trap 1. The fallback is the production posture, not an error path."""
+def test_the_rendered_document_is_complete(make_org, client, monkeypatch):
+    """Every section reaches the renderer. This used to be asserted against the
+    HTML degrade's response body; the degrade is gone, so it is asserted against
+    what the renderer is actually handed."""
     org = make_org()
     _ingest(client, org, 5)
-    monkeypatch.setitem(sys.modules, "weasyprint", None)
-    r = client.post("/v1/passport", headers=org["auth"])
-    assert r.status_code == 200
-    assert "text/html" in r.headers.get("content-type", "")
-    doc = r.text
+    doc = _html(client, org, monkeypatch)
     assert doc.strip().startswith("<!DOCTYPE html>")
     assert doc.strip().endswith("</html>")
     for section in ("Audit summary", "Host-Side Enforcement", "SDK Capture Coverage",
                     "Policy breakdown", "Verification record",
                     "How to verify this independently", "Trust model"):
-        assert section in doc, f"the fallback dropped '{section}'"
+        assert section in doc, f"the document dropped '{section}'"
 
 
-def test_the_pdf_branch_renders_the_same_document(make_org, client, monkeypatch):
-    """When weasyprint IS present the response is a PDF built from exactly the
-    same html — so nothing asserted above is true only of the fallback."""
-    captured = {}
-
-    class _FakeHTML:
-        def __init__(self, string=None, **kw):
-            captured["html"] = string
-
-        def write_pdf(self):
-            return b"%PDF-1.7\nfake\n%%EOF"
-
-    fake = type(sys)("weasyprint")
-    fake.HTML = _FakeHTML
-    monkeypatch.setitem(sys.modules, "weasyprint", fake)
-
+def test_the_response_is_a_pdf_built_from_that_document(make_org, client, monkeypatch):
+    """The wire contract: application/pdf, a download filename, and the bytes
+    built from exactly the html asserted everywhere else in this file."""
+    captured = _stub_renderer(monkeypatch)
     org = make_org()
     _ingest(client, org, 3)
     r = client.post("/v1/passport", headers=org["auth"])
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert "attachment; filename=passport.pdf" in r.headers.get("content-disposition", "")
+    assert r.content.startswith(b"%PDF-")
     doc = captured["html"]
     assert doc.strip().startswith("<!DOCTYPE html>")
     assert "Compliance<br>Passport" in doc
@@ -326,18 +338,34 @@ def test_the_pdf_branch_renders_the_same_document(make_org, client, monkeypatch)
     assert re.search(r"FA-[0-9A-F]{12}", doc)
 
 
-@pytest.mark.parametrize("branch", ["html", "pdf"])
-def test_neither_branch_leaks_a_traceback_when_something_is_odd(make_org, client,
-                                                               monkeypatch, branch):
-    """An org with no events at all is the edge that used to read as broken."""
-    if branch == "html":
-        monkeypatch.setitem(sys.modules, "weasyprint", None)
-    else:
-        fake = type(sys)("weasyprint")
-        fake.HTML = type("H", (), {"__init__": lambda s, string=None, **k: None,
-                                   "write_pdf": lambda s: b"%PDF-1.7"})
-        monkeypatch.setitem(sys.modules, "weasyprint", fake)
+def test_an_empty_org_renders_rather_than_reading_as_broken(make_org, client,
+                                                           monkeypatch):
+    """An org with no events at all is the edge that used to look like a fault."""
+    _stub_renderer(monkeypatch)
     org = make_org()
     r = client.post("/v1/passport", headers=org["auth"])
     assert r.status_code == 200
     assert b"Traceback" not in r.content
+
+
+def test_a_failed_render_leaks_neither_a_traceback_nor_the_document(make_org, client,
+                                                                   monkeypatch):
+    """The replacement for the old "html branch" case. A renderer that raises must
+    produce a 500 that carries no traceback, no library paths, and NOT the
+    document it could not render — the whole reason the degrade was removed."""
+    fake = type(sys)("weasyprint")
+
+    class _Boom:
+        def __init__(self, string=None, **kw):
+            raise OSError("cannot load library 'libgobject-2.0-0': /usr/lib/secret")
+
+    fake.HTML = _Boom
+    monkeypatch.setitem(sys.modules, "weasyprint", fake)
+
+    org = make_org()
+    r = client.post("/v1/passport", headers=org["auth"])
+    assert r.status_code == 500
+    assert b"Traceback" not in r.content
+    assert b"libgobject" not in r.content, "the renderer's message reached the caller"
+    assert b"/usr/lib/secret" not in r.content
+    assert b"Compliance" not in r.content, "a failed render must not ship the document"

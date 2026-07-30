@@ -6,16 +6,15 @@ libraries, and the route swallows ANY exception from that step and quietly
 returns HTML with a 200. So HTML-only tests pass in exactly the situation the
 customer is worst served by.
 
-These tests cover the two things a Windows dev box cannot: that the route's
-contract is honoured when the renderer works, and that its failure path does not
-leak the renderer's own error text into the log of an authenticated request.
+The route no longer degrades. It returns a PDF or a 500, and BOTH directions are
+exercised live below — which this host is unusually well placed to do, because
+weasyprint's native libraries are genuinely absent here, so the failure path is
+the real one rather than a simulation.
 
 The PDF itself was rendered and read in the production image (Debian + pango /
 cairo / gdk-pixbuf, per backend/Dockerfile) during the §12 sweep: 5 pages,
 application/pdf, all four @page margin boxes, and every counter traceable to
-six ingested events. Reproducing that here would mean shipping weasyprint's
-native stack into the test environment, so it is asserted where it can be — the
-route's declared media type and the template's structure.
+six ingested events.
 """
 
 from __future__ import annotations
@@ -40,14 +39,74 @@ def template() -> str:
     return TEMPLATE.read_text(encoding="utf-8")
 
 
+# ── a PDF or an honest error, exercised live ───────────────────────────────
+
+def test_a_broken_renderer_returns_500_not_html_with_a_200(make_org, client):
+    """The whole point of the change. weasyprint's native libs are absent on this
+    host, so this is the genuine failure, not a stub — and it must NOT come back
+    as a 200 carrying a substitute document.
+
+    A caller cannot tell HTML-labelled-success from a real passport, so the old
+    behaviour meant a pipeline expecting evidence would file the wrong artefact.
+    A 500 gets retried or escalated."""
+    org = make_org()
+    r = client.post("/v1/passport", headers=org["auth"], json={})
+    # Skip ONLY when a genuine PDF came back, i.e. this host can render. Keying
+    # the skip on status 200 alone made the test skip instead of fail when the
+    # HTML-200 degrade was reintroduced — a guard that steps aside for the very
+    # bug it exists to catch.
+    if r.headers.get("content-type") == "application/pdf":
+        pytest.skip("weasyprint renders on this host — see the success test below")
+    assert r.status_code == 500, f"expected a loud failure, got {r.status_code}"
+    assert "text/html" not in r.headers.get("content-type", "")
+    assert r.json()["detail"] == "could not render the passport PDF"
+    # The failure must not ship the document it could not render.
+    assert "Compliance Passport" not in r.text
+    assert "<html" not in r.text.lower()
+
+
+def test_a_working_renderer_returns_the_pdf(make_org, client, monkeypatch):
+    """The other direction, with a stub standing in for the native stack: given a
+    renderer that produces bytes, the route must hand back application/pdf and
+    the download filename."""
+    import sys
+    import types
+
+    stub = types.ModuleType("weasyprint")
+
+    class _HTML:
+        def __init__(self, string=None, **kw):
+            self._s = string
+
+        def write_pdf(self):
+            assert "Compliance Passport" in self._s, "the template did not render"
+            return b"%PDF-1.7\nstub"
+
+    stub.HTML = _HTML
+    monkeypatch.setitem(sys.modules, "weasyprint", stub)
+
+    org = make_org()
+    r = client.post("/v1/passport", headers=org["auth"], json={})
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/pdf"
+    assert "filename=passport.pdf" in r.headers["content-disposition"]
+    assert r.content.startswith(b"%PDF-")
+
+
+def test_the_route_never_answers_with_html(source):
+    """Structural backstop: HTMLResponse must not come back into this module."""
+    assert "HTMLResponse" not in source.replace(
+        "This used to fall back to HTMLResponse on any failure, so a caller asking", "")
+
+
 # ── the logging hard rule ──────────────────────────────────────────────────
 
-def test_the_degrade_path_logs_the_exception_type_not_its_text(source):
+def test_the_failure_path_logs_the_exception_type_not_its_text(source):
     """/v1/passport is authenticated, and a weasyprint failure carries library
     paths and system detail in its message. The type name distinguishes "no PDF
     renderer" from "the template blew up", which is all this line is for."""
-    m = re.search(r"except Exception as exc:(.*?)return HTMLResponse", source, re.S)
-    assert m, "the weasyprint degrade path moved — re-check what it logs"
+    m = re.search(r"except Exception as exc:(.*?)raise HTTPException", source, re.S)
+    assert m, "the weasyprint failure path moved — re-check what it logs"
     block = m.group(1)
     assert "type(exc).__name__" in block, "log the exception TYPE, never str(exc)"
     assert not re.search(r"log\.\w+\([^)]*,\s*exc\s*\)", block), (

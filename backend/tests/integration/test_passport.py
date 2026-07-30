@@ -33,29 +33,52 @@ def _sdk_event(client_id, client_seq):
     }
 
 
+def _stub_renderer(monkeypatch) -> dict:
+    """Install a weasyprint stand-in that RECORDS the html it is handed.
+
+    /v1/passport returns a PDF and nothing else — the HTML degrade these tests
+    used to read from was removed, because a caller asking for a PDF must not be
+    handed HTML under a 200. The document is inspected from the renderer's input
+    instead, which still exercises the real route and the real context assembly.
+    """
+    captured: dict = {}
+
+    class _FakeHTML:
+        def __init__(self, string=None, **kw):
+            captured["html"] = string
+
+        def write_pdf(self):
+            return b"%PDF-1.7\nstub\n%%EOF"
+
+    fake = type(sys)("weasyprint")
+    fake.HTML = _FakeHTML
+    monkeypatch.setitem(sys.modules, "weasyprint", fake)
+    return captured
+
+
 def test_passport_default_days_still_works(make_org, client, monkeypatch):
-    monkeypatch.setitem(sys.modules, "weasyprint", None)   # force HTML fallback
+    doc = _stub_renderer(monkeypatch)
     org = make_org()
     _ingest(client, org, 3)
     r = client.post("/v1/passport", headers=org["auth"])
     assert r.status_code == 200, r.text
-    assert "text/html" in r.headers.get("content-type", "")
+    assert r.headers["content-type"] == "application/pdf"
 
 
 def test_passport_honors_custom_date_range(make_org, client, monkeypatch):
     """A custom date_from is echoed in the report, proving the explicit range is
     applied rather than the default 30-day cutoff (which would never show 2020)."""
-    monkeypatch.setitem(sys.modules, "weasyprint", None)
+    doc = _stub_renderer(monkeypatch)
     org = make_org()
     _ingest(client, org, 2)
     r = client.post("/v1/passport?date_from=2020-01-01&date_to=2999-12-31",
                     headers=org["auth"])
     assert r.status_code == 200, r.text
-    assert "2020" in r.text
+    assert "2020" in doc["html"]
 
 
 def test_passport_reports_sdk_capture_gap_and_evidence_boundary(make_org, client, monkeypatch):
-    monkeypatch.setitem(sys.modules, "weasyprint", None)
+    doc = _stub_renderer(monkeypatch)
     org = make_org()
     response = client.post(
         "/v1/logs/batch",
@@ -67,16 +90,16 @@ def test_passport_reports_sdk_capture_gap_and_evidence_boundary(make_org, client
     report = client.post("/v1/passport", headers=org["auth"])
 
     assert report.status_code == 200, report.text
-    assert "SDK Capture Coverage" in report.text
-    assert "Policy Configuration Evidence" in report.text
-    assert "bound into the V3 chain payload" in report.text
-    assert "PARTIAL" in report.text
-    assert "Missing Client Sequence Events</dt><dd>1</dd>" in report.text
-    assert "calls that bypass the SDK" in report.text
+    assert "SDK Capture Coverage" in doc["html"]
+    assert "Policy Configuration Evidence" in doc["html"]
+    assert "bound into the V3 chain payload" in doc["html"]
+    assert "PARTIAL" in doc["html"]
+    assert "Missing Client Sequence Events</dt><dd>1</dd>" in doc["html"]
+    assert "calls that bypass the SDK" in doc["html"]
 
 
 def test_passport_does_not_infer_prior_history_outside_report_range(make_org, client, monkeypatch):
-    monkeypatch.setitem(sys.modules, "weasyprint", None)
+    doc = _stub_renderer(monkeypatch)
     org = make_org()
     response = client.post(
         "/v1/logs/batch",
@@ -97,6 +120,6 @@ def test_passport_does_not_infer_prior_history_outside_report_range(make_org, cl
     )
 
     assert report.status_code == 200, report.text
-    assert "Observed Events</dt>      <dd>1</dd>" in report.text
-    assert "Missing Client Sequence Events</dt><dd>0</dd>" in report.text
-    assert "VERIFIED" in report.text
+    assert "Observed Events</dt>      <dd>1</dd>" in doc["html"]
+    assert "Missing Client Sequence Events</dt><dd>0</dd>" in doc["html"]
+    assert "VERIFIED" in doc["html"]

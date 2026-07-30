@@ -144,6 +144,48 @@ def test_each_setting_has_its_own_card(html):
     assert 'id="polSdkSeg"' not in judge and 'id="polEnforcement"' not in sdk
 
 
+def test_the_verdict_labels_do_not_promise_prevention(html):
+    """Fix 3. `enforcement_mode` is read AFTER the model call, so it cannot stop
+    anything. "block on breach" said otherwise. Urgent / Notify / Silent describe
+    how loudly a finding is treated, which is all this field can ever do."""
+    judge = _card(html, "After grading")
+    m = re.search(r'<select id="polEnforcement">(.*?)</select>', judge, re.S)
+    assert m, "the verdict-handling select is gone"
+    labels = re.findall(r"<option value=\"\w+\">([^<]*)</option>", m.group(1))
+    assert len(labels) == 3
+    joined = " ".join(labels).lower()
+    for lie in ("block", "prevent", "stop", "allow through", "deny"):
+        assert lie not in joined, (
+            f"{lie!r} appears in a verdict-handling label — this control runs after "
+            "the model call and cannot do that")
+    assert labels[0].startswith("Urgent")
+    assert labels[1].startswith("Notify")
+    assert labels[2].startswith("Silent")
+
+
+def test_the_stored_values_are_untouched_by_the_rename(html):
+    """Display text only. `block|flag|monitor` is copied verbatim into the
+    tamper-evident evidence snapshot (policy_snapshot.py), so renaming the stored
+    strings would break comparability between old and new snapshots and
+    destabilise foxy-policy-v1. No migration, and none needed."""
+    m = re.search(r'<select id="polEnforcement">(.*?)</select>', html, re.S)
+    values = re.findall(r'<option value="(\w+)"', m.group(1))
+    assert values == ["block", "flag", "monitor"], (
+        f"stored enforcement_mode values changed to {values} — evidence snapshots "
+        "would stop being comparable")
+    # …and the save path still sends the value, not the label.
+    assert "enforcement_mode:($('polEnforcement')||{}).value" in html
+
+
+def test_the_sdk_control_keeps_its_block_label(html):
+    """`sdk_enforcement` runs BEFORE the model call and really does block, so
+    "Block" is correct there. Two controls, two vocabularies — the rename must not
+    have bled across."""
+    sdk = _card(html, "Before the call")
+    assert 'data-val="block">Block<' in sdk, "the SDK control's Block label changed"
+    assert "Urgent" not in sdk, "verdict-handling wording leaked into the SDK control"
+
+
 def test_the_judge_setting_does_not_claim_to_stop_anything(html):
     """It is read by nothing today. Saying otherwise is the lie that started
     this — the owner could not tell whether changing it did anything, because it

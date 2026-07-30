@@ -269,7 +269,20 @@ def test_passport_shows_host_side_enforcement_counts(make_org, client, monkeypat
     allowed / blocked / redacted counts, the policies actually enforced, and
     evaluator-unknown as its own honest non-pass state — never folded into a pass."""
     from app.schemas import Verdict
-    monkeypatch.setitem(sys.modules, "weasyprint", None)   # force HTML fallback
+    # /v1/passport returns a PDF and nothing else — the HTML degrade this used to
+    # read from was removed. Capture the document from the renderer's input.
+    _captured: dict = {}
+
+    class _FakeHTML:
+        def __init__(self, string=None, **kw):
+            _captured["html"] = string
+
+        def write_pdf(self):
+            return b"%PDF-1.7\nstub\n%%EOF"
+
+    _fake = type(sys)("weasyprint")
+    _fake.HTML = _FakeHTML
+    monkeypatch.setitem(sys.modules, "weasyprint", _fake)
     org = make_org()
     configure_judge(org["org_id"])
 
@@ -294,7 +307,8 @@ def test_passport_shows_host_side_enforcement_counts(make_org, client, monkeypat
 
     r = client.post("/v1/passport", headers=org["auth"])
     assert r.status_code == 200, r.text
-    body = r.text
+    assert r.headers["content-type"] == "application/pdf"
+    body = _captured["html"]
 
     assert "Host-Side Enforcement" in body
     assert "prevented from leaving the host" in body
