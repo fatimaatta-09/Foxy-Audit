@@ -4767,7 +4767,10 @@ async function loadLoginHistory(scope){
   function renderExportHistory(){
     var tb=$('exportHistory'); if(!tb)return;
     var items=window.foxPageSlice?window.foxPageSlice(_expItems,_expPage,'exportPager',renderExportHistory,'Export history pages'):_expItems;
-    var TYPE={passport:'Passport · HTML',logs_csv:'Logs · CSV',logs_json:'Logs · JSON'};
+    // The same label as the #exportType option that produced the row — the
+    // passport endpoint has been PDF-only for a while, and a history table that
+    // still said HTML contradicted the dropdown directly above it.
+    var TYPE={passport:'Passport · PDF',logs_csv:'Logs · CSV',logs_json:'Logs · JSON'};
     tb.innerHTML=items.length?items.map(function(j){
       var p=j.params||{};
       var range=p.date_from?(esc(p.date_from)+' → '+esc(p.date_to||'now')):(p.days?('last '+esc(String(p.days))+'d'):'all time');
@@ -4930,14 +4933,25 @@ async function loadLoginHistory(scope){
      on the title rather than beside it, and the glyph is pulled to the title's
      baseline — a period drawn anywhere else reads as a bullet. */
   .livedot{margin-left:-8px;font-size:20px;line-height:1;font-weight:800;
-    letter-spacing:0;position:relative;top:-2px;color:var(--fox);user-select:none;}
+    letter-spacing:0;position:relative;top:-2px;user-select:none;}
+  /* COLOUR COMES FROM THE STATE CLASS, NEVER FROM THE BASE. The light override
+     was written as `html[data-theme="light"] .livedot` — (0,2,1) — which outranks
+     `.livedot.off` at (0,2,0) on specificity, so in light mode an OFFLINE dot
+     painted the connected colour and the two states were indistinguishable.
+     Source order cannot fix that; scoping can. Both theme rules now carry `.on`,
+     so no rule that means "connected" can match an element that is not. */
+  .livedot.on{color:var(--fox);}
   /* --fox is the brand FILL and measures 2.81:1 on light paper; --fox2 is the one
      that carries colour as text there. Same rule as the token note above. */
-  html[data-theme="light"] .livedot{color:var(--fox2);}
-  /* Offline drops to the disabled ramp on purpose — --muted2 is this file's
-     inactive colour. A greyed period is quiet by design, so the state that wants
-     attention also breathes; the tooltip carries it when motion is turned off. */
-  .livedot.off{color:var(--muted2);}
+  html[data-theme="light"] .livedot.on{color:var(--fox2);}
+  /* --breach-ink, not --muted2. A connection indicator is live text reporting
+     system state, not an inactive control, so the disabled-only ramp does not
+     apply to it — that token is under AA by design and test_p1_contrast.py names
+     "points live text at it" as the thing to prevent (the same reason
+     .cin::placeholder was moved off it). --breach-ink is the bare-text status
+     token main used here: 5.67:1 dark, 4.77:1 light, on --bg. The fade below is
+     the second channel so the state is never carried by colour alone. */
+  .livedot.off{color:var(--breach-ink);}
   @media(prefers-reduced-motion:no-preference){
     .livedot.off{animation:livefade 2.4s ease-in-out infinite;}
   }
