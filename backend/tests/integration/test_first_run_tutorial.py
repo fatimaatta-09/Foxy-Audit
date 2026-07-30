@@ -7,9 +7,13 @@ fact on a new laptop and show a finished user the tour again. So the assertions
 below deliberately throw the client away and sign in fresh: a state that only
 survives because the same TestClient is still holding it has not been tested.
 
-**§5.3 — a skip defers, it does not finish.** These are two different facts and
-the endpoint keeps them apart; collapsing them into one status is what would make
-a skipped tour never come back.
+**§5.3, as revised by P6a — a skip is an answer, not a deferral.** A skipped tour
+used to be re-offered on the next login. The owner reported it as a bug, because
+the client gated on `completed` alone and so re-offered on every page load. The
+client now reads `skipped` too. The endpoint is unchanged: it still keeps the two
+facts apart, and it must, because they are not the same fact — the desktop
+console reads this payload, and a skip reported as a completion would tell it a
+user who never saw the tour had finished it.
 
 **The desktop reads this payload.** `/v1/onboarding` grew rather than changed, and
 one test here exists purely to fail if a key the console reads goes missing.
@@ -88,24 +92,37 @@ def test_completion_is_per_user_not_per_workspace(make_org, add_user, login):
     assert _tut(colleague)["tutorial"]["completed"] is False
 
 
-# ── guard 4 · a skip comes back ────────────────────────────────────────────
+# ── guard 4 · a skip stays skipped ─────────────────────────────────────────
 
-def test_a_skipped_tutorial_is_still_offered_on_the_next_login(make_org, login):
-    """§5.3. `completed` is what the client gates the offer on, so a skip must
-    leave it false — otherwise "re-offers until completed" is a dead letter."""
+def test_a_skipped_tutorial_is_not_offered_again(make_org, login):
+    """P6a, reversing §5.3. The owner reported the re-offer as a bug: the client
+    gated the offer on `completed` alone, so a tour the user had explicitly
+    skipped came back on the next login — and, because the gate runs on every
+    page load rather than on a session boundary, on every REFRESH.
+
+    `skipped` has been persisted since the tour shipped; only the client ignored
+    it. So the fix is a read, not a write, and this endpoint's job is unchanged:
+    keep the two facts apart and report both truthfully. What moved is the
+    meaning of a skip — it is now an answer, not a deferral.
+
+    Both flags stay separate on purpose. Collapsing a skip into `completed` would
+    tell the desktop console, which reads this same payload, that a user who
+    never saw the tour had finished it."""
     org = make_org()
     c = login(org["admin_email"], org["admin_password"])
     assert c.put("/v1/onboarding", json={"tutorial_skipped": True}).status_code == 200
 
-    fresh = login(org["admin_email"], org["admin_password"])
+    fresh = login(org["admin_email"], org["admin_password"])     # a "new device"
     body = _tut(fresh)["tutorial"]
-    assert body["skipped"] is True
-    assert body["completed"] is False, "a skip must not retire the tour"
-    assert body["enabled"] is True
+    assert body["skipped"] is True, "the skip did not survive a new session"
+    assert body["completed"] is False, "a skip is not a completion"
+    assert body["enabled"] is True, "the kill switch is unrelated to the skip"
 
 
 def test_finishing_clears_a_previous_skip(make_org, login):
-    """Otherwise both flags stay set and the tour is offered for ever."""
+    """A user who skipped, then came back through the user menu and finished, has
+    finished. Leaving both flags set would report that state as a skip to anything
+    reading one field — the desktop console among them."""
     org = make_org()
     c = login(org["admin_email"], org["admin_password"])
     c.put("/v1/onboarding", json={"tutorial_skipped": True})

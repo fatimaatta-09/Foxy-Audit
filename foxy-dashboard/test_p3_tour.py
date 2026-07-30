@@ -173,12 +173,33 @@ def test_the_feature_flag_is_read_from_the_server(tour_js):
     assert "'/v1/onboarding'" in tour_js
 
 
-def test_it_is_offered_again_until_it_is_completed(tour_js):
-    """§5.3 · the condition keys off `completed` only — a skip does not suppress
-    the next offer, which is the whole near-blocking-without-trapping design."""
-    assert "!t.completed" in tour_js
-    assert "t.skipped" not in tour_js.split("t.enabled")[1][:200], \
-        "a skipped tour must still be offered next login"
+def test_a_skipped_tour_is_not_offered_again(tour_js):
+    """P6a, reversing §5.3. The condition used to key off `completed` only, so a
+    skip did not suppress the next offer. Because this gate runs on page load and
+    not on a session boundary, "the next offer" meant the next REFRESH — the owner
+    reported it, and it is the first item on the punch-list.
+
+    The server has persisted `skipped` since the tour shipped; only the client
+    ignored it. Both flags are the user's answer and either one is a no."""
+    gate = tour_js.split("t.enabled")[1][:200]
+    assert "!t.completed" in gate
+    assert "!t.skipped" in gate, "a skipped tour must not be offered again"
+
+
+def test_a_vanished_target_records_neither_flag(tour_js):
+    """render() bails when a step's target has gone — the page changed under the
+    tour. That is not the user answering, and under the new gate writing `skipped`
+    there would retire the tour for somebody who never saw a step of it. It has to
+    close through a path that saves nothing.
+
+    Skip and Esc are unaffected: those ARE the user answering, and they still
+    record a skip (see test_skip_and_esc_record_a_skip_not_a_completion)."""
+    assert "if(!el){ abandon(); return; }" in tour_js, \
+        "the abort path no longer routes through abandon()"
+    m = re.search(r"function abandon\(\)\{(.*?)\n  \}", tour_js, re.S)
+    assert m, "abandon() is gone"
+    assert "save(" not in m.group(1), \
+        "abandon() must not write tutorial state — that is the whole point of it"
 
 
 def test_a_signed_out_page_gets_no_tour(tour_js):

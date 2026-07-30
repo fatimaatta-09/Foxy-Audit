@@ -307,13 +307,21 @@ body{
 }
 .topbar-left{display:flex;align-items:center;gap:11px;min-width:0;flex:1;}
 .topbar-brand{display:flex;flex-direction:column;line-height:1.15;min-width:0;}
-/* P2 §1.2 · `Foxy Audit │ <Page name> ●` — one line, nothing else. */
+/* P2 §1.2 / P6a §2 · `[mark] Foxy Audit │ <Page name>.` — one line, nothing else.
+   The mark carries no src in the markup: it is set at init from the dock's own
+   image so the 8.3 KB data URI is paid for once, not twice. */
 .crumb{display:flex;align-items:center;gap:8px;min-width:0;font-family:var(--mono);
   font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);}
+.crumb-logo{width:16px;height:16px;flex-shrink:0;object-fit:contain;opacity:.8;}
+/* The dock draws this mark light because it sits on an orange plate there. The
+   crumb has no plate, so on paper the same file is a white fox on near-white and
+   disappears — inked here instead, at the tone the rest of the crumb is set in.
+   The accent in this line is the full stop; the mark is not competing for it. */
+html[data-theme="light"] .crumb-logo{filter:brightness(0);opacity:.42;}
 .crumb-brand{white-space:nowrap;}
 .crumb-sep{opacity:.4;}
 .crumb b{color:var(--ink);font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-@media(max-width:520px){ .crumb-brand,.crumb-sep{display:none;} }
+@media(max-width:520px){ .crumb-brand,.crumb-sep,.crumb-logo{display:none;} }
 .topbar-actions{display:flex;align-items:center;gap:7px;flex-shrink:0;}
 .topbtn{
   position:relative;width:42px;height:42px;flex-shrink:0;border-radius:12px;
@@ -1099,7 +1107,6 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 .stat .v.danger{color:var(--breach-ink);}
 .usermenu-item.danger{color:var(--breach-ink);}
 .usermenu-item.danger:hover{color:var(--breach-ink);}
-.livedot.off{color:var(--breach-ink);}
 
 /* motion respect */
 @media(prefers-reduced-motion:reduce){
@@ -1112,10 +1119,15 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
      than paused — a frozen conic arc parked over one corner reads as a
      rendering fault. */
   .stat.kpi .beam{animation:none;display:none;}
+  /* Already gated on no-preference, so this never applies. It is here because
+     §13's guard test reads THIS block as the register of everything that loops,
+     and a looping animation missing from it is the thing that test exists to
+     catch — silence here would be the wrong kind of passing. */
+  .livedot.off{animation:none;}
   .btn::after,.fb-go::after,.stitle-act::after{display:none;}
   .btn.glinting::after,.fb-go.glinting::after,.stitle-act.glinting::after{animation:none;}
   .cx-endpulse{animation:none;}
-  .hb-live i,.badge.live i,.livedot.on i{animation:none;}
+  .hb-live i,.badge.live i{animation:none;}
   .stat.kpi,.tool,.htile,.btn,.topbtn{transition:none;}
   .lvbar i{transition:none;}
   /* the final state, immediately — not a half-swept ring frozen in place */
@@ -1224,10 +1236,11 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
         <div class="crumb">
+          <img class="crumb-logo" alt="" aria-hidden="true">
           <span class="crumb-brand">Foxy Audit</span>
           <span class="crumb-sep" aria-hidden="true">&#9474;</span>
           <b id="topbarTitle">Home</b>
-          <span class="livedot on" id="foxLiveDot" title="Connected to Foxy Audit"><i></i></span>
+          <span class="livedot on" id="foxLiveDot" title="Connected to Foxy Audit" aria-label="Connected">.</span>
         </div>
       </div>
       <div class="topbar-actions">
@@ -1606,7 +1619,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
     <!-- ═════════════ POLICY ═════════════ -->
     <div class="page" id="page-policy">
       <div class="pg-head"><span class="pg-wm" aria-hidden="true">POLICY</span>
-        <div><div class="eyebrow" id="judgeModelLabel">AI Judge</div></div>
+        <div></div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <span id="polSaveStatus" style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;"></span>
           <button class="btn pri sm" onclick="savePolicy()" style="margin:0;">save ruleset</button>
@@ -1703,7 +1716,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <div><div class="flabel" style="margin-top:0;">to</div><input class="cin" id="expTo" type="date"></div>
           </div>
           <div class="flabel">export type</div>
-          <select id="exportType"><option value="passport">Compliance passport · HTML</option><option value="logs_csv">Audit logs · CSV</option><option value="logs_json">Audit logs · JSON</option></select>
+          <select id="exportType"><option value="passport">Compliance passport · PDF</option><option value="logs_csv">Audit logs · CSV</option><option value="logs_json">Audit logs · JSON</option></select>
           <button class="btn pri" onclick="runExportFlow()">Generate export</button>
           <div style="font-size:10.5px;color:var(--muted);margin-top:10px;line-height:1.5;">The passport is a self-contained PDF with content-blind hash-chain and capture-coverage evidence. For a live, no-login proof page, mint a <b onclick="go('settings',null)" style="color:var(--fox2);cursor:pointer;">public verify link</b> in Settings.</div>
           <div id="exportProgress" style="display:none;margin-top:10px;">
@@ -1808,7 +1821,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
     <!-- ═════════════ BILLING ═════════════ -->
     <div class="page" id="page-billing">
       <div class="pg-head"><span class="pg-wm" aria-hidden="true">BILLING</span>
-        <div><div class="eyebrow">Plan &amp; consumption · <span id="bilPlan">—</span></div></div>
+        <div></div>
         <button class="btn ghost sm" onclick="loadBilling()">↻ refresh</button>
       </div>
       <div class="stats" style="margin-bottom:22px;">
@@ -2301,9 +2314,18 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 </script>
 
 <!-- ═══ login gate (added for live backend integration) ═══ -->
+<style>
+  /* P6a §4 · the four gate cards are one card as far as the reader is concerned —
+     you land on sign-in and the others replace it in place. They were four
+     separate inline `width:340px` declarations, which is four chances to drift and
+     a visible jolt if any one of them did. 380px: the sign-in card carries eight
+     controls and the owner reported it as cramped, and it is the widest of the
+     four, so sizing to it is what stops the swap from resizing the overlay. */
+  .authcard{width:380px;max-width:100%;}
+</style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <div id="authGate" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,5,4,.88);align-items:center;justify-content:center;padding:20px;">
-  <form id="authForm" class="clay pad" style="width:340px;max-width:100%;">
+  <form id="authForm" class="clay pad authcard">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <img src="data:image/png;base64,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" alt="" style="width:42px;height:42px;object-fit:contain;">
       <div><div style="font-weight:800;font-size:15px;">Foxy Audit</div><div class="eyebrow" style="margin:0;">Auditor sign-in</div></div>
@@ -2333,7 +2355,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
     <button type="button" id="ssoLink" class="pw-link-sm" onclick="ssoSignIn()">Sign in with your company (SSO)</button>
     <div class="sub mono" style="margin-top:8px;font-size:11px;">No account yet? <a href="https://foxyaudit.tech/book-a-demo.html" style="color:var(--fox2);">Book a demo →</a></div>
   </form>
-  <form id="authMfa" class="clay pad" style="display:none;width:340px;max-width:100%;">
+  <form id="authMfa" class="clay pad authcard" style="display:none;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:var(--border);box-shadow:var(--shadow-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
       <div><div style="font-weight:800;font-size:15px;">Check your email</div><div class="eyebrow" style="margin:0;">enter the 6-digit code</div></div>
@@ -2344,7 +2366,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
     <button class="btn pri" type="submit" style="margin-top:6px;">Verify &amp; sign in</button>
     <div id="mfaBack" class="sub mono" style="margin-top:12px;font-size:10px;cursor:pointer;">← back to sign-in</div>
   </form>
-  <form id="authForgot" class="clay pad" style="display:none;width:340px;max-width:100%;">
+  <form id="authForgot" class="clay pad authcard" style="display:none;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:var(--border);box-shadow:var(--shadow-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
       <div><div style="font-weight:800;font-size:15px;">Reset your password</div><div class="eyebrow" style="margin:0;">we'll email you a link</div></div>
@@ -2355,7 +2377,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
     <button class="btn pri" type="submit" style="margin-top:6px;">Send reset link</button>
     <div id="forgotBack" class="sub mono" style="margin-top:12px;font-size:10px;cursor:pointer;">← back to sign-in</div>
   </form>
-  <form id="authReset" class="clay pad" style="display:none;width:340px;max-width:100%;">
+  <form id="authReset" class="clay pad authcard" style="display:none;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <div style="width:36px;height:36px;border-radius:10px;background:var(--fox);border:var(--border);box-shadow:var(--shadow-sm);display:flex;align-items:center;justify-content:center;font-size:19px;">🔑</div>
       <div><div style="font-weight:800;font-size:15px;">Choose a new password</div><div class="eyebrow" style="margin:0;">at least 8 characters</div></div>
@@ -3001,7 +3023,6 @@ async function loadLoginHistory(scope){
   // clean_rate is null until there are determinate grades (unknown verdicts are never
   // counted clean) — render "—" honestly, never "null%".
   const fmtPct=v=>v==null?'—':v+'%';
-  const prettyModel=id=>String(id||'').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 
   async function loadStats(){
     let s; try{ s=await (await api('/v1/stats')).json(); }catch(e){ return; }
@@ -3016,21 +3037,10 @@ async function loadLoginHistory(scope){
     if(dv[3])dv[3].textContent=ttv;
     const gv=$('gVerdict'); if(gv)gv.textContent=ttv;
     if($('gVerdictChart'))window.foxChart('gVerdictChart',{type:'gauge',height:12,value:(s.avg_seconds_to_verdict==null?0:Math.min(10,s.avg_seconds_to_verdict)),max:10,tip:'Avg time to verdict — '+ttv});
-    // real judge model (replaces the hardcoded "Gemini 1.5 Pro")
-    const jm=$('judgeModelLabel'); if(jm&&s.judge_model)jm.textContent=prettyModel(s.judge_model)+' · AI Judge';
-    try{
-      const hr=await api('/v1/health');
-      const h=hr.ok?await hr.json():{};
-      const ev=h.evaluator||{};
-      if(jm&&ev.model){
-        const state=ev.status==='configured'?'configured':'unavailable';
-        jm.textContent=prettyModel(ev.model)+' · Gemini · '+state;
-        jm.style.color=state==='configured'?'var(--safe-bg)':'var(--warn-bg)';
-        jm.title=state==='configured'
-          ?'Provider is configured; verdicts remain advisory.'
-          :'No Gemini provider is configured; graded fallback results are unknown.';
-      }
-    }catch(_){ }
+    /* P6a §3 · the Policy page's judge-model eyebrow is gone at the owner's
+       request, and the /v1/health round-trip that fed it went with it — nothing
+       else on this page read that response. The provider's configured state is
+       still shown on Policy itself, where the setting lives. */
     // real greeting from the signed-in user (replaces the hardcoded "Yo Fatima")
     try{ const me=await (await api('/v1/auth/me')).json(); const gn=$('greetName');
       if(gn&&me){ const nm=(me.full_name&&me.full_name.trim())?me.full_name.trim().split(/\s+/)[0]:(me.email?me.email.split('@')[0]:'');
@@ -4160,7 +4170,8 @@ async function loadLoginHistory(scope){
         $('bilGaugeLbl').textContent=q.monthly_log_quota==null?'unlimited plan':(pct+'% of '+num(q.monthly_log_quota));
         if($('bilGaugeChart'))window.foxChart('bilGaugeChart',{type:'gauge',height:14,value:pct,max:100,unlimited:q.monthly_log_quota==null,tone:q.over_quota?'bad':null,tip:(q.monthly_log_quota==null?'Unlimited plan':pct+'% of monthly quota used')});
         if($('bilUsageTrend'))window.foxChart('bilUsageTrend',{type:'area',height:130,tone:'fox',data:days.map(d=>({label:d.day,value:+d.logs_count||0})),empty:{title:'No usage yet',desc:'Daily volume appears within ~5 min of SDK activity.'}});
-        const plan=$('bilPlan'); if(plan)plan.textContent=(q.plan_tier||'free').replace(/^\w/,c=>c.toUpperCase());
+        // P6a §3 · the "Plan & consumption · <tier>" eyebrow is gone at the owner's
+        // request. The tier is still on this page, on the plan card that can act on it.
         const entitlement=$('bilEntitlements');
         if(entitlement){
           const trial=q.trial_active&&q.trial_ends_at?('trial ends '+fmtD(q.trial_ends_at)):(q.ingestion_blocked?'capture paused':'active');
@@ -4911,14 +4922,26 @@ async function loadLoginHistory(scope){
 
 <!-- ═══ P18 · global liveliness & responsive polish ═══ -->
 <style>
-  /* live connection dot (top bar) */
-  .livedot{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);padding:0 8px 0 5px;user-select:none;}
-  .livedot i{width:7px;height:7px;border-radius:50%;background:#3ddc84;flex-shrink:0;}
-  .livedot.on i{animation:livepulse 2.4s infinite;}
-  .livedot.off{color:var(--breach-bg);}
-  .livedot.off i{background:#e0662e;animation:none;}
-  @keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.5);}70%{box-shadow:0 0 0 6px rgba(61,220,132,0);}100%{box-shadow:0 0 0 0 rgba(61,220,132,0);}}
-  @media(max-width:620px){ .livedot span{display:none;} }
+  /* P6a §2 · the live connection signal IS the full stop after the page title —
+     `Overview.` — the treatment .h1 .fox-dot already gives the sale-page hero.
+     It is restyled, not retired: setLive() still writes `livedot on|off` here and
+     still rewrites the tooltip and the aria-label, so the state has a text channel
+     as well as a colour one. The crumb's 8px gap is cancelled so the period lands
+     on the title rather than beside it, and the glyph is pulled to the title's
+     baseline — a period drawn anywhere else reads as a bullet. */
+  .livedot{margin-left:-8px;font-size:20px;line-height:1;font-weight:800;
+    letter-spacing:0;position:relative;top:-2px;color:var(--fox);user-select:none;}
+  /* --fox is the brand FILL and measures 2.81:1 on light paper; --fox2 is the one
+     that carries colour as text there. Same rule as the token note above. */
+  html[data-theme="light"] .livedot{color:var(--fox2);}
+  /* Offline drops to the disabled ramp on purpose — --muted2 is this file's
+     inactive colour. A greyed period is quiet by design, so the state that wants
+     attention also breathes; the tooltip carries it when motion is turned off. */
+  .livedot.off{color:var(--muted2);}
+  @media(prefers-reduced-motion:no-preference){
+    .livedot.off{animation:livefade 2.4s ease-in-out infinite;}
+  }
+  @keyframes livefade{0%,100%{opacity:1;}50%{opacity:.4;}}
   /* global activity feed */
   .afeed{display:flex;flex-direction:column;}
   .aitem{display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:2px dashed var(--line);}
@@ -5006,6 +5029,17 @@ async function loadLoginHistory(scope){
   }
   /* §1.2 · the dot is markup in the crumb now, not injected beside the actions */
   function injectLiveDot(){}
+  /* P6a §2 · the crumb mark borrows the dock's image rather than carrying its own.
+     Two base64 fox marks are already in this file (8.3 KB and 21.8 KB); a third
+     copy of the same picture is bytes on the wire for nothing. If the dock ever
+     loses its image the crumb simply stays empty — alt="" and aria-hidden mean
+     nothing is announced either way. */
+  function paintCrumbLogo(){
+    var mark=document.querySelector('.dock-mark img'), slot=document.querySelector('.crumb-logo');
+    if(mark&&slot&&mark.src)slot.src=mark.src;
+  }
+  if(document.readyState!=='loading')paintCrumbLogo();
+  else document.addEventListener('DOMContentLoaded',paintCrumbLogo);
   function pingHealth(){
     if(!navigator.onLine){ setLive(false); return; }
     // any HTTP response means the server is reachable; only a network error is "offline"
@@ -5729,9 +5763,15 @@ async function loadLoginHistory(scope){
 
      Deliberately not the blocking tutorial the original request described (§5.2):
      Esc exits from every step and a Skip control is rendered on every step, so a
-     user who hits a bug mid-flow is never trapped. Near-blocking completion comes
-     from §5.3 instead — a skipped tour is offered again on the next login, which
-     persuades rather than imprisons.
+     user who hits a bug mid-flow is never trapped.
+
+     P6a · a skip used to defer rather than finish, so the tour came back on the
+     next login — and because the client gated the offer on `completed` alone, it
+     came back on every REFRESH. The owner reported that as a bug, and it is one:
+     a control labelled "Skip tour" that reappears seconds later is not persuading
+     anyone, it is ignoring them. Skip now means skip. The tour stays one click
+     away in the user menu and the command palette, which is where a deferral
+     belongs — under the user's hand, not on a timer.
 
      The dim is one element's box-shadow spread rather than four masking divs or a
      clip-path: the "hole" is the only thing that has to be positioned, so there is
@@ -5743,14 +5783,19 @@ async function loadLoginHistory(scope){
      gate must cover this, never the other way round. */
   #tourHole{position:fixed;border-radius:14px;pointer-events:none;
     box-shadow:0 0 0 9999px rgba(6,5,4,.72);outline:2px solid var(--fox);outline-offset:3px;}
-  #tourBubble{position:fixed;width:310px;max-width:calc(100vw - 24px);background:var(--surf);
+  /* 340px, not 310px: the body copy went 11.5px → 13px and a card that stayed
+     310px wide bought the readability back as extra lines. At 340px the longest
+     step (the ledger one, 150 characters) still sets in four lines, so the bubble
+     is the same height it was and no step outgrows its spotlight. 24px of gutter
+     is still reserved, so this is unchanged at 375px where the clamp takes over. */
+  #tourBubble{position:fixed;width:340px;max-width:calc(100vw - 24px);background:var(--surf);
     border-radius:var(--r-lg);box-shadow:var(--raise-lg);padding:15px 16px 13px;pointer-events:auto;}
   #tourBubble:focus{outline:2px solid var(--fox);outline-offset:3px;}
   #tourArrow{position:absolute;width:12px;height:12px;background:var(--surf);transform:rotate(45deg);}
-  .tour-count{font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.5px;
+  .tour-count{font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.5px;
     text-transform:uppercase;color:var(--fox2);}
-  .tour-t{font-weight:800;font-size:14px;letter-spacing:-.2px;margin-top:5px;color:var(--ink);}
-  .tour-b{font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:6px;}
+  .tour-t{font-weight:800;font-size:15px;letter-spacing:-.2px;margin-top:5px;color:var(--ink);}
+  .tour-b{font-size:13px;color:var(--muted);line-height:1.6;margin-top:6px;}
   .tour-acts{display:flex;align-items:center;gap:7px;margin-top:13px;}
   .tour-acts .btn{margin-top:0;}
   #tourSkip{margin-right:auto;background:none;border:none;padding:8px 2px;cursor:pointer;
@@ -5881,7 +5926,7 @@ async function loadLoginHistory(scope){
   function render(){
     var step=steps[idx], el=step&&step.el;
     if(!el||!onScreen(el)){ el=findTarget(step||{sel:[]}); }
-    if(!el){ finish(false); return; }   // the page changed under us — leave cleanly
+    if(!el){ abandon(); return; }       // the page changed under us — leave cleanly
     step.el=el;
     var n=idx+1, m=steps.length;
     $('tourCount').textContent='Step '+n+' of '+m;
@@ -5951,6 +5996,14 @@ async function loadLoginHistory(scope){
     save(completed?{tutorial_completed:true}:{tutorial_skipped:true});
     if(completed){ try{ showToast('Tour complete'); }catch(e){} }
   }
+  /* P6a · leaving because the page moved, NOT because the user chose to. The
+     offer is gated on `skipped` now, so writing that flag from here would retire
+     the tour on behalf of somebody who never got to see it — the one case where
+     recording nothing is the honest thing to record. */
+  function abandon(){
+    if(!live)return;
+    close();
+  }
 
   $('tourNext').onclick=function(){ if(idx>=steps.length-1)finish(true); else { idx++; render(); } };
   $('tourBack').onclick=function(){ if(idx>0){ idx--; render(); } };
@@ -5978,16 +6031,20 @@ async function loadLoginHistory(scope){
 
   window.foxTourStart=open;             // palette + user menu entry point (§5.3)
 
-  /* §5.3 · offered again on every login until it is completed. `enabled` is the
-     §5.5 kill switch, read from the server on a response the page already has a
-     reason to fetch — this file is static and cannot see Settings itself. */
+  /* §5.3 · offered once, to a user who has neither finished it nor turned it
+     away. The server has stored `skipped` since the tour shipped and this gate
+     read only `completed`, so every refresh re-offered a tour the user had
+     already dismissed — item 1 of the owner's punch-list. Both flags are the
+     user's answer; either one is a no. `enabled` is the §5.5 kill switch, read
+     from the server on a response the page already has a reason to fetch —
+     this file is static and cannot see Settings itself. */
   window.foxTourMaybeOffer=async function(){
     if(offered||live)return; offered=true;
     try{
       var r=await fetch('/v1/onboarding',{credentials:'same-origin'});
       if(!r.ok)return;                                  // signed out → no tour
       var d=await r.json(), t=(d&&d.tutorial)||{};
-      if(t.enabled&&!t.completed)open();
+      if(t.enabled&&!t.completed&&!t.skipped)open();
     }catch(e){}
   };
   if(document.readyState!=='loading')window.foxTourMaybeOffer();
