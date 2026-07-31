@@ -52,6 +52,53 @@ _NOTICE_QUEUE: "queue.Queue[dict]" = queue.Queue(maxsize=_QUEUE_MAX)
 WEBHOOK_TIMEOUT = 5
 
 
+# ── enforcement_mode: the response to a breach the judge already found ──────
+# P5 §A.2. ``org_policies.enforcement_mode`` (block|flag|monitor) modulates
+# DELIVERY to humans and nothing else. It never touches the verdict, the
+# AuditEvent or the chain entry — the judge does not see this field at all
+# (``policy_snapshot.judge_policy_config`` drops it on its projection line).
+#
+#   monitor   no breach email, whatever notify_on_breach says
+#   flag      today's behaviour — email only on notify_on_breach == "immediate"
+#   block     "digest" is escalated to immediate as well; "none" still means none
+#
+# ``digest`` is the value that escalates because it sends NOTHING today: both
+# breach senders gate on ``!= "immediate"``, and ``send_weekly_digests`` runs off
+# the per-user ``notify_weekly_digest`` preference rather than this field, so
+# ``digest`` is behaviourally identical to ``none``. ``none`` is an explicit off
+# switch and is never bypassed — an escalation that overrides an off switch is a
+# dark pattern, not a feature.
+#
+# Both senders live off these two functions rather than open-coding the rule, so
+# the org-level path and the per-seat fan-out cannot drift apart;
+# ``user_notifications.send_breach_alert`` imports the second one.
+
+def breach_notice_wanted(enforcement_mode: str | None,
+                         notify_on_breach: str | None) -> bool:
+    """Has this tenant asked to be told about a graded breach at all?
+
+    Separate from :func:`breach_email_allowed` because it also gates the org's
+    own ``notify_webhook_url`` POST, and ``monitor`` silences people, never
+    machines: a webhook is an integration contract, and one that stops firing is
+    an outage rather than a quieter inbox.
+    """
+    return (notify_on_breach == "immediate"
+            or (enforcement_mode == "block" and notify_on_breach == "digest"))
+
+
+def breach_email_allowed(enforcement_mode: str | None,
+                         notify_on_breach: str | None) -> bool:
+    """…and may we EMAIL them about it?
+
+    ``monitor`` means "do not email me", not "do not look". The verdict, the
+    ``AuditEvent``, the chain entry and the in-app breach notification
+    (``routers/account.py`` backfills it from the ledger) are all written
+    regardless, so a suppressed email costs the tenant no evidence.
+    """
+    return (breach_notice_wanted(enforcement_mode, notify_on_breach)
+            and enforcement_mode != "monitor")
+
+
 def enqueue_breach_notice(row, verdict) -> None:
     """Called from worker._grade_one. Copies plain values off the grading row —
     nothing ORM- or session-bound crosses the thread boundary — never blocks and
@@ -75,17 +122,24 @@ def send_breach_notice(db: Session, item: dict) -> bool:
 
     The org's policy is re-read here rather than captured at enqueue time: a
     tenant who turns breach notices off between the grade and the send should
-    not receive one."""
+    not receive one. ``enforcement_mode`` is read off the same row, for the same
+    reason and at no extra cost — delivery follows the tenant's CURRENT setting,
+    never one frozen into an evidence snapshot months ago (P5 §A.2)."""
     oid = uuid.UUID(str(item["org_id"]))
     policy = db.get(OrgPolicy, oid)
-    if policy is None or policy.notify_on_breach != "immediate":
+    if policy is None:
+        return False
+    mode, wants = policy.enforcement_mode, policy.notify_on_breach
+    if not breach_notice_wanted(mode, wants):
         return False
 
     seq, risk, reason = item.get("seq"), item.get("risk"), item.get("reason") or ""
     org = db.get(Organization, oid)
     sent = False
     to = policy.notify_email or (org.contact_email if org else None)
-    if to:
+    # Split from the webhook POST below rather than widened into a single early
+    # return: under `monitor` the EMAIL is suppressed and that POST still fires.
+    if to and breach_email_allowed(mode, wants):
         html, plain = et.layout(
             title="Policy breach flagged",
             preheader=f"A policy breach was flagged in your audit trail (record #{seq}, risk {risk}).",

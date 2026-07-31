@@ -6,7 +6,9 @@ Settings UI's initial checkbox states:
 
 * ``notify_breach_alerts`` (default ON) — one email per graded breach to every
   opted-in org member. Only when the ORG's policy asks for immediate breach
-  notice (``org_policies.notify_on_breach``): a tenant that turned breach
+  notice (``org_policies.notify_on_breach``, modulated by ``enforcement_mode``
+  — the same rule the org-level notice uses, imported from
+  :mod:`org_notifications` so the two cannot drift): a tenant that turned breach
   notifications off must not be overridden by a per-user default. Deduped
   against the org-level address in ``worker._notify_breach`` so no address gets
   the same breach twice.
@@ -47,7 +49,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import email as email_mod, email_templates as et
+from . import email as email_mod, email_templates as et, org_notifications
 from .config import get_settings
 from .models import ApiKey, Notification, Organization, OrgPolicy, User
 
@@ -167,15 +169,22 @@ def send_breach_alert(db: Session, item: dict) -> int:
     Honors the ORG policy first: if the tenant set breach notifications to
     anything but 'immediate', nobody is emailed — a per-user default must not
     re-enable what the org turned off. The org-level destination is skipped so
-    that address is not emailed twice for one breach."""
+    that address is not emailed twice for one breach.
+
+    ``enforcement_mode`` is honored off the same row and by the same rule as the
+    org-level notice, so the two paths cannot disagree about one breach: under
+    'monitor' this fan-out is suppressed too, and under 'block' a tenant who
+    chose batching is delivered to (P5 §A.2). Read at send time, deliberately —
+    see the policy re-read note in :mod:`org_notifications`."""
     oid = uuid.UUID(str(item["org_id"]))
     org = db.get(Organization, oid)
     if org is None or org.suspended or org.deleted_at is not None:
         return 0
     policy = db.get(OrgPolicy, oid)
-    # No policy row yet = the model's server_default ('immediate').
-    mode = policy.notify_on_breach if policy is not None else "immediate"
-    if mode != "immediate":
+    # No policy row yet = the model's server_defaults ('immediate' / 'flag').
+    wants = policy.notify_on_breach if policy is not None else "immediate"
+    enforcement = policy.enforcement_mode if policy is not None else "flag"
+    if not org_notifications.breach_email_allowed(enforcement, wants):
         return 0
     org_level_to = ((policy.notify_email if policy is not None else None)
                     or org.contact_email or "").strip().lower() or None

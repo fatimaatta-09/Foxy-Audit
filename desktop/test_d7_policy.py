@@ -29,7 +29,7 @@ def test_policy_view_falls_back_to_the_backends_own_defaults():
     assert view["pii_detection"] is True and view["prompt_injection"] is True
     assert view["regulated_data_mode"] is False
     assert view["max_token_threshold"] == pd.DEFAULT_TOKENS
-    assert view["enforcement_mode"] == "block"
+    assert view["enforcement_mode"] == "flag"     # backend default since 0059
     assert view["confidence_threshold"] == "balanced"
     assert view["notify_on_breach"] == "immediate"
 
@@ -38,7 +38,7 @@ def test_an_unknown_option_value_never_reaches_a_control():
     """A select can only hold one of its own options; a server value outside
     that set falls back rather than silently selecting index 0."""
     view = pd.policy_view({"enforcement_mode": "nuke", "judge_provider": "xai"})
-    assert view["enforcement_mode"] == "block" and view["judge_provider"] == "gemini"
+    assert view["enforcement_mode"] == "flag" and view["judge_provider"] == "gemini"
 
 
 def test_token_threshold_is_clamped_to_what_the_server_accepts():

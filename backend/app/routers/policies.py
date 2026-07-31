@@ -37,8 +37,11 @@ class PolicyConfig(BaseModel):
     prompt_injection: bool = True
     regulated_data_mode: bool = False
     max_token_threshold: int = Field(default=50_000, ge=1, le=10_000_000)
-    # Judge sensitivity (Phase 5) — how strictly the Judge acts + how you're notified.
-    enforcement_mode: Literal["block", "flag", "monitor"] = "block"
+    # Judge sensitivity (Phase 5) — how a finding is RESPONDED to + how you are
+    # notified. Never how it is graded: nothing in the judge path reads this.
+    # "flag" since migration 0059, matching the column default — "block"
+    # escalates breach email, so it has to be chosen, never inherited (P5 §A.1).
+    enforcement_mode: Literal["block", "flag", "monitor"] = "flag"
     # SDK PREFLIGHT enforcement — a different vocabulary from enforcement_mode
     # above, and a different moment: before the model is called, not after a
     # verdict. None means the workspace has expressed no opinion and the SDK

@@ -445,12 +445,18 @@ def _block_message(policy: str, plan: dict) -> str:
 
     When the workspace tightened the mode, SAY SO. A developer reading
     FoxyPolicyBlocked from code that says `observe` would otherwise have no way
-    to discover the cause, and would go looking in the wrong place (§B6)."""
+    to discover the cause, and would go looking in the wrong place (§B6).
+
+    Which means naming the field the SDK ACTUALLY reads. This sentence said
+    `enforcement_mode=block` for two releases; that is the judge-response
+    setting, and org_policy.py has never read it (see SDK_ENFORCEMENT_FIELD).
+    Sending a blocked developer to a different control on a different page is
+    the same wrong-place problem this message exists to prevent."""
     base = (f"Foxy Audit blocked a prompt under policy '{policy}' "
             f"(reason: {plan['reason']}). The wrapped function was not called.")
     if plan.get("org_tightened"):
         base += (" This block came from your Foxy Audit workspace policy "
-                 "(enforcement_mode=block), not from this code's own mode. "
+                 "(sdk_enforcement=block), not from this code's own mode. "
                  "Change it in Settings, or set FOXY_ORG_POLICY=off to ignore "
                  "workspace policy in this deployment.")
     return base

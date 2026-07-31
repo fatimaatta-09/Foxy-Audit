@@ -23,12 +23,20 @@ def capture_policy_snapshot(policy: OrgPolicy) -> dict:
       for the judges; ``pii_detection`` and ``max_token_threshold`` are also read
       directly by :mod:`policy_engine`, and ``confidence_threshold`` tunes how
       conservatively the judge grades an ambiguous event (P4 Phase A).
-    * ``notify_on_breach`` governs alerting, not the verdict — it decides whether
-      a breach emails anyone, after the grading is already done.
-    * ``enforcement_mode`` is the one RECORDED-ONLY setting left. Nothing in the
-      grading path reads it today; it is captured so an auditor can see what the
-      tenant had configured at the time, and it is not evidence of how the
-      interaction was judged. Phase B makes it real.
+    * ``notify_on_breach`` and ``enforcement_mode`` govern the RESPONSE to a
+      finding, not the finding itself — who gets told, after the grading is
+      already done. Since P5 §A.2 both are read by the two breach senders
+      (:mod:`org_notifications` org-level, :mod:`user_notifications` per seat)
+      off the org's LIVE policy row at send time: ``monitor`` suppresses the
+      email entirely, ``block`` also delivers to a tenant who chose batching,
+      ``flag`` is the ordinary path. Neither reaches a judge —
+      :func:`judge_policy_config` drops both on its projection line — so neither
+      is evidence of how THIS interaction was judged. They are captured so an
+      auditor can see what the tenant had configured at the time.
+
+      Note the deliberate asymmetry: the consumer reads the live row, this
+      snapshot records the historical one. Delivery follows the tenant's current
+      setting; the export records what it was. Neither is the other's source.
 
     That distinction is the point of this docstring, so keep it accurate. A
     snapshot field described as inert while the judge acts on it — or the reverse

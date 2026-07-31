@@ -139,7 +139,9 @@ def test_policy_snapshot_is_bound_and_used_after_a_later_policy_change(
 def test_judge_sensitivity_fields_persist(make_org, client, login):
     org = make_org()
     p = client.get("/v1/policies", headers=org["auth"]).json()
-    assert p["enforcement_mode"] == "block"           # safe defaults on first read
+    # Safe defaults on first read. "flag" since 0059, not "block": a fresh org
+    # must land on the ordinary path, never on the one that escalates email.
+    assert p["enforcement_mode"] == "flag"
     assert p["confidence_threshold"] == "balanced"
     assert p["notify_on_breach"] == "immediate"
 

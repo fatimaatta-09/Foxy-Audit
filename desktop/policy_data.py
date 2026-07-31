@@ -118,7 +118,9 @@ def policy_view(data: dict | None) -> dict:
         "prompt_injection": bool(d.get("prompt_injection", True)),
         "regulated_data_mode": bool(d.get("regulated_data_mode", False)),
         "max_token_threshold": clamp_tokens(tokens),
-        "enforcement_mode": _choice(d.get("enforcement_mode"), ENFORCEMENT, "block"),
+        # "flag" tracks the backend's own default since migration 0059 — see
+        # save_body() for why this fallback is not merely cosmetic.
+        "enforcement_mode": _choice(d.get("enforcement_mode"), ENFORCEMENT, "flag"),
         "confidence_threshold": _choice(d.get("confidence_threshold"),
                                         CONFIDENCE, "balanced"),
         "notify_on_breach": _choice(d.get("notify_on_breach"), NOTIFY, "immediate"),
@@ -218,8 +220,11 @@ def save_body(form: dict, judge: dict, *,
         "prompt_injection": bool(form.get("prompt_injection")),
         "regulated_data_mode": bool(form.get("regulated_data_mode")),
         "max_token_threshold": clamp_tokens(form.get("max_token_threshold")),
+        # Load-bearing, not cosmetic: an unset field runs through this fallback
+        # and is then WRITTEN, so a stale "block" here would put every desktop
+        # save straight back over the migrated default (0059).
         "enforcement_mode": _choice(form.get("enforcement_mode"),
-                                    ENFORCEMENT, "block"),
+                                    ENFORCEMENT, "flag"),
         "confidence_threshold": _choice(form.get("confidence_threshold"),
                                         CONFIDENCE, "balanced"),
         "notify_on_breach": _choice(form.get("notify_on_breach"), NOTIFY,

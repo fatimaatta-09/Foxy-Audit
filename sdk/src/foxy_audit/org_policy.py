@@ -44,11 +44,19 @@ DEFAULT_MODE = "observe"
 #                                           judge grades an interaction
 #   sdk_enforcement    observe|redact|block what to do BEFORE the model is called
 #
-# Conflating them would have been an upgrade incident rather than a feature:
-# enforcement_mode defaults to "block" and a default row is written on first
-# read, so every org already stores "block" whether or not a human chose it.
-# Honouring that field would have started blocking prompts for every customer
-# running the default `observe` the moment they upgraded.
+# Conflating them would have been an upgrade incident rather than a feature.
+# enforcement_mode USED TO default to "block", and a default policy row is
+# written on the org's first read, so every workspace stored "block" whether or
+# not a human chose it. Honouring that field would have started blocking prompts
+# for every customer running the default `observe` the moment they upgraded.
+#
+# Backend migration 0059 has since moved that default to "flag" and flipped the
+# rows that only ever inherited it — for the same reason read the other way
+# round: enforcement_mode now decides whether a graded breach emails a human, so
+# "block" has to be something an owner chose rather than something a column
+# default handed them. Neither default has ever meant anything here. This is not
+# the field the SDK reads, before the change or after it, and the only safe way
+# to keep it that way is to keep reading it by name.
 #
 # sdk_enforcement is nullable with no default. NULL — which is what every
 # existing workspace reads — means "no opinion", and the SDK ignores org policy

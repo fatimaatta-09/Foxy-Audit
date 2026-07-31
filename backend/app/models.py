@@ -293,8 +293,12 @@ class OrgPolicy(Base):
     prompt_injection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     regulated_data_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     max_token_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=50000)
-    # Judge sensitivity (Phase 5) — persisted policy preferences surfaced on the dashboard.
-    enforcement_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default="block")
+    # Judge sensitivity (Phase 5) — persisted policy preferences surfaced on the
+    # dashboard. Defaults to "flag" since migration 0059: this field decides
+    # whether a graded breach EMAILS a human (P5 §A.2) and "block" — the old
+    # default — is the loudest of the three, so nobody may be escalated into it
+    # by a column default they never chose.
+    enforcement_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default="flag")
     # SDK preflight enforcement (P4 §B, migration 0056) — a DIFFERENT vocabulary
     # from enforcement_mode above: observe|redact|block, applied before the model
     # is called, versus block|flag|monitor applied to a verdict after grading.

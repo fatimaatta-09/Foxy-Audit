@@ -388,6 +388,12 @@ def test_an_org_block_explains_itself_in_the_exception(tmp_path):
     assert "workspace policy" in message
     assert "FOXY_ORG_POLICY=off" in message
     assert PHI not in message, "the exception leaked prompt content"
+    # …and it must name the field that actually produced the block. This said
+    # `enforcement_mode=block` for two releases, which is the judge-response
+    # setting the SDK has never read — an explanation that sends the developer
+    # to the wrong control is the same defect as no explanation at all.
+    assert "sdk_enforcement" in message
+    assert "enforcement_mode" not in message
 
 
 def test_a_local_block_does_not_blame_the_org(tmp_path):
@@ -520,14 +526,17 @@ def test_a_null_answer_also_survives_a_restart(tmp_path, monkeypatch):
 def test_an_existing_org_upgrading_sees_no_change_at_all(tmp_path, monkeypatch):
     """THE INCIDENT TEST, and the most important one on this branch.
 
-    enforcement_mode defaults to "block" and a default policy row is written on
-    first read, so EVERY existing workspace stores "block" whether or not a human
-    ever chose it. Had the SDK honoured that field, every customer running the
-    default `observe` would have started raising FoxyPolicyBlocked the moment
-    they installed this version — a production incident on upgrade, for everyone
-    at once, caused by a setting nobody touched.
+    enforcement_mode used to default to "block" and a default policy row is
+    written on first read, so EVERY existing workspace stored "block" whether or
+    not a human ever chose it. Had the SDK honoured that field, every customer
+    running the default `observe` would have started raising FoxyPolicyBlocked
+    the moment they installed this version — a production incident on upgrade,
+    for everyone at once, caused by a setting nobody touched.
 
-    This is exactly that org: enforcement_mode=block, sdk_enforcement NULL."""
+    Backend migration 0059 has since moved that default to "flag", which changes
+    nothing here and is exactly the point: a workspace can serve ANY
+    enforcement_mode and this SDK must still ignore it. The org below is the
+    original worst case — enforcement_mode=block, sdk_enforcement NULL."""
     client = FoxyClient(api_key="foxy_sk_test", spool_path=str(tmp_path / "s.sqlite3"),
                         desktop_ping=False)
 
