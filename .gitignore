@@ -30,3 +30,8 @@ deploy/backups/
 .DS_Store
 Thumbs.db
 logo/build/
+
+# Licensed icons8 3D Fluency source assets for the admin console hero cards.
+# They ship inlined as base64 data URIs inside foxy-adminpage/index.html — the
+# same way the dashboard carries its four — so the sources stay out of git.
+foxy-adminpage/icons/
