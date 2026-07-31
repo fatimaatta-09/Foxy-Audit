@@ -59,6 +59,15 @@ class MeResponse(BaseModel):
     mfa_enabled: bool = False
     full_name: str | None = None       # P14: identity — avatar/greeting use this once set
     preferences: dict | None = None    # P14: hide_sensitive_metadata + notification prefs
+    # P6c. A BOOLEAN, not the bytes and not a path. The dashboard only needs to
+    # know whether to render <img> or the initial fallback; the image itself comes
+    # from GET /v1/account/avatar, which is session-scoped and cacheable. Putting
+    # base64 here would put a picture on every /me poll and in every log line that
+    # ever captures a response body.
+    has_avatar: bool = False
+    # The ?v= cache-buster the dashboard appends to the image URL, so a fresh
+    # upload replaces the old picture at once. A timestamp, not a secret.
+    avatar_updated_at: str | None = None
 
 
 class UserListItem(BaseModel):
@@ -468,7 +477,10 @@ def redeem_handoff(payload: HandoffRedeemRequest, request: Request,
 def me(user: User = Depends(require_user)):
     return MeResponse(email=user.email, role=user.role,
                       mfa_enabled=bool(user.mfa_enabled),
-                      full_name=user.full_name, preferences=user.preferences or {})
+                      full_name=user.full_name, preferences=user.preferences or {},
+                      has_avatar=bool(user.avatar_path),
+                      avatar_updated_at=(user.avatar_updated_at.isoformat()
+                                         if user.avatar_updated_at else None))
 
 
 class LoginHistoryItem(BaseModel):

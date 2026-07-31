@@ -38,6 +38,24 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# P6c · Paths whose body is legitimately larger than a JSON payload, with the cap
+# that applies instead of the global one.
+#
+# max_request_bytes is 2 MB, which is generous for JSON and too small for a photo.
+# Without this the avatar route's own 5 MB cap would be unreachable — every upload
+# over 2 MB would be refused here first, with a generic "Request body too large"
+# instead of the endpoint's "image must be 5 MB or smaller". The limit is not
+# loosened globally: raising max_request_bytes would also raise it for
+# /v1/logs/batch, which is the unbounded ingest path this middleware exists for.
+#
+# This is a ceiling, not the check. The route still enforces 5 MB itself with a
+# BOUNDED READ, because Content-Length is a claim the client makes and this
+# middleware can only ever act on the claim.
+_BODY_LIMIT_OVERRIDES = {
+    "/v1/account/avatar": 5 * 1024 * 1024,
+}
+
+
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     """Reject requests whose declared Content-Length exceeds max_request_bytes with
     413, before the body is read — a cheap anti-DoS guard on the unbounded ingest
@@ -46,8 +64,10 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         cl = request.headers.get("content-length")
         if cl is not None:
+            limit = _BODY_LIMIT_OVERRIDES.get(
+                request.url.path, get_settings().max_request_bytes)
             try:
-                if int(cl) > get_settings().max_request_bytes:
+                if int(cl) > limit:
                     return PlainTextResponse("Request body too large", status_code=413)
             except ValueError:
                 pass

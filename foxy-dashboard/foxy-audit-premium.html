@@ -362,6 +362,32 @@ html[data-theme="light"] .crumb-logo{filter:brightness(0);opacity:.42;}
 .topuser:hover{background:var(--surf3);}
 .topuser:focus-visible{outline:2px solid var(--fox);outline-offset:2px;}
 .topuser-av{width:32px;height:32px;flex-shrink:0;border-radius:10px;background:linear-gradient(150deg,var(--fox),var(--fox3));color:#1a0900;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;border:var(--border-sm);}
+
+/* ════════════════ P6c · THE PROFILE PHOTO ════════════════
+   Every [data-avatar] mount already draws the user's initial on a fox plate.
+   The photo is laid OVER that rather than swapping it out, so the initial is
+   the resting state, the in-flight state and the it-failed state all at once —
+   there is never a frame where the circle is empty, and onerror only has to
+   remove the <img> to be back somewhere correct.
+   position:relative is added to the mounts (they were already flex-centred) so
+   the overlay has something to anchor to. */
+.dock-user,.topuser-av,.av-prev{position:relative;overflow:hidden;}
+.av-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  border-radius:inherit;display:block;}
+/* The Settings preview is the same object at a size you can actually judge a
+   crop by — deliberately the same shape and plate as the top bar, so what you
+   see here is what lands there. */
+.av-prev{width:64px;height:64px;flex-shrink:0;border-radius:18px;
+  background:linear-gradient(150deg,var(--fox),var(--fox3));color:#1a0900;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:24px;border:var(--border-sm);box-shadow:var(--raise-sm);}
+/* Busy state during upload. Motion only where motion is allowed; on `reduce` the
+   dimming alone still says "working", and the status line says it in words. */
+.av-prev.busy{opacity:.55;}
+@media(prefers-reduced-motion:no-preference){
+  .av-prev.busy{animation:avpulse 1s ease-in-out infinite;}
+}
+@keyframes avpulse{0%,100%{opacity:.55;}50%{opacity:.85;}}
 .topuser-meta{display:flex;flex-direction:column;line-height:1.2;min-width:0;max-width:150px;}
 .topuser-name{font-size:11.5px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .topuser-role{font-family:var(--mono);font-size:8.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
@@ -1243,6 +1269,10 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
      and a looping animation missing from it is the thing that test exists to
      catch — silence here would be the wrong kind of passing. */
   .livedot.off{animation:none;}
+  /* P6c · same story: gated on no-preference already, listed here because this
+     block is where §13 looks. The dimming stays either way, and the status line
+     says "uploading…" in words — the pulse was never the only signal. */
+  .av-prev.busy{animation:none;}
   .btn::after,.fb-go::after,.stitle-act::after{display:none;}
   .btn.glinting::after,.fb-go.glinting::after,.stitle-act.glinting::after{animation:none;}
   .cx-endpulse{animation:none;}
@@ -2072,6 +2102,28 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             </button>
           </div>
           <div id="setOrgStatus" role="status" aria-live="polite" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:5px;min-height:12px;"></div>
+
+          <!-- P6c · profile photo. The <input type="file"> is the real control and
+               is kept off-screen rather than display:none — a hidden input is not
+               focusable, and this one has to stay reachable by keyboard through the
+               label that triggers it. -->
+          <div style="border-top:2px dashed var(--line);margin:16px 0 4px;"></div>
+          <div style="font-weight:700;font-size:12px;margin-bottom:8px;">Profile photo</div>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <div class="av-prev" id="setAvatarPrev" data-avatar aria-hidden="true">F</div>
+            <div style="min-width:0;flex:1;">
+              <div class="btnrow" style="flex-wrap:wrap;margin:0;">
+                <button class="btn sm" type="button" id="setAvatarPick" style="margin:0;">Upload photo</button>
+                <button class="btn ghost sm" type="button" id="setAvatarClear" style="margin:0;">Remove photo</button>
+              </div>
+              <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:7px;">PNG, JPEG or WebP. Cropped to a square and resized to 256&times;256 in your browser before it is sent.</div>
+            </div>
+          </div>
+          <input type="file" id="setAvatarFile" accept="image/png,image/jpeg,image/webp"
+                 style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;">
+          <!-- role=status + aria-live so a rejection is announced, not just coloured -->
+          <div id="setAvatarStatus" role="status" aria-live="polite" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:9px;min-height:12px;"></div>
+
           <div style="border-top:2px dashed var(--line);margin:16px 0 4px;"></div>
           <div style="font-weight:700;font-size:12px;margin-bottom:2px;">Change password</div>
           <!-- A REAL form, submitted normally: browser password managers only offer to update a
@@ -2083,9 +2135,31 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
                  Off-screen rather than display:none, which password managers skip. -->
             <input id="pwUser" autocomplete="username" readonly tabindex="-1" aria-hidden="true"
                    style="position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;">
-            <div class="flabel" style="margin-top:8px;">current password</div><input class="cin" id="setCurPw" type="password" autocomplete="current-password" required>
-            <div class="flabel">new password <span style="color:var(--muted);font-weight:400;">(at least 8 characters)</span></div><input class="cin" id="setNewPw" type="password" autocomplete="new-password" minlength="8" required>
-            <div class="flabel">confirm new password</div><input class="cin" id="setNewPw2" type="password" autocomplete="new-password" minlength="8" required>
+            <!-- P6c · the same .pw-eye the sign-in card uses. The IIFE above wires
+                 any [data-pw-toggle] on load, so these need no JS of their own —
+                 only the ARIA contract test_login_card.py asserts. -->
+            <div class="flabel" style="margin-top:8px;">current password</div>
+            <div class="pw-wrap">
+              <input class="cin" id="setCurPw" type="password" autocomplete="current-password" required>
+              <button type="button" class="pw-eye" data-pw-toggle="setCurPw"
+                      aria-pressed="false" aria-label="Show password" aria-controls="setCurPw"></button>
+            </div>
+            <!-- Whoever reads this line is locked out of their own account and one
+                 click from giving up. It sits under the field that failed them, at
+                 the form's own body size — not in a footer with the legal links. -->
+            <button type="button" id="setPwForgot" class="pw-link-sm" style="margin-top:7px;">Don't know your current password? We'll email you a reset link.</button>
+            <div class="flabel">new password <span style="color:var(--muted);font-weight:400;">(at least 8 characters)</span></div>
+            <div class="pw-wrap">
+              <input class="cin" id="setNewPw" type="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="pw-eye" data-pw-toggle="setNewPw"
+                      aria-pressed="false" aria-label="Show password" aria-controls="setNewPw"></button>
+            </div>
+            <div class="flabel">confirm new password</div>
+            <div class="pw-wrap">
+              <input class="cin" id="setNewPw2" type="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="pw-eye" data-pw-toggle="setNewPw2"
+                      aria-pressed="false" aria-label="Show password" aria-controls="setNewPw2"></button>
+            </div>
             <div id="setPwStatus" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:5px;min-height:12px;" role="status" aria-live="polite"></div>
             <button class="btn pri" type="submit">change password</button>
           </form>
@@ -3125,7 +3199,27 @@ async function loadLoginHistory(scope){
       window.__foxPrefs=me.preferences||{};   // P14: drives the P0 mask/reveal default app-wide
       var name=(me.full_name&&String(me.full_name).trim())?String(me.full_name).trim():(me.email?String(me.email).split('@')[0]:'');
       var initial=(name?name.charAt(0):'F').toUpperCase();
-      Array.prototype.forEach.call(document.querySelectorAll('[data-avatar]'),function(el){ el.textContent=initial; });
+      /* P6c · every [data-avatar] mount gets the SAME treatment, so the dock, the
+         top bar and the settings preview cannot disagree about who is signed in.
+         The initial is written first and always: it is the resting state for a
+         user with no photo, and it is what remains on screen if the image 404s or
+         is still in flight. The <img> is laid over it rather than replacing it,
+         so there is never a frame with an empty circle in it.
+         ?v= is avatar_updated_at — without it the browser keeps serving the old
+         photo from cache after an upload, since the URL is otherwise identical. */
+      var ver=me.avatar_updated_at?encodeURIComponent(me.avatar_updated_at):'';
+      Array.prototype.forEach.call(document.querySelectorAll('[data-avatar]'),function(el){
+        el.textContent=initial;
+        if(!me.has_avatar)return;
+        var img=document.createElement('img');
+        img.className='av-img';
+        img.alt=''; img.setAttribute('aria-hidden','true');
+        /* onerror, not a try/catch: a broken image is a load-time event, and the
+           fallback has to be the initial that is already underneath. */
+        img.onerror=function(){ if(img.parentNode)img.parentNode.removeChild(img); };
+        img.src='/v1/account/avatar'+(ver?('?v='+ver):'');
+        el.appendChild(img);
+      });
       var disp=name?(name.charAt(0).toUpperCase()+name.slice(1)):(me.email||'—');
       Array.prototype.forEach.call(document.querySelectorAll('[data-user-name]'),function(el){ el.textContent=disp; });
       Array.prototype.forEach.call(document.querySelectorAll('[data-user-role]'),function(el){ el.textContent=me.role||''; });
@@ -4081,6 +4175,118 @@ async function loadLoginHistory(scope){
       else { if(st){ st.textContent='save failed — '+esc(await errText(r)); st.style.color='var(--breach-bg)'; } }
     }catch(e){ if(st){ st.textContent='could not reach the server'; st.style.color='var(--breach-bg)'; } }
   };
+  /* ── P6c · profile photo ────────────────────────────────────────────────────
+     The canvas step is not a nicety. A modern phone photo is 3-6 MB and 4000px
+     on a side; the server only ever keeps a 256x256 PNG, so sending the original
+     would spend the user's data and the server's CPU on pixels that are thrown
+     away on arrival. Cropping and resizing here means the wire payload is ~40 KB
+     whatever the camera produced.
+     It is NOT a security control. The server re-decodes and re-encodes whatever
+     arrives, because everything below runs on the client and a client is not a
+     place to enforce anything.
+     FormData through fetch, never a bare <form action=>: this SPA patches
+     window.fetch twice — CSRF, and the step-up retry — and a form post bypasses
+     both. The CSRF patch sets a header, so it composes with FormData fine; what
+     it must not do is set a Content-Type, or the multipart boundary is lost. */
+  const AV_PX=256, AV_MAX=5*1024*1024;
+  function avStatus(msg,tone){
+    const el=$('setAvatarStatus'); if(!el)return;
+    el.textContent=msg||'';
+    el.style.color=tone==='bad'?'var(--breach-bg)':(tone==='ok'?'var(--safe-bg)':'var(--muted)');
+  }
+  function avBusy(on){ const p=$('setAvatarPrev'); if(p)p.classList.toggle('busy',!!on); }
+
+  // Draw the file to a square canvas, centre-cropped so a wide photo is not
+  // squashed — the same crop the server would apply, done early to save the wire.
+  function avSquare(file){
+    return new Promise(function(resolve,reject){
+      const url=URL.createObjectURL(file);
+      const img=new Image();
+      img.onload=function(){
+        try{
+          const side=Math.min(img.naturalWidth,img.naturalHeight);
+          if(!side)throw new Error('empty image');
+          const c=document.createElement('canvas'); c.width=c.height=AV_PX;
+          const g=c.getContext('2d');
+          g.imageSmoothingQuality='high';
+          g.drawImage(img,(img.naturalWidth-side)/2,(img.naturalHeight-side)/2,side,side,
+                        0,0,AV_PX,AV_PX);
+          c.toBlob(function(b){ URL.revokeObjectURL(url);
+            b?resolve(b):reject(new Error('encode failed')); },'image/png');
+        }catch(e){ URL.revokeObjectURL(url); reject(e); }
+      };
+      // A file the browser cannot decode is not an image, whatever it is called.
+      img.onerror=function(){ URL.revokeObjectURL(url); reject(new Error('not an image')); };
+      img.src=url;
+    });
+  }
+
+  window.uploadAvatar=async function(file){
+    if(!file)return;
+    // Checked here so the user hears about it instantly instead of after an
+    // upload. The server checks it again, because this one is only a courtesy.
+    if(file.size>AV_MAX){ avStatus('that image is over 5 MB — pick a smaller one','bad'); return; }
+    avBusy(true); avStatus('preparing…');
+    let blob;
+    try{ blob=await avSquare(file); }
+    catch(e){ avBusy(false); avStatus('that file is not a readable image','bad'); return; }
+    avStatus('uploading…');
+    try{
+      const fd=new FormData();
+      fd.append('file',blob,'avatar.png');
+      // No content-type header: the browser sets it WITH the multipart boundary.
+      const r=await api('/v1/account/avatar',{method:'POST',body:fd});
+      if(r.ok){
+        avStatus('✓ photo updated','ok');
+        if(window.foxAvatar)await window.foxAvatar();   // repaints every mount, new ?v=
+      } else {
+        avStatus(esc(await errText(r)),'bad');
+      }
+    }catch(e){ avStatus('could not reach the server','bad'); }
+    avBusy(false);
+  };
+
+  window.removeAvatar=async function(){
+    avBusy(true); avStatus('removing…');
+    try{
+      const r=await api('/v1/account/avatar',{method:'DELETE'});
+      if(r.ok){ avStatus('✓ photo removed','ok');
+        if(window.foxAvatar)await window.foxAvatar(); }
+      else avStatus(esc(await errText(r)),'bad');
+    }catch(e){ avStatus('could not reach the server','bad'); }
+    avBusy(false);
+  };
+
+  /* The reset flow is already built front and back — this is a call site, not a
+     feature. Same enumeration-safe wording as the sign-in gate: the answer does
+     not change based on whether the address exists, and here the address is the
+     signed-in user's anyway. */
+  window.setPwForgot=async function(){
+    const st=$('setPwStatus');
+    const email=(window.__foxUser&&window.__foxUser.email)||'';
+    if(!email){ if(st){ st.textContent='could not read your email address'; st.style.color='var(--breach-bg)'; } return; }
+    if(st){ st.textContent='sending…'; st.style.color='var(--muted)'; }
+    try{
+      await api('/v1/auth/forgot-password',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({email:email})});
+      if(st){ st.textContent='If that address has an account, a reset link is on its way.'; st.style.color='var(--muted)'; }
+    }catch(e){ if(st){ st.textContent='could not reach the server'; st.style.color='var(--breach-bg)'; } }
+  };
+
+  (function wireAvatar(){
+    const pick=$('setAvatarPick'), input=$('setAvatarFile'),
+          clear=$('setAvatarClear'), forgot=$('setPwForgot');
+    if(pick&&input)pick.onclick=function(){ input.click(); };
+    if(input)input.onchange=function(){
+      const f=input.files&&input.files[0];
+      // Reset so re-picking the SAME file fires change again — otherwise a failed
+      // upload cannot be retried without choosing a different photo first.
+      window.uploadAvatar(f).finally(function(){ try{ input.value=''; }catch(e){} });
+    };
+    if(clear)clear.onclick=function(){ window.removeAvatar(); };
+    if(forgot)forgot.onclick=function(){ window.setPwForgot(); };
+  })();
+
   window.savePref=async function(key,val){
     try{ const r=await api('/v1/account/preferences',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{[key]:!!val}})});
       if(r.ok){ const d=await r.json(); window.__foxPrefs=d.preferences||window.__foxPrefs||{}; toast('Preference saved'); }

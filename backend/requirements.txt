@@ -28,3 +28,12 @@ web3==7.16.0
 google-auth==2.55.1
 # Fernet envelope for customer-supplied (BYOK) provider API keys — app/crypto_secrets.py.
 cryptography==46.0.1
+
+# Avatar upload (P6c) — the first file-upload surface in this backend.
+# python-multipart is what lets FastAPI parse multipart/form-data at all; without
+# it an UploadFile parameter raises at import time, not at request time.
+# Pillow is a SECURITY control here, not a convenience: every upload is decoded
+# and re-encoded, which is what proves the bytes are an image and destroys
+# anything embedded alongside the pixels. Exact-pinned like the rest.
+python-multipart==0.0.20
+pillow==12.3.0

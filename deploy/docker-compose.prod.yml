@@ -110,6 +110,11 @@ services:
       # serving the stale pre-deploy copy until the container is recreated.
       - ../foxy-dashboard:/site/foxy-dashboard:ro
       - ../foxy-adminpage:/site/foxy-adminpage:ro
+      # P6c · avatar PNGs. READ-WRITE, unlike the two site mounts above: this is
+      # the only path in this product the app WRITES to, and it is the first prod
+      # state that does not live in Postgres. A named volume, not a bind mount, so
+      # it survives `docker compose down` and a git reset on deploy.
+      - foxy_avatars:/data/avatars
     # Loopback-only publish: the host reverse proxy (nginx on the shared VM, or
     # the optional caddy service) reaches the API here; never expose publicly.
     ports:
@@ -175,6 +180,13 @@ services:
       - ANCHOR_WALLET_MIN_BALANCE_WEI=${ANCHOR_WALLET_MIN_BALANCE_WEI:-0}
       - ANCHOR_STALE_ALERT_SECONDS=${ANCHOR_STALE_ALERT_SECONDS:-0}
       - ANCHOR_ALERT_COOLDOWN=${ANCHOR_ALERT_COOLDOWN:-3600}
+    volumes:
+      # The worker does not write avatars today. It is mounted anyway because the
+      # account-deletion path it owns will need to unlink them, and a worker that
+      # could not see the directory would fail that silently — leaving a deleted
+      # user's photo on disk, which is the kind of orphan a compliance product
+      # should not create.
+      - foxy_avatars:/data/avatars
     command: python -m app.worker_main
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os,psycopg,datetime as d,sys; u=os.environ['DATABASE_URL'].replace('+psycopg',''); c=psycopg.connect(u); r=c.execute('SELECT beat_at FROM worker_heartbeat WHERE id=1').fetchone(); c.close(); sys.exit(0 if r and r[0] and (d.datetime.now(d.timezone.utc)-r[0]).total_seconds()<30 else 1)\""]
@@ -207,5 +219,8 @@ services:
 
 volumes:
   foxy_pgdata:
+  # P6c · user avatars. Backed up by deploy/backup.sh alongside the SQL dump —
+  # a pg_dump stopped being a complete backup the day this volume appeared.
+  foxy_avatars:
   caddy_data:
   caddy_config:

@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import json
 import logging
+import pathlib
 import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile,
+)
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import Date, func, select
 from sqlalchemy.orm import Session
@@ -28,6 +32,7 @@ from ..models import (
     AccountAction, ApiKey, AuditLog, ChainAnchor, ExportJob, Invoice, Notification,
     Organization, OrgPolicy, User,
 )
+from .logs import limiter          # the app's single Limiter instance
 
 log = logging.getLogger("foxy.account")
 router = APIRouter()
@@ -638,6 +643,163 @@ def update_profile(body: ProfileUpdate, user: User = Depends(require_user),
         db, org_id=user.org_id, actor_email=user.email, action="account.profile_update")
     db.commit()
     return {"full_name": user.full_name}
+
+
+# ───────────────────────────── avatar (P6c) ──────────────────────────────────
+# THE FIRST FILE-UPLOAD SURFACE IN THIS BACKEND. Everything below treats the
+# request body as hostile, because it is the only endpoint here that accepts
+# bytes a user chose rather than fields a schema shaped.
+#
+# The threat is not "someone uploads a big file". It is that an image upload is
+# the classic way to get attacker-controlled bytes written to a server's disk
+# and then served back to a browser. Four things stop that, in this order:
+#
+#   1. A SIZE CAP BEFORE THE READ. Content-Length is checked first because it is
+#      free, then the read itself is bounded — a lying or absent header must not
+#      be able to pull more than the cap into memory.
+#   2. DECODE, DO NOT SNIFF. The filename and the client's Content-Type are both
+#      attacker-controlled and neither is consulted. Pillow decoding the bytes is
+#      the only thing that establishes this is an image, and `.load()` forces the
+#      actual pixel work rather than just parsing a header.
+#   3. RE-ENCODE ONTO A FRESH CANVAS. The output is a NEW Image the server drew,
+#      not the input with its metadata rewritten. That is what strips EXIF, ICC
+#      profiles, PNG text chunks and anything hiding after the image data — a
+#      polyglot file that is both a valid PNG and a valid script does not survive
+#      being redrawn as pixels.
+#   4. THE SERVER NAMES THE FILE. `{user_id}.png` from the session, never from
+#      the request. There is no path component the caller can influence, so
+#      traversal is not defended against here — it is unreachable.
+#
+# Rate-limited because decode is CPU work: a 5 MB image is cheap to send and
+# expensive to open, which is the shape of an asymmetric DoS.
+MAX_AVATAR_BYTES = 5 * 1024 * 1024
+AVATAR_PX = 256
+# Formats accepted AFTER decoding, by what Pillow says the bytes are.
+_AVATAR_FORMATS = {"PNG", "JPEG", "WEBP"}
+
+
+def _avatar_path_for(user: User) -> pathlib.Path:
+    return pathlib.Path(get_settings().avatar_dir) / f"{user.id}.png"
+
+
+@router.post("/v1/account/avatar")
+@limiter.limit("6/minute")
+async def upload_avatar(request: Request, file: UploadFile = File(...),
+                        user: User = Depends(require_user),
+                        db: Session = Depends(get_db)):
+    """Replace the signed-in user's avatar. Audited as account.avatar_set."""
+    import io as _io
+
+    # 1 · the cap, before anything is read. The header is a claim; the bounded
+    # read below is what enforces it.
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail="image must be 5 MB or smaller")
+    raw = await file.read(MAX_AVATAR_BYTES + 1)
+    if len(raw) > MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail="image must be 5 MB or smaller")
+    if not raw:
+        raise HTTPException(status_code=400, detail="no image was uploaded")
+
+    # 2 · decode. Anything Pillow will not open is not an image, whatever it was
+    # called or claimed to be. DecompressionBombError is caught by the same
+    # blanket except on purpose — a 50000x50000 PNG is a refusal, not a 500.
+    try:
+        from PIL import Image
+    except ImportError:                                    # pragma: no cover
+        log.error("Pillow is not installed; avatar upload is unavailable")
+        raise HTTPException(status_code=503, detail="image processing unavailable")
+    try:
+        with Image.open(_io.BytesIO(raw)) as probe:
+            fmt = (probe.format or "").upper()
+            probe.load()
+    except Exception:
+        raise HTTPException(status_code=400, detail="that file is not a readable image")
+    if fmt not in _AVATAR_FORMATS:
+        raise HTTPException(status_code=400,
+                            detail="image must be a PNG, JPEG or WebP")
+
+    # 3 · redraw. Centre-crop to a square first so a wide photo is not squashed,
+    # then paste onto a canvas this process created. The new image inherits no
+    # `info` dict, which is where EXIF, ICC and PNG text chunks would have been.
+    try:
+        with Image.open(_io.BytesIO(raw)) as src:
+            src = src.convert("RGBA")
+            w, h = src.size
+            side = min(w, h)
+            src = src.crop(((w - side) // 2, (h - side) // 2,
+                            (w - side) // 2 + side, (h - side) // 2 + side))
+            src = src.resize((AVATAR_PX, AVATAR_PX), Image.LANCZOS)
+            canvas = Image.new("RGBA", (AVATAR_PX, AVATAR_PX), (0, 0, 0, 0))
+            canvas.paste(src, (0, 0), src)
+            buf = _io.BytesIO()
+            canvas.save(buf, format="PNG", optimize=True)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="that image could not be processed")
+
+    # 4 · write. The name comes from the session, so there is no caller-supplied
+    # path component to sanitise. Written to a temp file and moved into place so
+    # a crash mid-write cannot leave a half-PNG where a valid one used to be.
+    dest = _avatar_path_for(user)
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".png.tmp")
+        tmp.write_bytes(buf.getvalue())
+        tmp.replace(dest)
+    except OSError:
+        log.exception("could not write avatar for user %s", user.id)
+        raise HTTPException(status_code=500, detail="could not save the image")
+
+    user.avatar_path = str(dest)
+    user.avatar_updated_at = datetime.now(timezone.utc)
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email, action="account.avatar_set")
+    db.commit()
+    return {"has_avatar": True,
+            "avatar_updated_at": user.avatar_updated_at.isoformat()}
+
+
+@router.delete("/v1/account/avatar")
+def delete_avatar(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Remove the signed-in user's avatar. Audited as account.avatar_clear.
+
+    The columns are cleared even if the unlink fails: the row is what the rest of
+    the product reads, so a file left behind by a full disk or a permissions
+    change is litter, while a row still claiming a photo is a broken image."""
+    dest = _avatar_path_for(user)
+    try:
+        dest.unlink(missing_ok=True)
+    except OSError:
+        log.warning("could not unlink avatar for user %s", user.id)
+    user.avatar_path = None
+    user.avatar_updated_at = None
+    account_audit.record_account_action(
+        db, org_id=user.org_id, actor_email=user.email, action="account.avatar_clear")
+    db.commit()
+    return {"has_avatar": False}
+
+
+@router.get("/v1/account/avatar")
+def get_avatar(user: User = Depends(require_user)):
+    """The signed-in user's OWN avatar, and only ever their own.
+
+    There is no id parameter — not an ignored one, none at all. The path is
+    derived from the session, so "let me see someone else's picture" is not a
+    request this endpoint can express. That is deliberate: an avatar is not
+    public here, and the cheapest way to never leak one across tenants is to
+    give the caller no way to name a different file.
+
+    Cached private + short: long enough that a page with the avatar in the top
+    bar and the settings card does not fetch it twice, short enough that a
+    removal is not still on screen minutes later. `private` keeps it out of any
+    shared proxy — this is one user's photo, not a static asset."""
+    dest = _avatar_path_for(user)
+    if not user.avatar_path or not dest.is_file():
+        raise HTTPException(status_code=404, detail="no avatar set")
+    return FileResponse(dest, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=60"})
 
 
 # Every key here must be READ by something. notify_product_updates and

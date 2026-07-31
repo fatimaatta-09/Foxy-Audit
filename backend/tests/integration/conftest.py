@@ -18,6 +18,7 @@ import hashlib
 import os
 import subprocess
 import sys
+import tempfile
 import uuid
 
 # ── env must be set before importing the app ────────────────────────────────
@@ -32,6 +33,11 @@ os.environ.setdefault("ANCHOR_ENABLED", "false")     # no background worker in t
 # dedicated traffic test flips get_settings().traffic_tracking_enabled on itself.
 os.environ.setdefault("TRAFFIC_TRACKING_ENABLED", "false")
 os.environ.setdefault("STAFF_SESSION_SECRET", "test-staff-session-secret")
+# P6c · avatars are the first thing this app writes to disk. Point it at a temp
+# directory per run so the suite never touches the real /data/avatars mount and
+# two runs cannot see each other's files.
+os.environ.setdefault(
+    "AVATAR_DIR", os.path.join(tempfile.gettempdir(), "foxy-pytest-avatars"))
 # BYOK provider-key encryption (Fernet). A fixed urlsafe-b64 32-byte test key so
 # the encrypted-at-rest path is exercised; tests that need the "deployment has no
 # key" fail-closed path blank it with monkeypatch.

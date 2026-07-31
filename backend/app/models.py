@@ -367,6 +367,15 @@ class User(Base):
     # preferences: small JSONB bag (hide_sensitive_metadata + notification prefs).
     full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Avatar (P6c). The PATH only — the bytes live on a mounted volume, so reading
+    # a user row never drags an image along with it, and the column stays small
+    # enough to be in every SELECT the app already does.
+    # avatar_updated_at is what the dashboard hangs its ?v= cache-buster on: a
+    # fresh upload replaces the old picture at once instead of whenever the
+    # browser happens to expire it.
+    avatar_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
 
 
 class ApiKey(Base):

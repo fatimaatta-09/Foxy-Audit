@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # startup (so a real deploy can never silently run on the dev session secret).
     foxy_env: str = "dev"
     database_url: str = "postgresql+psycopg://foxy:foxy@localhost:5432/foxy"
+    # Where avatar PNGs live (P6c). The FIRST prod state in this product that is
+    # not in Postgres, so it needs its own volume and its own line in backup.sh —
+    # a database dump alone stopped being a complete backup when this landed.
+    avatar_dir: str = "/data/avatars"
     # Confined, NOLOGIN/NOBYPASSRLS role the app assumes (via `SET LOCAL ROLE`) for
     # every org-scoped transaction, so the existing FORCE RLS policies actually
     # filter rows instead of being bypassed by the superuser connection (5B.2).
