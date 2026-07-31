@@ -1,5 +1,66 @@
 # P5 — giving `enforcement_mode` a real consumer
 
+> ## ✅ COMPLETE — both phases merged, 2026-08-01
+>
+> A control that a customer could set, that was written into the tamper-evident
+> evidence snapshot, and that **nothing read**, now decides whether a graded breach
+> reaches a human. Merged in this order:
+>
+> | Phase | What | Commit(s) |
+> |---|---|---|
+> | §A | migration `0059`, the default moved everywhere, the consumer in both send paths, 8 guards | `aa8e307` · `0f2013b` |
+> | §B | the Policy page copy, the `digest` relabel on both surfaces, the desktop label resync | `2474fcd` |
+>
+> Register: **#4** (no consumer) and **#29** (the false `digest` label) are resolved.
+>
+> ### What the plan text below gets wrong — read this first
+>
+> The body was re-anchored twice and still carries three errors the executors caught.
+> Do not take the file at face value:
+>
+> 1. **The migration is `0059`, not `0057`.** P6c and P6f took `0057` and `0058`
+>    while this plan sat unbuilt. Corrected in the body, but any older copy is wrong.
+> 2. **The desktop function is `save_body`, not `put_body`.** Cited wrongly in §A.1
+>    and in the executor prompt. The line (`policy_data.py:221`) and the reasoning
+>    were right; only the name was wrong.
+> 3. **Two line cites are off:** the `account_actions` audit record runs to
+>    `policies.py:270`, not `:262`; and the HTML comment above `#polEnforcement`
+>    starts at `:2376`, not `:2378` — an offset that lands three lines in,
+>    mid-sentence.
+>
+> **Five findings in this plan were caught by an executor rather than by review**,
+> including the one that mattered most: the original §A asserted `flag` was the
+> stored default when it was `block`, which would have shipped an alert storm to
+> every existing tenant on launch day.
+>
+> ### The three things worth carrying to the next plan
+>
+> - **Recorded and current are different things, and only one is evidence.**
+>   Migration `0056` refused to rewrite this column because its values sit in
+>   snapshots already handed to auditors. `0059` rewrites the *live* row and never
+>   touches `event_metadata.policy_snapshot`. Both are right, because they are about
+>   different data.
+> - **`account_actions` is what makes a settings rewrite safe at all.** It had
+>   recorded every `policy.update` with its chosen value, so a deliberate `block` was
+>   distinguishable from an inherited one. Nothing prunes that table — verified.
+> - **A comment asserting parity is not a test.** The desktop option tuples carried a
+>   comment claiming they were "quoted verbatim from the web" while both had silently
+>   drifted, under a line cite that had rotted by ~1,000 lines. They are now pinned by
+>   a test that compares the two strings directly, and it fails on one character.
+>
+> ### Still open, both needing a decision rather than a fix
+>
+> - **[[#31]]** — `policies.py:214` writes `enforcement_mode` unconditionally, with no
+>   `model_fields_set` guard, so an omitted key resets the org to the schema default.
+>   Post-`0059` that *downgrades* a deliberate `block` — precisely the choice the
+>   migration went to lengths to preserve. Unreachable from either shipped client.
+> - **[[#32]]** — the webhook field says "POSTed on each breach" while the POST is
+>   gated by `notify_on_breach`. Not a relabel: §A.2's rule 2 argues machine contracts
+>   should not be modulated by a notification preference at all, which would make the
+>   label already correct and the code wrong.
+>
+> Devlogs: `2026-07-31` (planning, re-anchor) and `2026-08-01` (both merges).
+
 **Plan of record** · 2026-07-29 · MAIN chat is the committer; executors build per this file.
 Base: `main` = **`9d003cf`** (re-anchored 2026-07-31 at `9cd7a20`; `9d003cf` is deploy-docs only
 and touches no anchor here. Originally written against `f6f5ed6`).
