@@ -54,15 +54,22 @@ def test_a_new_org_has_no_sdk_enforcement(make_org, client):
 
 
 def test_the_column_has_no_server_default(make_org, client):
-    """A default would recreate the exact problem the field exists to avoid."""
+    """A default would recreate the exact problem the field exists to avoid.
+
+    The contrast beside it is the argument: `_get_or_create` writes a policy row
+    on first read, so a column WITH a default hands every workspace a value
+    nobody chose. That is why sdk_enforcement is nullable — and P5's migration
+    0059 is the same lesson collected late, moving enforcement_mode's inherited
+    default off `block` before anything started acting on it. What this test
+    guards is the presence of the asymmetry, not the value on the right of it."""
     org = make_org()
     client.get("/v1/policies", headers=org["auth"])      # forces _get_or_create
     row = _policy_row(org["org_id"])
     assert row is not None
     assert row.sdk_enforcement is None
-    assert row.enforcement_mode == "block", (
-        "enforcement_mode should still default to block — this test documents "
-        "WHY sdk_enforcement had to be a separate field")
+    assert row.enforcement_mode == "flag", (
+        "enforcement_mode still has a server default — 'flag' since 0059 — and "
+        "this test documents WHY sdk_enforcement had to be a separate field")
 
 
 # ══ the two fields are independent ═════════════════════════════════════════
