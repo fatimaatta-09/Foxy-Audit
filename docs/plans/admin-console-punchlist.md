@@ -80,7 +80,7 @@ phases are done rather than putting a half-finished redesign in front of staff;
 
 | Phase | Branch | Covers |
 |---|---|---|
-| P0 | `feat/admin-staff-device-alert` | new-device sign-in email (backend only — may run in parallel) |
+| ~~P0~~ | ~~`feat/admin-staff-device-alert`~~ | **✅ merged 2026-08-01 at `9cfe3cb`** — staff new-device sign-in email |
 | ~~P1~~ | ~~`feat/admin-p1-one-skin`~~ | **✅ merged 2026-08-01 at `1bc39b9`** — one skin, Dashboard palettes |
 | P2 | `feat/admin-p2-shell` | top-bar text, sidebar icons + active state, strip page heads, Settings stacking |
 | P3 | `feat/admin-p3-identity` | corner glow + per-page wordmark |
