@@ -82,7 +82,7 @@ phases are done rather than putting a half-finished redesign in front of staff;
 |---|---|---|
 | ~~P0~~ | ~~`feat/admin-staff-device-alert`~~ | **✅ merged 2026-08-01 at `9cfe3cb`** — staff new-device sign-in email |
 | ~~P1~~ | ~~`feat/admin-p1-one-skin`~~ | **✅ merged 2026-08-01 at `1bc39b9`** — one skin, Dashboard palettes |
-| P2 | `feat/admin-p2-shell` | top-bar text, sidebar icons + active state, strip page heads, Settings stacking |
+| ~~P2~~ | ~~`feat/admin-p2-shell`~~ | **✅ merged 2026-08-01 at `19e5d2a`** — crumb, rail, page heads, Settings |
 | P3 | `feat/admin-p3-identity` | corner glow + per-page wordmark |
 | P4 | `feat/admin-p4-heroes` | hero cards, colour and life on every page |
 | P5 | `feat/admin-p5-pagination` | pagination on every scrollable table, blurb sweep |
@@ -219,9 +219,17 @@ This is exactly the Dashboard's `.crumb`. Port CSS from
   <span class="crumb-brand">Foxy Audit</span>
   <span class="crumb-sep" aria-hidden="true">│</span>
   <b id="topbarTitle">Overview</b>
-  <span class="livedot on">.</span>
+  <span class="crumb-dot" aria-hidden="true">.</span>
 </div>
 ```
+
+**The dot is typography, not a status light.** The plan originally copied the
+Dashboard's `<span class="livedot on" title="Connected">`. The console polls no
+health endpoint, so that dot would have painted "connected" permanently
+regardless of whether anything was — a fabricated state, which the no-fake-data
+rule forbids as much as a fabricated number. It ships as `aria-hidden`
+punctuation. Wiring it to a real signal is a separate, small job; until then it
+must not claim one.
 
 Replace the console's static `.topbar-brand` (`index.html:1114-1118` — the
 frozen "Foxy Audit / internal ops console"). Drive `#topbarTitle` from a `CTX`
@@ -246,9 +254,13 @@ geometry. What changes:
   orange bar. Under soft UI it should read as **pressed into** the rail
   (`var(--sink-sm)` over `var(--bg)`) — the same physical logic as every other
   control, not a decoration applied on top of one.
-- **`.dock-mark`** loses its glass bevel and takes the soft-UI raise. On the
-  light theme the mark is a light-on-dark fox and disappears on a near-white
-  plate — invert it, the way the Dashboard treats its crumb logo.
+- **`.dock-mark`** loses its glass bevel and takes the soft-UI raise.
+  ~~Invert the mark on the light theme.~~ **Struck 2026-08-01 — this was wrong.**
+  `.dock-mark` keeps a `linear-gradient(155deg,var(--fox),var(--foxdeep))` plate
+  in *both* themes, so the light fox on it is perfectly legible and inverting it
+  would make it worse. What actually vanishes on near-white is the **crumb's**
+  copy of the same file, which has no plate — that is where `brightness(0)` goes,
+  exactly as the Dashboard does it. Verified in both themes at `19e5d2a`.
 
 ### Page heads
 
@@ -265,6 +277,10 @@ constraints:
 - **Only `.pagehead` eyebrows go.** The ~30 `.eyebrow` elements inside panels
   ("PLATFORM TREND", "LAST 7 DAYS", "GRADING QUEUE") label content, not the
   page, and stay.
+- **One `.sub` survives, and P5 is why.** "Strip all 17" and P5's instruction to
+  keep the Data page's read-only-tables warning contradicted each other — the
+  more specific one wins. It is a real warning about the tamper-evident chain,
+  not a blurb, and it now sits above the table picker it governs.
 - **Resize the head for what is left.** Most heads end up holding only the
   wordmark; a few also hold their existing actions. Left at its current height
   it reads as a dead band — the mock settled on ~68px with
