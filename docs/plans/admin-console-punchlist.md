@@ -67,10 +67,21 @@ sequential**. Each obeys the phase-stacking rule in `Admin Console\CLAUDE.md`:
 A stale base here silently reverts merged work. It has already nearly wiped this
 file once.
 
+**Give each executor its own `git worktree`.** P0 and P1 ran concurrently in the
+same checkout, and P1 found P0's half-written backend files dirty in its tree. It
+staged by path and nothing crossed over, but that was care rather than isolation:
+`git worktree add ../wt-<phase> origin/main`.
+
+**CI and CD are failing on GitHub Actions billing**, not on code — every job
+reports "the job was not started because recent account payments have failed."
+Merges land on `main` but nothing deploys. Hold the production deploy until the
+phases are done rather than putting a half-finished redesign in front of staff;
+`deploy/` has a manual path when it is wanted.
+
 | Phase | Branch | Covers |
 |---|---|---|
-| P0 | `feat/admin-staff-device-alert` | new-device sign-in email (backend only — may run in parallel with P1) |
-| P1 | `feat/admin-p1-one-skin` | one skeuomorphism style, Dashboard palettes |
+| P0 | `feat/admin-staff-device-alert` | new-device sign-in email (backend only — may run in parallel) |
+| ~~P1~~ | ~~`feat/admin-p1-one-skin`~~ | **✅ merged 2026-08-01 at `1bc39b9`** — one skin, Dashboard palettes |
 | P2 | `feat/admin-p2-shell` | top-bar text, sidebar icons + active state, strip page heads, Settings stacking |
 | P3 | `feat/admin-p3-identity` | corner glow + per-page wordmark |
 | P4 | `feat/admin-p4-heroes` | hero cards, colour and life on every page |
@@ -394,10 +405,27 @@ route would have added. `index.html` stays near its current 436 KB.
 `foxy-adminpage/icons/` (the 16 icons8 WebP exports) is now **unused**. It is
 git-ignored, so nothing needs undoing — leave it or delete it.
 
-**The rest of the page, not just the KPI row.** Apply the same per-metric hue
-system to panel accents, chart series and status chips across all 13 pages, with
-System Health as the reference case. Charts must keep resolving through
-`_chartPalette()` so they re-theme. `dataviz` first.
+### ⚠ The `::before` collision — changed shape after P1, read this
+
+The console's KPI cards use `.kpi::before` **as their accent bar**, and an
+element has exactly one `::before`. Before P1 the file defended this by scoping
+every decorative pseudo `.clay:not(.kpi)`.
+
+**P1 deleted those decorative pseudos along with the skins**, so
+`.clay:not(.kpi)` now appears **zero** times and `.kpi::before` is the only
+`::before` left in play. That is not permission to stop worrying — it removes the
+guard while leaving the thing it guarded. If P4 adds any decorative `::before` to
+`.clay`, `.kpi` or a shared ancestor selector, it will silently blank the accent
+bars on every KPI card and nothing will error.
+
+Use `::after`, an extra element, or scope the new rule `:not(.kpi)` explicitly.
+Verify by rendering a KPI row and counting the bars, not by reading the CSS.
+
+**The rest of the page, not just the KPI row.** Carry the face palette out to
+panel accents, chart series and status chips across all 13 pages, with System
+Health as the reference case. Charts must keep resolving through
+`_chartPalette()` so they re-theme — P1 changed only its fallback hexes, and its
+CVD-validated order is still load-bearing. `dataviz` first.
 
 **Hard rule:** every panel stays wired to a real endpoint. Honest empty states
 only — no fabricated numbers to make a page look alive, and no invented controls.
