@@ -26,6 +26,28 @@ from test_p1_contrast import HTML  # the one source of the file path
 # in the markup in this sequence and the icons have to match them.
 TILES = ("Breaches stopped", "Open alerts", "Clean rate", "Time to verdict")
 
+def _fills(html_text: str) -> dict[str, tuple[str, str]]:
+    """Every decorative .face gradient, by tone class."""
+    out = {}
+    for m in re.finditer(
+            r"\.(k-[a-z]+)\s+\.face\{background:linear-gradient\(145deg,(#[0-9a-f]{6}),(#[0-9a-f]{6})\)",
+            html_text):
+        out[m.group(1)] = (m.group(2), m.group(3))
+    return out
+
+
+def _lum(hexv: str) -> float:
+    c = [int(hexv[i:i+2], 16) / 255 for i in (1, 3, 5)]
+    c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def _ratio(a: str, b: str) -> float:
+    la, lb = _lum(a), _lum(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
 
 @pytest.fixture(scope="module")
 def html() -> str:
@@ -111,24 +133,70 @@ def test_the_icons_are_decorative_to_assistive_tech(kpi_block):
         assert 'aria-hidden="true"' in tag, f"hero icon is not hidden: {tag[:90]}"
 
 
-def test_the_row_is_back_on_the_neutral_surface(kpi_block):
-    """The icons are multi-colour now — a gold bell on a blue card fights
-    itself. Open alerts keeps .k-status, which is its own original class and
-    carries the is-raised behaviour with it."""
-    tones = re.findall(r'class="stat kpi (k-[a-z]+)"', kpi_block)
-    assert tones == ["k-plain", "k-status", "k-plain", "k-plain"], (
-        f"the Overview row is not on the neutral face: {tones}"
+def test_each_card_takes_its_hue_from_its_own_icon(kpi_block):
+    """The pairing is the point. An earlier pass used a fixed rotation and put
+    the blue-green shield on an orange card — the one combination where the card
+    and the object sitting on it argued. These four are derived from the icons:
+    teal from the shield's blue-to-green, fox-orange from the bell's gold, indigo
+    from the chart's blue bars and violet line, rose against the pewter watch."""
+    tones = re.findall(r'class="stat kpi ([^"]+)"', kpi_block)
+    assert tones == ["k-teal", "k-status k-fox", "k-indigo", "k-pink"], (
+        f"the Overview row's hues moved away from its icons: {tones}"
     )
 
 
-def test_the_neutral_face_rules_cover_both_classes(html):
-    """.k-plain shares .k-status's surface. If it stopped being listed on these
-    declarations the base .stat.kpi .face would hand it --foxink, which is
-    near-black on a near-black card."""
-    for rule in (".stat.kpi.k-plain .face,\n.stat.kpi.k-status .face{background:var(--surf2);color:var(--ink);}",
-                 ".stat.kpi.k-plain .v,\n.stat.kpi.k-status .v{color:var(--ink);}",
-                 ".stat.kpi.k-plain .l,\n.stat.kpi.k-status .l{color:var(--muted);opacity:1;}"):
-        assert rule in html, f"the neutral face lost a declaration:\n{rule}"
+def test_no_decorative_fill_wears_a_status_colour(html):
+    """The stylesheet reserves red, amber and green for status so a warning still
+    reads instantly beside four coloured cards. The teal is cyan-leaning for
+    exactly this reason and must not drift toward --safe."""
+    fills = _fills(html)
+    for tone, (light, deep) in fills.items():
+        for reserved in ("#12843c", "#3ddc84", "#f59e0b", "#dc2626"):
+            assert light.lower() != reserved and deep.lower() != reserved, (
+                f".{tone} is painted with the status colour {reserved}"
+            )
+    # the teal has to stay clearly off the success green
+    tl = fills["k-teal"][0].lower()
+    assert tl != "#3ddc84", "the teal collapsed onto --safe-ink"
+    r_, g_, b_ = (int(tl[i:i+2], 16) for i in (1, 3, 5))
+    assert b_ > g_ * 0.75, (
+        f"the teal {tl} lost its blue and now reads as success green"
+    )
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_every_decorative_fill_clears_aa_with_its_ink(html, theme):
+    """MEASURED, not asserted by token name. These fills are new surfaces for
+    text to sit on, and the .l label is 9.5px body text — the real risk of a
+    coloured row. The ink is --foxink, which is declared once and never
+    overridden, and the fills are literal hex, so both themes measure the same;
+    the parametrize is here so that stops being an assumption.
+
+    Deliberately checks the DEEP end: a 145deg gradient puts its darkest corner
+    at bottom-right, which is where the label's tail sits."""
+    foxink = re.search(r"--foxink:\s*(#[0-9a-f]{6})", html).group(1)
+    for tone, (light, deep) in _fills(html).items():
+        for end, hexv in (("light", light), ("deep", deep)):
+            got = _ratio(foxink, hexv)
+            assert got >= 4.5, (
+                f"[{theme}] .{tone}'s {end} end {hexv} measures {got:.2f}:1 against "
+                f"--foxink — deepen the fill, never lighten the ink"
+            )
+
+
+def test_the_status_tile_can_still_be_coloured_by_its_state(html):
+    """The gate note this file was built on: "this card carries state, so the
+    state is what colours it". Open alerts now also carries a decorative fill, so
+    the state takes the whole FACE rather than one number — --breach-ink measures
+    ~3:1 on orange and could not have carried it.
+
+    Every rule carries both classes, so none of them can outrank a state the way
+    P6a's theme override outranked .livedot.off."""
+    assert ".stat.kpi.k-status.k-fox .face{background:linear-gradient(145deg,#ff8b42,#dd5f18);color:var(--foxink);}" in html
+    assert ".stat.kpi.k-status.k-fox.is-raised .face{background:linear-gradient(145deg,#ff8d7d,#db4c3d);}" in html
+    # and the raised fill must itself be readable
+    foxink = re.search(r"--foxink:\s*(#[0-9a-f]{6})", html).group(1)
+    assert _ratio(foxink, "#db4c3d") >= 4.5, "the raised fill is too dark for its ink"
 
 
 def test_the_status_tile_keeps_its_state_rules(html):
