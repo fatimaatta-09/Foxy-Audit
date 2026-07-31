@@ -140,6 +140,37 @@ def test_all_four_page_margin_boxes_are_declared(template):
     assert 'content:"Page " counter(page) " of " counter(pages)' in page_rule
 
 
+def test_the_running_header_carries_the_mark(template):
+    """P6e §12.5 · a page torn out of the middle of the document should still
+    identify itself. The mark rides @top-left beside the title."""
+    page_rule = template[template.index("@page{"):template.index("@page :first")]
+    top_left = page_rule[page_rule.index("@top-left{"):page_rule.index("@top-right{")]
+    assert "content:url(" in top_left, "the running header lost its mark"
+    assert "Foxy Audit — Compliance Passport" in top_left,         "the header title must survive beside the mark, not be replaced by it"
+
+
+def test_the_header_mark_is_a_compact_svg_not_the_cover_png(template):
+    """This box repeats on EVERY page. The cover's mark is a 59 KB base64 PNG;
+    the same blob in a CSS content value is slow and fragile in weasyprint, and
+    it would be re-emitted per page. The whole header asset is a few hundred
+    bytes of SVG."""
+    page_rule = template[template.index("@page{"):template.index("@page :first")]
+    top_left = page_rule[page_rule.index("@top-left{"):page_rule.index("@top-right{")]
+    m = re.search(r'content:url\("(data:image/[^"]+)"\)', top_left)
+    assert m, "the header mark is not an inline data URI"
+    uri = m.group(1)
+    assert uri.startswith("data:image/svg+xml"),         "the header mark must be SVG — a PNG here repeats on every page"
+    assert len(uri) < 2048, f"the header mark is {len(uri)} bytes; it repeats per page"
+    assert "image/png" not in top_left
+
+
+def test_the_cover_mark_is_sized_for_print(template):
+    """A 256px source scaled to 34 is soft at print DPI. Smaller renders sharper."""
+    m = re.search(r'<img class="brand-mark" width="(\d+)" height="(\d+)"', template)
+    assert m, "the cover mark changed shape"
+    assert int(m.group(1)) == int(m.group(2)) <= 24,         "the cover mark is back to a size that renders soft"
+
+
 def test_the_cover_suppresses_the_running_header(template):
     """§12.5 · the cover carries its own identity block; repeating the running
     header on it is what made the old output look generated."""

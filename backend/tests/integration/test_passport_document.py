@@ -19,12 +19,17 @@ Above all §12.6: this is evidence. Every figure traces to a passport.py counter
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import re
 import sys
 import uuid
+from pathlib import Path
 
 import pytest
+from sqlalchemy import text
+
+from app.db import SessionLocal
 
 _h = lambda s: hashlib.sha256(s.encode()).hexdigest()  # noqa: E731
 
@@ -168,9 +173,10 @@ def test_an_empty_period_is_honest_rather_than_flattering(make_org, client, monk
     """Zero events must not render as a clean bill of health."""
     org = make_org()
     doc = _html(client, org, monkeypatch)
-    # The seal sets NO / EVENTS on two lines, so assert the tokens, not one string.
-    seal = doc[doc.index('class="seal"'):doc.index("</svg>", doc.index('class="seal"'))]
-    assert ">NO<" in seal and ">EVENTS<" in seal
+    # The state used to live inside the seal's own SVG rings; it now sits in the
+    # .seal-facts block beside the image, which is the only place a reader can
+    # still get it without opening the body.
+    assert ">NO EVENTS<" in _seal_facts(doc)
     flat = _flat(doc)
     assert "No audit events were captured in the selected report period." in flat
     assert "read it with the total beside it" in flat, \
@@ -187,25 +193,129 @@ def test_no_prompt_or_response_text_reaches_the_document(make_org, client, monke
         assert forbidden not in doc
 
 
+def _break_the_chain(client, org, monkeypatch):
+    """Corrupt one stored chain_hash so passport.py's recompute disagrees with it.
+
+    There is no API that produces this state — that is the whole point of a
+    tamper-evident chain — so the only way to see the failed seal is to reach
+    past the app and edit the row, exactly as an attacker with database access
+    would. Editing the LAST row keeps the break inside the report period."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "UPDATE audit_logs SET chain_hash = :h "
+            "WHERE org_id = :o AND seq = (SELECT MAX(seq) FROM audit_logs WHERE org_id = :o)"
+        ), {"h": "0" * 64, "o": uuid.UUID(org["org_id"])})
+        db.commit()
+    finally:
+        db.close()
+
+
+def _template() -> str:
+    """The Jinja source itself, for the assertions that are about which image
+    each branch selects rather than about one rendered document."""
+    return (Path(__file__).resolve().parents[2]
+            / "app" / "templates" / "compliance_passport.html").read_text(encoding="utf-8")
+
+
+def _seal_facts(doc: str) -> str:
+    """The block beside the seal image — state, sequence range, as-of date.
+    Sliced to INCLUDE the closing tag of the last line, so assertions can anchor
+    on `>value<` and cannot pass on a truncated match."""
+    i = doc.index('class="seal-facts"')
+    j = doc.index("</div>", doc.index('class="seal-asof"')) + len("</div>")
+    return doc[i:j]
+
+
+def _seal_image(doc: str) -> str:
+    """Which of the three prepared seals the template chose, by matching the
+    rendered <img src> back to the branch that set it."""
+    m = re.search(r'<img class="seal"[^>]*src="(data:image/png;base64,[^"]+)"', doc)
+    assert m, "the seal image is gone from the cover"
+    src = m.group(1)
+    tpl = _template()
+    for state in ("verified", "failed", "noevents"):
+        branch = {"verified": 'seal_col = "#107435"',
+                  "failed": 'seal_col = "#c42020"',
+                  "noevents": 'seal_col = "#8c5a06"'}[state]
+        seg = tpl[tpl.index(branch):]
+        if src in seg[:seg.index("{%", seg.index("seal_src"))]:
+            return state
+    raise AssertionError("the rendered seal matches none of the three branches")
+
+
 # ══ §12.3 · the seal ═══════════════════════════════════════════════════════
+#
+# The seal is now a struck IMAGE plus a facts block, not one SVG carrying both.
+# That split is the thing to guard: the image is a maker's mark that says only
+# "FOXY AUDIT · SINCE 2026", so if the facts block were ever dropped the cover
+# would look MORE authoritative while saying strictly less. Every test below
+# checks the pair, never just "a seal exists".
+
 
 def test_the_seal_reports_the_chain_result(make_org, client, monkeypatch):
     org = make_org()
     _ingest(client, org, 4)
     doc = _html(client, org, monkeypatch)
     assert 'class="seal"' in doc
-    assert "VERIFIED" in doc
-    assert "#107435" in doc                      # the ok green, on a verified chain
+    facts = _seal_facts(doc)
+    assert ">CHAIN VERIFIED<" in facts
+    assert "#107435" in facts                    # the ok green, on a verified chain
+    assert _seal_image(doc) == "verified", "a verified chain must carry the struck gold"
 
 
-def test_there_is_no_green_seal_without_a_verified_chain(make_org, client, monkeypatch):
-    """A stamp that looks the same whatever happened is decoration, and on an
-    evidence document it is a lie."""
+def test_the_facts_beside_the_seal_survive(make_org, client, monkeypatch):
+    """State, scope and as-of date. The image says none of these — it is brand,
+    not evidence — so losing this block would leave a passport whose reader
+    cannot tell WHAT was checked or over WHICH records."""
     org = make_org()
-    doc = _html(client, org, monkeypatch)        # no events at all
-    seal = doc[doc.index('class="seal"'):doc.index("</svg>", doc.index('class="seal"'))]
-    assert "#107435" not in seal, "an unverified period got the verified colour"
-    assert "NO" in seal and "EVENTS" in seal
+    _ingest(client, org, 6)
+    doc = _html(client, org, monkeypatch)
+    facts = _seal_facts(doc)
+    assert ">CHAIN VERIFIED<" in facts, "the state word is gone from the cover"
+    m = re.search(r'class="seal-scope">SEQ (\d+)[–-](\d+)<', facts)
+    assert m, "the sequence range is gone from the cover"
+    assert int(m.group(2)) >= int(m.group(1))
+    assert re.search(r'class="seal-asof">\d{4}-\d{2}-\d{2}<', facts),         "the as-of date is gone from the cover"
+
+
+@pytest.mark.parametrize("state,expect_word", [
+    ("failed", "CHAIN BROKEN"),
+    ("noevents", "NO EVENTS"),
+])
+def test_gold_never_renders_on_an_unverified_chain(make_org, client, monkeypatch,
+                                                   state, expect_word):
+    """THE RULE THIS WHOLE PHASE PRESERVES. The gold seal is photographic and can
+    only ever mean one thing; the other two states get the unstruck line art. A
+    gold strike on a broken chain would be the document lying in the one place a
+    reader trusts at a glance."""
+    org = make_org()
+    if state == "failed":
+        _ingest(client, org, 3)
+        _break_the_chain(client, org, monkeypatch)
+    doc = _html(client, org, monkeypatch)
+
+    assert _seal_image(doc) != "verified", f"a {state} chain was struck in gold"
+    assert _seal_image(doc) == state
+    facts = _seal_facts(doc)
+    assert f">{expect_word}<" in facts
+    assert "#107435" not in facts, "an unverified period got the verified colour"
+
+
+def test_the_three_seals_are_three_distinct_images():
+    """One tinted image cannot serve all three states — the gold is a rendered
+    metal strike, not flat art. If two branches ever pointed at the same blob,
+    two different chain results would look identical on the cover."""
+    srcs = re.findall(r'set seal_src = "(data:image/png;base64,[^"]+)"', _template())
+    assert len(srcs) == 3, f"expected three seal images, found {len(srcs)}"
+    assert len(set(srcs)) == 3, "two chain states share a seal image"
+    for src in srcs:
+        blob = base64.b64decode(src.split(",", 1)[1], validate=True)
+        # PNG magic as hex, not an escaped byte literal — the escapes in
+        # b"\x89PNG\r\n\x1a\n" are exactly the kind of thing a shell eats.
+        assert blob.startswith(bytes.fromhex("89504e470d0a1a0a")), \
+            "a seal src is not a real PNG"
+        assert len(blob) > 4096, "a seal image decodes to almost nothing"
 
 
 def test_the_seal_does_not_claim_regulatory_compliance(make_org, client, monkeypatch):
