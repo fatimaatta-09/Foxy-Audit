@@ -1,5 +1,31 @@
 # Dashboard punch-list — P6 (planner ↔ executor run book)
 
+> ## ✅ COMPLETE — all six phases merged, 2026-07-31
+>
+> The owner's 14-issue punch-list is closed. Merged in this order:
+>
+> | Phase | Items | Commit(s) |
+> |---|---|---|
+> | P6a | tour size + re-trigger, top bar, two removed lines, login card, PDF label | `acc594c` |
+> | P6b | verified-button persistence, two card moves, clickable alerts | `84beb1b` |
+> | P6d | hero icons, then coloured tiles, then an icon swap | `2837875` · `f5fd877` · `b7c7598` |
+> | P6c | profile picture upload (migration `0057`) | `12d268c` · `8d2a2d9` |
+> | P6e | passport running header + the owner's struck seal | `6d06781` · `0bfe3ee` |
+> | P6f | per-org judge model + verdict provenance (migration `0058`) | `b3a9cf7` |
+>
+> **Two owner decisions changed mid-flight** and the plan text below still reflects
+> the originals — read the 2026-07-31 devlog for what actually shipped:
+> the hero icons became **licensed icons8 3D Fluency assets**, not hand-drawn SVG;
+> and the passport seal became the **owner's own artwork**, gold for a verified
+> chain and tinted line art for the other two states.
+>
+> **What did NOT ship, deliberately:** no QR code, no public passport-verification
+> endpoint, no PDF signature. The seal still reports one fact.
+>
+> Follow-ups live in the vault's `Worth Noting — Issues` — **#27 is the one that
+> matters**: the passport tells a reader to run a verifier they have no way to
+> obtain.
+
 ## Context
 
 The owner's punch-list is at
