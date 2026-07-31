@@ -364,14 +364,17 @@ html[data-theme="light"] .crumb-logo{filter:brightness(0);opacity:.42;}
 .topuser-av{width:32px;height:32px;flex-shrink:0;border-radius:10px;background:linear-gradient(150deg,var(--fox),var(--fox3));color:#1a0900;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;border:var(--border-sm);}
 
 /* ════════════════ P6c · THE PROFILE PHOTO ════════════════
-   Every [data-avatar] mount already draws the user's initial on a fox plate.
-   The photo is laid OVER that rather than swapping it out, so the initial is
-   the resting state, the in-flight state and the it-failed state all at once —
-   there is never a frame where the circle is empty, and onerror only has to
-   remove the <img> to be back somewhere correct.
-   position:relative is added to the mounts (they were already flex-centred) so
-   the overlay has something to anchor to. */
-.dock-user,.topuser-av,.av-prev{position:relative;overflow:hidden;}
+   Every [data-avatar] mount draws the user's initial on a fox plate. The photo
+   is laid OVER that rather than swapping it out, so the initial is the resting
+   state, the in-flight state and the it-failed state all at once — there is
+   never a frame where the circle is empty, and onerror only has to remove the
+   <img> to be back somewhere correct.
+   Only the mounts marked [data-avatar-photo] receive one: the top-bar chip and
+   the Settings preview. The dock stays a letter by choice.
+   position:relative is on those two so the overlay has something to anchor to.
+   .dock-user is not listed — it hosts no image, and keeping it here would be a
+   standing hint that it might. */
+.topuser-av,.av-prev{position:relative;overflow:hidden;}
 .av-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
   border-radius:inherit;display:block;}
 /* The Settings preview is the same object at a size you can actually judge a
@@ -1415,7 +1418,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         </button>
         <div class="topuser" id="topUser" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false" data-tip="Account" onclick="toggleUserMenu(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleUserMenu(event);}">
-          <div class="topuser-av" data-avatar>F</div>
+          <div class="topuser-av" data-avatar data-avatar-photo>F</div>
           <div class="topuser-meta">
             <span class="topuser-name" data-user-name>—</span>
             <span class="topuser-role" data-user-role></span>
@@ -2110,7 +2113,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div style="border-top:2px dashed var(--line);margin:16px 0 4px;"></div>
           <div style="font-weight:700;font-size:12px;margin-bottom:8px;">Profile photo</div>
           <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-            <div class="av-prev" id="setAvatarPrev" data-avatar aria-hidden="true">F</div>
+            <div class="av-prev" id="setAvatarPrev" data-avatar data-avatar-photo aria-hidden="true">F</div>
             <div style="min-width:0;flex:1;">
               <div class="btnrow" style="flex-wrap:wrap;margin:0;">
                 <button class="btn sm" type="button" id="setAvatarPick" style="margin:0;">Upload photo</button>
@@ -3199,18 +3202,26 @@ async function loadLoginHistory(scope){
       window.__foxPrefs=me.preferences||{};   // P14: drives the P0 mask/reveal default app-wide
       var name=(me.full_name&&String(me.full_name).trim())?String(me.full_name).trim():(me.email?String(me.email).split('@')[0]:'');
       var initial=(name?name.charAt(0):'F').toUpperCase();
-      /* P6c · every [data-avatar] mount gets the SAME treatment, so the dock, the
-         top bar and the settings preview cannot disagree about who is signed in.
-         The initial is written first and always: it is the resting state for a
-         user with no photo, and it is what remains on screen if the image 404s or
-         is still in flight. The <img> is laid over it rather than replacing it,
-         so there is never a frame with an empty circle in it.
+      /* THE INITIAL GOES EVERYWHERE; THE PHOTO IS OPT-IN.
+         Every [data-avatar] mount still gets the letter, so no two of them can
+         disagree about who is signed in. Only a mount that also carries
+         [data-avatar-photo] gets the picture laid over it — today the top-bar
+         chip and the Settings preview, not the dock, which the owner wants left
+         as the initial.
+         Opt-in rather than excluding #dockUser by id, deliberately: an exclusion
+         list works until someone adds a fourth mount, which would then silently
+         inherit a photo nobody asked it to show. This way the quiet behaviour is
+         the default and showing a face is the decision.
+         The initial is written FIRST and always: it is the resting state for a
+         user with no photo, the in-flight state, and what remains if the image
+         404s. The <img> is laid over it rather than replacing it, so there is
+         never a frame with an empty circle in it.
          ?v= is avatar_updated_at — without it the browser keeps serving the old
          photo from cache after an upload, since the URL is otherwise identical. */
       var ver=me.avatar_updated_at?encodeURIComponent(me.avatar_updated_at):'';
       Array.prototype.forEach.call(document.querySelectorAll('[data-avatar]'),function(el){
         el.textContent=initial;
-        if(!me.has_avatar)return;
+        if(!me.has_avatar||!el.hasAttribute('data-avatar-photo'))return;
         var img=document.createElement('img');
         img.className='av-img';
         img.alt=''; img.setAttribute('aria-hidden','true');

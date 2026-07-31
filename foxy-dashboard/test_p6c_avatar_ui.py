@@ -130,6 +130,61 @@ def test_an_avatar_change_repaints_every_mount(html):
         assert "window.foxAvatar()" in block[:1400], f"{after} does not repaint the mounts"
 
 
+def test_the_photo_is_opt_in_per_mount(html):
+    """The initial goes on every mount; the picture only goes where it is asked
+    for. Written as an opt-in rather than an exclusion list on purpose — an
+    exclusion works until someone adds a fourth mount, which would then silently
+    inherit a photo nobody chose for it. This pins the gate itself, because the
+    whole point of the design is that the quiet behaviour is the default."""
+    assert "if(!me.has_avatar||!el.hasAttribute('data-avatar-photo'))return;" in html, (
+        "the <img> is no longer gated on [data-avatar-photo] — every mount is "
+        "about to start showing a face again"
+    )
+    # the initial is still unconditional, before the gate
+    loop = html[html.index("document.querySelectorAll('[data-avatar]')"):]
+    assert loop.index("el.textContent=initial;") < loop.index("hasAttribute('data-avatar-photo')"), (
+        "the initial must be written before the photo gate, so a mount that opts "
+        "out still gets its letter"
+    )
+
+
+def test_only_the_top_bar_and_the_settings_preview_carry_a_photo(html):
+    """The owner's call: the face belongs in the top-right chip, and in the
+    Settings preview because that IS the preview of the photo you just uploaded.
+    The dock stays a letter."""
+    mounts = re.findall(r'<div[^>]*\bdata-avatar\b[^>]*>', html)
+    assert len(mounts) == 3, f"the number of avatar mounts changed: {len(mounts)}"
+
+    by_id = {}
+    for tag in mounts:
+        m = re.search(r'id="([^"]+)"', tag)
+        cls = re.search(r'class="([^"]+)"', tag)
+        by_id[m.group(1) if m else cls.group(1)] = "data-avatar-photo" in tag
+
+    assert by_id.get("dockUser") is False, (
+        "the dock avatar took a photo again — it is meant to stay the initial"
+    )
+    assert by_id.get("topuser-av") is True, "the top-bar chip lost its photo"
+    assert by_id.get("setAvatarPrev") is True, (
+        "the Settings preview lost its photo — it is the preview of the upload"
+    )
+
+
+def test_the_dock_keeps_its_plate_and_its_letter(html):
+    """Only the <img> was taken away. The dock avatar must look exactly as it
+    did: same plate, same letter, same fallback when there is no name."""
+    m = re.search(r'<div class="dock-user" id="dockUser"[^>]*>([^<]*)</div>', html)
+    assert m, "the dock avatar markup changed shape"
+    assert m.group(1) == "F", "the dock avatar lost its no-name fallback letter"
+    assert re.search(r"\.dock-user\{[^}]*background:var\(--bg\)", html), (
+        "the dock avatar lost its plate"
+    )
+    # and it is no longer set up to host an overlay it will never receive
+    m2 = re.search(r"^\.topuser-av,\.av-prev\{position:relative;overflow:hidden;\}",
+                   html, re.M)
+    assert m2, "the overlay anchors should now list only the two photo mounts"
+
+
 # ══ the password fields ════════════════════════════════════════════════════
 
 def test_all_three_password_fields_carry_a_toggle(account_card):
