@@ -1797,11 +1797,19 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
               <option value="openai">OpenAI</option>
               <option value="both">Both — graded twice, any breach wins</option>
             </select>
-            <!-- §7.6 · the real model each provider will use, read from the
-                 backend rather than guessed. There is no per-org model FIELD to
-                 pick from (see the report) — the model is deployment config, so
-                 what the page can honestly show is which one will grade you. -->
-            <div id="polJudgeModels" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);line-height:1.6;margin-top:7px;"></div>
+            <!-- P6f · the model itself is now a CHOICE, not a readout. One select
+                 per provider, shown by the same rule the key rows use, so
+                 "both" can pin each side independently. Options come from the
+                 server (judge_models_available) — the page never hardcodes a
+                 model id it might outlive. -->
+            <div id="polGeminiModelRow" style="margin-top:10px;">
+              <label class="flabel" style="margin-top:0;" for="polGeminiModel">Gemini model</label>
+              <select id="polGeminiModel"></select>
+            </div>
+            <div id="polOpenaiModelRow" style="margin-top:10px;">
+              <label class="flabel" style="margin-top:0;" for="polOpenaiModel">OpenAI model</label>
+              <select id="polOpenaiModel"></select>
+            </div>
             <div class="flabel">whose API key pays for grading</div>
             <div class="seg" id="polKeyMode" role="group" aria-label="Judge key source">
               <button type="button" data-mode="own" aria-pressed="true" onclick="setJudgeKeyMode('own')">my own key</button>
@@ -3925,7 +3933,9 @@ async function loadLoginHistory(scope){
   // ── AI Judge selection (per-tenant provider + key source) ──
   // The API returns only booleans for stored keys — a key is never sent back to
   // the browser, so the password inputs start empty and stay empty.
-  const JUDGE={mode:'own',platformAllowed:false,set:{gemini:false,openai:false},clear:{gemini:false,openai:false}};
+  // `loading` is true only while loadJudgeSelection paints server state into the
+  // form, so the change events setFieldValue emits do not read as user edits.
+  const JUDGE={mode:'own',platformAllowed:false,loading:false,set:{gemini:false,openai:false},clear:{gemini:false,openai:false}};
   function loadJudgeSelection(p){
     JUDGE.platformAllowed=!!p.platform_keys_allowed;
     JUDGE.set.gemini=!!p.gemini_key_set; JUDGE.set.openai=!!p.openai_key_set;
@@ -3936,16 +3946,45 @@ async function loadLoginHistory(scope){
     // flags are also populated. Firing it early through a change event would
     // render the key fields against half-loaded state.
     if($('polJudgeProvider'))$('polJudgeProvider').value=p.judge_provider||'gemini';
-    // §7.6 · name the model that will actually grade, per provider. The backend
-    // reports these because there is no per-org model to choose; an absent map
-    // means an older server, so say nothing rather than guess.
-    const jm=$('polJudgeModels');
-    if(jm){
-      const m=p.judge_models||{};
-      jm.textContent=(m.gemini||m.openai)
-        ? ('grades with · gemini: '+(m.gemini||'—')+'  ·  openai: '+(m.openai||'—'))
-        : '';
-    }
+    // P6f · the model pickers. Options come from judge_models_available; an older
+    // server that does not send it leaves the select empty, and renderJudgeKeyFields
+    // hides an empty one rather than showing a control with nothing in it.
+    // JUDGE.loading is set around this because setFieldValue fires a real change
+    // event (that is the point of it) and this select's change handler is
+    // markPolicyDirty — without the guard the ruleset would read "unsaved" the
+    // instant the page opened, and "✓ Saved" would flip back a moment after a save.
+    JUDGE.loading=true;
+    try{
+      const avail=p.judge_models_available||{};
+      [['gemini','polGeminiModel',p.judge_gemini_model],
+       ['openai','polOpenaiModel',p.judge_openai_model]].forEach(function(f){
+        const sel=$(f[1]); if(!sel)return;
+        const list=Array.isArray(avail[f[0]])?avail[f[0]]:[];
+        const pinned=f[2]||'';
+        sel.innerHTML='';
+        if(list.length){
+          // A pin the server no longer offers still has to appear, or assigning
+          // it below would silently blank the select and the page would claim a
+          // choice the org never made. Named as withdrawn: grading has already
+          // fallen back to the default, and the honest fix is to pick again.
+          if(pinned&&list.indexOf(pinned)===-1){
+            const stale=document.createElement('option');
+            stale.value=pinned; stale.textContent=pinned+' · withdrawn, grading with '+list[0];
+            sel.appendChild(stale);
+          }
+          // The server puts the deployment default first. "Follow" keeps this org
+          // moving with the deployment; pinning the same id freezes it there.
+          const def=document.createElement('option');
+          def.value=''; def.textContent='Follow Foxy’s default · '+list[0];
+          sel.appendChild(def);
+          list.forEach(function(id){
+            const o=document.createElement('option'); o.value=id; o.textContent=id;
+            sel.appendChild(o);
+          });
+        }
+        window.setFieldValue(sel,pinned);
+      });
+    } finally { JUDGE.loading=false; }
     ['polGeminiKey','polOpenaiKey'].forEach(function(id){ const el=$(id); if(el)el.value=''; });
     const plat=$('polKeyModePlatform');
     if(plat){
@@ -3975,6 +4014,16 @@ async function loadLoginHistory(scope){
       b.setAttribute('aria-pressed',String(b.getAttribute('data-mode')===JUDGE.mode)); });
     const byok=JUDGE.mode==='own';
     const fields=$('polByokFields'); if(fields)fields.style.opacity=byok?'1':'.4';
+    // P6f · the model picker follows the PROVIDER, not the key mode: which model
+    // grades you is a separate question from whose key pays for it, so these stay
+    // visible on Foxy's managed keys too. An empty select means an older server
+    // sent no options — hide it rather than offer an empty control.
+    [['gemini','polGeminiModelRow','polGeminiModel'],
+     ['openai','polOpenaiModelRow','polOpenaiModel']].forEach(function(f){
+      const sel=$(f[2]), row=$(f[1]);
+      const show=(provider===f[0]||provider==='both')&&!!(sel&&sel.options.length);
+      if(row)row.style.display=show?'':'none';
+    });
     [['gemini','polGeminiKeyRow','polGeminiKeySet','polGeminiKey','polGeminiKeyClear'],
      ['openai','polOpenaiKeyRow','polOpenaiKeySet','polOpenaiKey','polOpenaiKeyClear']
     ].forEach(function(f){
@@ -4009,6 +4058,11 @@ async function loadLoginHistory(scope){
     ['polMaxTokens','polEnforcement','polConfidence','polNotify','polNotifyEmail','polNotifyWebhook',
      'polJudgeProvider','polGeminiKey','polOpenaiKey'].forEach(function(id){
       const el=$(id); if(el){ el.addEventListener('change',window.markPolicyDirty); el.addEventListener('input',window.markPolicyDirty); } });
+    // P6f · the model selects mark dirty like any other field, but skip the change
+    // event the loader emits through setFieldValue (see JUDGE.loading above).
+    ['polGeminiModel','polOpenaiModel'].forEach(function(id){
+      const el=$(id); if(el)el.addEventListener('change',function(){
+        if(!JUDGE.loading)window.markPolicyDirty(); }); });
     document.querySelectorAll('#page-policy .toggle').forEach(function(t){ t.addEventListener('click',function(){ setTimeout(window.markPolicyDirty,0); }); });
   }
   window.savePolicy=async function(){
@@ -4026,6 +4080,11 @@ async function loadLoginHistory(scope){
       notify_on_breach:($('polNotify')||{}).value||'immediate',
       notify_email:em||null, notify_webhook_url:wh||null,
       judge_provider:($('polJudgeProvider')||{}).value||'gemini',
+      // ALWAYS present, like sdk_enforcement above: "" is the meaningful "follow
+      // the deployment default" answer, so it has to travel as an explicit null
+      // or un-pinning a model would appear to do nothing.
+      judge_gemini_model:(($('polGeminiModel')||{}).value||'')||null,
+      judge_openai_model:(($('polOpenaiModel')||{}).value||'')||null,
       judge_key_mode:JUDGE.mode };
     // Provider keys are WRITE-ONLY: send one only when the user typed a new key
     // (empty box = leave the stored key alone) or explicitly removed it ("" clears).

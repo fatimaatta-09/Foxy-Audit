@@ -17,7 +17,7 @@ _JUDGE_DECISIONS = {"clean", "breach"}
 _MIN_REASON_LEN = 3
 
 
-def _quarantine(problems: list[str]) -> Verdict:
+def _quarantine(problems: list[str], source: Verdict | None = None) -> Verdict:
     """An honest 'we could not determine this' — never a clean pass, never a breach."""
     return Verdict(
         policy_breach=False,
@@ -25,6 +25,11 @@ def _quarantine(problems: list[str]) -> Verdict:
         risk_score=0,
         decision="unknown",
         rules=[],
+        # Keep the provenance of the answer being thrown away. A model that keeps
+        # returning unusable verdicts is exactly what an operator needs to see, and
+        # that is unreadable once the only record says "unknown" with no author.
+        judge_provider=source.judge_provider if source else None,
+        judge_model=source.judge_model if source else None,
     )
 
 
@@ -53,7 +58,7 @@ def validate(verdict: Verdict) -> Verdict:
 
     if problems:
         log.warning("quarantining judge verdict as evaluator_unknown: %s", problems)
-        return _quarantine(problems)
+        return _quarantine(problems, verdict)
     return verdict
 
 
@@ -87,4 +92,15 @@ def combine(first: Verdict, second: Verdict) -> Verdict:
         risk_score=max(verdict.risk_score for verdict, _ in known),
         decision=decision,
         rules=rules,
+        # Credit every model that contributed, in the same order `reason` merges
+        # them. Only the KNOWN verdicts are named: a provider that fell over did
+        # not grade this event and must not appear to have.
+        judge_provider=_join(verdict.judge_provider for verdict, _ in known),
+        judge_model=_join(verdict.judge_model for verdict, _ in known),
     )
+
+
+def _join(values) -> str | None:
+    """Comma-join the models that answered; None when none of them did."""
+    present = [value for value in values if value]
+    return ",".join(present) if present else None

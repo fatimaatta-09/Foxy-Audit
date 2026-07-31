@@ -19,8 +19,7 @@ from .. import account_audit
 from ..auth import require_role, resolve_org
 from ..crypto_secrets import SecretsNotConfigured, encrypt_secret
 from ..db import get_db
-from ..judge_routing import platform_keys_allowed
-from ..config import get_settings
+from ..judge_routing import allowed_models, platform_keys_allowed, resolve_model
 from ..models import OrgPolicy, Organization, User
 
 router = APIRouter()
@@ -68,13 +67,20 @@ class PolicyConfig(BaseModel):
     openai_key_set: bool = False
     plan_tier: str | None = None
     platform_keys_allowed: bool = False
-    # §7.6 · read-only. Which model each provider will actually grade with, so
-    # the dashboard can name it instead of guessing. There is NO per-org model
-    # column — the model is deployment config (settings.gemini_model /
-    # settings.openai_model), so this reports rather than offers a choice.
+    # WRITABLE (P6f · 0058). Which model of the chosen provider grades this org.
+    # None or "" means inherit the deployment default, and that is the resting
+    # state for every tenant — see migration 0058 for why there is no default here.
+    judge_gemini_model: str | None = Field(default=None, max_length=64)
+    judge_openai_model: str | None = Field(default=None, max_length=64)
+    # §7.6 · read-only. Which model each provider will ACTUALLY grade with —
+    # the org's pick where it has one, the deployment default otherwise. It
+    # resolves through the same function the worker routes with, so this can
+    # never advertise a model the judge would not use.
     # Additive: the desktop reads this endpoint (desktop/dashboard.py:3177) and
     # takes named keys, so a new key is inert there.
     judge_models: dict[str, str] = {}
+    # READ-ONLY, derived. The choices the dashboard's model <select> offers.
+    judge_models_available: dict[str, list[str]] = {}
 
 
 def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig":
@@ -97,9 +103,43 @@ def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig
         openai_key_set=bool((row.openai_key_enc or "").strip()),
         plan_tier=tier,
         platform_keys_allowed=platform_keys_allowed(tier),
-        judge_models={"gemini": get_settings().gemini_model,
-                      "openai": get_settings().openai_model},
+        judge_gemini_model=row.gemini_judge_model,
+        judge_openai_model=row.openai_judge_model,
+        # Resolved, not reported raw: an org pinned to a model that has since been
+        # withdrawn would otherwise be shown a name the worker no longer calls.
+        judge_models={
+            "gemini": resolve_model("gemini", row.gemini_judge_model),
+            "openai": resolve_model("openai", row.openai_judge_model),
+        },
+        judge_models_available={"gemini": list(allowed_models("gemini")),
+                                "openai": list(allowed_models("openai"))},
     )
+
+
+def _checked_model(provider: str, submitted: str | None,
+                   current: str | None = None) -> str | None:
+    """Validate a submitted model id; "" and None both mean "inherit the default".
+
+    Storing NULL rather than the resolved id is deliberate — a tenant who never
+    expressed a preference keeps following the deployment forward (0058).
+
+    A value already on the row always passes, even if it has since left the
+    allow-list. Otherwise an org pinned to a withdrawn model could not save ANY
+    policy change — unrelated edits would 422 on a field they never touched —
+    which is a worse failure than letting a stale pin sit there resolving to the
+    default. The dashboard flags it; grading already falls back (resolve_model).
+    """
+    value = (submitted or "").strip()
+    if not value:
+        return None
+    if value == (current or "").strip():
+        return value
+    if value not in allowed_models(provider):
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown {provider} judge model; choose one of "
+                   + ", ".join(allowed_models(provider)))
+    return value
 
 
 def _store_key(submitted: str | None, current: str | None,
@@ -196,6 +236,22 @@ def update_policies(
                    "use your own Gemini/OpenAI key on this plan")
     row.judge_provider = body.judge_provider
     row.judge_key_mode = body.judge_key_mode
+    # The model pick, on the same absent/present rule as sdk_enforcement above and
+    # for the same reason — the desktop client (desktop/policy_data.py::put_body)
+    # does not send these fields, and a desktop save must not erase a model the
+    # web dashboard pinned.
+    #
+    # An unrecognised value is rejected rather than silently corrected: the
+    # dashboard offers exactly judge_models_available, so a value outside it means
+    # the caller meant something we cannot honour, and quietly grading with a
+    # different model than the one the org asked for is the failure this phase
+    # exists to fix.
+    if "judge_gemini_model" in body.model_fields_set:
+        row.gemini_judge_model = _checked_model("gemini", body.judge_gemini_model,
+                                                row.gemini_judge_model)
+    if "judge_openai_model" in body.model_fields_set:
+        row.openai_judge_model = _checked_model("openai", body.judge_openai_model,
+                                                row.openai_judge_model)
     row.gemini_key_enc = _store_key(body.gemini_api_key, row.gemini_key_enc, org.id, "gemini")
     row.openai_key_enc = _store_key(body.openai_api_key, row.openai_key_enc, org.id, "openai")
     account_audit.record_account_action(
@@ -206,6 +262,10 @@ def update_policies(
                 "notify_on_breach": body.notify_on_breach,
                 "judge_provider": body.judge_provider,
                 "judge_key_mode": body.judge_key_mode,
+                # A model id is not a secret, so unlike the keys beside it this
+                # records the value, not merely that it changed.
+                "judge_gemini_model": row.gemini_judge_model,
+                "judge_openai_model": row.openai_judge_model,
                 "gemini_key_set": bool((row.gemini_key_enc or "").strip()),
                 "openai_key_set": bool((row.openai_key_enc or "").strip())})
     db.commit()

@@ -37,7 +37,7 @@ def _seed_breach(client, org, monkeypatch, *, tc=90, tag="hipaa", risk=90):
     assert client.post("/v1/logs/batch", json=rows, headers=org["auth"]).status_code == 202
     monkeypatch.setattr(
         workermod.gemini, "evaluate",
-        lambda meta, policy_config=None, history=None, api_key=None:
+        lambda meta, policy_config=None, history=None, api_key=None, model=None:
         Verdict(policy_breach=True, reason="pii detected", risk_score=risk))
     # worker.email_mod and user_notifications.email_mod are the SAME module
     # object, so one patch captures both senders — clear between the phases to
@@ -193,7 +193,7 @@ def test_breach_alert_not_duplicated_with_org_level_email(make_org, client, monk
         headers=org["auth"]).status_code == 202
     monkeypatch.setattr(
         workermod.gemini, "evaluate",
-        lambda meta, policy_config=None, history=None, api_key=None:
+        lambda meta, policy_config=None, history=None, api_key=None, model=None:
         Verdict(policy_breach=True, reason="pii detected", risk_score=90))
     sent: list = []
     monkeypatch.setattr(un.email_mod, "send_email",

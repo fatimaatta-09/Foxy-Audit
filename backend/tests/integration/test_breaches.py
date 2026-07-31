@@ -30,7 +30,7 @@ def _grade_all(monkeypatch, breach_when):
     from app import worker as workermod
     from app.schemas import Verdict
 
-    def fake_eval(meta, policy_config=None, history=None, api_key=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None, model=None):
         breach = breach_when(meta)
         return Verdict(
             policy_breach=breach,

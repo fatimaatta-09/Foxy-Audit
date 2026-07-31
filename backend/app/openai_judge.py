@@ -121,7 +121,8 @@ def _response_text(payload: dict[str, Any]) -> str:
 
 def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
              history: dict[str, Any] | None = None,
-             api_key: str | None = None) -> Verdict:
+             api_key: str | None = None,
+             model: str | None = None) -> Verdict:
     """Evaluate content-blind metadata with the configured OpenAI model.
 
     ``api_key`` is a tenant's own (BYOK) key, decrypted by the caller for this
@@ -133,8 +134,13 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
     if not key:
         return _fallback("no_api_key")
 
+    # The caller's resolved model wins; settings is the fallback for the paths
+    # that still call this without routing (tests, direct use). Bound once so the
+    # id sent on the wire and the id recorded on the verdict cannot diverge.
+    model_id = model or settings.openai_model
+
     body = {
-        "model": settings.openai_model,
+        "model": model_id,
         "input": [
             {"role": "system", "content": [
                 {"type": "input_text", "text": _build_system_prompt(policy_config, history)},
@@ -185,6 +191,10 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
             risk_score=int(data["risk_score"]),
             decision=str(data["decision"]),
             rules=[str(value)[:80] for value in data["rules"] if isinstance(value, str)],
+            # Stamped only here — the one line that knows a model answered. A
+            # _fallback verdict leaves both None rather than naming a model that
+            # was never called.
+            judge_provider="openai", judge_model=model_id,
         )
     except (urllib_error.URLError, TimeoutError, OSError, json.JSONDecodeError,
             AttributeError, KeyError, TypeError, ValueError) as exc:

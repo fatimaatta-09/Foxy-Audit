@@ -319,6 +319,13 @@ class OrgPolicy(Base):
     # returned by an API, never logged, never copied into event metadata.
     gemini_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     openai_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which VERSION of the chosen provider grades this org (P6f). NULL = inherit
+    # the deployment default; see migration 0058 for why there is no server
+    # default and no CHECK constraint. Unlike the two columns above, a model id
+    # is not a secret — it is recorded on the verdict so the ledger can say which
+    # model produced each grade.
+    gemini_judge_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    openai_judge_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

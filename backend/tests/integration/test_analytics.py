@@ -31,7 +31,7 @@ def _ingest(client, org, specs):
 def _grade(monkeypatch, verdict_for):
     from app import worker as workermod
 
-    def fake_eval(meta, policy_config=None, history=None, api_key=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None, model=None):
         return verdict_for(meta)
 
     monkeypatch.setattr(workermod.gemini, "evaluate", fake_eval)

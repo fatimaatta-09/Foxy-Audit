@@ -90,7 +90,7 @@ def _grade_pending(monkeypatch, *, breach_when=lambda m: False, calls=None):
     from app import worker as workermod
     from app.schemas import Verdict
 
-    def fake_eval(meta, policy_config=None, history=None, api_key=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None, model=None):
         if calls is not None:
             calls.append(meta)
         breach = breach_when(meta)
@@ -168,7 +168,7 @@ def _grade_with_verdict(monkeypatch, verdict):
     """Grade all pending rows with a fixed (possibly malformed) judge verdict."""
     from app import worker as workermod
     monkeypatch.setattr(workermod.gemini, "evaluate",
-                        lambda meta, policy_config=None, history=None, api_key=None: verdict)
+                        lambda meta, policy_config=None, history=None, api_key=None, model=None: verdict)
     from app.db import SessionLocal
     db = SessionLocal()
     try:
@@ -253,7 +253,7 @@ def _grade_each(monkeypatch, verdict_for):
     from app import worker as workermod
     monkeypatch.setattr(
         workermod.gemini, "evaluate",
-        lambda meta, policy_config=None, history=None, api_key=None: verdict_for(meta))
+        lambda meta, policy_config=None, history=None, api_key=None, model=None: verdict_for(meta))
     from app.db import SessionLocal
     db = SessionLocal()
     try:

@@ -166,13 +166,15 @@ def _judge_verdict(db: Session, org_id, meta: dict, policy_config: dict | None,
     if routing.uses_gemini:
         verdicts.append(
             gemini.evaluate(meta, policy_config, history=history,
-                            api_key=routing.gemini_key)
+                            api_key=routing.gemini_key,
+                            model=routing.gemini_model)
             if routing.can_call("gemini")
             else gemini._fallback(routing.problems.get("gemini", "no_api_key")))
     if routing.uses_openai:
         verdicts.append(
             openai_judge.evaluate(meta, policy_config, history=history,
-                                  api_key=routing.openai_key)
+                                    api_key=routing.openai_key,
+                                    model=routing.openai_model)
             if routing.can_call("openai")
             else openai_judge._fallback(routing.problems.get("openai", "no_api_key")))
     if len(verdicts) == 2:

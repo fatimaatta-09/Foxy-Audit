@@ -71,6 +71,26 @@ class Verdict(BaseModel):
                           pattern=r"^(clean|breach|unknown|blocked|redacted)$")
     rules: list[str] = Field(default_factory=list)
 
+    # P6f provenance: WHICH model produced this grade. A model id is not a secret;
+    # a provider key is, and none is ever recorded here — see judge_routing.py:1-8.
+    #
+    # This is the right home for it because the verdict is NOT hashed chain
+    # material. compute_chain_hash (chain.py) enumerates every hashed field and no
+    # verdict field appears in either the V2/V3 dict or the legacy string; the
+    # chain hash is fixed at ingest (routers/logs.py), before any grade exists; the
+    # worker adds the verdict later with an UPDATE that never touches chain_hash;
+    # and verifier/foxy_verify.py does not read a verdict at all. Note the contrast
+    # with event_metadata, which IS hashed — putting the model there would have
+    # invalidated every existing chain.
+    #
+    # Both stay None unless a model actually answered. An evaluator that never ran
+    # (no key, timeout) records nothing rather than naming a model it did not call.
+    # Set at the single point of truth: the judge module that made the call.
+    # Multi-judge runs comma-join both fields in the same order, matching how
+    # `reason` already merges (judge.combine).
+    judge_provider: str | None = None
+    judge_model: str | None = None
+
 
 class LogResponse(BaseModel):
     log_id: uuid.UUID

@@ -20,7 +20,7 @@ def _seed_breach(client, org, monkeypatch, tc=90, tag="hipaa", risk=90):
     assert client.post("/v1/logs/batch", json=rows, headers=org["auth"]).status_code == 202
     from app import worker as workermod
     monkeypatch.setattr(workermod.gemini, "evaluate",
-                        lambda meta, policy_config=None, history=None, api_key=None:
+                        lambda meta, policy_config=None, history=None, api_key=None, model=None:
                         Verdict(policy_breach=True, reason="x", risk_score=risk))
     from app.db import SessionLocal
     db = SessionLocal()

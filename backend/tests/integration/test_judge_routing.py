@@ -52,16 +52,22 @@ def _configure(org_id: str, *, provider: str = "gemini", key_mode: str = "own",
 
 def _spy(monkeypatch, *, gemini_verdict: Verdict | None = None,
          openai_verdict: Verdict | None = None) -> dict:
-    """Record every judge call (and the key it was handed) instead of calling out."""
-    calls: dict = {"gemini": [], "openai": []}
+    """Record every judge call (and the key it was handed) instead of calling out.
 
-    def fake_gemini(meta, policy_config=None, history=None, api_key=None):
+    ``models`` records the model id each call was routed to (P6f), so a test can
+    assert the org's pick reached the provider and not just that a call happened.
+    """
+    calls: dict = {"gemini": [], "openai": [], "models": {}}
+
+    def fake_gemini(meta, policy_config=None, history=None, api_key=None, model=None):
         calls["gemini"].append(api_key)
+        calls["models"]["gemini"] = model
         return gemini_verdict or Verdict(policy_breach=False, reason="gemini says fine",
                                          risk_score=1, decision="clean")
 
-    def fake_openai(meta, policy_config=None, history=None, api_key=None):
+    def fake_openai(meta, policy_config=None, history=None, api_key=None, model=None):
         calls["openai"].append(api_key)
+        calls["models"]["openai"] = model
         return openai_verdict or Verdict(policy_breach=False, reason="openai says fine",
                                          risk_score=2, decision="clean")
 

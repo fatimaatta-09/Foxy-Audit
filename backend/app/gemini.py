@@ -121,7 +121,8 @@ def _fallback(reason: str) -> Verdict:
 
 def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
              history: dict[str, Any] | None = None,
-             api_key: str | None = None) -> Verdict:
+             api_key: str | None = None,
+             model: str | None = None) -> Verdict:
     """Grade interaction metadata against the org's active policy.
 
     Args:
@@ -144,8 +145,11 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
 
         system_prompt = _build_system_prompt(policy_config, history)
         genai.configure(api_key=key)
+        # The caller's resolved model wins; settings is the fallback for the
+        # paths that still call this without routing (tests, direct use).
+        model_id = model or settings.gemini_model
         model = genai.GenerativeModel(
-            settings.gemini_model, system_instruction=system_prompt
+            model_id, system_instruction=system_prompt
         )
         resp = model.generate_content(
             json.dumps({**meta, "recent_history": history} if history else meta),
@@ -160,6 +164,10 @@ def evaluate(meta: dict, policy_config: dict[str, Any] | None = None,
             risk_score=int(data.get("risk_score", 0)),
             decision=str(data.get("decision", "breach" if data.get("policy_breach") else "clean")),
             rules=[str(v)[:80] for v in data.get("rules", []) if isinstance(v, str)],
+            # Provenance is stamped here and nowhere else: this is the only line
+            # that knows a model actually answered, and which one. model_id is the
+            # id sent on the wire, so the record cannot drift from the call.
+            judge_provider="gemini", judge_model=model_id,
         )
     except Exception as exc:  # network / quota / bad-JSON / version drift
         # Log the TYPE only. Google authenticates with the API key as a ?key=...

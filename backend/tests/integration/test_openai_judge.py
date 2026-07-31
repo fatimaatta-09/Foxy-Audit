@@ -84,9 +84,13 @@ def test_openai_request_is_content_blind_and_parses_verdict(monkeypatch):
     body_text = json.dumps(captured["body"])
     assert "SECRET_RAW_PROMPT" not in body_text
     assert captured["timeout"] == 2.0
+    # P6f: the verdict now also names the model that produced it. Asserted as
+    # part of the whole object so a future field cannot slip in unnoticed.
     assert result == Verdict(policy_breach=True, reason="metadata rule matched",
                              risk_score=88, decision="breach",
-                             rules=["pii_signal"])
+                             rules=["pii_signal"],
+                             judge_provider="openai",
+                             judge_model=captured["body"]["model"])
 
 
 def test_openai_provider_failure_is_unknown(monkeypatch):

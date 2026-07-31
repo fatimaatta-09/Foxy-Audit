@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from .config import get_settings
 from .crypto_secrets import SecretDecryptionError, SecretsNotConfigured, decrypt_secret
 from .models import OrgPolicy, Organization
 
@@ -41,6 +42,53 @@ KEY_MODES = ("own", "platform")
 
 DEFAULT_PROVIDER = "gemini"
 DEFAULT_KEY_MODE = "own"
+
+# Which model versions an org may pin, per provider (P6f). One constant, in the
+# same spirit as PLATFORM_KEY_TIERS above: adding a model is a one-line change.
+#
+# The DEPLOYMENT DEFAULT IS NOT LISTED HERE and is not required to be. It comes
+# from settings.gemini_model / settings.openai_model and is always allowed, so a
+# deployment can move to a model this list has not heard of without anyone having
+# to edit it first. That ordering matters — the operator's setting outranks a
+# constant in source.
+JUDGE_MODELS = {
+    "gemini": ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"),
+    "openai": ("gpt-5.6", "gpt-5.6-mini", "chat-latest"),
+}
+
+
+def allowed_models(provider: str) -> tuple[str, ...]:
+    """The models this deployment will accept for a provider, default first.
+
+    The default is prepended rather than assumed present, and de-duplicated, so
+    the list is correct whether or not the running default happens to appear in
+    JUDGE_MODELS."""
+    settings = get_settings()
+    default = settings.gemini_model if provider == "gemini" else settings.openai_model
+    out = [default] if default else []
+    for m in JUDGE_MODELS.get(provider, ()):
+        if m not in out:
+            out.append(m)
+    return tuple(out)
+
+
+def resolve_model(provider: str, stored: str | None) -> str:
+    """The model id to grade with: the org's pin if we still honour it, else the
+    deployment default.
+
+    AN UNKNOWN STORED VALUE FALLS BACK; IT DOES NOT FAIL THE GRADE. A model that
+    was valid when an admin chose it can be retired by the provider months later,
+    and the org finds out through a grading outage it cannot diagnose. The same
+    posture the BYOK path takes when a key will not decrypt: record the problem,
+    carry on with something that works."""
+    settings = get_settings()
+    default = settings.gemini_model if provider == "gemini" else settings.openai_model
+    if stored and stored in allowed_models(provider):
+        return stored
+    if stored:
+        log.warning("org pinned an unknown %s judge model %r; using the "
+                    "deployment default %r", provider, stored, default)
+    return default
 
 
 def platform_keys_allowed(plan_tier: str | None) -> bool:
@@ -63,6 +111,13 @@ class JudgeRouting:
     key_mode: str = DEFAULT_KEY_MODE
     gemini_key: str | None = None
     openai_key: str | None = None
+    # The RESOLVED model id per provider — an org pin if it survived validation,
+    # otherwise the deployment default. Never None once resolve_judge_routing has
+    # run. Unlike the keys above these are safe to record: a model id identifies
+    # a public product, not a credential, and the verdict carries it so the ledger
+    # can say which model graded each event.
+    gemini_model: str | None = None
+    openai_model: str | None = None
     # Why a chosen provider had to be skipped (e.g. "no_byok_key"), for the
     # evaluator_unavailable reason string. Never contains key material.
     problems: dict[str, str] = field(default_factory=dict)
@@ -77,6 +132,9 @@ class JudgeRouting:
 
     def key_for(self, provider: str) -> str | None:
         return self.gemini_key if provider == "gemini" else self.openai_key
+
+    def model_for(self, provider: str) -> str | None:
+        return self.gemini_model if provider == "gemini" else self.openai_model
 
     def can_call(self, provider: str) -> bool:
         """False when this provider is chosen but has no usable key in own mode."""
@@ -118,7 +176,8 @@ def resolve_judge_routing(db: Session, org_id) -> JudgeRouting:
     oid = org_id if isinstance(org_id, uuid.UUID) else uuid.UUID(str(org_id))
     policy = db.get(OrgPolicy, oid)
     if policy is None:
-        return JudgeRouting()
+        return JudgeRouting(gemini_model=resolve_model("gemini", None),
+                            openai_model=resolve_model("openai", None))
 
     provider = policy.judge_provider if policy.judge_provider in PROVIDERS else DEFAULT_PROVIDER
     key_mode = policy.judge_key_mode if policy.judge_key_mode in KEY_MODES else DEFAULT_KEY_MODE
@@ -130,8 +189,14 @@ def resolve_judge_routing(db: Session, org_id) -> JudgeRouting:
             # downgrade): fall back to BYOK rather than spending Foxy's key.
             key_mode = "own"
 
+    # Resolved for BOTH key modes: whose key pays and which version runs are
+    # independent choices, and a platform-key org still gets to pick a model.
+    gemini_model = resolve_model("gemini", policy.gemini_judge_model)
+    openai_model = resolve_model("openai", policy.openai_judge_model)
+
     if key_mode == "platform":
-        return JudgeRouting(provider=provider, key_mode=key_mode)
+        return JudgeRouting(provider=provider, key_mode=key_mode,
+                            gemini_model=gemini_model, openai_model=openai_model)
 
     problems: dict[str, str] = {}
     gemini_key = (_decrypt_optional(policy.gemini_key_enc, oid, "gemini", problems)
@@ -140,4 +205,5 @@ def resolve_judge_routing(db: Session, org_id) -> JudgeRouting:
                   if provider in ("openai", "both") else None)
     return JudgeRouting(provider=provider, key_mode=key_mode,
                         gemini_key=gemini_key, openai_key=openai_key,
+                        gemini_model=gemini_model, openai_model=openai_model,
                         problems=problems)

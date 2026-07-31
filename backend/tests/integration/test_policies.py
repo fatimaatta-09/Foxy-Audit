@@ -48,7 +48,7 @@ def test_policy_flags_reach_the_judge(make_org, client, login, monkeypatch, conf
     from app.schemas import Verdict
     captured = {}
 
-    def fake_eval(meta, policy_config=None, history=None, api_key=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None, model=None):
         captured["policy_config"] = policy_config
         return Verdict(policy_breach=False, reason="stub", risk_score=0)
 
@@ -104,7 +104,7 @@ def test_policy_snapshot_is_bound_and_used_after_a_later_policy_change(
     from app.schemas import Verdict
     captured = {}
 
-    def fake_eval(meta, policy_config=None, history=None, api_key=None):
+    def fake_eval(meta, policy_config=None, history=None, api_key=None, model=None):
         captured["policy_config"] = policy_config
         return Verdict(decision="clean", reason="stub", risk_score=0)
 
