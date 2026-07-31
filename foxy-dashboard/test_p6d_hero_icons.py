@@ -136,13 +136,39 @@ def test_the_icons_are_decorative_to_assistive_tech(kpi_block):
 def test_each_card_takes_its_hue_from_its_own_icon(kpi_block):
     """The pairing is the point. An earlier pass used a fixed rotation and put
     the blue-green shield on an orange card — the one combination where the card
-    and the object sitting on it argued. These four are derived from the icons:
-    teal from the shield's blue-to-green, fox-orange from the bell's gold, indigo
-    from the chart's blue bars and violet line, rose against the pewter watch."""
+    and the object sitting on it argued. Each of these is derived from the icon
+    that sits on it:
+
+      teal    <- the shield's blue-to-green
+      fox     <- the alert diamond's red, one step back in the same warm family
+      blue    <- the chart's blue bars (the magenta is only the trend line)
+      violet  <- the gauge's violet dial
+
+    Blue and violet replaced indigo and rose when those two icons changed: a
+    violet dial beside an indigo card made them read as nearly the same tile."""
     tones = re.findall(r'class="stat kpi ([^"]+)"', kpi_block)
-    assert tones == ["k-teal", "k-status k-fox", "k-indigo", "k-pink"], (
+    assert tones == ["k-teal", "k-status k-fox", "k-blue", "k-violet"], (
         f"the Overview row's hues moved away from its icons: {tones}"
     )
+
+
+def test_the_alerts_tile_stays_orange_at_rest(html):
+    """Its fill IS the state signal — decorative at rest, coral once the count is
+    non-zero. Matching the icon's red at REST would leave the escalation nowhere
+    to go, so orange is deliberate: the same warm family as the diamond, one step
+    back from where the raised state lives."""
+    assert ".stat.kpi.k-status.k-fox .face{background:linear-gradient(145deg,#ff8b42,#dd5f18);color:var(--foxink);}" in html
+    assert ".stat.kpi.k-status.k-fox.is-raised .face{background:linear-gradient(145deg,#ff8d7d,#db4c3d);}" in html
+
+
+def test_the_retired_tone_is_gone_and_the_shared_one_is_not(html):
+    """.k-indigo existed only for the Overview chart tile, so moving that tile
+    off it leaves a rule nothing can reach. .k-pink looks equally unused on this
+    row but is NOT — the Billing tiles use it and the plans page cycles its TONE
+    array through it, so deleting it would blank a card on another page."""
+    assert ".k-indigo" not in html, "a tone class with no consumer is left over"
+    assert ".k-pink" in html, ".k-pink is still used by Billing and the TONE array"
+    assert "var TONE=['k-fox','k-blue','k-violet','k-pink'];" in html
 
 
 def test_no_decorative_fill_wears_a_status_colour(html):
