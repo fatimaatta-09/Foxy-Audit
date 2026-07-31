@@ -63,7 +63,7 @@ Three tiers plus the human surfaces:
 |---|---|
 | `sdk/src/foxy_audit/` | SDK: `client.py` (decorator + guard), `policy.py`, `pii.py`, `dispatch.py`, `spool.py`, `hashing.py` |
 | `backend/app/` | FastAPI app: `main.py` (3-ASGI), `chain.py`, `worker.py`, `gemini.py`, `openai_judge.py`, `judge.py`, `judge_routing.py`, `crypto_secrets.py`, `routers/`, `models.py` |
-| `backend/migrations/versions/` | Alembic (linear, head **0056**; 55 files — the number `0023` was never used) |
+| `backend/migrations/versions/` | Alembic (linear, head **0059**; 58 files — the number `0023` was never used) |
 | `foxy-dashboard/` · `foxy-adminpage/` · `foxy-sale-page/` | Web UIs (CSP-safe: inline SVG charts, embedded fonts, no CDN; token-driven theming) |
 | `verifier/` · `demo/` · `contracts/` | Standalone verifier · demos (`mock_llm.py`, `offline_demo.py`, `live_openai_client.py`) · `AnchorRegistry.sol` |
 | `deploy/` · `.github/workflows/` | Prod compose + `.env.example` · `ci.yml` / `deploy.yml` / `release.yml` |
