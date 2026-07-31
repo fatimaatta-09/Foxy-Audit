@@ -58,15 +58,36 @@ SEVERITY = {"high": ("high severity", "bad"), "med": ("medium severity", "warn")
 NO_MATCH = "No safeguard matches your search."
 
 # Option lists quoted verbatim from the web's <option> text so the two products
-# describe the same setting the same way (html:1319-1332).
-ENFORCEMENT = (("block", "block on breach — highest protection"),
-               ("flag", "flag only, allow through"),
-               ("monitor", "silent monitor (log only)"))
+# describe the same setting the same way. Cited by element id rather than line
+# number — the previous cite (html:1319-1332) had rotted by roughly a thousand
+# lines while still reading as precise, and by then it was also wrong about the
+# TEXT: ENFORCEMENT and NOTIFY below had both drifted from the web and nothing
+# noticed, because a comment claiming verbatim quotation is not a test.
+#
+# Standing owner rule: the WEB WINS on any style or copy conflict. When these
+# disagree, copy the web's string across, do not meet in the middle.
+#
+#   ENFORCEMENT  #polEnforcement   CONFIDENCE  #polConfidence
+#   NOTIFY       #polNotify        PROVIDERS   #polProvider
+#
+# ENFORCEMENT carried pre-98e1399 prevention language ("block on breach —
+# highest protection", "flag only, allow through") for the whole life of this
+# module. enforcement_mode is read AFTER the model call, so it can never block
+# or allow anything; the web replaced those labels with Urgent / Notify / Silent
+# and these are that text, verbatim (P5 §B).
+ENFORCEMENT = (("block", "Urgent — escalate on breach"),
+               ("flag", "Notify — raise an alert"),
+               ("monitor", "Silent — record only"))
 CONFIDENCE = (("high", "high — fewer false positives"),
               ("balanced", "balanced (default)"),
               ("low", "low — catch every edge case"))
+# "digest" keeps its stored value — notify_on_breach is inside foxy-policy-v1 —
+# but its label said "batch — hourly digest" and no hourly digest exists or ever
+# has. Choosing it means no breach email at all, EXCEPT under Urgent, which P5 §A
+# escalates into a sent one. The label now states both. Byte-identical to the
+# web's #polNotify option; test_p4c_policy_ui compares the two strings directly.
 NOTIFY = (("immediate", "immediate alert"),
-          ("digest", "batch — hourly digest"),
+          ("digest", "no email — unless handling is Urgent"),
           ("none", "no notification"))
 PROVIDERS = (("gemini", "Google Gemini"), ("openai", "OpenAI"),
              ("both", "Both — graded twice, any breach wins"))

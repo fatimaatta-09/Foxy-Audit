@@ -2382,16 +2382,49 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
                The old labels — "block on breach", "flag only, allow through" —
                described prevention. This field is read AFTER the model call, so it
                cannot prevent anything; the strongest thing a post-hoc setting can
-               do is escalate. Urgent / Notify / Silent says that, and matches what
-               the planned consumer will actually do with each value: severe and
-               un-batchable, ordinary notification, suppressed. -->
+               do is escalate. Urgent / Notify / Silent says that.
+
+               P5 §A shipped the consumer — docs/plans/p5-enforcement-consumer.md,
+               migration 0059. It lives in the two breach SEND paths and NOWHERE
+               else: org_notifications.send_breach_notice and
+               user_notifications.send_breach_alert read the org's live policy row
+               at send time. Grading is identical in all three modes and the judge
+               never sees this field (judge_policy_config drops it).
+
+                 block    escalates notify_on_breach="digest" into a sent email.
+                          "none" is still honoured; an escalation that overrides
+                          an off switch would be a dark pattern.
+                 flag     unchanged. The ordinary path, and after 0059 the value
+                          every workspace holds unless somebody chose otherwise.
+                 monitor  suppresses BOTH breach emails. The verdict, the chain
+                          entry and the in-app Alerts row are written regardless —
+                          it means "do not email me", not "do not look".
+
+               This comment previously promised "severe and un-batchable". Neither
+               was ever built: block escalates batching rather than refusing it,
+               and no un-batchable path has ever existed.
+
+               NOTE FOR WHOEVER EDITS THIS NEXT: keep the "greater than" character
+               out of this comment. test_p4c_policy_ui strips tags with a regex
+               that stops at the first one, so a comment containing it spills its
+               prose into assertions that are meant to read only visible copy —
+               which is how a test can be satisfied by an explanation of the very
+               thing it was written to forbid. -->
           <select id="polEnforcement"><option value="block">Urgent — escalate on breach</option><option value="flag">Notify — raise an alert</option><option value="monitor">Silent — record only</option></select>
-          <div class="lvcustom" id="polEnforcementNote" style="margin-top:10px;">
-            How loudly you want a breach treated <strong>once the judge has already found
-            one</strong> — never whether it happens. Recorded, not yet acted on: the value is
-            stored and written into your evidence snapshot so an auditor can see what you had
-            configured, but nothing in the grading pipeline reads it today. To stop a prompt
-            reaching a model at all, use the SDK enforcement setting below.
+          <div id="polEnforcementNote" style="font-size:11px;color:var(--muted);line-height:1.55;margin-top:10px;">
+            How loudly a breach is treated <strong>once the judge has already found
+            one</strong> — never whether it happens.
+            <ul style="margin:8px 0 0 16px;padding:0;">
+              <li style="margin-bottom:5px;"><strong>Urgent</strong> — a breach emails you
+                unless you chose no notification below.</li>
+              <li style="margin-bottom:5px;"><strong>Notify</strong> — a breach emails you
+                only if you chose immediate alert below.</li>
+              <li style="margin-bottom:5px;"><strong>Silent</strong> — a breach never emails
+                you. It is still recorded: it appears in Alerts, in your ledger and in your
+                export.</li>
+            </ul>
+            <div style="margin-top:8px;">To stop a prompt reaching a model at all, use the
+            SDK enforcement setting below.</div>
           </div>
         </div>
 <div class="clay pad">
@@ -2438,7 +2471,18 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <details class="polgroup" open style="margin-top:0;border-top:0;">
             <summary style="display:none;">Alerts</summary>
             <div class="flabel">notification on breach</div>
-            <select id="polNotify"><option value="immediate">immediate alert</option><option value="digest">batch — hourly digest</option><option value="none">no notification</option></select>
+            <!-- The middle value stays "digest" on the wire: notify_on_breach is inside
+                 foxy-policy-v1 (policy_snapshot.py), so the stored string cannot be
+                 renamed without destabilising every snapshot already exported — the same
+                 constraint that made enforcement_mode a relabel. The LABEL had to change:
+                 it said "batch — hourly digest" and there is no hourly digest and never
+                 has been. Both senders treat anything but "immediate" as send-nothing, and
+                 the weekly digest runs off a per-user preference, never off this field. So
+                 choosing it meant silence, while the label sold batching. It is now true in
+                 both directions: silent normally, delivered when handling is Urgent, which
+                 is the one escalation P5 §A added. Keep this string byte-identical to
+                 desktop/policy_data.py::NOTIFY — test_p4c_policy_ui pins them together. -->
+            <select id="polNotify"><option value="immediate">immediate alert</option><option value="digest">no email — unless handling is Urgent</option><option value="none">no notification</option></select>
             <div class="flabel">alert email <span style="color:var(--muted);font-weight:400;">(blank = workspace contact)</span></div>
             <input class="cin" id="polNotifyEmail" type="email" placeholder="security@yourco.com">
             <div class="flabel">webhook URL <span style="color:var(--muted);font-weight:400;">(optional — POSTed on each breach)</span></div>
@@ -4071,7 +4115,11 @@ async function loadLoginHistory(scope){
     const wh=(($('polNotifyWebhook')||{}).value||'').trim();
     const body={ pii_detection:!!($('polPii')||{}).checked, prompt_injection:!!($('polInjection')||{}).checked,
       regulated_data_mode:!!($('polRegulated')||{}).checked, max_token_threshold:(mt>0?mt:50000),
-      enforcement_mode:($('polEnforcement')||{}).value||'block', confidence_threshold:($('polConfidence')||{}).value||'balanced',
+      // 'flag', not 'block': migration 0059 moved the column and schema default
+      // (models.py, routers/policies.py) so that Urgent is a deliberate choice
+      // rather than a value every workspace inherited. A stale fallback here
+      // would write the old default back on any save that reached it.
+      enforcement_mode:($('polEnforcement')||{}).value||'flag', confidence_threshold:($('polConfidence')||{}).value||'balanced',
       // ALWAYS present, never omitted. The server reads absence as "keep what you
       // have" (policies.py, model_fields_set), so "Not set" has to travel as an
       // explicit null — dropping the key would silently retain the old value and

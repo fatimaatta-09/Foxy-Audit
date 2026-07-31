@@ -187,14 +187,156 @@ def test_the_sdk_control_keeps_its_block_label(html):
 
 
 def test_the_judge_setting_does_not_claim_to_stop_anything(html):
-    """It is read by nothing today. Saying otherwise is the lie that started
-    this — the owner could not tell whether changing it did anything, because it
-    did not."""
+    """Saying otherwise is the lie that started this — the owner could not tell
+    whether changing it did anything.
+
+    The "reads it today" half of this assertion moved out when P5 §A gave the
+    field a consumer; see test_the_note_no_longer_calls_the_field_unread."""
     judge = _card(html, "After grading")
     flat = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", judge)).lower()
     assert "after" in flat
     assert "does not stop anything from reaching a model" in flat
-    assert "nothing in the grading pipeline reads it today" in flat
+
+
+# ══ P5 §B — the page stops apologising for a field that now works ══════════
+
+def _note(html_text: str) -> str:
+    """The #polEnforcementNote div, and nothing around it.
+
+    Sliced by id rather than off the card, deliberately. `_card` hands back the
+    HTML comment above the select too, and the tag-stripping regex below stops at
+    the first "greater than" character — so a comment that contains one leaks its
+    own prose into the visible text. A test hunting for a removed phrase can then
+    be satisfied by the comment explaining the removal. That trap has landed
+    three phases running; this helper is how this file stops stepping in it."""
+    at = html_text.index('id="polEnforcementNote"')
+    start = html_text.rindex("<div", 0, at)
+    end = html_text.index("</div>\n        </div>", at)
+    return html_text[start:end]
+
+
+def _flat(fragment: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", fragment)).strip().lower()
+
+
+def test_the_explanatory_comment_cannot_leak_into_visible_text(html):
+    """The trap itself, pinned. Every assertion in this file that reads "visible
+    copy" strips tags with `<[^>]+>`, which treats an HTML comment as one tag
+    only while the comment holds no "greater than" character. Put one in and the
+    remainder becomes text, and prose about a removal starts satisfying tests
+    written to forbid the thing removed."""
+    judge = _card(html, "After grading")
+    for comment in re.findall(r"<!--.*?-->", judge, re.S):
+        assert ">" not in comment[4:-3], (
+            "the comment above the enforcement select contains a 'greater than' "
+            "character, so its prose now leaks into every visible-text assertion "
+            "in this file")
+
+
+def test_the_note_no_longer_calls_the_field_unread(html):
+    """P5 §A shipped the consumer (org_notifications.send_breach_notice /
+    user_notifications.send_breach_alert, migration 0059). The note used to say
+    "Recorded, not yet acted on … nothing in the grading pipeline reads it
+    today", which became false the moment that merged.
+
+    Matched on the CLAIM, not on the replacement prose — the copy will be edited
+    again and a guard pinned to it would just be deleted next time."""
+    flat = _flat(_note(html))
+    for dead in ("not yet acted on", "reads it today", "nothing in the grading",
+                 "not yet", "no consumer"):
+        assert dead not in flat, (
+            f"the enforcement note still claims the field is inert ({dead!r}) — "
+            "it has had a consumer since P5 §A")
+
+
+def test_the_note_states_a_consequence_for_every_mode(html):
+    """Three stored values, three consequences. Keyed off the labels the select
+    actually renders, so adding a fourth mode — or renaming one — fails here
+    instead of silently shipping a note that covers two of three."""
+    m = re.search(r'<select id="polEnforcement">(.*?)</select>', html, re.S)
+    labels = re.findall(r"<option value=\"\w+\">([^<]*)</option>", m.group(1))
+    heads = [label.split("—")[0].strip() for label in labels]
+    assert heads == ["Urgent", "Notify", "Silent"], heads
+    flat = _flat(_note(html))
+    for head in heads:
+        assert head.lower() in flat, (
+            f"the note says nothing about {head!r}, so one of the three modes "
+            "ships with no stated consequence")
+    # …and it still carries the two claims that survived the rewrite.
+    assert "already found" in flat, "the note stopped saying the judge found it first"
+    assert "sdk enforcement setting below" in flat, \
+        "the note stopped pointing at the only control that can stop a call"
+
+
+def test_silent_says_the_finding_is_still_recorded(html):
+    """`monitor` suppresses DELIVERY, never RECORDING —
+    routers/account.py backfills a kind="breach" in-app notification straight off
+    the ledger, independent of email. Without this clause "Silent — record only"
+    reads as a hole in the audit trail rather than a mail preference."""
+    flat = _flat(_note(html))
+    silent = flat[flat.index("silent"):]
+    assert "still recorded" in silent
+    assert "alerts" in silent and "ledger" in silent and "export" in silent
+
+
+def test_the_digest_label_is_identical_on_both_surfaces(html):
+    """THE ONE THAT STOPS A THIRD DRIFT. The desktop's own comment claimed its
+    options were "quoted verbatim from the web" while both this label and the
+    enforcement labels had drifted — a comment is not a test. These two strings
+    are now compared directly."""
+    m = re.search(r'<select id="polNotify">(.*?)</select>', html, re.S)
+    assert m, "the notification-on-breach select is gone"
+    web = dict(re.findall(r'<option value="(\w+)">([^<]*)</option>', m.group(1)))
+    desktop_src = (Path(__file__).resolve().parents[1] / "desktop" / "policy_data.py"
+                   ).read_text(encoding="utf-8")
+    block = desktop_src[desktop_src.index("NOTIFY = ("):]
+    block = block[:block.index(")\n")]
+    native = dict(re.findall(r'\("(\w+)", "([^"]*)"\)', block))
+    assert set(web) == set(native) == {"immediate", "digest", "none"}
+    for value in ("immediate", "digest", "none"):
+        assert web[value] == native[value], (
+            f"notify_on_breach {value!r} reads {web[value]!r} on the web and "
+            f"{native[value]!r} on the desktop — the two products describe one "
+            "setting two different ways")
+
+
+def test_the_digest_label_no_longer_promises_a_digest(html):
+    """There is no hourly digest and there never has been: both senders treat
+    anything but "immediate" as send-nothing, and send_weekly_digests runs off
+    the per-user notify_weekly_digest preference, never off this field. The label
+    sold batching and delivered silence."""
+    m = re.search(r'<select id="polNotify">(.*?)</select>', html, re.S)
+    label = dict(re.findall(r'<option value="(\w+)">([^<]*)</option>',
+                            m.group(1)))["digest"].lower()
+    for lie in ("hourly", "digest", "batch"):
+        assert lie not in label, (
+            f"{lie!r} is back in the notify_on_breach label — no such delivery "
+            "exists (Worth Noting #29)")
+    # …and the value itself is untouched: it lives in foxy-policy-v1.
+    assert 'value="digest"' in m.group(1)
+
+
+def test_the_enforcement_labels_are_identical_on_both_surfaces(html):
+    """Same rule as the digest label, applied to the tuple the desktop had been
+    carrying pre-98e1399 prevention language in. Web wins, verbatim."""
+    m = re.search(r'<select id="polEnforcement">(.*?)</select>', html, re.S)
+    web = dict(re.findall(r'<option value="(\w+)">([^<]*)</option>', m.group(1)))
+    desktop_src = (Path(__file__).resolve().parents[1] / "desktop" / "policy_data.py"
+                   ).read_text(encoding="utf-8")
+    block = desktop_src[desktop_src.index("ENFORCEMENT = ("):]
+    block = block[:block.index(")\n")]
+    native = dict(re.findall(r'\("(\w+)", "([^"]*)"\)', block))
+    assert web == native, f"web {web} vs desktop {native}"
+
+
+def test_the_save_default_matches_the_migrated_column_default(html):
+    """0059 moved the server default block -> flag so that Urgent is a deliberate
+    choice. A stale ||'block' here writes the old default straight back."""
+    js = _scripts().replace(" ", "")
+    assert "enforcement_mode:($('polEnforcement')||{}).value||'flag'" in js, \
+        "the save path no longer defaults enforcement_mode to the migrated 'flag'"
+    assert "value||'block'" not in js, \
+        "a save path still falls back to the pre-0059 'block' default"
 
 
 def test_the_sdk_setting_says_when_it_applies(html):
