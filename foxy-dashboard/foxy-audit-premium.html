@@ -497,6 +497,39 @@ html[data-theme="light"] .crumb-logo{filter:brightness(0);opacity:.42;}
 .pill.redacted{background:var(--c-4);color:#3a0620;}
 .pill i{width:5px;height:5px;border-radius:50%;background:currentColor;}
 
+/* ════════ P6b §1 · remembered verification state (ledger detail row) ════════
+   COLOUR LIVES ON THE STATE CLASS, never on .vfy itself. A base-scoped rule —
+   especially a themed one — outranks `.vfy.ok`/`.vfy.bad` on specificity and
+   paints both states the same; that shipped once in P6a and was invisible in
+   every screenshot. --safe-ink and --breach-ink are already theme-aware, so
+   there is no theme override here at all, which is the version that cannot
+   collide. Both are the file's BARE-TEXT status tokens (the pill fills are a
+   different pair and fail as words on light paper). */
+.vfy-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px;}
+.vfy{display:inline-flex;align-items:center;gap:6px;border-radius:20px;
+  padding:4px 10px;font-size:10.5px;font-weight:800;letter-spacing:.2px;line-height:1;}
+.vfy.ok{color:var(--safe-ink);background:rgba(61,220,132,.13);}
+.vfy.bad{color:var(--breach-ink);background:rgba(255,77,77,.13);}
+.vfy-tick{width:13px;height:13px;flex-shrink:0;}
+.vfy-tick path{fill:none;stroke:currentColor;stroke-width:2.8;
+  stroke-linecap:round;stroke-linejoin:round;}
+/* The age is never optional furniture: it is what stops a remembered result
+   from reading as a live one. Same muted tone as the rest of the detail row. */
+.vfy-age{font-family:var(--mono);font-size:9.5px;color:var(--muted);}
+@media(prefers-reduced-motion:no-preference){
+  /* `.fresh` is set ONLY by a verification that just returned — a check-mark
+     that redraws itself on every page load would be claiming, once a second,
+     that something just happened. The remembered state renders instantly. */
+  .vfy.ok.fresh .vfy-tick path{stroke-dasharray:26;stroke-dashoffset:26;
+    animation:vfydraw .44s .05s cubic-bezier(.2,.7,.3,1) forwards;}
+  .vfy.ok.fresh{animation:vfyglow 1.1s ease-out;}
+}
+@keyframes vfydraw{to{stroke-dashoffset:0;}}
+@keyframes vfyglow{
+  0%{box-shadow:0 0 0 0 rgba(61,220,132,.5);}
+  100%{box-shadow:0 0 0 9px rgba(61,220,132,0);}
+}
+
 /* ════════ ALERTS ════════ */
 .arow{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:2px dashed var(--line);}
 .arow:last-child{border-bottom:none;}
@@ -891,7 +924,13 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .foxdlg-box{width:420px;max-width:94%;background:var(--surf);border-radius:var(--r-lg);
   box-shadow:var(--raise-lg);padding:20px;}
 .foxdlg-t{font-weight:800;font-size:15px;letter-spacing:-.3px;}
-.foxdlg-b{font-size:11.5px;color:var(--muted);line-height:1.65;margin-top:8px;}
+/* pre-line so a body can carry its own paragraph breaks. The body is written
+   with textContent, never innerHTML, so this is the only way a multi-part
+   explanation can have structure — and it keeps the dialog unable to render
+   markup that arrived from the API. Existing single-line callers are unchanged:
+   pre-line still collapses runs of spaces and still wraps normally. */
+.foxdlg-b{font-size:11.5px;color:var(--muted);line-height:1.65;margin-top:8px;
+  white-space:pre-line;}
 .foxdlg .btnrow{margin-top:16px;}
 @media(prefers-reduced-motion:no-preference){ .foxdlg.on .foxdlg-box{animation:afade .16s ease both;} }
 
@@ -1589,17 +1628,11 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div id="verifyResult" style="display:none;"></div>
         </div>
         <div>
-          <details class="clay pad">
-            <summary style="font-weight:700;font-size:11.5px;cursor:pointer;">How the fingerprint works <span style="color:var(--muted);font-weight:500;">· advanced</span></summary>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin:10px 0;">For current SDK capture, raw content stays local while customer-keyed commitments are sent to Foxy. The backend canonically serializes those commitments with operational metadata and the preceding chain hash. Altering a stored record breaks verification; the full-ledger check below also detects gaps.</div>
-            <div class="codebox">
-              prompt_commitment &nbsp;= HMAC-SHA256(customer_key, canonical_prompt)<br>
-              response_commitment = HMAC-SHA256(customer_key, canonical_response)<br>
-              chain_hash &nbsp;= SHA256(canonical_record + previous_chain_hash)
-            </div>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:10px;">For independent offline proof, export your ledger and run <code>python verifier/foxy_verify.py foxy-audit-logs.json</code>. Known-content checks require your customer-held commitment key and an events sidecar; neither is sent to Foxy.</div>
-          </details>
-          <div class="clay pad" style="margin-top:14px;">
+          <!-- P6b §2 · "How the fingerprint works" moved to Settings, beside the
+               Trust badge card, with the rest of the proof material. The card
+               that used to sit below it led with margin-top:14px to clear it;
+               with nothing above, that margin was a gap at the top of a column. -->
+          <div class="clay pad">
             <button class="btn pri" id="chainCheckBtn" style="margin-top:0;">Verify the whole ledger</button>
             <button class="btn ghost" id="anchorNowBtn" style="margin-top:8px;">Anchor now</button>
             <div class="vres" id="chainCheckResult"></div>
@@ -1801,20 +1834,13 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div id="keysPager"></div>
         </div>
       </div>
-      <div class="clay pad" style="max-width:780px;margin-top:16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Connect the SDK</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Wrap any AI call with the decorator — only SHA-256 hashes + metadata leave your machine, never the prompt or response text.</div>
-        <div class="flabel" style="margin-top:0;">1 · install</div>
-        <div class="codebox">pip install foxy-audit</div>
-        <div class="flabel">2 · set your key (from “+ new key” above)</div>
-        <div class="codebox">export FOXY_API_KEY=foxy_sk_your_key_here</div>
-        <div class="flabel">3 · decorate your model call</div>
-        <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.audit(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
-        <div class="btnrow" style="flex-wrap:wrap;align-items:center;">
-          <button class="btn half" onclick="checkSdkConnection(this)" style="margin-top:0;">Test connection</button>
-          <a class="btn ghost half" style="margin-top:0;text-decoration:none;" href="https://foxyaudit.tech/blog/connect-the-sdk.html" target="_blank" rel="noopener">Read the setup guide</a>
-        </div>
-        <span id="sdkCheckOut" style="font-size:11px;font-weight:700;"></span>
+      <!-- P6b §3 · the "Connect the SDK" card moved to Settings. Somebody who has
+           just minted their first key is one step from needing it, so this is a
+           pointer rather than a silent removal — a dead end here is how a new
+           workspace stalls with a key and nothing to use it on. -->
+      <div style="max-width:780px;margin-top:14px;font-size:11px;color:var(--muted);line-height:1.6;">
+        Got a key? The install-and-decorate steps live in
+        <b onclick="go('settings',null)" style="color:var(--fox2);cursor:pointer;">Settings → Connect the SDK</b>.
       </div>
     </div>
 
@@ -1998,6 +2024,20 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <button class="btn ghost" onclick="revokeBadge()" style="margin-left:8px;">Revoke</button>
             <div id="badgeOut" style="margin-top:12px;display:none;"></div>
           </div>
+<!-- P6b §2 · moved here from Verify. It explains how the proof is CONSTRUCTED,
+     which is reference material, not part of running a check — it belongs with
+     the trust badge and "What Foxy stores", not above the button you came to
+     press. Static markup, no JS depends on it. -->
+<details class="clay pad" style="margin-bottom:14px;">
+            <summary style="font-weight:700;font-size:11.5px;cursor:pointer;">How the fingerprint works <span style="color:var(--muted);font-weight:500;">· advanced</span></summary>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin:10px 0;">For current SDK capture, raw content stays local while customer-keyed commitments are sent to Foxy. The backend canonically serializes those commitments with operational metadata and the preceding chain hash. Altering a stored record breaks verification; the full-ledger check on Verify also detects gaps.</div>
+            <div class="codebox">
+              prompt_commitment &nbsp;= HMAC-SHA256(customer_key, canonical_prompt)<br>
+              response_commitment = HMAC-SHA256(customer_key, canonical_response)<br>
+              chain_hash &nbsp;= SHA256(canonical_record + previous_chain_hash)
+            </div>
+            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:10px;">For independent offline proof, export your ledger and run <code>python verifier/foxy_verify.py foxy-audit-logs.json</code>. Known-content checks require your customer-held commitment key and an events sidecar; neither is sent to Foxy.</div>
+          </details>
 <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">What Foxy stores</div>
             <div style="font-size:11px;color:var(--muted);line-height:1.65;">
@@ -2013,6 +2053,26 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <a class="btn ghost" href="https://foxyaudit.tech/download/FoxyAudit-x86_64.AppImage" style="text-decoration:none;display:inline-block;margin-left:8px;">Linux (AppImage)</a>
             <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5;">Early build — Windows may show a SmartScreen notice (More info → Run anyway); on Linux <code>chmod +x</code> the AppImage.</div>
           </div>
+<!-- P6b §3 · moved here from Access. window.checkSdkConnection resolves
+     #sdkCheckOut by id at call time, so it keeps working from where it is —
+     the id travels with this markup and nothing had to follow it.
+     Step 2 used to read "from '+ new key' above"; the key table is on Access
+     now, so the instruction names the page instead of pointing at a direction. -->
+<div class="clay pad" style="margin-bottom:14px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Connect the SDK</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Wrap any AI call with the decorator — only SHA-256 hashes + metadata leave your machine, never the prompt or response text.</div>
+        <div class="flabel" style="margin-top:0;">1 · install</div>
+        <div class="codebox">pip install foxy-audit</div>
+        <div class="flabel">2 · set your key (mint one under Access → “+ new key”)</div>
+        <div class="codebox">export FOXY_API_KEY=foxy_sk_your_key_here</div>
+        <div class="flabel">3 · decorate your model call</div>
+        <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.audit(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
+        <div class="btnrow" style="flex-wrap:wrap;align-items:center;">
+          <button class="btn half" onclick="checkSdkConnection(this)" style="margin-top:0;">Test connection</button>
+          <a class="btn ghost half" style="margin-top:0;text-decoration:none;" href="https://foxyaudit.tech/blog/connect-the-sdk.html" target="_blank" rel="noopener">Read the setup guide</a>
+        </div>
+        <span id="sdkCheckOut" style="font-size:11px;font-weight:700;"></span>
+      </div>
 <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Help &amp; support</div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Questions, a bug, or help getting set up? We read every message.</div>
@@ -3102,6 +3162,77 @@ async function loadLoginHistory(scope){
     }
   }
 
+  /* ── P6b §1 · remembered verification results ───────────────────────────────
+     verifyRecord() used to keep its answer in the button's own textContent, so
+     the answer survived neither a refresh nor a filter change — loadLogs()
+     rewrites ledgerBody wholesale, which threw the result away while the row was
+     still on screen. A user who verified ten records and paged forward lost all
+     ten, on the page whose entire job is evidence.
+
+     What is stored is deliberately thin: a chain hash the user has already been
+     shown, a boolean, and when it was checked. No prompt text, no response text,
+     no metadata. localStorage is not a place to widen this product's footprint.
+
+     A remembered result is a fact about the PAST, and it is never rendered as a
+     bare present-tense claim — the age rides along with it and a re-check is one
+     click away. "Verified", with no date and no way to ask again, is exactly the
+     kind of reassurance this product exists to refuse. */
+  const VFY_KEY='foxy_verified_records', VFY_MAX=200, VFY_TTL=7*24*60*60*1000;
+  let _vfyMap={};
+  function vfyRead(){
+    try{
+      const raw=JSON.parse(localStorage.getItem(VFY_KEY)||'{}');
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))return {};
+      const now=Date.now(), out={};
+      Object.keys(raw).forEach(k=>{
+        const e=raw[k];
+        if(!e||typeof e.at!=='number')return;
+        if(now-e.at>VFY_TTL)return;         // expired → exactly as if never checked
+        out[k]={verified:!!e.verified,at:e.at};
+      });
+      return out;
+    }catch(e){ return {}; }                 // private mode, quota, or junk in the key
+  }
+  function vfyWrite(hash,verified){
+    try{
+      const m=vfyRead();                    // re-read: another tab may have written
+      m[hash]={verified:!!verified,at:Date.now()};
+      const keys=Object.keys(m);
+      if(keys.length>VFY_MAX){
+        keys.sort((a,b)=>m[a].at-m[b].at);  // oldest first, drop the excess
+        keys.slice(0,keys.length-VFY_MAX).forEach(k=>{ delete m[k]; });
+      }
+      localStorage.setItem(VFY_KEY,JSON.stringify(m));
+      _vfyMap=m;
+    }catch(e){}
+  }
+  // Same wording as the global [data-ago] ticker so the string does not change
+  // shape on the first tick after render.
+  function vfyAgo(at){
+    let s=Math.round((Date.now()-at)/1000); if(s<0)s=0;
+    if(s<45)return 'just now';
+    const m=Math.round(s/60); if(m<60)return m+'m ago';
+    const h=Math.round(m/60); if(h<24)return h+'h ago';
+    return Math.round(h/24)+'d ago';
+  }
+  function vfyBtn(hash,label){
+    return '<button class="btn ghost sm" style="margin-top:0;" onclick="verifyRecord(\''
+      +esc(hash)+'\',this)">'+label+'</button>';
+  }
+  /* The remembered state and the freshly-returned one render through ONE
+     function, so the wording cannot drift between "you just checked this" and
+     "you checked this on Tuesday". `fresh` adds the motion, nothing else. */
+  function vfyMark(entry,fresh){
+    const ok=entry.verified;
+    const tick=ok
+      ? '<svg class="vfy-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.8l4.9 4.9L19.5 7.1"/></svg>'
+      : '<svg class="vfy-tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.2v8.4"/><path d="M12 17.9v.2"/></svg>';
+    const iso=new Date(entry.at).toISOString();
+    return '<span class="vfy '+(ok?'ok':'bad')+(fresh?' fresh':'')+'">'+tick
+      +(ok?'verified — untampered':'mismatch — altered')+'</span>'
+      +'<span class="vfy-age">· checked <span data-ago="'+iso+'">'+vfyAgo(entry.at)+'</span></span>';
+  }
+
   function ledgerRow(it){
     const {v,cls}=verdictOf(it);
     const t=new Date(it.created_at).toLocaleTimeString();
@@ -3110,6 +3241,7 @@ async function loadLoginHistory(scope){
     const risk=(gv.risk_score!=null?gv.risk_score:'');
     const reason=esc(gv.reason||(it.grading_status==='graded'?'no issues found':'awaiting grading'));
     const pii=(it.pii_signals&&it.pii_signals.length)?it.pii_signals.map(esc).join(', '):'none detected';
+    const remembered=_vfyMap[it.chain_hash];
     const detail='<tr id="det-'+it.seq+'" style="display:none;"><td colspan="4" style="padding:0 10px 12px;">'
       +'<div style="font-size:11px;line-height:1.7;padding:11px 13px;border:2px dashed var(--line);border-radius:10px;">'
       +'<div><b>verdict:</b> '+v+(gv.decision?' ('+esc(gv.decision)+')':'')+(risk!==''?' · risk '+risk:'')+'</div>'
@@ -3117,7 +3249,9 @@ async function loadLoginHistory(scope){
       +'<div><b>PII signals:</b> '+pii+'</div>'
       +'<div><b>grading:</b> '+esc(it.grading_status)+(it.agent?' · agent '+esc(it.agent):'')+' · policy '+esc(it.policy_tag||'—')+'</div>'
       +'<div style="font-family:var(--mono);font-size:9.5px;word-break:break-all;margin-top:4px;"><b>chain hash:</b> '+esc(it.chain_hash)+'</div>'
-      +'<button class="btn ghost sm" style="margin-top:9px;" onclick="verifyRecord(\''+esc(it.chain_hash)+'\',this)">verify this record</button>'
+      +'<div class="vfy-row">'+(remembered
+          ? vfyMark(remembered,false)+vfyBtn(it.chain_hash,'re-check')
+          : vfyBtn(it.chain_hash,'verify this record'))+'</div>'
       +'</div></td></tr>';
     // §5.4 · this was a bare <tr> with an onclick: no tabindex, no role, no key
     // handler. Not "a row missing its focus ring" — a control the keyboard
@@ -3140,10 +3274,23 @@ async function loadLoginHistory(scope){
     if(tr)tr.setAttribute('aria-expanded',open?'true':'false');
   };
   window.verifyRecord=async function(hash,btn){
+    const row=(btn&&btn.closest)?btn.closest('.vfy-row'):null;
     if(btn){ btn.disabled=true; btn.textContent='verifying…'; }
-    try{ const r=await api('/v1/verify/hash/'+encodeURIComponent(hash)); const d=await r.json();
-      if(btn){ btn.disabled=false; btn.textContent=(d.verified?'✓ verified — untampered':'⚠ mismatch — altered'); btn.className='btn '+(d.verified?'':'danger')+' sm'; }
-    }catch(e){ if(btn){ btn.disabled=false; btn.textContent='could not verify'; } }
+    try{
+      const r=await api('/v1/verify/hash/'+encodeURIComponent(hash));
+      const d=await r.json();
+      vfyWrite(hash,d.verified);
+      const entry={verified:!!d.verified,at:Date.now()};
+      if(row)row.innerHTML=vfyMark(entry,true)+vfyBtn(hash,'re-check');
+      else if(btn){ btn.disabled=false;
+        btn.textContent=d.verified?'✓ verified — untampered':'⚠ mismatch — altered'; }
+    }catch(e){
+      /* A failed REQUEST is not a failed verification, so nothing is remembered
+         here. "We could not ask" and "the record is intact" are different facts
+         and only one of them is evidence — caching the first as the second is
+         how a verifier starts lying. */
+      if(btn){ btn.disabled=false; btn.textContent='could not verify — retry'; }
+    }
   };
   function _ledgerQuery(){
     const q=(($('ledgerQ')||{}).value||'').trim();
@@ -3167,6 +3314,10 @@ async function loadLoginHistory(scope){
 
   async function loadLogs(){
     let d; try{ d=await (await api('/v1/logs'+_ledgerQuery())).json(); }catch(e){ return; }
+    // Read the remembered results ONCE per load, not once per row — this is the
+    // call that re-paints them after the refresh or filter change that used to
+    // lose them. Expiry is applied on read, so a stale entry simply is not here.
+    _vfyMap=vfyRead();
     const rows=d.items||[];
     _ledgerTotal=d.total||0;
     const body=$('ledgerBody');
@@ -4850,8 +5001,20 @@ async function loadLoginHistory(scope){
   var api=function(p,o){return fetch(p,Object.assign({credentials:'same-origin'},o||{}));};
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
   function rel(s){ if(!s)return ''; try{ var d=(Date.now()-new Date(s).getTime())/1000; if(d<60)return 'just now'; if(d<3600)return Math.floor(d/60)+'m ago'; if(d<86400)return Math.floor(d/3600)+'h ago'; return Math.floor(d/86400)+'d ago'; }catch(e){ return ''; } }
+  /* P6b §4 · the whole notification is kept by id so the detail dialog can read
+     the fields the API already returned, instead of threading five values
+     through an onclick attribute and escaping each one. Both list renderers fill
+     this; a row can only be clicked if it was rendered, so it is always primed. */
+  var _notifById={};
+
   function notifRow(n){
-    return '<div class="notif-item'+(n.read?'':' unread')+' lv-'+esc(n.level)+'" role="button" tabindex="0" onclick="onNotifClick(\''+esc(n.id)+'\',\''+esc(n.kind)+'\')">'
+    _notifById[n.id]=n;
+    return '<div class="notif-item'+(n.read?'':' unread')+' lv-'+esc(n.level)+'" role="button" tabindex="0"'
+      +' aria-label="'+esc(n.title)+' — open details"'
+      +' onclick="onNotifClick(\''+esc(n.id)+'\',\''+esc(n.kind)+'\')"'
+      /* §5.4 · role="button" with no key handler is a control the keyboard can
+         reach and cannot use. Same pattern as the ledger rows. */
+      +' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();onNotifClick(\''+esc(n.id)+'\',\''+esc(n.kind)+'\');}">'
       +'<div class="notif-dot"></div>'
       +'<div class="notif-body"><div class="notif-title">'+esc(n.title)+'</div>'
       +(n.body?'<div class="notif-sub">'+esc(n.body)+'</div>':'')
@@ -4868,11 +5031,68 @@ async function loadLoginHistory(scope){
     list.innerHTML=items.length?items.map(notifRow).join('')
       :'<div class="empty" style="padding:24px 14px;"><div class="empty-t">No notifications yet</div><div class="empty-d">Breaches, quota and account events will show up here.</div></div>';
   };
-  window.onNotifClick=function(id,kind){
+  /* Static product copy, one entry per kind the backend actually emits
+     (breach · digest · key_rotation · billing_change — see user_notifications.py
+     and account.py). This is NOT per-alert detail: it says what this CLASS of
+     alert means and what to do about it, the same words every time. Anything
+     specific to one alert comes from the payload above it or is not shown.
+     `go` is the page to open, or null when there is honestly nowhere to send
+     someone — a digest is a summary of things that already have their own rows. */
+  var KIND_HELP={
+    breach:{
+      what:'A graded interaction matched one of the rules in your policy. The record is already in the ledger and counted in your breach total.',
+      todo:'Open Threats to see which rule caught it and which record it was, then decide whether the policy or the caller needs to change.',
+      go:'analytics', goLabel:'Open in Threats'},
+    quota:{
+      what:'Your workspace crossed a usage threshold on its current plan.',
+      todo:'Check the usage chart on Billing. Events beyond the quota may be rejected until the period resets or the plan changes.',
+      go:'billing', goLabel:'Open billing'},
+    key_rotation:{
+      what:'One or more API keys are older than this deployment’s rotation window. Nothing is broken — a long-lived key is simply a bigger blast radius if it ever leaks.',
+      todo:'Mint a replacement under Access, move your services onto it, then revoke the old one. A key’s secret is shown only once.',
+      go:'keys', goLabel:'Open Access'},
+    billing_change:{
+      what:'Something changed on your subscription — a trial ending, a plan or payment status moving.',
+      todo:'Review the plan card on Billing so the change does not land as a surprise.',
+      go:'billing', goLabel:'Open billing'},
+    digest:{
+      what:'Your weekly summary of captured events and breaches. It is generated once per week from the ledger you already have.',
+      todo:'Nothing to act on here. The individual events behind these numbers are on the Ledger and Threats pages.',
+      go:null}
+  };
+  var LEVEL_WORD={info:'Info',warning:'Warning',critical:'Critical'};
+
+  window.onNotifClick=async function(id,kind){
     try{ api('/v1/notifications/'+encodeURIComponent(id)+'/read',{method:'POST'}); }catch(e){}
     if(window.closeMenus)window.closeMenus();
-    if(kind==='breach'&&window.go)window.go('analytics',null);
-    else if(kind==='quota'&&window.go)window.go('billing',null);
+    var n=_notifById[id]||{};
+    var help=KIND_HELP[kind]||null;
+    var when='';
+    if(n.created_at){ try{ when=new Date(n.created_at).toLocaleString(); }catch(e){ when=''; } }
+
+    /* Built from the alert's own fields plus the static explainer — every line
+       below is either something the API returned or copy that is identical for
+       every alert of this kind. The body is set with textContent by foxConfirm,
+       so none of it can be markup. */
+    var parts=[];
+    if(n.body)parts.push(n.body);
+    if(help)parts.push('What this means\n'+help.what);
+    if(help)parts.push('What to do\n'+help.todo);
+    var meta=[LEVEL_WORD[n.level]||n.level||'', kind||'', when].filter(Boolean).join(' · ');
+    if(meta)parts.push(meta);
+
+    var target=help&&help.go;
+    var go=await window.foxConfirm({
+      title:n.title||'Notification',
+      body:parts.join('\n\n'),
+      confirm:target?help.goLabel:'Close',
+      dismiss:!target,          // nowhere to go → one button, not a fake choice
+      cancel:'Close'
+    });
+    // The navigation this replaced is preserved exactly: breach → Threats,
+    // quota → Billing. It is now the dialog's confirm rather than a side effect
+    // of clicking, so the reader gets to see WHY before the page moves.
+    if(target&&go&&window.go)window.go(target,null);
     setTimeout(window.loadTopNotif,300);
   };
   window.notifReadAll=function(){
@@ -5513,6 +5733,12 @@ async function loadLoginHistory(scope){
       b.style.display=o.body?'':'none';
       yes.textContent=o.confirm||'Confirm';
       yes.className='btn half '+(o.danger?'danger':'pri');
+      /* `dismiss:true` — one button, for a dialog that only has something to say.
+         An alert with nowhere to go should not offer "Cancel / OK" as though the
+         reader were deciding something. The dialog is shared and reused, so the
+         button is restored on every call, not just hidden on one. */
+      no.style.display=o.dismiss?'none':'';
+      no.textContent=o.cancel||'Cancel';
       // `input:` is the one-field shorthand; `fields:` is the general form.
       var fields=o.fields||(o.input?[Object.assign({name:'value'},o.input)]:[]);
       host.textContent='';
@@ -5548,8 +5774,13 @@ async function loadLoginHistory(scope){
         if(e.key==='Escape'){ e.preventDefault(); done(inputs.length?null:false); }
         else if(e.key==='Enter'&&inputs.indexOf(document.activeElement)>=0){ e.preventDefault(); yes.click(); }
         else if(e.key==='Tab'){
-          /* a modal that lets Tab escape it is not modal */
-          var f=dlg.querySelectorAll('button,input');
+          /* a modal that lets Tab escape it is not modal.
+             Filtered to what is actually on screen: a hidden Cancel (dismiss
+             mode) still answers querySelectorAll, and focus() on a display:none
+             element does nothing — so the cycle would silently break at the wrap
+             point and let Tab out of the dialog. */
+          var f=Array.prototype.filter.call(dlg.querySelectorAll('button,input'),
+            function(el){ return el.offsetParent!==null; });
           if(!f.length)return;
           var first=f[0], lastEl=f[f.length-1];
           if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); lastEl.focus(); }
