@@ -307,9 +307,29 @@ Every guard must fail when the rule it protects is removed — re-break each:
 
 ## MAIN ↔ EXECUTOR protocol
 
+The loop, fixed: MAIN writes the prompt → the owner relays it → the executor pushes a branch →
+MAIN second-checks the code → MAIN pushes to `main` by SHA → MAIN updates the vault → MAIN issues
+the next prompt. **MAIN does not build.**
+
 1. Every message ends with a paste-ready block for the other side, both directions.
 2. `TASK <n> — P5 §<x>` · branch `feat/p5-<slug>` · report opens `TASK · branch · SHA · DONE|BLOCKED`.
 3. Prompts are self-contained; a fresh chat with no history starts from the block alone.
-4. `[skip ci]` on every commit. **Deploys are currently blocked on the Actions quota** — MAIN
-   dispatches `deploy.yml` once the monthly allowance resets, and `main` is ahead of production
-   until then.
+4. `[skip ci]` on every commit — note it skips `deploy.yml` too. **Deploys are currently blocked on
+   the Actions quota** anyway; MAIN dispatches `deploy.yml` once the allowance resets, and `main`
+   is ahead of production until then.
+5. **Nobody touches the working tree while an executor is building.** MAIN reviews in an isolated
+   `git worktree` and merges by direct SHA push (`git push origin <sha>:refs/heads/main`) — never
+   by checking a branch out in the shared tree, and never by editing `main`.
+6. **Branch off fresh `origin/main` and rebase before pushing.** TASK 2 waits for TASK 1 for this
+   reason: the two touch `desktop/policy_data.py`, and a branch cut too early silently reverts
+   merged work. This is not theoretical — it caught a branch that would have deleted P6f.
+7. **UI work loads `ui-ux-pro-max` first, then `frontend-design`.** That is TASK 2 only; TASK 1
+   touches no UI.
+8. MAIN's merge gate: fast-forward-safe over `origin/main` · `node --check` every inline
+   `<script>` in changed HTML · scope grep · no-fake-data grep · no-secret grep · single Alembic
+   head · the `code-review` skill.
+9. After every merge MAIN syncs the vault: a dated devlog entry, plus the affected section note
+   with its `updated:` and `verified-against:` refreshed. Noticed-but-not-fixed →
+   `Worth Noting — Issues`; Claude got it wrong → `Where Claude Was Wrong`.
+10. `ponytail` only where it is provably output-neutral. **Never** on a hash, a verdict, or the
+    wire contract — which rules it out of most of this plan.
