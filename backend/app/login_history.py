@@ -7,7 +7,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from .ip_allow import client_ip
-from .models import LoginEvent
+from .models import LoginEvent, StaffSession
 
 
 def is_new_device(db, user, user_agent: str | None) -> bool:
@@ -34,6 +34,41 @@ def is_new_device(db, user, user_agent: str | None) -> bool:
         select(LoginEvent.id).where(
             LoginEvent.user_id == user.id, LoginEvent.success.is_(True),
             LoginEvent.user_agent == ua).limit(1)
+    ).first()
+    return seen_this is None
+
+
+def is_new_staff_device(db, staff_user_id, user_agent: str | None) -> bool:
+    """The staff equivalent of :func:`is_new_device`, answered from ``staff_sessions``.
+
+    Staff logins write no LoginEvent, but every successful staff sign-in already
+    mints a StaffSession carrying its user-agent — so "have we seen this device"
+    is answerable without a new table. Same two rules as the customer path: keyed
+    on the user-agent alone (IP churns on every mobile hop), and the first-ever
+    sign-in is not a new device.
+
+    Revoked sessions still count as seen: revoking a session does not make the
+    browser unfamiliar, and treating it as new would email somebody every time
+    they used "log out everywhere".
+
+    Call BEFORE adding this login's StaffSession row, or it matches itself and no
+    device is ever new.
+    """
+    # Normalized exactly as _establish_staff_session stores it — a blank agent is
+    # written as NULL, and `= ''` would never match NULL, so a client that sends
+    # no user-agent would look new on every single sign-in.
+    ua = (user_agent or "")[:400] or None
+    same_ua = (StaffSession.user_agent.is_(None) if ua is None
+               else StaffSession.user_agent == ua)
+    seen_any = db.execute(
+        select(StaffSession.id).where(
+            StaffSession.staff_user_id == staff_user_id).limit(1)
+    ).first()
+    if seen_any is None:
+        return False
+    seen_this = db.execute(
+        select(StaffSession.id).where(
+            StaffSession.staff_user_id == staff_user_id, same_ua).limit(1)
     ).first()
     return seen_this is None
 

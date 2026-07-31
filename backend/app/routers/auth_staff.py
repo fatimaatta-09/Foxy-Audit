@@ -23,7 +23,8 @@ from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import email, email_templates as et, mfa, password_reset
+from .. import (email, email_templates as et, login_history, mfa, password_reset,
+                user_notifications)
 from ..admin_audit import client_ip, record_admin_action
 from ..auth import grant_step_up, hash_session_token, require_staff, require_step_up_dep
 from ..config import get_settings
@@ -101,10 +102,24 @@ def _establish_staff_session(request: Request, staff: StaffUser, db: Session) ->
     request.session.clear()
     token = secrets.token_urlsafe(32)
     ua = (request.headers.get("user-agent") or "")[:400] or None
+    ip = client_ip(request)
+    # Ask the new-device question BEFORE the row is added, or this session matches
+    # itself and no device is ever new. Best-effort in every direction: a failed
+    # lookup means no alert, never a failed sign-in.
+    try:
+        new_device = login_history.is_new_staff_device(db, staff.id, ua)
+    except Exception:                       # noqa: BLE001 — never break a login
+        db.rollback()
+        new_device = False
     db.add(StaffSession(staff_user_id=staff.id, token_hash=hash_session_token(token),
-                        ip=client_ip(request), user_agent=ua))
+                        ip=ip, user_agent=ua))
     staff.last_login_at = datetime.now(timezone.utc)
     db.commit()
+    if new_device:
+        # ENQUEUED only — sent from the notifications thread, so a slow or broken
+        # mail provider can never delay or fail a staff sign-in.
+        user_notifications.enqueue_staff_device_alert(
+            staff_user_id=staff.id, email=staff.email, ip=ip, user_agent=ua)
     request.session["staff_user_id"] = str(staff.id)
     request.session["staff_role"] = staff.platform_role
     request.session["staff_session_token"] = token

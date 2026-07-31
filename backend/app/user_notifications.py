@@ -51,7 +51,7 @@ from sqlalchemy.orm import Session
 
 from . import email as email_mod, email_templates as et, org_notifications
 from .config import get_settings
-from .models import ApiKey, Notification, Organization, OrgPolicy, User
+from .models import ApiKey, Notification, Organization, OrgPolicy, StaffUser, User
 
 log = logging.getLogger("foxy.user_notifications")
 
@@ -64,6 +64,11 @@ _BREACH_QUEUE: queue.Queue = queue.Queue(maxsize=2000)
 # request only enqueues plain values and this module's thread does the sending,
 # so a slow mail provider can never add latency to — or fail — a sign-in.
 _DEVICE_QUEUE: queue.Queue = queue.Queue(maxsize=2000)
+# The same alert for platform STAFF sign-ins (admin console). Separate queue, not
+# a flag on the customer one: the two read different tables, mail different
+# addresses and point at different consoles, and one drain failing must not stall
+# the other.
+_STAFF_DEVICE_QUEUE: queue.Queue = queue.Queue(maxsize=2000)
 
 
 def _dashboard_url() -> str:
@@ -332,6 +337,97 @@ def send_new_device_alert(db: Session, item: dict) -> int:
     )
     return 1 if email_mod.send_email(
         to=to, subject="New sign-in to your Foxy Audit account",
+        html=html, text=plain) else 0
+
+
+# ── (a3) new-device sign-in alerts for platform STAFF (admin console) ────────
+# The staff mirror of (a2), and not preference-gated for the same reason: staff
+# hold cross-tenant read access, so an unrecognised sign-in on a staff account is
+# the alert that matters most, and a switch that silences it is a switch that
+# helps an attacker stay quiet. `user_notifications_enabled` still applies — that
+# is an ops kill switch for the mailer, not a product setting.
+#
+# "New device" is answered from staff_sessions (login_history.is_new_staff_device);
+# there is no staff LoginEvent and no new table.
+
+def enqueue_staff_device_alert(*, staff_user_id, email: str, ip: str | None,
+                               user_agent: str | None) -> None:
+    """Called from the staff login path. Copies plain values only (nothing ORM- or
+    session-bound crosses the thread boundary), never blocks, never raises into a
+    sign-in."""
+    if not get_settings().user_notifications_enabled:
+        return
+    try:
+        _STAFF_DEVICE_QUEUE.put_nowait({
+            "staff_user_id": str(staff_user_id), "email": email,
+            "ip": ip, "user_agent": user_agent,
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+    except queue.Full:
+        log.warning("staff new-device queue full — dropping alert for staff %s",
+                    staff_user_id)
+    except Exception as exc:                # noqa: BLE001 — never break a login
+        log.warning("could not queue staff new-device alert: %s", exc)
+
+
+def drain_staff_device_alerts(db: Session, *, limit: int = 200) -> int:
+    """Send every queued staff new-device alert (up to `limit`). Returns emails sent."""
+    sent = 0
+    for _ in range(limit):
+        try:
+            item = _STAFF_DEVICE_QUEUE.get_nowait()
+        except queue.Empty:
+            break
+        try:
+            sent += send_staff_device_alert(db, item)
+        except Exception as exc:            # noqa: BLE001 — one alert must not stop the drain
+            db.rollback()
+            log.warning("staff new-device alert failed for staff %s: %s",
+                        item.get("staff_user_id"), exc)
+    return sent
+
+
+def send_staff_device_alert(db: Session, item: dict) -> int:
+    """Email one staff member that their console account was signed into from a
+    device we have not seen before."""
+    staff = db.get(StaffUser, uuid.UUID(str(item["staff_user_id"])))
+    if staff is None or staff.disabled:
+        return 0
+    to = staff.email
+
+    when = item.get("at") or ""
+    try:
+        when = datetime.fromisoformat(when).strftime("%d %b %Y at %H:%M UTC")
+    except ValueError:
+        when = "just now"
+    ip = (item.get("ip") or "").strip()
+    # No geo-IP provider is configured, so there is no location to give. Say that
+    # rather than guessing one — a wrong city in a security email is worse than a
+    # missing one, and this product does not ship invented data.
+    rows = [("When", when), ("Device", describe_device(item.get("user_agent"))),
+            ("IP address", ip or "not recorded"),
+            ("Approximate location", "not available")]
+
+    # Release the read transaction BEFORE the network send (see send_breach_alert).
+    db.commit()
+
+    html, plain = et.layout(
+        title="New sign-in to your Foxy Audit staff account",
+        preheader=f"A new device signed in to the staff console as {to}.",
+        blocks=[
+            et.paragraph(f"The Foxy Audit staff console was just signed into as {to} "
+                         f"from a device we have not seen before."),
+            et.info_rows(rows),
+            et.callout("If this was you, no action is needed. If it was not, open "
+                       "Settings → Devices & sessions in the console, log out "
+                       "everywhere, and then change your password.", tone="warn"),
+            et.muted("Security alerts like this one cannot be switched off."),
+        ],
+        cta={"label": "Open the staff console", "url": get_settings().admin_url},
+        surface="staff",
+    )
+    return 1 if email_mod.send_email(
+        to=to, subject="New sign-in to your Foxy Audit staff account",
         html=html, text=plain) else 0
 
 
@@ -613,6 +709,7 @@ def user_notifications_loop(stopping: dict, s) -> None:
         try:
             drain_breach_alerts(db)
             drain_new_device_alerts(db)
+            drain_staff_device_alerts(db)
             now = time.monotonic()
             if now - last_sweep >= s.user_notifications_interval:
                 last_sweep = now
