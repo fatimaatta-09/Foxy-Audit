@@ -164,11 +164,27 @@ def test_the_header_mark_is_a_compact_svg_not_the_cover_png(template):
     assert "image/png" not in top_left
 
 
-def test_the_cover_mark_is_sized_for_print(template):
-    """A 256px source scaled to 34 is soft at print DPI. Smaller renders sharper."""
-    m = re.search(r'<img class="brand-mark" width="(\d+)" height="(\d+)"', template)
-    assert m, "the cover mark changed shape"
-    assert int(m.group(1)) == int(m.group(2)) <= 24,         "the cover mark is back to a size that renders soft"
+def test_the_cover_mark_is_sized_in_css_not_by_attributes(template):
+    """What actually sizes the cover mark in the PDF.
+
+    This used to assert on the width= ATTRIBUTE. weasyprint ignores width=/height=
+    on <img> entirely (measured in P6e: a 256px source with width="24" lays out at
+    256x256), so that assertion was reading a value with no effect on the output —
+    it passed for as long as the mark was rendering full-size and wrong.
+
+    The CSS rule is the thing under test. The attributes are asserted only to be
+    IN STEP with it, so an HTML preview and the PDF agree.
+    """
+    css = re.search(r"\.brand-mark\{width:(\d+)px;height:(\d+)px;\}", template)
+    assert css, "the .brand-mark CSS rule is gone — the PDF mark would render full-size"
+    size = int(css.group(1))
+    assert size == int(css.group(2)), "the mark must stay square"
+    # A 256px source at 40px is a 6.4x downscale — still far above print DPI.
+    assert 32 <= size <= 48, f"the cover mark is {size}px; it should stand with the wordmark"
+
+    attr = re.search(r'<img class="brand-mark" width="(\d+)" height="(\d+)"', template)
+    assert attr, "the cover mark changed shape"
+    assert int(attr.group(1)) == int(attr.group(2)) == size,         "the inert width=/height= attributes have drifted from the CSS that does the work"
 
 
 def test_the_cover_suppresses_the_running_header(template):

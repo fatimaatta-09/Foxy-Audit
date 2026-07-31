@@ -330,11 +330,26 @@ def test_the_seal_does_not_claim_regulatory_compliance(make_org, client, monkeyp
 # ══ §12.4 · independent verification ═══════════════════════════════════════
 
 def test_the_document_says_how_to_check_it_without_us(make_org, client, monkeypatch):
+    """The document's central claim: a third party can check it without us.
+
+    This asserted the literal string "foxy_verify.py" until the invocation line
+    was removed. The route it was standing in for is the STEP, not the command —
+    recomputing the chain from an export is the only thing here that turns records
+    into a root hash to compare, and §Trust model (which carried the chain formula)
+    is gone, so nothing else can stand in for it. Asserted on the step's substance
+    so the command can come and go without this test going quiet.
+    """
     org = make_org()
     _ingest(client, org, 3)
     doc = _html(client, org, monkeypatch)
+    flat = _flat(doc)
     assert "How to verify this independently" in doc
-    assert "foxy_verify.py" in doc
+    assert "standalone verifier" in flat, \
+        "the recomputation step is gone — nothing left produces the root hash " \
+        "that step 3 tells the reader to compare"
+    assert "no dependencies" in flat and "no network calls" in flat, \
+        "the verifier's independence is the reason the step counts as a check " \
+        "that does not require trusting us"
     assert "Root chain hash" in doc
     assert "Genesis hash" in doc
     # The root hash is the thing being verified, so it must actually be printed.
@@ -426,8 +441,14 @@ def test_the_rendered_document_is_complete(make_org, client, monkeypatch):
     assert doc.strip().endswith("</html>")
     for section in ("Audit summary", "Host-Side Enforcement", "SDK Capture Coverage",
                     "Policy breakdown", "Verification record",
-                    "How to verify this independently", "Trust model"):
+                    "How to verify this independently"):
         assert section in doc, f"the document dropped '{section}'"
+    # §Trust model was removed on the owner's instruction; asserted absent so a
+    # revert cannot quietly restore it without this list being reconsidered.
+    # Matched on the HEADING, not the bare phrase — a CSS comment in the template
+    # explains why the section went, and a substring test reads that explanation
+    # as the section itself. Same trap that bit the P6b and P6d guards.
+    assert "Trust model</h2>" not in doc
 
 
 def test_the_response_is_a_pdf_built_from_that_document(make_org, client, monkeypatch):
