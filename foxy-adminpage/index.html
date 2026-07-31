@@ -263,7 +263,6 @@ body{
 .dock-mark{
   width:46px;height:46px;border-radius:14px;
   background:linear-gradient(155deg,var(--fox),var(--foxdeep));
-  border:1px solid rgba(255,255,255,.35);
   box-shadow:var(--raise-sm);
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   margin-bottom:8px;position:relative;
@@ -282,18 +281,21 @@ body{
   border:1px solid transparent;background:none;font-family:var(--disp);
   transition:background var(--dur) ease,color var(--dur) ease,transform var(--dur) ease;
 }
-.dock-item span{font-size:8.5px;font-weight:600;letter-spacing:.4px}
+/* the rail said OVERVIEW, ORGS, DATA but Revenue, Security, Audit, Leads —
+   seven shouted and four did not. Cased here rather than in thirteen spans so
+   a new item cannot arrive in the wrong register. */
+.dock-item span{font-size:8.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
 .dock-item svg{width:20px;height:20px;transition:transform var(--dur) ease}
-.dock-item svg *{stroke-width:2}
-.dock-item:hover:not(.active){background:var(--surf2);color:var(--ink);transform:translateY(-1px)}
-.dock-item:hover:not(.active) svg{transform:scale(1.12)}
+/* P2 · one physical story, the same one every other control tells. The rail is
+   --surf; a key lifts OUT of it on hover and is pressed INTO it when it is the
+   page you are on. The old active state was a colour-mix tint with a hard
+   `inset 3px 0 0` bar — a decoration applied on top of a surface rather than a
+   state of it, which is why it read as a sticker against soft UI. Colour still
+   carries the state as well as depth, so it is never depth alone. */
+.dock-item:hover:not(.active){background:var(--bg);color:var(--ink);box-shadow:var(--raise-sm)}
 .dock-item.active{
-  /* restrained active state (Liquid-Glass correction 2): soft tint + orange left accent bar
-     + orange (not white-on-bright) icon/label, no glow. Token-driven → works in light and dark.
-     P2 reworks this into a --sink-sm press; P1 only re-points the colours. */
-  background:color-mix(in srgb, var(--fox) 14%, var(--surf));
-  color:var(--fox2);border-color:transparent;
-  box-shadow:inset 3px 0 0 var(--fox);
+  background:var(--bg);color:var(--fox2);border-color:transparent;
+  box-shadow:var(--sink-sm);
 }
 .dock-item.active span{color:var(--fox2)}
 .dock-badge{
@@ -330,9 +332,28 @@ html[data-theme="dark"] .dock-badge{box-shadow:0 0 0 2px rgba(0,0,0,.4)}
   background:var(--surf);
   border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--clay);
 }
-.topbar-brand{display:flex;flex-direction:column;line-height:1.15;min-width:0}
-.topbar-word{font-family:var(--disp);font-weight:700;font-size:14px;color:var(--ink);letter-spacing:-.2px}
-.topbar-sub{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--fox2);margin-top:1px}
+/* P2 · `[mark] Foxy Audit │ <Page name>.` — one line, nothing else. Replaces the
+   frozen two-line "Foxy Audit / internal ops console", which said the same thing
+   on all 17 pages and so said nothing. Ported from the Dashboard's .crumb. */
+.crumb{display:flex;align-items:center;gap:8px;min-width:0;font-family:var(--mono);
+  font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+/* the mark carries no src in the markup: it is copied at sign-in from the dock's
+   own image, so the base64 fox is paid for once rather than twice. */
+.crumb-logo{width:16px;height:16px;flex-shrink:0;object-fit:contain;opacity:.8}
+/* the dock draws this mark light because it sits on an orange plate there. The
+   crumb has no plate, so on paper the same file is a white fox on near-white and
+   disappears — inked here instead, at the tone the rest of the crumb is set in. */
+html[data-theme="light"] .crumb-logo{filter:brightness(0);opacity:.42}
+.crumb-brand{white-space:nowrap}
+.crumb-sep{opacity:.4}
+.crumb b{color:var(--ink);font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the full stop is typography, not a status light. The console polls no health
+   endpoint, so a dot that always painted "connected" would be reporting a state
+   nobody measured. aria-hidden: it carries no information to announce. */
+.crumb-dot{margin-left:-8px;font-size:20px;line-height:1;letter-spacing:0;font-weight:800;
+  position:relative;top:-2px;user-select:none;color:var(--fox)}
+html[data-theme="light"] .crumb-dot{color:var(--fox2)}
+@media(max-width:520px){.crumb-brand,.crumb-sep,.crumb-logo{display:none}}
 .topbar-actions{display:flex;align-items:center;gap:8px}
 .topbtn{
   position:relative;width:38px;height:38px;flex-shrink:0;border-radius:11px;
@@ -375,11 +396,21 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none}
   text-transform:uppercase;color:var(--fox2);margin-bottom:8px;
 }
 .eyebrow::before{content:'';width:16px;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--fox),var(--fox3));flex-shrink:0}
-h1{font-family:var(--disp);font-size:clamp(20px,2.2vw,28px);font-weight:700;letter-spacing:-.4px;color:var(--ink);margin-bottom:3px}
 .sub{color:var(--muted);font-size:12.5px;line-height:1.55}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
-.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s-4);margin-bottom:var(--s-6);flex-wrap:wrap}
+/* P2 · the head no longer holds the page's name — the crumb does, and P3 hangs
+   the wordmark and the corner bloom here. What is left is a band that centres
+   whatever controls a page already had, right-aligned; the wordmark P3 adds is
+   absolutely positioned and so never enters this flex row. Left at its old
+   flex-end height with the title block gone it read as a dead gap. */
+.pagehead{display:flex;align-items:center;justify-content:flex-end;gap:var(--s-3);
+  min-height:68px;margin-bottom:var(--s-4);flex-wrap:wrap}
+/* org360 only: `← organizations` is navigation, not a label, so it survives the
+   head-stripping — above the band, with the org's id beside it. */
+.backline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:-6px;
+  font-family:var(--mono);font-size:10.5px}
+.backline .mono{color:var(--muted2);word-break:break-all}
 
 /* ════════ CARDS ════════ */
 .clay{
@@ -787,7 +818,6 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
   }
   .dock-mark,.dock-ops,.dock-foot{display:none}
   .dock-item{width:60px;height:52px;flex-shrink:0;border-radius:12px}
-  .dock-item.active{box-shadow:inset 0 -3px 0 var(--fox)}   /* accent flips to the bottom in the bottom-bar layout */
   /* wide tables → stacked cards (opt-in via .cardify + per-cell data-label; else they still scroll in .twrap) */
   .tbl.cardify thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
   .tbl.cardify tr{display:block;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;padding:6px 11px;background:var(--surf2)}
@@ -797,9 +827,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     text-transform:uppercase;color:var(--muted);flex-shrink:0}
   .tbl.cardify td:empty{display:none}
   .main{margin-left:0;padding:14px 14px calc(60px + 24px)}
-  .pagehead{margin-bottom:16px}
+  .pagehead{min-height:44px;margin-bottom:12px}
   .topbar{top:6px}
-  .topbar-sub,.topuser-meta{display:none}
+  .topuser-meta{display:none}
   .topuser{padding:4px}
 }
 @media(max-width:520px){
@@ -882,57 +912,57 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <div class="dock-ops">INTERNAL</div>
 
     <button class="dock-item active" data-page="overview" onclick="go('overview',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="8.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="5" rx="2"/><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="2"/><rect x="3" y="14" width="7.5" height="7" rx="2"/></svg>
       <span>OVERVIEW</span>
     </button>
     <button class="dock-item" data-page="health" id="navOps" onclick="go('health',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 12h4l2.2-6 4.2 12 2.2-6H21"/><path d="M4 4h16v16H4z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3.9l2-5.4 3.5 10.8 2.1-5.4H21"/></svg>
       <span>OPS</span>
       <span class="dock-badge" id="alertBadge" style="display:none;">0</span>
     </button>
     <button class="dock-item" data-page="orgs" onclick="go('orgs',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 21v-4h6v4"/><path d="M9 10h.01M15 10h.01M9 14h.01M15 14h.01"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5.6 21V6.4a1 1 0 0 1 .52-.88l5.4-2.95a1 1 0 0 1 .96 0l5.4 2.95a1 1 0 0 1 .52.88V21"/><path d="M10 21v-4.2h4V21"/><path d="M9.4 9.4h.01M14.6 9.4h.01M9.4 13h.01M14.6 13h.01"/></svg>
       <span>ORGS</span>
     </button>
     <button class="dock-item" data-page="traffic" onclick="go('traffic',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 17l5-6 4 4 6-8"/><path d="M14 7h4v4"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17.4l5.5-5.9 3.6 3.6L20.6 6.4"/><path d="M15.6 6.4h5v5"/></svg>
       <span>TRAFFIC</span>
     </button>
     <button class="dock-item" data-page="staff" id="navStaff" onclick="go('staff',this)" style="display:none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M15.6 14.6c2.9.2 5 1.7 5.9 4.4"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.2" cy="8" r="3.3"/><path d="M2.8 20c.9-3.3 3.4-5 6.4-5s5.5 1.7 6.4 5"/><circle cx="17.6" cy="9.4" r="2.5"/><path d="M15.9 14.4c2.8.2 4.7 1.8 5.5 4.3"/></svg>
       <span>STAFF</span>
     </button>
     <button class="dock-item" data-page="campaigns" onclick="go('campaigns',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v9a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 16.5z"/><path d="M8 5V3.5M16 5V3.5M8 11h8M8 15h5"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 9.3V7.4a2 2 0 0 1 2-2h13.2a2 2 0 0 1 2 2v1.9a2.8 2.8 0 0 0 0 5.4v1.9a2 2 0 0 1-2 2H5.4a2 2 0 0 1-2-2v-1.9a2.8 2.8 0 0 0 0-5.4z"/><path d="M14.6 5.6v2M14.6 11v2M14.6 16.4v2"/></svg>
       <span>CAMPAIGNS</span>
     </button>
     <button class="dock-item" data-page="data" onclick="go('data',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h7l2 2h7v12a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 12h8M8 16h5"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.2"/><path d="M3 9.4h18M3 14.7h18M9.4 9.4V20"/></svg>
       <span>DATA</span>
     </button>
     <button class="dock-item" data-page="revenue" onclick="go('revenue',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.6v18.8"/><path d="M16.8 6.4H9.8a3.4 3.4 0 0 0 0 6.8h4.4a3.4 3.4 0 0 1 0 6.8H6.6"/></svg>
       <span>Revenue</span>
     </button>
     <button class="dock-item" data-page="security" onclick="go('security',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.4s7.6-3.9 7.6-9.6V5.4L12 2.6 4.4 5.4v6.4c0 5.7 7.6 9.6 7.6 9.6z"/><path d="M9.3 12.1l1.9 1.9 3.5-3.6"/></svg>
       <span>Security</span>
     </button>
     <button class="dock-item" data-page="audit" onclick="go('audit',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 2.6H6.6a2 2 0 0 0-2 2v14.8a2 2 0 0 0 2 2h10.8a2 2 0 0 0 2-2V8.6z"/><path d="M13.6 2.6v6h5.8"/><path d="M8.6 13.4h6.4M8.6 17h4.2"/></svg>
       <span>Audit</span>
     </button>
     <button class="dock-item" data-page="leads" onclick="go('leads',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.3 4.6h17.4l-6.6 7.8v6l-4.2 2.2v-8.2z"/></svg>
       <span>Leads</span>
     </button>
     <button class="dock-item" data-page="inbox" onclick="go('inbox',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.2" width="18" height="13.6" rx="2.2"/><path d="M3.7 6.9 12 13l8.3-6.1"/></svg>
       <span>INBOX</span>
       <span class="dock-badge" id="inboxBadge" style="display:none;">0</span>
     </button>
     <button class="dock-item" data-page="settings" onclick="go('settings',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.6a7.9 7.9 0 000-3.2l2-1.6-2-3.4-2.4 1a8 8 0 00-2.8-1.6L14 2.5h-4l-.2 2.3a8 8 0 00-2.8 1.6l-2.4-1-2 3.4 2 1.6a7.9 7.9 0 000 3.2l-2 1.6 2 3.4 2.4-1a8 8 0 002.8 1.6l.2 2.3h4l.2-2.3a8 8 0 002.8-1.6l2.4 1 2-3.4z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 7h8.6M16.4 7h4M3.6 12h2.8M10.6 12h9.8M3.6 17h8.6M16.4 17h4"/><circle cx="14.2" cy="7" r="2.2"/><circle cx="8.4" cy="12" r="2.2"/><circle cx="14.2" cy="17" r="2.2"/></svg>
       <span>SETTINGS</span>
     </button>
 
@@ -947,9 +977,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ═══ top command bar ═══ -->
     <header class="topbar">
-      <div class="topbar-brand">
-        <span class="topbar-word">Foxy Audit</span>
-        <span class="topbar-sub">internal ops console</span>
+      <div class="crumb">
+        <img class="crumb-logo" alt="" aria-hidden="true">
+        <span class="crumb-brand">Foxy Audit</span>
+        <span class="crumb-sep" aria-hidden="true">&#9474;</span>
+        <b id="topbarTitle">Overview</b>
+        <span class="crumb-dot" aria-hidden="true">.</span>
       </div>
       <div class="topbar-actions">
         <button class="topbtn" type="button" data-tip="Refresh this page" aria-label="Refresh this page" onclick="refreshCurrent()">
@@ -990,14 +1023,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <!-- ──────────────── OVERVIEW ──────────────── -->
       <div id="annBanner"></div>
     <section class="page active" id="page-overview">
-      <div class="pagehead">
-        <div>
-          <div class="eyebrow">platform · cross-org</div>
-          <h1>Ops overview</h1>
-          <div class="sub">Everything below reads across <b>all</b> tenants — staff channel only.</div>
-        </div>
-        
-      </div>
+      <div class="pagehead"></div>
 
       <div class="clay pad" style="margin-bottom:18px;">
         <div class="panel-h">
@@ -1060,7 +1086,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── ORGS ──────────────── -->
     <section class="page" id="page-health">
-      <div class="pagehead"><div><div class="eyebrow">P0 · operations</div><h1>System health</h1><div class="sub">Durable signals only. The circuit breaker is process-local and intentionally not reported as healthy.</div></div></div>
+      <div class="pagehead"></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi"><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></div><div class="clay kpi"><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></div><div class="clay kpi"><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></div><div class="clay kpi"><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" class="sub mono">loading…</div></div></div>
@@ -1081,37 +1107,29 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-deadletter">
-      <div class="pagehead"><div><div class="eyebrow">P0 · grading recovery</div><h1>Dead letters</h1><div class="sub">Failed rows parked after the worker exhausted its retries. Raw prompt and response text are never shown.</div></div></div>
+      <div class="pagehead"></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm pri" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table></div>
     </section>
 
     <section class="page" id="page-anchors">
-      <div class="pagehead"><div><div class="eyebrow">P0 · public-chain receipts</div><h1>Anchor monitor</h1><div class="sub">Latest receipt per tenant, current chain head, freshness, and safe wallet status.</div></div></div>
+      <div class="pagehead"></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm pri" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="split" style="margin-bottom:18px;"><div class="clay pad" id="anchorSummary"><div class="sub mono">loading…</div></div><div class="clay pad" id="anchorWallet"><div class="sub mono">loading…</div></div></div>
       <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table></div>
     </section>
 
     <section class="page" id="page-alerts">
-      <div class="pagehead"><div><div class="eyebrow">P0 · operator attention</div><h1>Alerts center</h1><div class="sub">Derived from health, grading, and anchor conditions. Acknowledgements are staff-audited.</div></div></div>
+      <div class="pagehead"></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm pri" onclick="goOps('alerts')">Alerts</button></div>
       <div class="clay pad"><div id="alertSummary" class="sub mono" style="margin-bottom:14px;">loading…</div><div id="alertRows"><div class="sub mono">loading…</div></div></div>
     </section>
 
     <section class="page" id="page-orgs">
       <div class="pagehead">
-        <div>
-          <div class="eyebrow">tenants</div>
-          <h1>Organizations</h1>
-          <div class="sub">Click a row for drill-down. Suspend = staff access-hold, independent of Stripe.</div>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;">
-          <label class="sub mono" style="font-size:10px;display:flex;gap:6px;align-items:center;cursor:pointer;">
-            <input type="checkbox" id="showDeleted" onchange="loadOrgs()"> show offboarded
-          </label>
-          
-        </div>
+        <label class="sub mono" style="font-size:10px;display:flex;gap:6px;align-items:center;cursor:pointer;">
+          <input type="checkbox" id="showDeleted" onchange="loadOrgs()"> show offboarded
+        </label>
       </div>
       <div class="clay pad twrap">
         <table class="tbl" id="orgTbl">
@@ -1126,16 +1144,14 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <!-- ──────────────── TRAFFIC ──────────────── -->
     <!-- ──────────────── ORG 360 (drill-down sub-page) ──────────────── -->
     <section class="page" id="page-org360">
+      <div class="backline">
+        <a class="linklike" onclick="navTo('orgs')">&larr; organizations</a>
+        <span class="mono" id="o3Sub"></span>
+      </div>
       <div class="pagehead">
-        <div>
-          <div class="eyebrow"><a class="linklike" onclick="navTo('orgs')">&larr; organizations</a></div>
-          <h1 id="o3Name">Organization</h1>
-          <div class="sub mono" id="o3Sub" style="font-size:11px;word-break:break-all;">—</div>
-        </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <span id="o3Actions" style="display:flex;gap:8px;"></span>
           <button class="btn" onclick="orgVerify()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M12 3a9 9 0 1 0 9 9"/></svg>Verify chain</button>
-          
         </div>
       </div>
       <div id="o3Chips" style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;"></div>
@@ -1156,14 +1172,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-traffic">
-      <div class="pagehead">
-        <div>
-          <div class="eyebrow">in / out · all 3 sites</div>
-          <h1>Traffic feed</h1>
-          <div class="sub">IP &amp; user-agent are HMAC-hashed at capture — nothing here is raw client data.</div>
-        </div>
-        
-      </div>
+      <div class="pagehead"></div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
         <div class="clay kpi tint" style="--k:var(--teal);--k2:var(--teal)"><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></div>
         <div class="clay kpi tint" style="--k:var(--blue);--k2:var(--blue2)"><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></div>
@@ -1221,14 +1230,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── STAFF ──────────────── -->
     <section class="page" id="page-staff">
-      <div class="pagehead">
-        <div>
-          <div class="eyebrow">superadmin only</div>
-          <h1>Platform staff</h1>
-          <div class="sub">Every create/disable lands in the append-only <span class="mono">admin_actions</span> audit trail.</div>
-        </div>
-        
-      </div>
+      <div class="pagehead"></div>
       <div class="split">
         <div class="clay pad twrap">
           <table class="tbl">
@@ -1260,12 +1262,11 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── DATA ──────────────── -->
     <section class="page" id="page-data">
-      <div class="pagehead">
-        <div>
-          <div class="eyebrow">live rows · read/write</div>
-          <h1>Data</h1>
-          <div class="sub">audit_logs, admin_actions, chain_anchors and stripe_events are permanently read-only — editing them would break the tamper-evident chain, the audit trail, or the Stripe idempotency log. Everything else can be edited or deleted (operator role required).</div>
-        </div>
+      <div class="pagehead"></div>
+      <div class="annbar" style="margin-bottom:14px;">
+        <div><b>audit_logs, admin_actions, chain_anchors and stripe_events are permanently read-only.</b>
+        Editing them would break the tamper-evident chain, the audit trail, or the Stripe idempotency
+        log. Everything else can be edited or deleted (operator role required).</div>
       </div>
       <div class="clay pad" style="margin-bottom:18px;position:relative;z-index:30;">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
@@ -1319,14 +1320,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── INBOX ──────────────── -->
     <section class="page" id="page-inbox">
-      <div class="pagehead">
-        <div>
-          <div class="eyebrow">support · from the sales site</div>
-          <h1>Inbox</h1>
-          <div class="sub">Contact &amp; support messages. Claiming or replying <b>locks</b> a message to you — others can read but not reply.</div>
-        </div>
-        
-      </div>
+      <div class="pagehead"></div>
       <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start;">
         <div class="clay" style="padding:10px;max-height:78vh;overflow:auto;">
           <input class="cin" id="inboxSearch" placeholder="Search sender, subject, message…" oninput="renderInboxList()" style="margin-bottom:8px;">
@@ -1339,7 +1333,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── REVENUE ──────────────── -->
     <section class="page" id="page-revenue">
-      <div class="pagehead"><div><div class="eyebrow">P4 · finance</div><h1>Revenue</h1><div class="sub">Paid-invoice revenue across all tenants.</div></div></div>
+      <div class="pagehead"></div>
       <div class="grid kpis">
         <div class="clay kpi hot"><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></div>
         <div class="clay kpi tint" style="--k:var(--blue);--k2:var(--blue2)"><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></div>
@@ -1362,7 +1356,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── SECURITY ──────────────── -->
     <section class="page" id="page-security">
-      <div class="pagehead"><div><div class="eyebrow">P4 · login monitor</div><h1>Security</h1><div class="sub">Login successes and failures across all sites. Watch failed spikes by IP and email.</div></div></div>
+      <div class="pagehead"></div>
       <div class="split">
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">last 7 days</div><div class="panel-t">Failed logins</div></div></div><div id="secTrend" style="min-height:190px;"></div></div>
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by IP</div><div class="panel-t">Top offenders</div></div></div><div id="secOffenders" style="min-height:190px;"></div></div>
@@ -1375,7 +1369,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── AUDIT ──────────────── -->
     <section class="page" id="page-audit">
-      <div class="pagehead"><div><div class="eyebrow">P4 · staff audit trail</div><h1>Audit log</h1><div class="sub">Every staff mutation, filterable and exportable — from the append-only admin_actions.</div></div><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button></div></div>
+      <div class="pagehead"><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button></div></div>
       <div class="clay pad" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
         <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">action (prefix)</div><input class="cin" id="auAction" placeholder="e.g. org." oninput="auditDebounced()"></div>
         <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">actor (email)</div><input class="cin" id="auActor" placeholder="staff@foxy.audit" oninput="auditDebounced()"></div>
@@ -1387,7 +1381,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── LEADS ──────────────── -->
     <section class="page" id="page-leads">
-      <div class="pagehead"><div><div class="eyebrow">P4 · pipeline</div><h1>Leads</h1><div class="sub">Pre-sales pipeline over marketing_leads. Operators can move a lead's stage.</div></div></div>
+      <div class="pagehead"></div>
       <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">funnel</div><div class="panel-t">Conversion</div></div><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div><div class="fun" id="ldFunnel"></div></div>
       <div id="ldKanban" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
     </section>
@@ -1395,11 +1389,6 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <!-- ──────────────── EVALUATION CAMPAIGNS ──────────────── -->
     <section class="page" id="page-campaigns">
       <div class="pagehead">
-        <div>
-          <div class="eyebrow">finite access / staff controlled</div>
-          <h1>Evaluation campaigns</h1>
-          <div class="sub">Create bounded Premium access for judges or design partners. Codes are hashed and never recoverable after creation.</div>
-        </div>
         <button class="btn" onclick="loadCampaigns()">Refresh</button>
       </div>
       <div class="clay pad" id="campaignCreateCard" style="display:none;margin-bottom:18px;">
@@ -1426,14 +1415,11 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── SETTINGS ──────────────── -->
     <section class="page" id="page-settings">
-      <div class="pagehead">
-        <div>
-          <div class="eyebrow">preferences</div>
-          <h1>Settings</h1>
-          <div class="sub">Local to this browser — doesn't affect other staff.</div>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start;">
+      <div class="pagehead"></div>
+      <!-- P2 · one column. Six cards side by side across a 2559px viewport left
+           every one of them half empty; a settings form is a reading column, not
+           a dashboard, so it is capped rather than stretched to the window. -->
+      <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;max-width:900px;">
         <div class="clay pad">
           <div class="panel-h"><div><div class="eyebrow">local · this browser</div><div class="panel-t">Appearance</div></div></div>
           <label class="voxswitch" style="margin-bottom:14px;"><input type="checkbox" id="darkModeToggle" onchange="setTheme(this.checked?'dark':'light')"><span class="voxswitch-track"><span class="voxswitch-knob"></span></span><span>dark mode</span></label>
@@ -1999,6 +1985,23 @@ function _arc(cx,cy,r,ri,a0,a1){
 let CUR_PAGE='overview';
 /* built lazily at call time so all loader fn declarations are already hoisted+defined */
 function _loaders(){return {overview:loadOverview,health:loadHealth,deadletter:loadDeadletter,anchors:loadAnchors,alerts:loadAlerts,orgs:loadOrgs,traffic:loadTraffic,staff:loadStaff,settings:loadSettings,data:goToData,inbox:loadInbox,revenue:loadRevenue,security:loadSecurity,audit:loadAudit,leads:loadLeads,campaigns:loadCampaigns};}
+/* P2 · the crumb's page name. Every id in _loaders(), plus org360 — which
+   overrides it with the organisation's own name, because on that page the org
+   IS the page. Anything unmapped falls back rather than printing "undefined". */
+const CTX={overview:'Overview',health:'System health',deadletter:'Dead letters',
+  anchors:'Anchor monitor',alerts:'Alerts',orgs:'Organizations',org360:'Organization',
+  traffic:'Traffic',staff:'Platform staff',data:'Data',inbox:'Inbox',revenue:'Revenue',
+  security:'Security',audit:'Audit log',leads:'Leads',campaigns:'Campaigns',settings:'Settings'};
+function setTopbarContext(page,override){
+  const t=$('topbarTitle'); if(t)t.textContent=override||CTX[page]||'Overview';
+}
+/* the crumb mark borrows the dock's image rather than carrying its own — the
+   same base64 fox is already in this file twice, and a third copy would be
+   bytes on the wire for a picture the browser has already decoded. */
+function paintCrumbLogo(){
+  const m=document.querySelector('.dock-mark img'), s=document.querySelector('.crumb-logo');
+  if(m&&s&&m.src)s.src=m.src;
+}
 function go(page,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   var _pg=$('page-'+page); _pg.classList.add('active');
@@ -2006,6 +2009,7 @@ function go(page,el){
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   if(el)el.classList.add('active');
   CUR_PAGE=page;
+  setTopbarContext(page);
   const fn=_loaders()[page]; if(fn)fn();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -2376,6 +2380,8 @@ function enter(me){
   window.PREFS=Object.assign({hide_sensitive_metadata:false,notify_broadcasts:true,notify_targeted:true,notify_system:true},(me.preferences||{}));
   $('gate').style.display='none';
   $('app').style.visibility='visible';
+  paintCrumbLogo();
+  setTopbarContext('overview');
   applyIdentity(me);
   const _trole=$('topUserRole');if(_trole)_trole.textContent=me.platform_role;
   if(can('superadmin'))$('navStaff').style.display='';
@@ -2647,20 +2653,24 @@ async function openOrg(id){
   O3_ID=id; O3_TAB='overview'; O3_LEDGER_OFF=0; O3_BREACH_OFF=0; O3_LEDGER_BREACH=false;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   $('page-org360').classList.add('active'); CUR_PAGE='org360';
+  setTopbarContext('org360','Loading…');
   document.querySelectorAll('.dock-item').forEach(n=>n.classList.remove('active'));
   const od=document.querySelector('.dock-item[data-page="orgs"]'); if(od)od.classList.add('active');
   window.scrollTo({top:0,behavior:'smooth'});
-  $('o3Name').textContent='Loading…'; $('o3Sub').textContent=''; $('o3Chips').innerHTML=''; $('o3Actions').innerHTML='';
+  $('o3Sub').textContent=''; $('o3Chips').innerHTML=''; $('o3Actions').innerHTML='';
   $('o3Usage').innerHTML=''; $('o3Kpis').innerHTML=''; $('o3VerifyState').textContent='';
   $('o3Panel').innerHTML='<div class="sub mono" style="padding:14px;">loading…</div>';
   let r; try{ r=await api('/admin/v1/organizations/'+id+'/overview'); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('o3Name').textContent='Organization'; $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load ('+(r?r.status:'network')+').</div></div>'; return; }
+  if(!r||!r.ok){ setTopbarContext('org360'); $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load ('+(r?r.status:'network')+').</div></div>'; return; }
   O3_DATA=await r.json();
   renderO3Header(O3_DATA);
   o3Tab('overview');
 }
 function renderO3Header(d){
-  $('o3Name').textContent=d.name||'Organization';
+  /* the org's name is the page's name, so it lands in the crumb rather than in
+     a heading the head no longer has. The id stays: it is the value operators
+     copy into a query, not a subtitle. */
+  setTopbarContext('org360',d.name||'Organization');
   $('o3Sub').textContent=d.id;
   const access=d.deleted?'<span class="chip dim">offboarded</span>':d.suspended?'<span class="chip bad">suspended</span>':'<span class="chip safe">active</span>';
   const sub=d.subscription_status?('<span class="chip '+(d.subscription_status==='active'?'safe':'warn')+'">'+esc(d.subscription_status)+'</span>'):'';
