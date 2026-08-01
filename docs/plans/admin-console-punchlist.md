@@ -85,7 +85,7 @@ phases are done rather than putting a half-finished redesign in front of staff;
 | ~~P2~~ | ~~`feat/admin-p2-shell`~~ | **✅ merged 2026-08-01 at `19e5d2a`** — crumb, rail, page heads, Settings |
 | ~~P3~~ | ~~`feat/admin-p3-identity`~~ | **✅ merged 2026-08-01 at `3eaf44a`** — bloom + wordmark |
 | ~~P4~~ | ~~`feat/admin-p4-heroes`~~ | **✅ merged 2026-08-01 at `ccb5406`** — faces, glyphs, panel tints |
-| P5 | `feat/admin-p5-pagination` | pagination on every scrollable table, blurb sweep |
+| ~~P5~~ | ~~`feat/admin-p5-pagination`~~ | **✅ merged 2026-08-01 at `fb3d7dd`** — one pager, 14 hosts |
 | P6 | `feat/admin-p6-responsive` | same information at every breakpoint |
 
 Mandatory skills: `ui-ux-pro-max` **first**, then `frontend-design`, on P1–P6.
@@ -502,14 +502,33 @@ by `o3LoadLedger` and `o3LoadBreaches`, plus an `auPager` host on the audit page
 There are **19 `<table class="tbl">`** and 23 `.twrap` scroll containers. Pick
 per table by what the endpoint supports:
 
-- **Server-side**, where `limit`/`offset` already exist — no backend change:
-  `admin_orgs` (`:436`, `:523`) · `admin_audit_view` (`:62`) · `admin_billing`
-  stripe-events (`:93`) · `admin_data` (`page`/`limit`, `:196`) ·
-  `admin_staff/{id}/activity` (`:251`) · `admin_health/alert-history` (`:203`).
-- **Client-side `foxPageSlice`** for the capped-list endpoints that return a
-  bounded array with no offset: `admin_security/logins` ·
-  `admin_grading/deadletter` · `admin_anchors` · `admin_alerts` · `admin_leads` ·
-  `admin_staff` · `admin_campaigns`.
+> **⚠ The split below was WRONG in four places and is corrected from the
+> routers, not from this table. Verified at `fb3d7dd`.** I cited
+> `admin_orgs:436/:523` as the organisation list; they are `org_logs` and
+> `org_breaches`. The list itself returns a bare `list[OrgListItem]` — no
+> `limit`, no `offset`, no `total`. Following the original table would have
+> shipped three tables whose paging params the server silently ignores.
+
+| Endpoint | I said | Actually | Why |
+|---|---|---|---|
+| `GET /v1/organizations` | server | **client** | no paging params at all |
+| `staff/{id}/activity` | server | **client** | `limit`, but no `offset`, no `total` |
+| `health/alert-history` | server | **client** | same shape |
+| `grading/deadletter` | client | **server** | it does take `limit`+`offset` and returns a `total` |
+
+**As shipped:**
+
+- **Server-side** (endpoint already pages): org360 ledger · org360 breaches ·
+  audit log · data browser · Stripe events · dead letters.
+- **Client-side `foxPageSlice`** (endpoint returns a capped array):
+  organisations · platform staff · anchors · alerts · campaigns · lockout
+  watchlist · recent login attempts · traffic feed.
+
+Overview's recent-organisations widget is deliberately **not** paged — it is a
+top-N preview with a "view all" link.
+
+Paging state lives outside the loaders in `PG{}`, so a filter change or a poll
+does not throw the reader back to page one.
 
 Do **not** add `limit`/`offset` to those endpoints here — it changes
 `/admin/v1/*` response shapes, which is out of scope and needs its own review.
