@@ -32,8 +32,10 @@
 > `animation-duration` but not `animation-delay`, so staggered rows faded in for
 > a reduced-motion reader regardless.
 >
-> **Not deployed.** CI/CD fail on GitHub Actions billing, not on code. `main` is
-> fifteen commits ahead of production and the console should go out as one piece.
+> **Deployed 2026-08-01** once the Actions bill cleared. Verified against the
+> live site, not inferred from a green run: `admin.foxyaudit.tech/admin/` serves
+> 446 KB with **0** occurrences of `data-skin`, and the crumb, the `pg-wm`
+> wordmark, `foxPager` and the glyph sprite all present.
 >
 > Guards grew 0 → **98**. `foxy-adminpage/index.html` 436 KB → 450 KB.
 
