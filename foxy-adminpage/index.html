@@ -1467,7 +1467,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
           <div style="flex:1;min-width:160px;">
             <div class="flabel" style="margin-top:0;">site</div>
-            <div class="fauxselect" id="trafSite" data-value="" data-onchange="renderTraffic">
+            <div class="fauxselect" id="trafSite" data-value="" data-onchange="renderTrafficFiltered">
               <button type="button" class="cin fauxselect-trigger">
                 <span class="fauxselect-label">all sites</span>
                 <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -1482,7 +1482,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           </div>
           <div style="flex:1;min-width:160px;">
             <div class="flabel" style="margin-top:0;">status</div>
-            <div class="fauxselect" id="trafStatus" data-value="" data-onchange="renderTraffic">
+            <div class="fauxselect" id="trafStatus" data-value="" data-onchange="renderTrafficFiltered">
               <button type="button" class="cin fauxselect-trigger">
                 <span class="fauxselect-label">all statuses</span>
                 <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -1497,9 +1497,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           </div>
           <div style="flex:2;min-width:200px;">
             <div class="flabel" style="margin-top:0;">path contains</div>
-            <input class="cin" id="trafPath" placeholder="/v1/logs, /admin/v1/staff…" oninput="renderTraffic()">
+            <input class="cin" id="trafPath" placeholder="/v1/logs, /admin/v1/staff…" oninput="renderTrafficFiltered()">
           </div>
-          <button class="btn sm" style="margin-bottom:4px;" onclick="fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTraffic()">clear</button>
+          <button class="btn sm" style="margin-bottom:4px;" onclick="fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTrafficFiltered()">clear</button>
         </div>
         <div class="twrap">
           <table class="tbl cardify">
@@ -1507,7 +1507,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
               <th>When</th><th>Site</th><th>Method</th><th>Path</th><th>Status</th><th>Latency</th><th>Org</th>
             </tr></thead>
             <tbody id="trafRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody>
-          </table>
+          </table><div id="trafPager"></div>
         </div>
       </div>
     </section>
@@ -3252,6 +3252,7 @@ async function loadTraffic(){
 }
 /* Filters run client-side against the already-fetched batch (the API has no
    filter params beyond limit) — instant, no re-fetch on every keystroke. */
+function renderTrafficFiltered(){ pgReset('traffic'); renderTraffic(); }
 function renderTraffic(){
   const site=fauxVal('trafSite'), status=fauxVal('trafStatus'), path=$('trafPath').value.trim().toLowerCase();
   const rows=TRAFFIC_ROWS.filter(e=>{
@@ -3262,8 +3263,9 @@ function renderTraffic(){
     if(path&&!e.path.toLowerCase().includes(path))return false;
     return true;
   });
-  if(!rows.length){$('trafRows').innerHTML=`<tr><td colspan="7" class="sub mono">${TRAFFIC_ROWS.length?'no traffic matches these filters':'no traffic captured yet'}</td></tr>`;return}
-  $('trafRows').innerHTML=rows.map(e=>{
+  if(!rows.length){window.foxPager('trafPager',{total:0});$('trafRows').innerHTML=`<tr><td colspan="7" class="sub mono">${TRAFFIC_ROWS.length?'no traffic matches these filters':'no traffic captured yet'}</td></tr>`;return}
+  const page=window.foxPageSlice(rows,pgState('traffic',25),'trafPager',renderTraffic,'Traffic pages');
+  $('trafRows').innerHTML=page.map(e=>{
     const sc=e.status_code>=500?'bad':e.status_code>=400?'warn':'safe';
     const site=e.site==='marketing'?'info':e.site==='admin'?'warn':'dim';
     return `<tr>
