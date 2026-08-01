@@ -84,7 +84,7 @@ phases are done rather than putting a half-finished redesign in front of staff;
 | ~~P1~~ | ~~`feat/admin-p1-one-skin`~~ | **✅ merged 2026-08-01 at `1bc39b9`** — one skin, Dashboard palettes |
 | ~~P2~~ | ~~`feat/admin-p2-shell`~~ | **✅ merged 2026-08-01 at `19e5d2a`** — crumb, rail, page heads, Settings |
 | ~~P3~~ | ~~`feat/admin-p3-identity`~~ | **✅ merged 2026-08-01 at `3eaf44a`** — bloom + wordmark |
-| P4 | `feat/admin-p4-heroes` | hero cards, colour and life on every page |
+| ~~P4~~ | ~~`feat/admin-p4-heroes`~~ | **✅ merged 2026-08-01 at `ccb5406`** — faces, glyphs, panel tints |
 | P5 | `feat/admin-p5-pagination` | pagination on every scrollable table, blurb sweep |
 | P6 | `feat/admin-p6-responsive` | same information at every breakpoint |
 
@@ -389,9 +389,15 @@ and then within that bias, every card in a row gets its own face.
 .k-teal    .face{background:linear-gradient(145deg,#4fd6cd,#20a89e)}
 ```
 
-**Measure the five new ones.** `--foxink` clears 4.5:1 on the four inherited
-values; `azure`, `indigo`, `magenta`, `coral` and the deep stops around them have
-not been verified. The `.l` label is 9.5px body text sitting in the bottom-right
+**✅ Measured at `ccb5406`. All nine clear 4.5:1** with `--foxink` on the deep
+stop — worst is `indigo` at **4.64**. None needed lightening.
+
+**But the label opacity did.** The mock ran `.l` at `opacity:.82`, copied from
+the Dashboard. At `.82`, **seven of the nine drop under 4.5:1** (indigo 3.89).
+The label ships at **full strength**; hierarchy comes from size, not from fading
+the smallest text on the card. Reproduce by compositing the ink onto the deep
+stop at the label's alpha — measuring the ink's own value flatters the result and
+is not what renders. The `.l` label is 9.5px body text sitting in the bottom-right
 corner of a 145° gradient — the darkest part of the face — so measure there, not
 at the light stop. Lighten a deep stop until it passes rather than darkening the
 ink.
@@ -403,11 +409,16 @@ ink.
 | Overview | azure · blue · indigo · **orange** *(breaches)* · rose |
 | System health | teal · azure · **orange** *(failed grading)* · **coral** *(anchor issues)* |
 | Traffic | azure · blue · indigo · **orange** *(errors ≥400)* |
-| Revenue | violet · magenta · indigo |
-| Org drill-down | blue · teal · indigo · orange |
+| Revenue | violet · magenta · **azure** |
+| Org drill-down | blue · teal · indigo · orange · **coral** (the loader renders **five** cards, not four) |
 
 The warm card in each row is the one that can be bad. That is the only part of
 the assignment that carries meaning and it must not be traded away for variety.
+
+**The table is an application of the rule, not the rule itself.** Revenue was
+tabulated violet · magenta · indigo; rendered, `#a89bff` and `#9a96f5` are the
+same card, so it shipped violet · magenta · azure. When the two disagree,
+"no two in a row alike" wins and the table gets corrected — as it has been here.
 
 A risk card that is *genuinely* bad goes red through `.k-status` / `.is-raised`
 (`foxy-audit-premium.html:1073`) — it is never red at rest.
