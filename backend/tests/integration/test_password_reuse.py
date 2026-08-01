@@ -9,16 +9,38 @@ the endpoint stays an oracle for nothing.
 
 from __future__ import annotations
 
+# Anchored by the two `== REUSE_DETAIL` assertions below, which compare it to a
+# live response. It is NOT a safe thing to assert against on its own.
 REUSE_DETAIL = "new password must be different from your previous one"
 
 
-def test_reuse_message_does_not_say_current():
-    """The admin modal routes a server error to the field it is about with
-    `/current/i.test(m)`. This message is about the NEW field, so the word
-    "current" in it would send focus to the wrong input. The substring test is
-    fragile and P3 replaces it — until then this assertion is what stops the
-    wording drifting back."""
-    assert "current" not in REUSE_DETAIL.lower()
+def test_reuse_message_names_the_field_it_is_about(make_staff, staff_login, make_org, login):
+    """The reuse rejection is about the NEW password, and its wording should say
+    so rather than borrowing the current-password vocabulary.
+
+    This reads the message off the live responses. The previous version asserted
+    `"current" not in REUSE_DETAIL.lower()` — a literal defined in this file,
+    compared against itself — which stays green no matter what either handler
+    actually returns, and so could never have caught the drift it was written to
+    catch. Both surfaces are checked, because a guard on one is how the two
+    drift apart.
+    """
+    s = make_staff(role="viewer")
+    staff = staff_login(s["email"], s["password"]).post(
+        "/admin/v1/auth/change-password",
+        json={"current_password": s["password"], "new_password": s["password"]})
+
+    org = make_org()
+    customer = login(org["admin_email"], org["admin_password"]).post(
+        "/v1/auth/change-password",
+        json={"current_password": org["admin_password"],
+              "new_password": org["admin_password"]})
+
+    for surface, r in (("staff", staff), ("customer", customer)):
+        assert r.status_code == 400, f"{surface}: {r.status_code}"
+        detail = r.json()["detail"]
+        assert "current" not in detail.lower(), f"{surface} reuse message: {detail!r}"
+        assert "new" in detail.lower(), f"{surface} reuse message: {detail!r}"
 
 
 # ------------------------------- staff surface -------------------------------

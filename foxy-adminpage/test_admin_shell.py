@@ -487,7 +487,8 @@ def test_the_glyph_sprite_is_complete_and_currentcolor_only() -> None:
     sprite = SRC[SRC.index('<svg width="0" height="0"') :]
     sprite = sprite[: sprite.index("</svg>") + 6]
     ids = set(re.findall('id="(g-[a-z]+)"', sprite))
-    assert len(ids) == 18, f"expected 18 glyphs, found {len(ids)}: {sorted(ids)}"
+    # 18 card glyphs + g-info, which round-2 P3 added for the hero (i) button.
+    assert len(ids) == 19, f"expected 19 glyphs, found {len(ids)}: {sorted(ids)}"
     used = set(re.findall('href="#(g-[a-z]+)"', SRC))
     assert used <= ids, f"a card points at a glyph that does not exist: {sorted(used - ids)}"
     # currentColor is the point: the glyph inherits the card's ink, so it can
@@ -798,7 +799,9 @@ def test_every_table_cardifies() -> None:
     """One table opting in and eighteen scrolling sideways is exactly the
     'different pages behave differently' that was reported."""
     tables = _tables()
-    assert len(tables) == 19, f"expected 19 tables, found {len(tables)}"
+    # 18 since round-2 item 9 removed the Settings self-activity card, whose
+    # loader built the nineteenth.
+    assert len(tables) == 18, f"expected 18 tables, found {len(tables)}"
     missing = [t[:70] for t in tables if "tbl cardify" not in t[:60]]
     assert not missing, f"tables that still scroll sideways instead of stacking: {missing}"
 
@@ -958,6 +961,143 @@ def test_the_offscreen_username_does_not_steal_the_modal_focus() -> None:
     """openModal focuses the first field; the manager's username must not be it."""
     assert 'querySelector(\'input:not([tabindex="-1"])' in SRC, \
         "openModal would focus the off-screen username field"
+
+
+# ── chips, the hero (i), and the removed activity card (round 2 · P3) ─────────
+
+def _css_rule(selector: str) -> str:
+    """The body of the first `selector{…}` rule in the real <style> block."""
+    css = _style_block()
+    i = css.index(selector + "{")
+    return css[i + len(selector) + 1: css.index("}", i)]
+
+
+def test_the_chip_is_a_solid_fill_with_no_border() -> None:
+    """The old chip was a translucent tint plus a 30%-mix border. Over .k-teal's
+    deep stop its own ink measured 1.55:1 — that is item 4. Only an opaque fill
+    makes the face behind it stop mattering."""
+    base = _css_rule(".chip")
+    assert "border:0" in base, "the chip still draws a border"
+    assert "border:1px" not in base
+    for cls, fill, ink in (("safe", "--safe-bg", "--safe-tx"),
+                           ("bad", "--breach-bg", "--breach-tx"),
+                           ("warn", "--warn-bg", "--warn-tx"),
+                           ("info", "--info-bg", "--info-tx")):
+        rule = _css_rule(f".chip.{cls}")
+        assert f"background:var({fill})" in rule, f".chip.{cls} is not a solid fill: {rule}"
+        assert f"color:var({ink})" in rule, f".chip.{cls} does not use its paired ink: {rule}"
+        assert "border-color" not in rule, f".chip.{cls} kept a border colour"
+        assert "-soft" not in rule, f".chip.{cls} is still a translucent tint"
+
+
+def test_the_chip_separates_from_the_face_without_a_border() -> None:
+    """Solid fixes the text and breaks the edge: #3ddc84 on .k-teal's light stop
+    is 1.01:1, so the word reads but the pill dissolves into the card. The owner
+    ruled out a border, so the boundary has to come from the lift."""
+    assert "box-shadow" in _css_rule(".chip"), "nothing separates the pill from the face"
+
+
+def test_the_dim_chip_does_not_shout_in_a_status_colour() -> None:
+    """`never` and `not_applicable` mark absence, not a state."""
+    rule = _css_rule(".chip.dim")
+    for status in ("--safe-bg", "--breach-bg", "--warn-bg", "--info-bg",
+                   "--ok", "--danger", "--warnc", "--infoc"):
+        assert status not in rule, f".chip.dim borrowed {status}"
+    assert "background:var(--line2)" in rule and "color:var(--ink2)" in rule, rule
+
+
+# ── the hero info button ──
+
+def _kpi_cards() -> list[str]:
+    return re.findall(r'<div class="clay kpi k-[a-z]+">.*?</span></div>', SRC, re.S)
+
+
+def test_every_hero_card_has_an_info_button_with_real_copy() -> None:
+    cards = _kpi_cards()
+    assert len(cards) >= 16, f"only found {len(cards)} kpi cards"
+    for card in cards:
+        m = re.search(r'<button type="button" class="kinfo"[^>]*>', card)
+        assert m, f"a card has no (i): {card[:90]}"
+        tag = m.group(0)
+        tip = re.search(r'data-tip="([^"]*)"', tag)
+        assert tip and len(tip.group(1)) > 40, f"(i) copy is too thin to be worth a button: {tag}"
+        assert 'aria-label="More about ' in tag, f"the (i) has no accessible name: {tag}"
+
+
+def test_the_info_button_is_a_real_button_left_in_the_tab_order() -> None:
+    """opacity:0 keeps it focusable. display:none or visibility:hidden would take
+    it out of the tab order and make it pointer-only, which is not reachable."""
+    rule = _css_rule(".kpi .kinfo")
+    assert "opacity:0" in rule, "the (i) is not hidden by opacity"
+    assert "display:none" not in rule and "visibility:hidden" not in rule, \
+        "the (i) is hidden in a way that removes it from the tab order"
+    assert 'tabindex="-1"' not in SRC[SRC.index('class="kinfo"'):][:400]
+
+
+def test_focus_visible_reveals_the_info_button_exactly_as_hover_does() -> None:
+    css = _style_block()
+    reveal = css[css.index(".kpi:hover .kinfo"):]
+    reveal = reveal[: reveal.index("}") + 1]
+    assert ".kinfo:focus-visible" in reveal, "keyboard focus does not reveal the (i)"
+    assert "opacity:1" in reveal
+    # ...and the glyph steps aside for both, or the two overlap.
+    swap = css[css.index(".kpi:hover .gly"):]
+    swap = swap[: swap.index("}") + 1]
+    assert ".kinfo:focus-visible + .gly" in swap, "the glyph does not move on keyboard focus"
+
+
+def test_the_info_button_has_a_touch_path() -> None:
+    """There is no hover on a phone: the (i) must be permanently visible there,
+    and it must be openable by tap — .datatip's focusin path is :focus-visible
+    gated, which a tap does not satisfy."""
+    css = _style_block()
+    i = css.index("@media (hover:none)")
+    block = css[i: css.index("\n}", i)]
+    assert ".kpi .kinfo" in block and "opacity:1" in block, block
+    assert ".kpi .gly" in block and "opacity:0" in block, "the glyph does not step aside on touch"
+    assert "44px" in block, "the touch target is under the 44px minimum"
+    assert "onclick=\"kinfoTip(this)\"" in SRC, "the (i) cannot be opened by tap"
+
+
+def test_the_info_button_reuses_the_shared_tooltip() -> None:
+    """One .datatip node, 23 existing sites. A second tooltip is a second set of
+    edge-flip, delay and reduced-motion bugs."""
+    assert "data-tip=" in SRC[SRC.index('class="kinfo"'):][:400]
+    assert SRC.count("class='datatip'") + SRC.count('class="datatip"') <= 1
+    fn = _js_func("kinfoTip")
+    assert "_tipForEl" in fn and "tipHide" in fn, "kinfoTip built its own tooltip"
+
+
+# ── item 9: the Settings self-activity card ──
+
+def test_the_settings_activity_card_is_gone() -> None:
+    assert "setActivity" not in SRC, "#setActivity survived"
+    assert "loadSelfActivity" not in SRC, "its loader survived"
+
+
+def test_the_staff_drilldown_activity_list_survived() -> None:
+    """#mActivity is a different feature — the staff-member audit list a
+    superadmin opens from the drill-down modal. Only the self card went."""
+    assert 'id="mActivity"' in SRC, "the staff drill-down activity list was removed too"
+    assert "loadStaffActivity" in SRC, "its loader was removed too"
+
+
+# ── the P2 error-focus routing, hardened ──
+
+def test_the_change_password_error_focus_reads_no_server_copy() -> None:
+    """It used to be `(/current/i.test(m) ? cur : nw).focus()`, which also matched
+    the reuse message — a complaint about the NEW field — and so pointed at the
+    wrong input as soon as the backend grew its reuse guard."""
+    # Comments stripped: this function explains the old shape in prose, and the
+    # guard is about the code, not about what the code says about itself.
+    fn = re.sub(r"//[^\n]*", "", _js_func("_doChangePw"))
+    tail = fn[fn.index("if(!r.ok)"):]
+    assert "/current/" not in fn, "the substring match over server copy came back"
+    assert not re.search(r"\.test\(\s*m\s*\)|m\.(includes|indexOf|match)\(", tail), \
+        f"the error branch is parsing the server's wording again: {tail[:200]}"
+    # The local reuse check is what makes that safe — it removes the only server
+    # rejection that is about the new-password box.
+    assert "nw.value===cur.value" in fn, "nothing catches reuse before the request"
 
 
 if __name__ == "__main__":  # pragma: no cover

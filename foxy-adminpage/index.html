@@ -511,8 +511,41 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    At full strength the worst face is 4.64:1 and hierarchy comes from size. */
 .kpi .face .klabel,.kpi .face .kval,.kpi .face .kfoot{color:var(--foxink)}
 .kpi .gly{position:absolute;right:13px;top:11px;width:38px;height:38px;z-index:2;
-  color:var(--foxink);opacity:.9;pointer-events:none}
+  color:var(--foxink);opacity:.9;pointer-events:none;
+  transition:opacity var(--dur) var(--ease-out)}
 .kpi .face .klabel{padding-right:44px}
+
+/* ── the (i): swaps in over the glyph ──────────────────────────────────────
+   Hover-first was the owner's call, so it buys two things it does not get free:
+
+   KEYBOARD — a real <button>, always in the tab order. opacity:0 (not
+   visibility/display) keeps it focusable at rest, and :focus-visible reveals it
+   exactly as hover does. It sits BEFORE .gly in the DOM so `+ .gly` can push the
+   glyph aside on focus without needing :has().
+
+   TOUCH — there is no hover on a phone, so under (hover:none) the (i) is
+   permanently visible, the glyph steps aside for good, and the target grows to
+   the 44px minimum. The tooltip itself is opened by click there; .datatip's
+   focusin path is :focus-visible-gated and a tap does not satisfy it. */
+.kpi .kinfo{
+  position:absolute;right:13px;top:11px;width:38px;height:38px;z-index:3;
+  display:flex;align-items:center;justify-content:center;
+  background:none;border:0;padding:0;margin:0;cursor:pointer;
+  color:var(--foxink);opacity:0;pointer-events:none;
+  border-radius:11px;-webkit-tap-highlight-color:transparent;
+  transition:opacity var(--dur) var(--ease-out);
+}
+.kpi .kinfo svg{width:24px;height:24px;display:block}
+.kpi:hover .kinfo,.kpi .kinfo:focus-visible{opacity:1;pointer-events:auto}
+.kpi:hover .gly,.kpi .kinfo:focus-visible + .gly{opacity:0}
+.kpi .kinfo:focus-visible{outline:2px solid var(--foxink);outline-offset:-2px}
+@media (hover:none){
+  .kpi .kinfo{opacity:1;pointer-events:auto;width:44px;height:44px;right:10px;top:8px}
+  .kpi .gly{opacity:0}
+}
+@media (prefers-reduced-motion:reduce){
+  .kpi .kinfo,.kpi .gly{transition:none}
+}
 /* the travelling rim light: a conic gradient orbits BEHIND the face, which
    covers all but the 1.6px padding, so the only thing visible is a light
    running the perimeter. Phase-offset per card so a row never pulses in unison. */
@@ -548,18 +581,35 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .kpi .kval{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:clamp(22px,2.2vw,30px);font-weight:600;margin-top:6px;letter-spacing:-.5px;color:var(--ink);line-height:1.1}
 .kpi .kfoot{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:4px}
 
-/* ════════ CHIPS / BADGES (glass-tinted) ════════ */
+/* ════════ CHIPS / BADGES (solid fill) ════════
+   Was a translucent tint plus a 30% color-mix border. That reads fine on a flat
+   panel and turns to mud on a decorative hero face: the old .chip.safe over
+   .k-teal's deep stop measured 1.55:1 for its own ink, and over .k-indigo 2.16:1.
+   Solid fill covers what is behind it, so the face stops mattering — measured
+   ink-on-fill, worst case across both themes, is 4.78:1 (light .safe).
+
+   The fill introduces one problem the tint did not have: the PILL EDGE. A solid
+   #3ddc84 on .k-teal's light stop is 1.01:1 — the word is perfectly legible but
+   the pill dissolves into the card and reads as loose text. The lift is what
+   separates it, not a border (1.4.11 asks for a visible boundary, not
+   specifically a stroke). Every face is bright in both themes, so one dark
+   shadow works everywhere it is needed and is invisible where it is not. */
 .chip{
   display:inline-flex;align-items:center;gap:5px;
   font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.5px;
-  border:1px solid transparent;border-radius:6px;padding:2px 8px;
+  border:0;border-radius:6px;padding:3px 8px;
   text-transform:uppercase;white-space:nowrap;line-height:1.5;
+  box-shadow:0 1px 2px rgba(0,0,0,.28);
 }
-.chip.safe{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
-.chip.bad{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
-.chip.warn{background:var(--warn-soft);color:var(--warnc);border-color:color-mix(in srgb,var(--warnc) 30%,transparent)}
-.chip.info{background:var(--info-soft);color:var(--infoc);border-color:color-mix(in srgb,var(--infoc) 30%,transparent)}
-.chip.dim{background:var(--neutral-soft);color:var(--neutral);border-color:var(--line)}
+.chip.safe{background:var(--safe-bg);color:var(--safe-tx)}
+.chip.bad{background:var(--breach-bg);color:var(--breach-tx)}
+.chip.warn{background:var(--warn-bg);color:var(--warn-tx)}
+.chip.info{background:var(--info-bg);color:var(--info-tx)}
+/* Absence, not a status: `never` and `not_applicable` must not shout in a status
+   hue. --line2 is the quietest fill that is still a step off every surface it
+   lands on (1.54:1 dark / 1.47:1 light vs the panel) and carries --ink2 at
+   6.79:1 / 5.32:1. */
+.chip.dim{background:var(--line2);color:var(--ink2)}
 
 /* ════════ TABLES ════════ */
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
@@ -1201,6 +1251,14 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <path d="M14.2 17.4H9.6a2.2 2.2 0 01-2.2-2.2V9.8"/>
   </g>
 </symbol>
+<symbol id="g-info" viewBox="0 0 24 24">
+  <circle opacity=".2" fill="currentColor" cx="12" cy="12" r="9.4"/>
+  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9.4"/>
+    <path d="M12 10.9v5.6"/>
+    <path d="M12 7.6h.01"/>
+  </g>
+</symbol>
 <symbol id="g-apikey" viewBox="0 0 24 24">
   <circle opacity=".2" fill="currentColor" cx="8.2" cy="8.2" r="5"/>
   <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1412,11 +1470,11 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div id="ovTrend" style="min-height:220px;"></div>
       </div>
       <div class="grid kpis">
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-orgs"/></svg><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></span></div>
-        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-users"/></svg><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></span></div>
-        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></span></div>
-        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></span></div>
-        <div class="clay kpi k-rose"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-staff"/></svg><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Organizations" data-tip="Tenant workspaces that have not been offboarded — soft-deleted orgs are excluded. The line below splits the same count into active and suspended." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-orgs"/></svg><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer users" data-tip="Every customer dashboard login on the platform. Unlike the org count this is not filtered by offboarding, so users of offboarded orgs are still in here." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-users"/></svg><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></span></div>
+        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Audited interactions" data-tip="Interactions the SDK committed to the ledger, summed from the daily usage rollup rather than counted row by row." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Policy breaches" data-tip="Committed interactions flagged as a breach, all-time and across every org. Same daily rollup as the count above." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-rose"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Platform staff" data-tip="Accounts that can sign in to this console, at any of the three platform roles. Disabled staff are still counted." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-staff"/></svg><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></span></div>
       </div>
 
       <div class="bento">
@@ -1456,7 +1514,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-health">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
-      <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-health"/></svg><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-worker"/></svg><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-failed"/></svg><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-anchor"/></svg><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
+      <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-health"/></svg><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-worker"/></svg><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-failed"/></svg><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-anchor"/></svg><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" class="sub mono">loading…</div></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px;">
         <div class="clay pad k-orange">
@@ -1542,10 +1600,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-traffic">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-marketing"/></svg><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></span></div>
-        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-app"/></svg><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></span></div>
-        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-admin"/></svg><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></span></div>
-        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-errors"/></svg><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr">—</div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Marketing traffic" data-tip="Requests to the public sale page in the last 7 days. Client IP and user-agent are HMAC-hashed at capture, so nothing here re-exposes them." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-marketing"/></svg><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></span></div>
+        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer app traffic" data-tip="Requests to the customer dashboard and the /v1 API in the last 7 days." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-app"/></svg><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></span></div>
+        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Admin traffic" data-tip="Requests to this console in the last 7 days — staff sessions only." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-admin"/></svg><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></span></div>
+        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Errors in the last 7 days" data-tip="Responses with a status of 400 or above in the last 7 days, counted across all three sites together." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-errors"/></svg><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr">—</div></span></div>
       </div>
       <div class="clay pad">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
@@ -1699,9 +1757,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-revenue">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="grid kpis">
-        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-revenue"/></svg><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
-        <div class="clay kpi k-magenta"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-subscription"/></svg><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-trial"/></svg><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
+        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Invoices Stripe marked paid whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-revenue"/></svg><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
+        <div class="clay kpi k-magenta"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose Stripe subscription status is active right now, offboarded orgs excluded." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-subscription"/></svg><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Trialing orgs" data-tip="Orgs whose trial window has not closed yet. This is independent of subscription status, so an org can be counted here and under active." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-trial"/></svg><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
       </div>
       <div class="split">
         <div class="clay pad k-violet"><div class="panel-h"><div><div class="eyebrow">monthly</div><div class="panel-t">Revenue trend</div></div></div><div id="rvMonthly" style="min-height:200px;"></div></div>
@@ -1808,8 +1866,6 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <button class="btn sm" onclick="pwModal()">Change password</button>
             <span id="setMfaBtns"></span>
           </div>
-          <div class="flabel">recent activity</div>
-          <div id="setActivity" class="twrap" style="max-height:200px;overflow:auto;"><div class="sub mono">loading…</div></div>
         </div>
         <div class="clay pad">
           <div class="panel-h"><div><div class="eyebrow">privacy · this account</div><div class="panel-t">Privacy &amp; notifications</div></div></div>
@@ -2720,7 +2776,6 @@ function loadSettings(){
   $('setMfaBtns').innerHTML=mfaOn
     ? '<button class="btn sm" onclick="mfaDisable()">Disable MFA</button> <span class="chip safe">MFA on</span>'
     : '<button class="btn sm pri" onclick="mfaEnableFlow()">Enable MFA</button> <span class="chip dim">MFA off</span>';
-  loadSelfActivity();
   const isSuper=can('superadmin');
   $('setConfigCard').style.display=isSuper?'':'none';
   $('setBroadcastCard').style.display=isSuper?'':'none';
@@ -3102,11 +3157,11 @@ function renderO3Header(d){
   const logs=usage.map(p=>p.logs), breaches=usage.map(p=>p.breaches), days=usage.map(p=>p.day);
   const totLogs=logs.reduce((a,b)=>a+b,0), totBr=breaches.reduce((a,b)=>a+b,0);
   $('o3Kpis').innerHTML=
-    '<div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Interactions · '+usage.length+'d</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:30px;margin-top:6px;"></div></span></div>'+
-    '<div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · '+usage.length+'d</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:30px;margin-top:6px;"></div></span></div>'+
-    '<div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-ledger"/></svg><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot">'+(d.ledger_head?sens(d.ledger_head,{short:d.ledger_head.slice(0,12)+'…'}):'—')+'</div></span></div>'+
-    '<div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-apikey"/></svg><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></span></div>'+
-    '<div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></span></div>';
+    '<div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Interactions over the window" data-tip="Committed interactions for this org over the window, from its daily usage rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Interactions · '+usage.length+'d</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:30px;margin-top:6px;"></div></span></div>'+
+    '<div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches over the window" data-tip="Flagged interactions for this org over the same window and the same rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · '+usage.length+'d</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:30px;margin-top:6px;"></div></span></div>'+
+    '<div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Ledger height" data-tip="How many entries are in the hash chain for this org. The line below is the current chain head." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-ledger"/></svg><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot">'+(d.ledger_head?sens(d.ledger_head,{short:d.ledger_head.slice(0,12)+'…'}):'—')+'</div></span></div>'+
+    '<div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Users and API keys" data-tip="Dashboard logins for this org, then every API key it has ever held. The line below counts only the keys still live." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-apikey"/></svg><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></span></div>'+
+    '<div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches all time" data-tip="Every flagged interaction since signup, against the total committed logs. Unlike the platform Overview these two are counted straight from audit_logs, not the rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></span></div>';
   if(usage.length){
     chart('o3Usage',{type:'area',height:200,labels:days,xFormat:v=>String(v).slice(5),
       colors:[_cssvar('--teal','#1BAF7A'),_cssvar('--danger','#B91C1C')],   /* interactions=teal, breaches=red */
@@ -3534,14 +3589,9 @@ function setDensity(d){
   try{localStorage.setItem('foxy_admin_density',d)}catch(e){}
   document.querySelectorAll('[data-density-opt]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.densityOpt===d?'true':'false'));
 }
-async function loadSelfActivity(){
-  const el=$('setActivity'); if(!el)return;
-  let r; try{ r=await api('/admin/v1/auth/activity?limit=25'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">unavailable</div>'; return; }
-  const items=(await r.json()).items||[];
-  if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No recent activity.</div>'; return; }
-  el.innerHTML='<table class="tbl cardify"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td></tr>`).join('')+'</tbody></table>';
-}
+/* The Settings self-activity card was removed (round-2 item 9). Its endpoint,
+   GET /admin/v1/auth/activity, is left in place: it is still covered by
+   backend/tests/integration/test_admin_phase3.py and costs nothing standing. */
 /* ──────────── change password ────────────
    The body is a REAL <form> submitted normally. Browser password managers only
    offer to update a stored credential on a form submission (or an explicit
@@ -3638,13 +3688,25 @@ async function _doChangePw(){
   if(nw.value.length<8){ say('New password must be at least 8 characters.',true); nw.focus(); return; }
   // Catch the typo here. There is no way back from a password typed only once.
   if(nw.value!==nw2.value){ say('The two new passwords do not match.',true); nw2.focus(); return; }
+  // Refuse the reuse the server also refuses, without spending a round trip on
+  // it. This is also what makes the error routing below copy-independent: the
+  // reuse rejection can no longer come back from the server, so every rejection
+  // that DOES come back is about the current-password box.
+  if(nw.value===cur.value){ say('New password must be different from your previous one.',true); nw.focus(); return; }
   let r; try{ r=await api('/admin/v1/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:cur.value,new_password:nw.value})}); }
   catch(e){ say('Could not reach the server.',true); return; }
   const d=await r.json().catch(()=>({}));
   if(!r.ok){
-    const m=d.detail||'Change failed.';
-    say(m,true);
-    (/current/i.test(m)?cur:nw).focus();   // land on the field the server rejected
+    say(d.detail||'Change failed.',true);
+    // Land on the current-password box, reading NOTHING out of the server's copy.
+    // This replaces `(/current/i.test(m) ? cur : nw).focus()`, which also matched
+    // the reuse message — a complaint about the NEW field — and so would have sent
+    // the cursor to the wrong input as soon as the backend grew its reuse guard.
+    // The three checks above have already caught every rejection that is about the
+    // new-password box, so what can still arrive here is the current one. DO NOT
+    // reintroduce a substring test over server wording; if a future guard needs its
+    // own field, give the response a machine-readable code and switch on that.
+    cur.focus();
     return;
   }
   await _storeCredential(($('pwUser')||{}).value||'',nw.value);
@@ -3894,6 +3956,16 @@ function tipHide(){ if(_tipTimer){clearTimeout(_tipTimer);_tipTimer=0;}
 function _tipForEl(el){ var text=el.getAttribute('data-tip'); if(!text)return;
   var r=el.getBoundingClientRect(); tipShowAt(text,r.left+r.width/2,r.top,'top');
   el.setAttribute('aria-describedby','datatip'); }
+/* The (i) on a hero card, opened by CLICK. The listeners below cover hover and
+   :focus-visible, and a tap satisfies neither — focusin is deliberately gated on
+   :focus-visible so that clicking any of the other data-tip controls does not
+   pop a tooltip. Scoped to .kinfo rather than widened to every [data-tip], so
+   "Refresh this page" still just refreshes. It toggles, so a second tap
+   dismisses; tapping elsewhere blurs the button and focusout hides it. */
+function kinfoTip(btn){
+  if(_tipCur===btn&&_tipEl&&_tipEl.classList.contains('on')){ tipHide(); return; }
+  tipHide(); _tipCur=btn; _tipForEl(btn);
+}
 document.addEventListener('mouseover',function(e){
   var t=e.target.closest?e.target.closest('[data-tip]'):null; if(!t||t===_tipCur)return;
   if(_tipTimer)clearTimeout(_tipTimer); _tipCur=t;
