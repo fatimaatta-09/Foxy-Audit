@@ -57,7 +57,7 @@ rule as last time.
 
 | Phase | Branch | Items |
 |---|---|---|
-| P1 | `feat/admin-pw-reuse-block` | 2 — reject reusing the current password (backend) |
+| ~~P1~~ | ~~`feat/admin-pw-reuse-block`~~ | **✅ merged 2026-08-02 at `f4d2889`** — both surfaces |
 | ~~P2~~ | ~~`feat/admin-pw-modal`~~ | **✅ merged 2026-08-02 at `05a390a`** — form, confirm, meter |
 | P3 | `feat/admin-chips-info` | 4, 5, 6, 9 — chips, hero info button, drop Recent Activity |
 | P4 | `feat/admin-credit-link` | 7 — credit via shareable link |
@@ -195,6 +195,21 @@ aware, already used at 23 `data-tip` sites. Do not build a second tooltip.
 
 Write real copy per card — what the number is and where it comes from. "Shows the
 overall status" is not worth a button.
+
+### Also in P3 — the anti-drift guard is weaker than its name
+
+`test_reuse_message_does_not_say_current` asserts `"current" not in
+REUSE_DETAIL`, but `REUSE_DETAIL` is a **constant defined in the test file**, not
+imported from the app. It compares a literal to itself and cannot fail when a
+handler changes.
+
+Drift *is* caught — by `test_staff_same_password_rejected` and its customer twin,
+which assert `response.detail == REUSE_DETAIL`. Verified by reverting the wording
+in a worktree: those two failed, the one named for the job passed.
+
+The protection is real, the attribution is not, and a guard that reads stronger
+than it is will be trusted for more than it does. Point it at the live response
+or import the string from the app.
 
 ### Also in P3 — harden the error-focus test
 
