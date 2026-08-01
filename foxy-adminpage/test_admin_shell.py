@@ -554,5 +554,148 @@ def test_no_invented_numbers_in_a_kpi_card() -> None:
             )
 
 
+# ── 8. pagination (P5) ───────────────────────────────────────────────────────
+# The one behaviour worth running rather than reading: foxPager must render
+# NOTHING when everything fits on one page. A pager over a single page is
+# furniture, and an empty table with an empty pager under it is worse — it
+# implies there are other pages to look at.
+
+PAGER_SHIM = """
+var _made=[];
+function El(tag){
+  return {tag:tag, children:[], attrs:{}, textContent:'', className:'', type:'',
+    disabled:false, listeners:0,
+    appendChild:function(c){ this.children.push(c); return c; },
+    setAttribute:function(k,v){ this.attrs[k]=v; },
+    addEventListener:function(){ this.listeners++; }};
+}
+var HOST=El('div');
+HOST.textContent='';
+global.document={
+  createElement:function(t){ var e=El(t); _made.push(e); return e; },
+  getElementById:function(){ return HOST; }
+};
+global.window={};
+"""
+
+
+def _pager_source() -> str:
+    """The pager IIFE as it ships, lifted out of the app script."""
+    app = _script_blocks()[1]
+    start = app.index("(function(){\n  /* which page numbers to show around the current one")
+    end = app.index("})();", start) + len("})();")
+    return app[start:end]
+
+
+def _run_pager(total: int, size: int) -> dict:
+    """Run the shipped foxPager against a DOM stub and report what it built."""
+    probe = (
+        PAGER_SHIM
+        + _pager_source()
+        + f"""
+window.foxPager('host',{{page:1,pageSize:{size},total:{total},onPage:function(){{}}}});
+console.log(JSON.stringify({{
+  children:HOST.children.length,
+  nav:HOST.children.length?HOST.children[0].className:null,
+  buttons:_made.filter(function(e){{return e.tag==='button';}}).length
+}}));
+"""
+    )
+    import tempfile, os
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        proc = subprocess.run([shutil.which("node"), path], capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stderr
+        import json
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+
+def test_the_pager_component_was_ported_not_rewritten() -> None:
+    """foxPager/foxPageSlice come from the Dashboard; the console's own _pager —
+    a prev/next pair built as an HTML string — is gone."""
+    assert "window.foxPager=function" in SRC
+    assert "window.foxPageSlice=function" in SRC
+    assert "function _pager(" not in SRC, "the old string-built pager is back"
+    assert "_pager(" not in SRC, "something still calls the old pager"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+@pytest.mark.parametrize("total,size", [(0, 25), (1, 25), (24, 25), (25, 25)])
+def test_no_pager_when_everything_fits_on_one_page(total: int, size: int) -> None:
+    """total <= pageSize renders nothing at all — not an empty nav, nothing."""
+    out = _run_pager(total, size)
+    assert out["children"] == 0, f"total={total} size={size} still drew {out}"
+    assert out["buttons"] == 0
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+@pytest.mark.parametrize("total,size,pages", [(26, 25, 2), (100, 25, 4), (500, 25, 20)])
+def test_pager_appears_once_there_is_a_second_page(total: int, size: int, pages: int) -> None:
+    out = _run_pager(total, size)
+    assert out["children"] == 1 and out["nav"] == "pager", out
+    # prev + next + at most seven numbered buttons (the rest collapse to gaps)
+    assert 3 <= out["buttons"] <= 9, out
+
+
+def test_pager_css_is_present() -> None:
+    css = _style_block()
+    for sel in (".pager{", ".pager-count{", ".pager-nav{", ".pager button{",
+                ".pager button[aria-current=\"page\"]{", ".pager-gap{"):
+        assert sel in css, f"the pager is missing {sel}"
+    # real <button>s, so keyboard and focus come from the platform
+    assert ".pager button:focus-visible{" in css
+
+
+def test_every_pager_host_is_wired_both_ways() -> None:
+    """A host div with no foxPager call is dead markup; a call with no host is a
+    pager nobody sees. Neither errors at runtime."""
+    hosts = set(re.findall('id="([a-zA-Z0-9]+Pager)"', SRC))
+    # pgState('orgs',25) has a comma in it, so match the host by name, not by
+    # argument position.
+    called = set(re.findall("'([a-zA-Z0-9]+Pager)'", SRC))
+    assert hosts, "no pager hosts at all"
+    assert hosts == called, (
+        f"hosts with no call: {sorted(hosts - called)}; "
+        f"calls with no host: {sorted(called - hosts)}"
+    )
+
+
+def test_client_side_slices_do_not_invent_query_params() -> None:
+    """The seven capped endpoints keep their shapes: no limit/offset was added
+    to /organizations, /staff, /anchors, /alerts, /evaluation-campaigns,
+    /leads or /security/logins. Changing an /admin/v1/* response is out of
+    scope for this phase and needs its own review."""
+    for path in ("/admin/v1/organizations'", "/admin/v1/staff'", "/admin/v1/anchors'",
+                 "/admin/v1/alerts'", "/admin/v1/evaluation-campaigns'"):
+        i = SRC.find("api('" + path)
+        assert i != -1, f"{path} call site moved"
+        call = SRC[i : i + 160]
+        assert "limit=" not in call and "offset=" not in call, (
+            f"{path} grew a paging param: {call[:110]}"
+        )
+
+
+def test_the_data_page_warning_survived_the_blurb_sweep() -> None:
+    """The one line that must not go: it names the four permanently read-only
+    tables and why, which is a real warning about the tamper-evident chain."""
+    assert "permanently read-only" in SRC
+    assert "tamper-evident chain" in SRC
+
+
+def test_the_named_blurb_is_gone() -> None:
+    """Its card's eyebrow already reads 'local · this browser'."""
+    assert "Saved to this browser only" not in SRC
+
+
+def test_shown_once_secret_warning_is_not_a_blurb() -> None:
+    """Kept: the reader cannot get this anywhere else, and getting it wrong
+    loses the code."""
+    assert "shown once" in SRC
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

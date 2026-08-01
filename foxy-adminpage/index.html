@@ -574,6 +574,30 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .tbl tbody tr:hover{background:var(--surf2);box-shadow:inset 3px 0 0 var(--fox)}
 .twrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 
+/* ════════ P5 · PAGINATION ════════
+   Ported from the Dashboard (foxy-audit-premium.html:996-1012). One component
+   for every table that scrolls; the console's own _pager — a bare prev/next
+   pair built as an HTML string — is gone.
+   Buttons are real <button>s so keyboard operation and focus come from the
+   platform rather than from handlers that have to remember to exist. */
+.pager{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:2px dashed var(--line)}
+.pager-count{font-family:var(--mono);font-size:10px;color:var(--muted);
+  letter-spacing:.04em;white-space:nowrap}
+.pager-nav{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.pager button{min-width:30px;height:30px;padding:0 8px;border:0;border-radius:9px;
+  background:var(--bg);box-shadow:var(--raise-sm);color:var(--ink2);cursor:pointer;
+  font-family:var(--mono);font-size:10.5px;font-weight:700;
+  transition:color .14s,box-shadow .14s}
+.pager button:hover:not(:disabled){color:var(--fox2)}
+.pager button:active:not(:disabled){box-shadow:var(--sink-sm)}
+.pager button:focus-visible{outline:2px solid var(--fox);outline-offset:2px}
+.pager button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+.pager button[aria-current="page"]{background:var(--fox);color:var(--foxink);
+  box-shadow:var(--raise-sm);cursor:default}
+.pager-gap{color:var(--muted2);font-family:var(--mono);font-size:10.5px;padding:0 2px}
+@media(max-width:560px){.pager{justify-content:center}}
+
 /* subtle load stagger for KPI cards + table rows */
 @keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
 .kpis .kpi,.tbl tbody tr{animation:rise .3s ease both}
@@ -942,7 +966,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
 /* ════════ REDUCED MOTION ════════ */
 @media(prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important}
+  /* animation-DELAY was missing here, and `animation:rise .3s both` holds its
+     from-state (opacity:0) for the length of the delay. The row stagger runs
+     30-150ms, so a reduced-motion reader watched rows 2-6 of every table fade
+     in anyway — and a capture at any moment inside that window shows them
+     blank. Reduced motion means no stagger, not a stagger played instantly. */
+  *,*::before,*::after{animation-duration:.001ms !important;animation-delay:0s !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important}
 }
 </style>
 </head>
@@ -1364,20 +1393,20 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-deadletter">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm pri" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
-      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table></div>
+      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table><div id="deadPager"></div></div>
     </section>
 
     <section class="page" id="page-anchors">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm pri" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="split" style="margin-bottom:18px;"><div class="clay pad" id="anchorSummary"><div class="sub mono">loading…</div></div><div class="clay pad" id="anchorWallet"><div class="sub mono">loading…</div></div></div>
-      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table></div>
+      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="anchorPager"></div></div>
     </section>
 
     <section class="page" id="page-alerts">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm pri" onclick="goOps('alerts')">Alerts</button></div>
-      <div class="clay pad"><div id="alertSummary" class="sub mono" style="margin-bottom:14px;">loading…</div><div id="alertRows"><div class="sub mono">loading…</div></div></div>
+      <div class="clay pad"><div id="alertSummary" class="sub mono" style="margin-bottom:14px;">loading…</div><div id="alertRows"><div class="sub mono">loading…</div><div id="alertPager"></div></div></div>
     </section>
 
     <section class="page" id="page-orgs">
@@ -1392,7 +1421,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <th>Org</th><th>Plan</th><th>Subscription</th><th>Access</th><th>Contact</th><th>Created</th>
           </tr></thead>
           <tbody id="orgRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody>
-        </table>
+        </table><div id="orgPager"></div>
       </div>
     </section>
 
@@ -1491,7 +1520,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <table class="tbl">
             <thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>Last login</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
             <tbody id="staffRows"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody>
-          </table>
+          </table><div id="staffPager"></div>
         </div>
         <div class="clay pad">
           <div class="eyebrow">new staff account</div>
@@ -1547,12 +1576,8 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="clay pad twrap" id="dataResultsWrap" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
           <div class="sub mono" id="dataCount"></div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button class="btn sm" type="button" onclick="dataPage(-1)">‹ prev</button>
-            <span class="mono sub" id="dataPageLbl"></span>
-            <button class="btn sm" type="button" onclick="dataPage(1)">next ›</button>
-          </div>
         </div>
+        <div id="dataPager"></div>
         <table class="tbl" id="dataTbl">
           <thead><tr id="dataHead"></tr></thead>
           <tbody id="dataRows"></tbody>
@@ -1605,7 +1630,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <div class="fauxselect-list"><div class="fauxselect-opt sel" data-value="">all statuses</div><div class="fauxselect-opt" data-value="failed">failed</div><div class="fauxselect-opt" data-value="processed">processed</div><div class="fauxselect-opt" data-value="ignored">ignored</div><div class="fauxselect-opt" data-value="received">received</div></div>
           </div>
         </div>
-        <div class="twrap"><table class="tbl"><thead><tr><th>Type</th><th>Status</th><th>Org</th><th>Received</th><th>Error</th><th style="text-align:right;">Action</th></tr></thead><tbody id="seRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table></div>
+        <div class="twrap"><table class="tbl"><thead><tr><th>Type</th><th>Status</th><th>Org</th><th>Received</th><th>Error</th><th style="text-align:right;">Action</th></tr></thead><tbody id="seRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="sePager"></div></div>
       </div>
     </section>
 
@@ -1617,8 +1642,8 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by IP</div><div class="panel-t">Top offenders</div></div></div><div id="secOffenders" style="min-height:190px;"></div></div>
       </div>
       <div class="split" style="margin-top:16px;">
-        <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl"><thead><tr><th>Email</th><th style="text-align:right;">Fails · 24h</th><th>Last</th></tr></thead><tbody id="secWatch"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table></div></div>
-        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap" style="max-height:360px;overflow:auto;"><table class="tbl"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table></div></div>
+        <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl"><thead><tr><th>Email</th><th style="text-align:right;">Fails · 24h</th><th>Last</th></tr></thead><tbody id="secWatch"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table><div id="secWatchPager"></div></div></div>
+        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap" style="max-height:360px;overflow:auto;"><table class="tbl"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table><div id="secRecentPager"></div></div></div>
       </div>
     </section>
 
@@ -1631,7 +1656,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">since</div><input class="cin" id="auSince" type="date" onchange="loadAudit()"></div>
         <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">until</div><input class="cin" id="auUntil" type="date" onchange="loadAudit()"></div>
       </div>
-      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Org</th><th>IP</th></tr></thead><tbody id="auRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:12px;"></div></div>
+      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Org</th><th>IP</th></tr></thead><tbody id="auRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
     </section>
 
     <!-- ──────────────── LEADS ──────────────── -->
@@ -1664,7 +1689,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       </div>
       <div class="clay pad">
         <div class="eyebrow">active and historical</div>
-        <div id="campaignRows"><div class="sub mono">Loading...</div></div>
+        <div id="campaignRows"><div class="sub mono">Loading...</div><div id="campaignPager"></div></div>
       </div>
     </section>
 
@@ -1683,7 +1708,6 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <button type="button" class="segbtn" data-density-opt="comfortable" aria-pressed="true" onclick="setDensity('comfortable')">Comfortable</button>
             <button type="button" class="segbtn" data-density-opt="compact" aria-pressed="false" onclick="setDensity('compact')">Compact</button>
           </div>
-          <div class="sub" style="margin-top:10px;font-size:11px;">Saved to this browser only — doesn't affect other staff.</div>
         </div>
         <div class="clay pad">
           <div class="panel-h"><div><div class="eyebrow">your account</div><div class="panel-t">Account &amp; security</div></div></div>
@@ -2021,15 +2045,9 @@ async function refreshData(){
     }
     return `<tr>${cells}${actionsCell}</tr>`;
   }).join('');
-  const pages=Math.max(1,Math.ceil(DATA_TOTAL/DATA_LIMIT));
   $('dataCount').textContent=num(DATA_TOTAL)+' row'+(DATA_TOTAL===1?'':'s')+' · '+esc(DATA_TABLE);
-  $('dataPageLbl').textContent='page '+DATA_PAGE+' / '+pages;
-}
-function dataPage(delta){
-  const pages=Math.max(1,Math.ceil(DATA_TOTAL/DATA_LIMIT));
-  const next=DATA_PAGE+delta;
-  if(next<1||next>pages)return;
-  DATA_PAGE=next;refreshData();
+  window.foxPager('dataPager',{page:DATA_PAGE,pageSize:DATA_LIMIT,total:DATA_TOTAL,
+    label:'Table rows',onPage:function(pg){ DATA_PAGE=pg; refreshData(); }});
 }
 function openDataEdit(pk){
   const row=DATA_ROW_CACHE[pk];
@@ -2314,10 +2332,14 @@ async function loadHealth(){
   loadHealthTrends();
   const counts=g.counts||{};$('healthQueue').innerHTML='<div style="display:grid;gap:8px;">'+['pending','in_progress','graded','failed'].map(k=>`<div style="display:flex;justify-content:space-between;"><span>${esc(k)}</span><b>${num(counts[k]||0)}</b></div>`).join('')+'</div>';
 }
-async function loadDeadletter(){
-  let r;try{r=await api('/admin/v1/grading/deadletter')}catch(e){toast('dead-letter queue unavailable','error');return}
+async function loadDeadletter(page){
+  const st=pgState('deadletter',25); if(page)st.page=page;
+  const off=(st.page-1)*st.size;
+  let r;try{r=await api('/admin/v1/grading/deadletter?limit='+st.size+'&offset='+off)}catch(e){toast('dead-letter queue unavailable','error');return}
   if(!r.ok){toast('dead-letter queue failed ('+r.status+')');return}
   const d=await r.json(),rows=d.items||[];
+  window.foxPager('deadPager',{page:st.page,pageSize:st.size,total:d.total||rows.length,
+    label:'Dead-letter pages',onPage:loadDeadletter});
   if(!rows.length){$('deadRows').innerHTML='<tr><td colspan="7" class="sub mono">no failed grading rows</td></tr>';return}
   $('deadRows').innerHTML=rows.map(x=>`<tr><td><b>${esc(x.org_name||'unknown organization')}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td class="mono">${num(x.seq)}</td><td class="mono">${num(x.grading_attempts)}</td><td class="mono">${esc(x.policy_tag||'—')}</td><td class="mono" style="font-size:10px;">${fmtTime(x.created_at)}</td><td class="sub" style="max-width:230px;">${esc(x.failure_detail||'not recorded')}</td><td>${can('operator')?`<button class="btn sm pri" onclick="requeueDeadletter('${x.id}')">requeue</button>`:'<span class="sub mono">operator required</span>'}</td></tr>`).join('');
 }
@@ -2332,8 +2354,12 @@ async function loadAnchors(){
   const d=await r.json(),s=d.summary||{},w=d.wallet||{};
   $('anchorSummary').innerHTML='<div class="eyebrow">anchor summary</div><div style="font-weight:800;font-size:15px;">'+num(s.organizations||0)+' organizations</div><div class="sub mono" style="margin-top:10px;">'+Object.entries(s.by_status||{}).map(([k,v])=>esc(k)+': '+num(v)).join(' · ')+'</div><div class="sub mono" style="margin-top:8px;">provider: '+esc(d.provider||'unknown')+'</div>';
   const walletDetail=w.detail||w.address||(w.balance_wei!=null?w.balance_wei+' wei':'not configured');$('anchorWallet').innerHTML='<div class="eyebrow">wallet</div>'+opsChip(w.state||'unavailable')+'<div class="sub mono" style="margin-top:9px;word-break:break-word;">'+esc(walletDetail)+'</div>';
-  const rows=d.organizations||[];
-  if(!rows.length){$('anchorRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  ANCHORS_ALL=d.organizations||[];pgReset('anchors');renderAnchors();
+}
+let ANCHORS_ALL=[];
+function renderAnchors(){
+  const rows=window.foxPageSlice(ANCHORS_ALL,pgState('anchors',25),'anchorPager',renderAnchors,'Anchor pages');
+  if(!ANCHORS_ALL.length){$('anchorRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
   $('anchorRows').innerHTML=rows.map(x=>{const a=x.latest,status=a?a.status:'never',receipt=a?(a.tx_hash||a.chain||'receipt'):'—',act=can('operator')&&x.current_head_seq>0?`<button class="btn sm pri" onclick="reanchor('${x.org_id}')">re-anchor</button>`:'<span class="sub mono">'+(can('operator')?'no logs':'operator required')+'</span>';return `<tr><td><b>${esc(x.org_name)}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td class="mono">${num(x.current_head_seq)}</td><td class="mono" style="font-size:10px;">${fmtTime(x.last_confirmed_at)}</td><td>${opsChip(status)}${x.stale?'<span class="chip warn" style="margin-left:5px;">stale</span>':''}</td><td class="mono" style="font-size:10px;max-width:190px;overflow:hidden;text-overflow:ellipsis;">${esc(receipt)}</td><td>${act}</td></tr>`}).join('');
 }
 async function reanchor(id){
@@ -2345,8 +2371,14 @@ async function loadAlerts(){
   if(!r.ok)return;
   const d=await r.json(),rows=d.items||[],open=d.unacknowledged||0;$('alertBadge').textContent=num(open);$('alertBadge').style.display=open?'':'none';
   const _tab=$('topAlertBadge');if(_tab){_tab.textContent=num(open);_tab.style.display=open?'':'none';}
-  if(!rows.length){$('alertSummary').textContent='no active alerts';$('alertRows').innerHTML='<div class="sub mono" style="padding:18px 0;">No operational conditions need attention.</div>';return}
+  ALERTS_ALL=rows;
+  if(!rows.length){window.foxPager('alertPager',{total:0});$('alertSummary').textContent='no active alerts';$('alertRows').innerHTML='<div class="sub mono" style="padding:18px 0;">No operational conditions need attention.</div>';return}
   $('alertSummary').textContent=num(open)+' unacknowledged · '+num(rows.length)+' active';
+  pgReset('alerts');renderAlerts();
+}
+let ALERTS_ALL=[];
+function renderAlerts(){
+  const rows=window.foxPageSlice(ALERTS_ALL,pgState('alerts',15),'alertPager',renderAlerts,'Alert pages');
   $('alertRows').innerHTML=rows.map(x=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;"><div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${opsChip(x.level)}<b>${esc(x.title)}</b>${x.acknowledged?'<span class="chip safe">acknowledged</span>':''}</div><div class="sub" style="margin-top:6px;">${esc(x.detail)}</div>${x.org_name?'<div class="sub mono" style="font-size:10px;margin-top:4px;">'+esc(x.org_name)+'</div>':''}</div>${!x.acknowledged&&can('operator')?`<button class="btn sm" onclick="ackAlert('${x.id}')">acknowledge</button>`:''}</div>`).join('');
 }
 async function ackAlert(id){
@@ -2555,8 +2587,12 @@ async function loadCampaigns(){
   let r;try{r=await api('/admin/v1/evaluation-campaigns')}catch(e){r=null}
   if(!r||!r.ok){$('campaignRows').innerHTML='<div class="sub mono">Unable to load campaigns.</div>';return}
   CAMPAIGNS=await r.json();
-  if(!CAMPAIGNS.length){$('campaignRows').innerHTML='<div class="sub mono" style="padding:16px 0;">No campaigns yet.</div>';return}
-  $('campaignRows').innerHTML=CAMPAIGNS.map(c=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;flex-wrap:wrap;">
+  pgReset('campaigns');renderCampaigns();
+}
+function renderCampaigns(){
+  if(!CAMPAIGNS.length){$('campaignRows').innerHTML='<div class="sub mono" style="padding:16px 0;">No campaigns yet.</div>';window.foxPager('campaignPager',{total:0});return}
+  const _c=window.foxPageSlice(CAMPAIGNS,pgState('campaigns',10),'campaignPager',renderCampaigns,'Campaign pages');
+  $('campaignRows').innerHTML=_c.map(c=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;flex-wrap:wrap;">
     <div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b>${esc(c.label)}</b>${opsChip(c.status)}</div>
     <div class="sub mono" style="font-size:10px;margin-top:5px;">${esc(c.offer_id)} Â· ${num(c.credits)} credits Â· ${num(c.duration_days)} days</div></div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span class="sub mono">${num(c.redemptions)} / ${num(c.max_redemptions)} redeemed</span>
@@ -2860,12 +2896,19 @@ async function loadKpiSparks(){
 }
 
 let ORG_OPEN=null;
+let ORGS_ALL=[];
 async function loadOrgs(){
   const inc=$('showDeleted').checked?'?include_deleted=true':'';
   const r=await api('/admin/v1/organizations'+inc);
   if(!r.ok){toast('orgs failed ('+r.status+')');return}
-  const orgs=await r.json();ORG_OPEN=null;
-  if(!orgs.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  ORGS_ALL=await r.json();ORG_OPEN=null;pgReset('orgs');renderOrgs();
+}
+/* /organizations returns the whole list with no offset, so the slice is local.
+   Do not "fix" that by adding limit/offset to the router — it changes an
+   /admin/v1/* response shape and needs its own review. */
+function renderOrgs(){
+  const orgs=window.foxPageSlice(ORGS_ALL,pgState('orgs',25),'orgPager',renderOrgs,'Organization pages');
+  if(!ORGS_ALL.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
   $('orgRows').innerHTML=orgs.map(o=>{
     const access=o.deleted?'<span class="chip dim">offboarded</span>'
       :o.suspended?'<span class="chip bad">suspended</span>'
@@ -3058,11 +3101,103 @@ function renderO3Keys(rows){
   ).join('')+'</tbody></table></div>';
 }
 
-function _pager(off,limit,total,fn){
-  return '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn sm" '+(off<=0?'disabled':'')+' onclick="'+fn+'(-1)">← prev</button><button class="btn sm" '+(off+limit>=total?'disabled':'')+' onclick="'+fn+'(1)">next →</button></div>';
-}
-async function o3LoadLedger(dir){
-  if(dir===1)O3_LEDGER_OFF+=50; else if(dir===-1)O3_LEDGER_OFF=Math.max(0,O3_LEDGER_OFF-50);
+/* ═══ P5 · the pagination component, ported from the Dashboard ═══
+   Rendering is by DOM node rather than innerHTML: these labels are numbers we
+   computed, but a pager is not worth the risk of building markup out of values.
+
+   Server-side where the endpoint genuinely supports it, a local slice where the
+   loader already holds the whole list. Which is which is decided by what the
+   endpoint actually accepts — see the table in the P5 commit message; four of
+   the plan's assignments did not survive contact with the router signatures. */
+(function(){
+  /* which page numbers to show around the current one, with gaps */
+  function window_(page,last){
+    if(last<=7){ var all=[]; for(var i=1;i<=last;i++)all.push(i); return all; }
+    var out=[1];
+    var lo=Math.max(2,page-1), hi=Math.min(last-1,page+1);
+    if(lo>2)out.push('gap');
+    for(var j=lo;j<=hi;j++)out.push(j);
+    if(hi<last-1)out.push('gap');
+    out.push(last);
+    return out;
+  }
+  function btn(label,opts){
+    var b=document.createElement('button');
+    b.type='button';
+    b.textContent=label;
+    if(opts.label)b.setAttribute('aria-label',opts.label);
+    if(opts.disabled)b.disabled=true;
+    if(opts.current){ b.setAttribute('aria-current','page'); b.disabled=true; }
+    if(opts.onClick)b.addEventListener('click',opts.onClick);
+    return b;
+  }
+  /* foxPager(host, {page, pageSize, total, onPage})
+     Renders nothing at all when there is only one page — a pager over a single
+     page is furniture, not information. An empty table gets its empty state and
+     no pager underneath it. */
+  window.foxPager=function(host,o){
+    host=(typeof host==='string')?document.getElementById(host):host;
+    if(!host)return;
+    host.textContent='';
+    var total=Math.max(0,+o.total||0), size=Math.max(1,+o.pageSize||20);
+    var last=Math.max(1,Math.ceil(total/size));
+    var page=Math.min(last,Math.max(1,+o.page||1));
+    if(total===0||last===1)return;
+
+    var nav=document.createElement('nav');
+    nav.className='pager';
+    nav.setAttribute('role','navigation');
+    nav.setAttribute('aria-label',o.label||'Pagination');
+
+    var first=(page-1)*size+1, lastRow=Math.min(total,page*size);
+    var count=document.createElement('span');
+    count.className='pager-count';
+    count.textContent=first+'\u2013'+lastRow+' of '+total;
+    nav.appendChild(count);
+
+    var group=document.createElement('div');
+    group.className='pager-nav';
+    function goTo(target){ return function(){ if(o.onPage)o.onPage(target); }; }
+    group.appendChild(btn('\u2039',{label:'Previous page',disabled:page<=1,onClick:goTo(page-1)}));
+    window_(page,last).forEach(function(item){
+      if(item==='gap'){
+        var g=document.createElement('span');
+        g.className='pager-gap'; g.textContent='\u2026';
+        g.setAttribute('aria-hidden','true');
+        group.appendChild(g);
+        return;
+      }
+      group.appendChild(btn(String(item),{
+        label:'Page '+item, current:item===page, onClick:goTo(item)}));
+    });
+    group.appendChild(btn('\u203a',{label:'Next page',disabled:page>=last,onClick:goTo(page+1)}));
+    nav.appendChild(group);
+    host.appendChild(nav);
+  };
+
+  /* For loaders that already hold the whole list: slice it, render the pager,
+     and hand back the rows for this page. */
+  window.foxPageSlice=function(items,state,host,onChange,label){
+    var size=state.size||20;
+    var total=items.length;
+    var last=Math.max(1,Math.ceil(total/size));
+    if(state.page>last)state.page=last;
+    if(state.page<1)state.page=1;
+    window.foxPager(host,{page:state.page,pageSize:size,total:total,label:label,
+      onPage:function(pg){ state.page=pg; onChange(); }});
+    return items.slice((state.page-1)*size,state.page*size);
+  };
+})();
+/* one paging state per list, kept outside the loader so a re-render — a filter
+   change, a poll, a row action — does not silently throw the reader back to
+   page one. */
+const PG={};
+function pgState(key,size){ return PG[key]||(PG[key]={page:1,size:size||25}); }
+function pgReset(key){ if(PG[key])PG[key].page=1; }
+/* P5 · dir is a page NUMBER now, not a +1/-1 nudge: foxPager can jump straight
+   to page 9, which prev/next could never express. */
+async function o3LoadLedger(page){
+  if(page)O3_LEDGER_OFF=Math.max(0,(page-1)*50);
   const bo=O3_LEDGER_BREACH?'&breaches_only=true':'';
   let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/logs?limit=50&offset='+O3_LEDGER_OFF+bo); }catch(e){ r=null; }
   if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load ledger.</div></div>'; return; }
@@ -3073,10 +3208,12 @@ async function o3LoadLedger(dir){
         '<tr><td class="mono" style="text-align:right;">'+num(x.seq)+'</td><td class="mono">'+esc(x.event_type||'—')+'</td><td><span class="chip '+(x.breach?'bad':'dim')+'">'+esc(x.policy_tag||'—')+'</span></td><td class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td class="mono" style="text-align:right;">'+num(x.token_count)+'</td><td>'+(x.breach?'<span class="chip bad">breach</span>':'<span class="chip '+(x.grading_status==='graded'?'safe':x.grading_status==='failed'?'bad':'warn')+'">'+esc(x.grading_status||'—')+'</span>')+'</td><td class="mono" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">'+esc((x.chain_hash||'').slice(0,12))+'…</td><td class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>'
       ).join('')+'</tbody></table></div>'
     : '<div class="chart-empty">No ledger rows'+(O3_LEDGER_BREACH?' with breaches':'')+'.</div>';
-  $('o3Panel').innerHTML='<div class="clay pad">'+head+body+(d.total>d.limit?_pager(d.offset,d.limit,d.total,'o3LoadLedger'):'')+'</div>';
+  $('o3Panel').innerHTML='<div class="clay pad">'+head+body+'<div id="o3LedgerPager"></div></div>';
+  window.foxPager('o3LedgerPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
+    total:d.total,label:'Ledger pages',onPage:o3LoadLedger});
 }
-async function o3LoadBreaches(dir){
-  if(dir===1)O3_BREACH_OFF+=50; else if(dir===-1)O3_BREACH_OFF=Math.max(0,O3_BREACH_OFF-50);
+async function o3LoadBreaches(page){
+  if(page)O3_BREACH_OFF=Math.max(0,(page-1)*50);
   let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/breaches?limit=50&offset='+O3_BREACH_OFF); }catch(e){ r=null; }
   if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load.</div></div>'; return; }
   const d=await r.json();
@@ -3085,7 +3222,9 @@ async function o3LoadBreaches(dir){
     '<tr><td class="mono" style="text-align:right;">'+num(x.seq)+'</td><td><span class="chip bad">'+esc(x.policy_tag||'—')+'</span></td><td class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td class="sub" style="max-width:360px;">'+esc(String(reason).slice(0,180))+'</td><td class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>';
   }).join('');
   const head='<div class="sub mono" style="margin-bottom:12px;font-size:11px;">'+num(d.total)+' breaches · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)+'</div>';
-  $('o3Panel').innerHTML='<div class="clay pad">'+head+'<div class="twrap"><table class="tbl"><thead><tr><th style="text-align:right;">Seq</th><th>Policy</th><th>Agent</th><th>Verdict</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+(d.total>d.limit?_pager(d.offset,d.limit,d.total,'o3LoadBreaches'):'')+'</div>';
+  $('o3Panel').innerHTML='<div class="clay pad">'+head+'<div class="twrap"><table class="tbl"><thead><tr><th style="text-align:right;">Seq</th><th>Policy</th><th>Agent</th><th>Verdict</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+'<div id="o3BreachPager"></div></div>';
+  window.foxPager('o3BreachPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
+    total:d.total,label:'Breach pages',onPage:o3LoadBreaches});
 }
 async function orgVerify(){
   if(!O3_ID)return;
@@ -3143,8 +3282,12 @@ function renderTraffic(){
 let STAFF_CACHE=[];
 async function loadStaff(){
   const r=await api('/admin/v1/staff');
-  if(!r.ok){$('staffRows').innerHTML=`<tr><td colspan="6" class="sub mono">requires superadmin (${r.status})</td></tr>`;return}
-  const rows=await r.json();STAFF_CACHE=rows;
+  if(!r.ok){$('staffRows').innerHTML=`<tr><td colspan="6" class="sub mono">requires superadmin (${r.status})</td></tr>`;window.foxPager('staffPager',{total:0});return}
+  STAFF_CACHE=await r.json();pgReset('staff');renderStaff();
+}
+function renderStaff(){
+  const rows=window.foxPageSlice(STAFF_CACHE,pgState('staff',25),'staffPager',renderStaff,'Staff pages');
+  if(!STAFF_CACHE.length){$('staffRows').innerHTML='<tr><td colspan="6" class="sub mono">no staff accounts</td></tr>';return}
   $('staffRows').innerHTML=rows.map(s=>{
     const self=ME&&s.id===ME.id;
     return `<tr class="rowbtn" onclick="staffManage('${s.id}')">
@@ -3435,11 +3578,15 @@ async function loadRevenue(){
     yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'revenue by plan', empty:'No paid invoices yet'});
   loadStripeEvents();
 }
-async function loadStripeEvents(){
+async function loadStripeEvents(page){
   const st=fauxVal('seStatus');
-  let r; try{ r=await api('/admin/v1/billing/stripe-events?limit=50'+(st?('&status='+st):'')); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('seRows').innerHTML='<tr><td colspan="6" class="sub mono">unavailable</td></tr>'; return; }
-  const items=(await r.json()).items||[];
+  const pg=pgState('stripe',25); if(page)pg.page=page;
+  const off=(pg.page-1)*pg.size;
+  let r; try{ r=await api('/admin/v1/billing/stripe-events?limit='+pg.size+'&offset='+off+(st?('&status='+st):'')); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('seRows').innerHTML='<tr><td colspan="6" class="sub mono">unavailable</td></tr>'; window.foxPager('sePager',{total:0}); return; }
+  const _d=await r.json(), items=_d.items||[];
+  window.foxPager('sePager',{page:pg.page,pageSize:pg.size,total:_d.total||items.length,
+    label:'Stripe event pages',onPage:loadStripeEvents});
   if(!items.length){ $('seRows').innerHTML='<tr><td colspan="6" class="sub mono">no stripe events'+(st?(' with status '+esc(st)):'')+'</td></tr>'; return; }
   const canReplay=can('operator');
   $('seRows').innerHTML=items.map(e=>{
@@ -3465,9 +3612,17 @@ async function loadSecurity(){
   const off=d.top_offenders||[];
   if(off.length) chart('secOffenders',{type:'bar',height:190,labels:off.map(o=>o.ip),colors:[_cssvar('--violet','#4A3AA7')],series:[{name:'failed',values:off.map(o=>o.failed)}],ariaLabel:'top offending IPs'});
   else $('secOffenders').innerHTML='<div class="chart-empty">No failed logins yet</div>';
-  const wl=d.watchlist||[];
+  SEC_WATCH=d.watchlist||[];SEC_RECENT=d.recent||[];
+  pgReset('secWatch');pgReset('secRecent');renderSecWatch();renderSecRecent();
+}
+/* /security/logins answers with a capped array and no offset — sliced here. */
+let SEC_WATCH=[],SEC_RECENT=[];
+function renderSecWatch(){
+  const wl=window.foxPageSlice(SEC_WATCH,pgState('secWatch',15),'secWatchPager',renderSecWatch,'Watchlist pages');
   $('secWatch').innerHTML=wl.length?wl.map(w=>`<tr><td class="mono" style="font-size:11px;">${esc(w.email)}</td><td class="mono" style="text-align:right;color:var(--danger);font-weight:700;">${num(w.failed_24h)}</td><td class="mono" style="font-size:10px;">${fmtTime(w.last_at)}</td></tr>`).join(''):'<tr><td colspan="3" class="sub mono">no lockout signals</td></tr>';
-  const rec=d.recent||[];
+}
+function renderSecRecent(){
+  const rec=window.foxPageSlice(SEC_RECENT,pgState('secRecent',25),'secRecentPager',renderSecRecent,'Login attempt pages');
   $('secRecent').innerHTML=rec.length?rec.map(x=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(x.at)}</td><td class="mono" style="font-size:11px;">${esc(x.email)}</td><td class="mono" style="font-size:10px;">${esc(x.ip||'—')}</td><td>${x.success?'<span class="chip safe">ok</span>':'<span class="chip bad">fail</span>'}</td></tr>`).join(''):'<tr><td colspan="4" class="sub mono">no attempts recorded</td></tr>';
 }
 let AU_OFF=0, _auT;
@@ -3488,8 +3643,9 @@ async function loadAudit(keepOff){
   const d=await r.json();
   if(!d.items.length){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">no matching actions</td></tr>'; $('auPager').innerHTML=''; return; }
   $('auRows').innerHTML=d.items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.actor||'—')}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td><td class="mono" style="font-size:10px;">${esc(a.target_type||'—')}${a.target_id?(' '+esc(a.target_id.slice(0,8))+'…'):''}</td><td class="mono" style="font-size:10px;">${esc(a.org_name||'—')}</td><td class="mono" style="font-size:10px;">${esc(a.ip||'—')}</td></tr>`).join('');
-  const from=d.offset+1, to=Math.min(d.offset+d.limit,d.total);
-  $('auPager').innerHTML=`<span class="sub mono" style="font-size:10px;">${num(d.total)} rows · ${from}–${to}</span><button class="btn sm" ${d.offset<=0?'disabled':''} onclick="AU_OFF=Math.max(0,AU_OFF-50);loadAudit(true)">← prev</button><button class="btn sm" ${d.offset+d.limit>=d.total?'disabled':''} onclick="AU_OFF=AU_OFF+50;loadAudit(true)">next →</button>`;
+  window.foxPager('auPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
+    total:d.total,label:'Audit log pages',
+    onPage:function(pg){ AU_OFF=(pg-1)*50; loadAudit(true); }});
 }
 function auditExport(){
   const p=_auditParams(); p.set('format','csv');
