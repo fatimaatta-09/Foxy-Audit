@@ -1369,21 +1369,36 @@ const leadTitle = document.getElementById('leadTitle');
 const leadDesc = document.getElementById('leadDesc');
 const leadMsg = document.getElementById('leadMsg');
 let leadSource = 'cta';
-function openLeadModal(source, title){
+function openLeadModal(source, title, prefillCode){
   leadSource = source || 'cta';
   const isJudgeOffer = leadSource === 'judge-offer';
   if (leadEb) leadEb.textContent = title || 'Get started';
   if (leadMsg) leadMsg.textContent = '';
   if (leadEmail) leadEmail.value = '';
-  if (leadOfferCode) { leadOfferCode.value = ''; leadOfferCode.style.display = isJudgeOffer ? 'block' : 'none'; }
+  if (leadOfferCode) { leadOfferCode.value = prefillCode || ''; leadOfferCode.style.display = isJudgeOffer ? 'block' : 'none'; }
   if (leadTitle) leadTitle.textContent = isJudgeOffer ? 'Redeem judge access.' : 'Prove it — start free.';
   if (leadDesc) leadDesc.textContent = isJudgeOffer
     ? 'Enter your evaluation code to start premium access with a fixed event allowance. No card and no automatic charge.'
     : "Drop your email and we'll send setup steps and get you going. No credit card to start.";
   leadBackdrop.classList.add('open'); leadCard.classList.add('open');
   document.body.style.overflow = 'hidden';
+  // With the code already filled, the only thing left to type is the email.
   setTimeout(() => leadEmail && leadEmail.focus(), 120);
 }
+/* The other half of the shareable evaluation link. The dashboard's /redeem
+   landing sends a signed-out visitor here with ?offer=CODE; this opens the
+   judge-offer modal with the code already in place, so the link works for
+   someone who does not have a workspace yet. The code is dropped from the URL
+   once read — it is a secret and does not belong in a shared address bar. */
+(function(){
+  try{
+    var offer=(new URLSearchParams(location.search).get('offer')||'').trim();
+    if(!offer)return;
+    var url=new URL(location.href); url.searchParams.delete('offer');
+    history.replaceState(null,'',url.pathname+url.search+url.hash);
+    openLeadModal('judge-offer','Redeem judge access',offer);
+  }catch(e){}
+})();
 function closeLeadModal(){
   leadBackdrop.classList.remove('open'); leadCard.classList.remove('open');
   document.body.style.overflow = '';

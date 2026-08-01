@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
@@ -751,6 +751,143 @@ def cancel_subscription(request: Request, admin: User = Depends(require_role("ad
     db.commit()
     return {"status": "cancelling", "cancel_at_period_end": True,
             "access_until": ends.isoformat() if ends else None}
+
+
+class RedeemRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/v1/billing/redeem", dependencies=[Depends(require_step_up_user)])
+@limiter.limit("5/minute")
+def redeem_offer(request: Request, payload: RedeemRequest,
+                 admin: User = Depends(require_role("admin")),
+                 db: Session = Depends(get_db)):
+    """Redeem an evaluation code on an EXISTING organization (round 2 · item 7).
+
+    Signup already does this for a brand-new org. The difference here is that the
+    org has a life already, and an evaluation offer is NOT purely additive:
+    setting ``evaluation_offer_id`` puts ingestion behind
+    ``evaluation_credits_exhausted`` / ``evaluation_expired`` in logs.py. So this
+    endpoint refuses far more often than it accepts, and every refusal names its
+    own reason.
+
+    Two of the four planned guards did not survive contact with the code:
+
+    * The plan's guard 3 was "refuse if this org already redeemed THIS offer_id".
+      ``EvaluationRedemption`` carries ``uq_evaluation_redemption_org``, a UNIQUE
+      on ``org_id`` alone — the schema already allows exactly one redemption per
+      org, ever. Checking per-offer would let a second campaign through the guard
+      and then fail on an IntegrityError instead of a clean 409, so the check
+      here is the schema's: ANY prior redemption refuses.
+
+    * The plan's guard 4 was "set only the four evaluation fields; do not touch
+      plan_tier, monthly_log_quota or trial_ends_at". That leaves the grant inert.
+      logs.py gates ingestion in order: ``trial_expired`` (free tier past
+      ``trial_ends_at``) → ``subscription_inactive`` → ``credits_exhausted``
+      (``monthly_log_quota``) → the evaluation pair. Guard 1 has already limited
+      us to free orgs, so an org arriving here is either past its trial — where
+      gate 1 rejects every capture and the credits can never be spent — or inside
+      it, where the free monthly quota still caps the grant below the credits
+      issued. Applying signup's exact field set is what makes the offer mean what
+      it says, and on a free org it is an upgrade rather than the downgrade the
+      guard was written to prevent.
+
+    What has NOT been solved, and is disclosed in the UI before the user confirms:
+    when the window closes, gate 4 stops capture entirely, so an org that could
+    previously capture up to its free quota can capture nothing until it upgrades.
+    Nothing clears the evaluation fields on expiry today.
+    """
+    supplied = _normalise_offer_code(payload.code)
+    if not supplied:
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+    now = datetime.now(timezone.utc)
+
+    # Lock the org BEFORE reading its billing state: two codes redeemed at once
+    # must not both pass the no-stacking guard. Nothing else takes the campaign
+    # lock and then the org lock, so org → campaign cannot cycle.
+    org = db.execute(
+        select(Organization).where(Organization.id == admin.org_id).with_for_update()
+    ).scalar_one_or_none()
+    if org is None or org.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="organization not found")
+
+    # Order matters, and not in the order the plan listed them. Because a granted
+    # offer sets plan_tier="premium" (see the docstring), an org that has already
+    # redeemed LOOKS paid — so running the paid-plan guard first answers a second
+    # attempt with "you are on a paid plan", which is both wrong and unactionable.
+    # The evaluation-specific reasons have to come first.
+
+    # Guard 2 — one offer at a time, no stacking.
+    if org.evaluation_ends_at is not None and org.evaluation_ends_at > now:
+        raise HTTPException(status_code=409, detail={
+            "code": "evaluation_active",
+            "message": "This workspace already has an evaluation offer running. "
+                       "Offers do not stack.",
+        })
+
+    # Guard 3 — the schema's rule, not the plan's: one redemption per org, ever.
+    if db.execute(select(EvaluationRedemption.id).where(
+            EvaluationRedemption.org_id == org.id)).scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail={
+            "code": "already_redeemed",
+            "message": "This workspace has already redeemed an evaluation offer.",
+        })
+
+    # Guard 1 — never let a gift silently replace a plan someone is paying for.
+    # A Stripe subscription is the money signal and is decisive on its own;
+    # plan_tier only counts as "paid" when no evaluation offer explains it, since
+    # a lapsed offer leaves the tier behind.
+    paying = bool(org.stripe_subscription_id) or (org.subscription_status or "").lower() in {
+        "active", "trialing", "past_due"}
+    if paying or ((org.plan_tier or "free").lower() != "free"
+                  and org.evaluation_offer_id is None):
+        raise HTTPException(status_code=409, detail={
+            "code": "paid_plan",
+            "message": "This workspace is on a paid plan. An evaluation offer would replace it "
+                       "with a capped, expiring one, so it cannot be redeemed here.",
+        })
+
+    # Campaign-side checks: status, window, per-email cap and capacity, all under
+    # an advisory lock. Its refusals stay deliberately opaque — an authenticated
+    # customer must not be able to probe campaign capacity either.
+    offer = _claim_database_campaign(db, (admin.email or "").strip().lower(), supplied)
+    if offer is None:
+        raise HTTPException(status_code=422, detail="This evaluation offer is unavailable")
+
+    org.evaluation_offer_id = offer["offer_id"]
+    org.evaluation_credit_limit = offer["credits"]
+    org.evaluation_credits_used = 0
+    org.evaluation_ends_at = offer["expires_at"]
+    # Guard 4, overruled — see the docstring. Identical to what signup applies.
+    org.plan_tier = "premium"
+    org.trial_ends_at = None
+    org.monthly_log_quota = None
+
+    db.add(EvaluationRedemption(
+        offer_id=offer["offer_id"], org_id=org.id, email_hash=offer["email_hash"],
+        credits_granted=offer["credits"], expires_at=offer["expires_at"],
+    ))
+    account_audit.record_account_action(
+        db, org_id=org.id, actor_email=admin.email, action="billing.redeem_evaluation",
+        target=offer["offer_id"], detail={"credits": offer["credits"],
+                                          "expires_at": offer["expires_at"].isoformat()})
+    try:
+        db.commit()
+    except IntegrityError:
+        # uq_evaluation_redemption_org / uq_evaluation_offer_email — the same
+        # refusals as above, lost a race. Report them as the guards, not as a 500.
+        db.rollback()
+        raise HTTPException(status_code=409, detail={
+            "code": "already_redeemed",
+            "message": "This workspace has already redeemed an evaluation offer.",
+        })
+    return {
+        "status": "redeemed",
+        "credits_total": offer["credits"],
+        "credits_remaining": offer["credits"],
+        "expires_at": offer["expires_at"].isoformat(),
+        "no_auto_charge": True,
+    }
 
 
 def _org_for_customer(db: Session, customer_id: str | None) -> Organization | None:

@@ -142,6 +142,17 @@ def dashboard():
     return FileResponse(_DASHBOARD_HTML, media_type="text/html")
 
 
+@customer_api.get("/redeem")
+def redeem_landing():
+    """Serve the same dashboard file for an evaluation link (/redeem?offer=…).
+
+    The dashboard is served by explicit routes rather than a catch-all, so the
+    link needs its own one. The page reads ?offer= on boot and decides between
+    the signed-in redeem flow and sending the visitor to signup.
+    """
+    return FileResponse(_DASHBOARD_HTML, media_type="text/html")
+
+
 # Middleware runs outermost-last: SessionMiddleware is added LAST so it wraps (runs
 # before) TrafficMiddleware — the traffic row can then read the logged-in session.
 customer_api.add_middleware(TrafficMiddleware, site="app")

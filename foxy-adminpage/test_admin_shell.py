@@ -1100,5 +1100,36 @@ def test_the_change_password_error_focus_reads_no_server_copy() -> None:
     assert "nw.value===cur.value" in fn, "nothing catches reuse before the request"
 
 
+# ── the shown-once campaign disclosure (round 2 · P4) ────────────────────────
+
+def test_the_campaign_panel_shows_both_secrets_once() -> None:
+    """Creation now returns two things you cannot get again, not one."""
+    fn = _js_func("createCampaign")
+    assert "_secretRow('redemption code'" in fn
+    assert "_secretRow('shareable link'" in fn
+    assert "shown once" in fn
+
+
+def test_the_panel_says_the_link_is_as_secret_as_the_code() -> None:
+    """A URL reads like something you paste into a channel; a code does not. The
+    UI has to close that gap in words, because the two shapes do not."""
+    assert "contains the code" in _js_func("createCampaign"), \
+        "the link's secrecy is never stated"
+
+
+def test_the_secret_row_shows_its_value_in_full() -> None:
+    """A link you cannot read end to end is a link you cannot check before you
+    send it, so it wraps rather than truncating or masking."""
+    fn = _js_func("_secretRow")
+    assert "word-break:break-all" in fn
+    assert "text-overflow" not in fn and "masked" not in fn
+
+
+def test_the_copy_button_is_wired() -> None:
+    assert "data-copy=" in SRC
+    handler = SRC[SRC.index("var b=e.target.closest?e.target.closest('[data-copy]')"):]
+    assert "_copyText(" in handler[:400], "the copy button does nothing"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

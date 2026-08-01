@@ -5398,6 +5398,104 @@ async function loadLoginHistory(scope){
 })();
 </script>
 
+<!-- ═══ Round 2 · evaluation redemption landing (/redeem?offer=CODE) ═══
+     Sits at 10000: above #authGate (9999) so it covers the sign-in card, below
+     the step-up overlay (10001) which it triggers. It runs only when ?offer= is
+     present and never touches normal boot. -->
+<script>
+(function(){
+  var code=(new URLSearchParams(location.search).get('offer')||'').trim();
+  if(!code)return;
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+
+  var ov=document.createElement('div');
+  ov.id='redeemLanding';
+  ov.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(6,5,4,.92);'
+    +'display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;';
+  document.body.appendChild(ov);
+
+  function card(inner){
+    ov.innerHTML='<div class="clay pad" style="width:460px;max-width:100%;">'
+      +'<div class="eyebrow" style="margin-bottom:4px;">evaluation offer</div>'+inner+'</div>';
+  }
+  function close(){ ov.remove(); }
+  function cleanUrl(){ try{ history.replaceState(null,'','/dashboard'); }catch(e){} }
+
+  card('<div style="font-weight:800;font-size:16px;">Checking your session…</div>');
+
+  function offerConfirm(){
+    // The numbers cannot be shown before redeeming: the code is opaque until it
+    // is claimed, and a preview endpoint would let anyone probe which codes are
+    // live. So this states the SHAPE of the trade honestly and fills in the
+    // actual figures the moment it succeeds.
+    card('<div style="font-weight:800;font-size:16px;margin-bottom:8px;">Redeem evaluation access</div>'
+      +'<div style="font-size:12.5px;line-height:1.6;color:var(--ink2);">'
+      +'This replaces your free monthly quota with a fixed number of evaluation credits and an '
+      +'end date, both set by the offer and shown as soon as you confirm.</div>'
+      +'<div style="font-size:12.5px;line-height:1.6;color:var(--ink2);margin-top:10px;">'
+      +'<b>When the window closes, capture stops</b> until you upgrade. Everything already '
+      +'captured stays available, verifiable and exportable.</div>'
+      // NOT class="fb-res bad" — that class is used by #authErr and the step-up
+      // modal but is never defined in this file, so those errors render as plain
+      // body copy. Left alone there (out of scope); not repeated here.
+      +'<div id="redeemErr" role="status" aria-live="polite" style="min-height:14px;margin-top:12px;'
+      +'font-size:12px;line-height:1.5;color:var(--breach-bg);font-weight:600;"></div>'
+      +'<div class="btnrow"><button class="btn pri half" id="redeemGo" type="button">Redeem</button>'
+      +'<button class="btn ghost half" id="redeemNo" type="button">Not now</button></div>');
+    document.getElementById('redeemNo').onclick=function(){ cleanUrl(); close(); };
+    document.getElementById('redeemGo').onclick=submit;
+  }
+
+  function submit(){
+    var btn=document.getElementById('redeemGo'), err=document.getElementById('redeemErr');
+    btn.disabled=true; btn.textContent='Redeeming…'; err.textContent='';
+    // No step-up handling here on purpose — the P15 interceptor catches the 403,
+    // prompts for the emailed code and retries this exact request.
+    fetch('/v1/billing/redeem',{method:'POST',credentials:'same-origin',
+      headers:{'content-type':'application/json'},body:JSON.stringify({code:code})})
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(d){
+        btn.disabled=false; btn.textContent='Redeem';
+        if(r.ok){ success(d); return; }
+        // The guards answer with {code,message}; the campaign-side refusal is a
+        // plain string and stays deliberately vague about campaign state.
+        var m=d&&d.detail;
+        err.textContent=(m&&m.message)?m.message
+          :(typeof m==='string'?m:'This evaluation offer could not be redeemed.');
+      });})
+      .catch(function(){ btn.disabled=false; btn.textContent='Redeem';
+        err.textContent='Could not reach the server.'; });
+  }
+
+  function success(d){
+    var when=''; try{ when=new Date(d.expires_at).toLocaleDateString(undefined,
+      {year:'numeric',month:'long',day:'numeric'}); }catch(e){ when=d.expires_at||''; }
+    cleanUrl();
+    card('<div style="font-weight:800;font-size:16px;margin-bottom:8px;">Evaluation access is on</div>'
+      +'<div style="font-size:12.5px;line-height:1.6;color:var(--ink2);">'
+      +'<b>'+esc(String(d.credits_total))+'</b> audit credits, through <b>'+esc(when)+'</b>. '
+      +'No card is on file and nothing charges when it ends.</div>'
+      +'<div class="btnrow"><button class="btn pri" id="redeemDone" type="button">Go to your dashboard</button></div>');
+    document.getElementById('redeemDone').onclick=function(){ location.href='/dashboard'; };
+  }
+
+  function signedOut(){
+    card('<div style="font-weight:800;font-size:16px;margin-bottom:8px;">Sign in to redeem</div>'
+      +'<div style="font-size:12.5px;line-height:1.6;color:var(--ink2);">'
+      +'An evaluation offer is applied to a workspace, so it needs an account. Sign in and '
+      +'open this link again, or create a workspace with the code.</div>'
+      +'<div class="btnrow"><button class="btn pri half" id="redeemSignIn" type="button">Sign in</button>'
+      +'<a class="btn ghost half" style="text-decoration:none;text-align:center;" '
+      +'href="https://foxyaudit.tech/?offer='+encodeURIComponent(code)+'">Create a workspace</a></div>');
+    document.getElementById('redeemSignIn').onclick=function(){ close(); };
+  }
+
+  fetch('/v1/auth/me',{credentials:'same-origin'})
+    .then(function(r){ if(r.status===200)offerConfirm(); else signedOut(); })
+    .catch(function(){ signedOut(); });
+})();
+</script>
+
 <!-- ═══ P16 · notifications center — wire the top-bar bell (real events, honest empty state) ═══ -->
 <script>
 (function(){

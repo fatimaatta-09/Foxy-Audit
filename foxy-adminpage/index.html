@@ -2739,6 +2739,16 @@ function renderCampaigns(){
     ${c.status==='active'&&can('operator')?`<button class="btn sm" onclick="revokeCampaign('${esc(c.offer_id)}')">revoke</button>`:''}</div>
   </div>`).join('');
 }
+/* One shown-once secret: a label, the value in mono, and a copy button. The value
+   wraps rather than truncates — a link you cannot read in full is a link you
+   cannot check before you send it. */
+function _secretRow(label,value){
+  return '<div class="flabel" style="margin-top:0;">'+esc(label)+'</div>'
+    +'<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;">'
+    +'<code class="mono" style="flex:1;min-width:0;word-break:break-all;font-size:11.5px;'
+    +'background:var(--bg2);border-radius:var(--r-sm);padding:8px 10px;">'+esc(value||'')+'</code>'
+    +'<button type="button" class="btn sm" data-copy="'+esc(value||'')+'">Copy</button></div>';
+}
 async function createCampaign(){
   const code=$('campaignCode').value.trim();
   if(code.length<16){toast('Use a redemption code of at least 16 characters.');return}
@@ -2747,7 +2757,23 @@ async function createCampaign(){
   let r;try{r=await api('/admin/v1/evaluation-campaigns',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)})}catch(e){r=null}
   const d=r?await r.json().catch(()=>({})):{};
   if(!r||!r.ok){toast(d.detail||'Campaign creation failed.');return}
-  $('campaignOut').innerHTML='<b>Store this code now; it will not be shown again:</b> <code>'+esc(d.redemption_code)+'</code>';
+  // Shown once, and now there are TWO secrets to store rather than one. The link
+  // carries the code in a query string, so it is exactly as secret as the code —
+  // said here rather than assumed, because a URL reads like something you can
+  // paste in a channel and a code does not.
+  $('campaignOut').innerHTML=
+    '<div class="clay pad" style="margin-top:10px;border-left:3px solid var(--warn-bg);">'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">'
+    +'<span class="chip warn">shown once</span>'
+    +'<span class="sub" style="font-size:11px;">Store both before you leave this page. Neither can be shown again.</span></div>'
+    +_secretRow('redemption code',d.redemption_code)
+    +_secretRow('shareable link',d.redeem_url)
+    +'<div class="sub" style="font-size:10.5px;margin-top:10px;line-height:1.5;">'
+    +'The link contains the code, so treat it exactly like the code: anyone holding it can '
+    +'claim a slot. It grants '+esc(String(payload.credits))+' credits for '+esc(String(payload.duration_days))
+    +' days on a free workspace, and will refuse a workspace that is on a paid plan or has '
+    +'already redeemed an offer.</div>'
+    +'</div>';
   $('campaignCode').value='';
   toast('Campaign created');loadCampaigns();
 }
@@ -4005,6 +4031,15 @@ function _copyText(text,btn){
       navigator.clipboard.writeText(text).then(done,function(){_copyFallback(text);done();}); }
     else{ _copyFallback(text); done(); } }
   catch(e){ _copyFallback(text); } }
+/* [data-copy] — a plain copy button for a value that is already fully visible,
+   which is the shown-once campaign panel. The .sens component above is for values
+   that start MASKED; here hiding the secret would defeat the point of showing it. */
+document.addEventListener('click',function(e){
+  var b=e.target.closest?e.target.closest('[data-copy]'):null; if(!b)return;
+  e.preventDefault(); _copyText(b.getAttribute('data-copy'),b);
+  var was=b.textContent; b.textContent='Copied';
+  setTimeout(function(){ b.textContent=was; },1100);
+});
 document.addEventListener('click',function(e){
   var btn=e.target.closest?e.target.closest('.sens-btn'):null; if(!btn)return;
   var wrap=btn.closest('.sens'); if(!wrap)return; e.preventDefault(); e.stopPropagation();

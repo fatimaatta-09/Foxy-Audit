@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from urllib.parse import quote, urlsplit, urlunsplit
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,7 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
-from ..auth import require_platform_role
+from ..auth import require_platform_role, require_step_up_dep
+from ..config import get_settings
 from ..db import get_db
 from ..models import EvaluationCampaign, EvaluationRedemption, StaffUser
 from .billing import _normalise_offer_code, _offer_code_hash
@@ -47,6 +49,18 @@ class CreateCampaignRequest(BaseModel):
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def _redeem_url(code: str) -> str:
+    """The shareable link, derived from the ORIGIN of dashboard_url.
+
+    dashboard_url points at a path ("https://app.foxyaudit.tech/dashboard"), so
+    appending to it would produce /dashboard/redeem. The landing is served by
+    main.py at /redeem on the same app.
+    """
+    parts = urlsplit(get_settings().dashboard_url)
+    origin = urlunsplit((parts.scheme, parts.netloc, "", "", "")) or ""
+    return f"{origin}/redeem?offer={quote(code, safe='')}"
 
 
 def _item(campaign: EvaluationCampaign, redemptions: int) -> CampaignItem:
@@ -88,7 +102,7 @@ def list_campaigns(
     return [_item(campaign, counts.get(campaign.offer_id, 0)) for campaign in campaigns]
 
 
-@router.post("/v1/evaluation-campaigns")
+@router.post("/v1/evaluation-campaigns", dependencies=[Depends(require_step_up_dep)])
 def create_campaign(
     payload: CreateCampaignRequest,
     request: Request,
@@ -142,10 +156,14 @@ def create_campaign(
         raise HTTPException(status_code=409, detail="campaign offer_id or code already exists")
     db.refresh(campaign)
     # The plaintext code is returned only in this creation response. It is not
-    # stored, listed, or included in audit detail.
+    # stored, listed, or included in audit detail. The link is built here rather
+    # than in the console because the server is what knows dashboard_url — and it
+    # CARRIES THE CODE, so it is exactly as secret as the code and gets the same
+    # one-time treatment. Both are shown once and never again.
     return {
         **_item(campaign, 0).model_dump(),
         "redemption_code": code,
+        "redeem_url": _redeem_url(code),
     }
 
 
