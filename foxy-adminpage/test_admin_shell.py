@@ -294,5 +294,89 @@ def test_settings_cards_stack() -> None:
     assert "grid-template-columns:minmax(0,1fr)" in grid, "Settings cards are still side by side"
 
 
+# ── 6. page identity (P3) ────────────────────────────────────────────────────
+# The wordmark and the bloom are decoration, but two things about them are not
+# cosmetic: the head's overflow:hidden is the only thing stopping a word wider
+# than its column from scrolling the whole document sideways (measured: 63px of
+# body scroll at 1440 with the clip removed), and the word comes from the same
+# CTX map as the crumb, so the two can never name the page differently.
+
+def test_every_pagehead_carries_a_wordmark() -> None:
+    blocks = _pagehead_blocks()
+    assert len(blocks) == 17
+    for block in blocks:
+        assert 'class="pg-wm"' in block, f"a page head has no wordmark: {block[:120]}"
+
+
+def test_wordmark_is_decoration_not_content() -> None:
+    """Empty in markup, filled from CTX, and never announced."""
+    assert SRC.count('<span class="pg-wm" aria-hidden="true"></span>') == 17
+
+
+def test_pagehead_clips_and_isolates() -> None:
+    css = _style_block()
+    block = css[css.index(".pagehead{") :]
+    block = block[: block.index("}")]
+    for prop in ("position:relative", "overflow:hidden", "isolation:isolate"):
+        assert prop in block, f".pagehead lost {prop} — the wordmark can now scroll the page"
+
+
+def test_wordmark_rule_follows_the_child_rule() -> None:
+    """.pagehead>* and .pg-wm have equal specificity, so only source order
+    stops the child rule from overriding the wordmark's position and z-index."""
+    css = _style_block()
+    assert css.index(".pagehead>*{") < css.index(".pg-wm{")
+
+
+def test_wordmark_is_hidden_on_narrow_screens() -> None:
+    """Decoration, not information — the one intentional exception to P6."""
+    css = _style_block().replace(" ", "")
+    assert "@media(max-width:620px){.pg-wm{display:none}}" in css
+
+
+def _bloom_alpha(block: str) -> str:
+    i = block.index("--bloom:")
+    return block[i : block.index(";", i)]
+
+
+def test_bloom_is_retuned_per_theme_not_ported() -> None:
+    """One alpha for both themes is the failure the token exists to prevent:
+    what reads as light on near-black reads as a printing smudge on paper."""
+    css = _style_block()
+    root = css[css.index(":root{") : css.index('html[data-theme="light"]{')]
+    light = css[css.index('html[data-theme="light"]{') :]
+    light = light[: light.index("}")]   # the light block nests no braces
+    dark_decl, light_decl = _bloom_alpha(root), _bloom_alpha(light)
+    assert dark_decl != light_decl, "both themes are using the same --bloom"
+    # geometry identical, strength different
+    assert "60% 80% at 100% 0%" in dark_decl and "60% 80% at 100% 0%" in light_decl
+
+
+def test_bloom_is_painted_on_the_head() -> None:
+    css = _style_block()
+    block = css[css.index(".pagehead::before{") :]
+    block = block[: block.index("}")]
+    assert "background:var(--bloom)" in block
+    assert "pointer-events:none" in block
+
+
+def test_ctx_carries_a_word_for_every_page() -> None:
+    """CTX values are [crumb title, wordmark]; both must be present and non-empty."""
+    body = SRC[SRC.index("const CTX={") :]
+    body = body[: body.index("};")]
+    pairs = re.findall("([a-z0-9]+):.'([^']*)','([^']*)'", body)
+    assert len(pairs) == 17, f"expected 17 CTX pairs, parsed {len(pairs)}"
+    for key, title, word in pairs:
+        assert title and word, f"{key} has an empty name"
+    words = dict((k, w) for k, _t, w in pairs)
+    assert words["overview"] == "Foxy Audit", "home must read Foxy Audit"
+
+
+def test_wordmarks_are_painted_at_sign_in() -> None:
+    assert "function paintWordmarks(" in SRC
+    i = SRC.index("function enter(")
+    assert "paintWordmarks()" in SRC[i : i + 900], "enter() never fills the wordmarks"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

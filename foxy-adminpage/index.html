@@ -405,7 +405,50 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none}
    absolutely positioned and so never enters this flex row. Left at its old
    flex-end height with the title block gone it read as a dead gap. */
 .pagehead{display:flex;align-items:center;justify-content:flex-end;gap:var(--s-3);
-  min-height:68px;margin-bottom:var(--s-4);flex-wrap:wrap}
+  min-height:68px;margin-bottom:var(--s-4);flex-wrap:wrap;
+  /* P3 · the head's own overflow:hidden is what keeps a word wider than the
+     column from ever producing horizontal body scroll. isolation:isolate keeps
+     the bloom's stacking context local so it cannot slide under a panel. */
+  position:relative;overflow:hidden;isolation:isolate}
+/* everything the head actually holds sits above the two decorative layers.
+   .pg-wm below re-declares position and z-index at the same specificity, so it
+   must stay AFTER this rule — source order is the only thing separating them. */
+.pagehead>*{position:relative;z-index:1}
+
+/* ════════ P3 · THE PAGE WORDMARK ════════
+   Giant, low-opacity, bleeding off the RIGHT edge and vertically centred —
+   never centred horizontally. It carries the page's own name, so it is
+   orientation rather than ornament, and the head clips it.
+
+   Ported from the Dashboard's .pg-wm with one value changed: the size. The
+   Dashboard hangs its word on a tall hero and can afford clamp(70px,12.8vw,168px);
+   this band is 68px, where that clamp shows the middle slice of the letterforms
+   instead of a word. Scaled to the band so the word still reads as one. */
+.pg-wm{
+  position:absolute;right:-2%;top:50%;transform:translateY(-50%);z-index:0;
+  font-family:var(--disp);font-weight:900;font-size:clamp(38px,6.4vw,72px);
+  line-height:.78;letter-spacing:-.07em;color:var(--ink);opacity:.05;
+  pointer-events:none;user-select:none;-webkit-user-select:none;white-space:nowrap;
+}
+html[data-theme="light"] .pg-wm{opacity:.06}
+/* decoration, not information — the one intentional exception to P6's rule that
+   the same information appears at every screen size. Below 620px the head is a
+   44px strip holding real controls and the word would only crowd them. */
+@media(max-width:620px){.pg-wm{display:none}}
+
+/* ════════ P3 · THE CORNER BLOOM ════════
+   --bloom arrives from P1 and is already re-tuned per theme (.16 dark, .10
+   light): the alpha that reads as light on near-black reads as a printing
+   smudge on paper, so the two themes share the geometry and not the strength.
+   The Dashboard insets this box -60% vertically because it hangs on a tall
+   hero; doing the same on a 68px band puts the gradient's bright corner 40px
+   ABOVE the clip, and nothing but its tail lands inside. The top edge is pinned
+   to the band instead — `at 100% 0%` then resolves to the band's own top-right
+   corner — and only the bottom is extended, so the falloff has somewhere to go. */
+.pagehead::before{
+  content:'';position:absolute;inset:0 -8% -60% 34%;z-index:0;
+  background:var(--bloom);pointer-events:none;
+}
 /* org360 only: `← organizations` is navigation, not a label, so it survives the
    head-stripping — above the band, with the org's id beside it. */
 .backline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:-6px;
@@ -1023,7 +1066,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <!-- ──────────────── OVERVIEW ──────────────── -->
       <div id="annBanner"></div>
     <section class="page active" id="page-overview">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
 
       <div class="clay pad" style="margin-bottom:18px;">
         <div class="panel-h">
@@ -1086,7 +1129,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── ORGS ──────────────── -->
     <section class="page" id="page-health">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi"><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></div><div class="clay kpi"><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></div><div class="clay kpi"><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></div><div class="clay kpi"><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" class="sub mono">loading…</div></div></div>
@@ -1107,26 +1150,26 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-deadletter">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm pri" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table></div>
     </section>
 
     <section class="page" id="page-anchors">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm pri" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="split" style="margin-bottom:18px;"><div class="clay pad" id="anchorSummary"><div class="sub mono">loading…</div></div><div class="clay pad" id="anchorWallet"><div class="sub mono">loading…</div></div></div>
       <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table></div>
     </section>
 
     <section class="page" id="page-alerts">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm pri" onclick="goOps('alerts')">Alerts</button></div>
       <div class="clay pad"><div id="alertSummary" class="sub mono" style="margin-bottom:14px;">loading…</div><div id="alertRows"><div class="sub mono">loading…</div></div></div>
     </section>
 
     <section class="page" id="page-orgs">
-      <div class="pagehead">
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span>
         <label class="sub mono" style="font-size:10px;display:flex;gap:6px;align-items:center;cursor:pointer;">
           <input type="checkbox" id="showDeleted" onchange="loadOrgs()"> show offboarded
         </label>
@@ -1148,7 +1191,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <a class="linklike" onclick="navTo('orgs')">&larr; organizations</a>
         <span class="mono" id="o3Sub"></span>
       </div>
-      <div class="pagehead">
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <span id="o3Actions" style="display:flex;gap:8px;"></span>
           <button class="btn" onclick="orgVerify()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M12 3a9 9 0 1 0 9 9"/></svg>Verify chain</button>
@@ -1172,7 +1215,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-traffic">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
         <div class="clay kpi tint" style="--k:var(--teal);--k2:var(--teal)"><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></div>
         <div class="clay kpi tint" style="--k:var(--blue);--k2:var(--blue2)"><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></div>
@@ -1230,7 +1273,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── STAFF ──────────────── -->
     <section class="page" id="page-staff">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="split">
         <div class="clay pad twrap">
           <table class="tbl">
@@ -1262,7 +1305,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── DATA ──────────────── -->
     <section class="page" id="page-data">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="annbar" style="margin-bottom:14px;">
         <div><b>audit_logs, admin_actions, chain_anchors and stripe_events are permanently read-only.</b>
         Editing them would break the tamper-evident chain, the audit trail, or the Stripe idempotency
@@ -1320,7 +1363,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── INBOX ──────────────── -->
     <section class="page" id="page-inbox">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start;">
         <div class="clay" style="padding:10px;max-height:78vh;overflow:auto;">
           <input class="cin" id="inboxSearch" placeholder="Search sender, subject, message…" oninput="renderInboxList()" style="margin-bottom:8px;">
@@ -1333,7 +1376,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── REVENUE ──────────────── -->
     <section class="page" id="page-revenue">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="grid kpis">
         <div class="clay kpi hot"><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></div>
         <div class="clay kpi tint" style="--k:var(--blue);--k2:var(--blue2)"><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></div>
@@ -1356,7 +1399,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── SECURITY ──────────────── -->
     <section class="page" id="page-security">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="split">
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">last 7 days</div><div class="panel-t">Failed logins</div></div></div><div id="secTrend" style="min-height:190px;"></div></div>
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by IP</div><div class="panel-t">Top offenders</div></div></div><div id="secOffenders" style="min-height:190px;"></div></div>
@@ -1369,7 +1412,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── AUDIT ──────────────── -->
     <section class="page" id="page-audit">
-      <div class="pagehead"><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button></div></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button></div></div>
       <div class="clay pad" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
         <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">action (prefix)</div><input class="cin" id="auAction" placeholder="e.g. org." oninput="auditDebounced()"></div>
         <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">actor (email)</div><input class="cin" id="auActor" placeholder="staff@foxy.audit" oninput="auditDebounced()"></div>
@@ -1381,14 +1424,14 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── LEADS ──────────────── -->
     <section class="page" id="page-leads">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">funnel</div><div class="panel-t">Conversion</div></div><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div><div class="fun" id="ldFunnel"></div></div>
       <div id="ldKanban" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
     </section>
 
     <!-- ──────────────── EVALUATION CAMPAIGNS ──────────────── -->
     <section class="page" id="page-campaigns">
-      <div class="pagehead">
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span>
         <button class="btn" onclick="loadCampaigns()">Refresh</button>
       </div>
       <div class="clay pad" id="campaignCreateCard" style="display:none;margin-bottom:18px;">
@@ -1415,7 +1458,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── SETTINGS ──────────────── -->
     <section class="page" id="page-settings">
-      <div class="pagehead"></div>
+      <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <!-- P2 · one column. Six cards side by side across a 2559px viewport left
            every one of them half empty; a settings form is a reading column, not
            a dashboard, so it is capped rather than stretched to the window. -->
@@ -1988,12 +2031,33 @@ function _loaders(){return {overview:loadOverview,health:loadHealth,deadletter:l
 /* P2 · the crumb's page name. Every id in _loaders(), plus org360 — which
    overrides it with the organisation's own name, because on that page the org
    IS the page. Anything unmapped falls back rather than printing "undefined". */
-const CTX={overview:'Overview',health:'System health',deadletter:'Dead letters',
-  anchors:'Anchor monitor',alerts:'Alerts',orgs:'Organizations',org360:'Organization',
-  traffic:'Traffic',staff:'Platform staff',data:'Data',inbox:'Inbox',revenue:'Revenue',
-  security:'Security',audit:'Audit log',leads:'Leads',campaigns:'Campaigns',settings:'Settings'};
+/* P3 · [crumb title, wordmark]. One map for both, so the name in the top bar
+   and the giant word behind the page head cannot drift apart. The wordmark is
+   the shorter of the two: it is set at 72px and bleeds off the right edge, so
+   "Anchor monitor" would arrive as a clipped fragment where "Anchors" reads. */
+const CTX={overview:['Overview','Foxy Audit'],health:['System health','Health'],
+  deadletter:['Dead letters','Dead letters'],anchors:['Anchor monitor','Anchors'],
+  alerts:['Alerts','Alerts'],orgs:['Organizations','Orgs'],
+  org360:['Organization','Organization'],traffic:['Traffic','Traffic'],
+  staff:['Platform staff','Staff'],data:['Data','Data'],inbox:['Inbox','Inbox'],
+  revenue:['Revenue','Revenue'],security:['Security','Security'],
+  audit:['Audit log','Audit'],leads:['Leads','Leads'],
+  campaigns:['Campaigns','Campaigns'],settings:['Settings','Settings']};
 function setTopbarContext(page,override){
-  const t=$('topbarTitle'); if(t)t.textContent=override||CTX[page]||'Overview';
+  const c=CTX[page]; const t=$('topbarTitle');
+  if(t)t.textContent=override||(c&&c[0])||'Overview';
+}
+/* The wordmark is painted once, at sign-in: a page's own name never changes, so
+   there is nothing for a per-navigation write to keep up with. org360 is the one
+   page whose crumb takes an override — the organisation's name — and its
+   wordmark deliberately does not follow it. The crumb answers "which one";
+   the word answers "what kind of page is this", and a 40-character tenant name
+   set at 72px would answer neither. */
+function paintWordmarks(){
+  document.querySelectorAll('.page').forEach(function(pg){
+    const wm=pg.querySelector('.pg-wm'), c=CTX[pg.id.replace('page-','')];
+    if(wm&&c)wm.textContent=c[1];
+  });
 }
 /* the crumb mark borrows the dock's image rather than carrying its own — the
    same base64 fox is already in this file twice, and a third copy would be
@@ -2381,6 +2445,7 @@ function enter(me){
   $('gate').style.display='none';
   $('app').style.visibility='visible';
   paintCrumbLogo();
+  paintWordmarks();
   setTopbarContext('overview');
   applyIdentity(me);
   const _trole=$('topUserRole');if(_trole)_trole.textContent=me.platform_role;
