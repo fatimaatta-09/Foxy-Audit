@@ -58,7 +58,7 @@ rule as last time.
 | Phase | Branch | Items |
 |---|---|---|
 | P1 | `feat/admin-pw-reuse-block` | 2 — reject reusing the current password (backend) |
-| P2 | `feat/admin-pw-modal` | 1, 3 — confirm field, strength meter, and the form defect |
+| ~~P2~~ | ~~`feat/admin-pw-modal`~~ | **✅ merged 2026-08-02 at `05a390a`** — form, confirm, meter |
 | P3 | `feat/admin-chips-info` | 4, 5, 6, 9 — chips, hero info button, drop Recent Activity |
 | P4 | `feat/admin-credit-link` | 7 — credit via shareable link |
 
@@ -91,6 +91,23 @@ if bcrypt.checkpw(payload.new_password.encode("utf-8"),
 
 Order matters: the current-password check stays first, so a wrong current
 password never leaks whether the new one matches.
+
+### ⚠ Word it WITHOUT "current" — P2 routes focus on that substring
+
+P2 shipped `(/current/i.test(m) ? cur : nw).focus()` so a server error lands on
+the field it is about. `"current password is incorrect"` matches and focuses the
+current field, correctly. **The message above also contains "current", so it
+would focus the current field too — and it is about the new one.**
+
+Use wording that does not collide:
+
+```python
+detail="new password must be different from your previous one"
+```
+
+The substring test is fragile either way; hardening it is P3's job, since P3 is
+the next phase touching `index.html`. Until then the wording is what keeps the
+two apart, so do not reintroduce "current" here.
 
 **Also apply it to the customer path.** Grep for the `/v1/auth/change-password`
 handler and give it the same guard — the same gap almost certainly exists there,
@@ -178,6 +195,14 @@ aware, already used at 23 `data-tip` sites. Do not build a second tooltip.
 
 Write real copy per card — what the number is and where it comes from. "Shows the
 overall status" is not worth a button.
+
+### Also in P3 — harden the error-focus test
+
+`_doChangePw` routes focus with `/current/i.test(m)`, a loose substring match
+over the server's message. It works today only because P1 was worded around it.
+Replace it with something that cannot be broken by copy — match the specific
+known error, or have the server return a code the client switches on. Leave a
+comment saying why, or the next person will "simplify" it back.
 
 ### Item 9 — remove Recent Activity
 
