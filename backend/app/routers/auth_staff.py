@@ -346,6 +346,18 @@ def change_password(payload: ChangePasswordRequest, request: Request,
     if not bcrypt.checkpw(payload.current_password.encode("utf-8"),
                           staff.password_hash.encode("utf-8")):
         raise HTTPException(status_code=400, detail="current password is incorrect")
+    # Only after the current-password check: a wrong current password must never
+    # leak whether the new one happens to match the stored hash.
+    #
+    # The wording avoids the word "current" on purpose. The admin modal routes a
+    # server error to the field it is about with `/current/i.test(m)`, so a reuse
+    # message carrying that word would focus the current-password field while
+    # being about the new one. Do not reintroduce it here; P3 replaces the
+    # substring test with something copy cannot break.
+    if bcrypt.checkpw(payload.new_password.encode("utf-8"),
+                      staff.password_hash.encode("utf-8")):
+        raise HTTPException(status_code=400,
+                            detail="new password must be different from your previous one")
     staff.password_hash = bcrypt.hashpw(
         payload.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     record_admin_action(db, staff, "staff.password_change", target_type="staff_user",

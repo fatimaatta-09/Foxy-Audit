@@ -597,6 +597,15 @@ def change_password(
         raise HTTPException(status_code=403, detail="current password is incorrect")
     if len(payload.new_password) < 8:
         raise HTTPException(status_code=422, detail="new password must be at least 8 characters")
+    # Only after the current-password check: a wrong current password must never
+    # leak whether the new one happens to match the stored hash.
+    #
+    # Wording kept identical to the staff path, and deliberately free of the word
+    # "current" — see the note in auth_staff.change_password.
+    if bcrypt.checkpw(payload.new_password.encode("utf-8"),
+                      user.password_hash.encode("utf-8")):
+        raise HTTPException(status_code=400,
+                            detail="new password must be different from your previous one")
     user.password_hash = _bcrypt(payload.new_password)
     db.commit()
     return {"status": "password_changed"}
