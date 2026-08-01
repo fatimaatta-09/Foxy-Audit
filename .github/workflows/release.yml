@@ -330,6 +330,13 @@ jobs:
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks the repo out — it only downloads artifacts — so
+          # `gh` has no git remote to infer the repository from and dies with
+          # "fatal: not a git repository". GH_REPO tells it directly, which is
+          # cheaper than adding a checkout for a job that needs no source.
+          # The job was added after v1.2.0 shipped, so v1.3.0 was the first tag
+          # to reach it and the first to expose this.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           V="${GITHUB_REF_NAME#v}"
