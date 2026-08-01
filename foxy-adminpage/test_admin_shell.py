@@ -378,5 +378,181 @@ def test_wordmarks_are_painted_at_sign_in() -> None:
     assert "paintWordmarks()" in SRC[i : i + 900], "enter() never fills the wordmarks"
 
 
+# ── 7. hero cards (P4) ───────────────────────────────────────────────────────
+# The trap this group exists for: .kpi::before IS the accent bar, and an element
+# has exactly one ::before. The file used to defend that by scoping every
+# decorative pseudo .clay:not(.kpi); P1 deleted those with the skins, removing
+# the guard and leaving the thing it guarded. A decorative ::before added to
+# .clay, .kpi or any shared ancestor blanks all 21 bars and nothing errors.
+# Rendered count at the time of writing (headless, computed ::before height over
+# the four static rows): kpis=16 bars=16 faces=16 glyphs=16 blank=[].
+
+def _kpi_cards() -> list[str]:
+    return _blocks('<div class="clay kpi ')
+
+
+FACE_CLASSES = ["k-azure", "k-blue", "k-indigo", "k-violet", "k-magenta",
+                "k-rose", "k-coral", "k-orange", "k-teal"]
+
+
+def test_every_kpi_has_a_face_a_beam_and_a_glyph() -> None:
+    cards = _kpi_cards()
+    assert len(cards) == 21, f"expected 21 KPI cards, found {len(cards)}"
+    for c in cards:
+        assert c.count('class="face"') == 1, c[:140]
+        assert c.count('class="beam"') == 1, c[:140]
+        assert c.count('class="gly"') == 1, c[:140]
+
+
+def test_the_accent_bar_rule_survives() -> None:
+    """It is the one ::before on .kpi, it paints, and it is not scaled away."""
+    css = _style_block()
+    assert ".kpi::before{" in css
+    rule = css[css.index(".kpi::before{") :]
+    rule = rule[: rule.index("}")]
+    assert "content:''" in rule, "the accent bar has no content — it paints nothing"
+    assert "height:3px" in rule
+    assert "scaleX(1)" in rule, "the bar is scaled to zero and never revealed"
+
+
+def test_no_other_pseudo_claims_the_kpi_before() -> None:
+    """Any decorative ::before on .clay/.kpi or a shared ancestor blanks the bars."""
+    css = _style_block()
+    for sel in re.findall("([^{}]*)::before[^{}]*{", css):
+        sel = sel.strip().splitlines()[-1].strip()
+        if sel in (".kpi", "*,*", ".eyebrow", ".pagehead", ".tbl.cardify td"):
+            continue
+        assert ".clay" not in sel and ".kpi" not in sel, (
+            f"{sel}::before competes with the KPI accent bar"
+        )
+    assert css.count(".kpi::before{") == 1
+
+
+def test_face_and_beam_are_elements_not_pseudos() -> None:
+    """The reason the bars survive at all."""
+    css = _style_block()
+    assert ".kpi .face{" in css
+    assert ".kpi .beam{" in css
+    for banned in (".kpi::after{", ".kpi .face::before{", ".kpi .face::after{"):
+        assert banned not in css, f"{banned} is a pseudo where an element was required"
+
+
+def test_nine_faces_are_defined_with_both_stops() -> None:
+    css = _style_block()
+    for k in FACE_CLASSES:
+        i = css.index("." + k)
+        rule = css[i : css.index("}", i)]
+        assert "--k:" in rule and "--k2:" in rule, f"{k} is missing a stop: {rule}"
+
+
+def test_status_hues_stay_out_of_the_face_palette() -> None:
+    """Red, amber and green are reserved for status — the only reason a breach
+    pill still reads instantly sitting on top of any of these faces."""
+    css = _style_block()
+    for k in FACE_CLASSES:
+        i = css.index("." + k)
+        rule = css[i : css.index("}", i)]
+        for banned in ("--safe", "--warn", "--breach", "--danger", "--ok"):
+            assert banned not in rule, f"{k} reaches for a status token: {rule}"
+
+
+def _rows() -> list[list[str]]:
+    """The face class of every card, grouped by .grid.kpis row."""
+    rows = []
+    for row in _blocks('<div class="grid kpis"'):
+        faces = re.findall('class="clay kpi (k-[a-z]+)"', row)
+        if faces:
+            rows.append(faces)
+    return rows
+
+
+def test_no_two_faces_alike_in_a_row() -> None:
+    """The owner rejected three identical blues on sight. Uniqueness within the
+    row outranks the category bias."""
+    rows = _rows()
+    assert len(rows) >= 4, f"expected the static KPI rows, found {len(rows)}"
+    for faces in rows:
+        assert len(faces) == len(set(faces)), f"a row repeats a face: {faces}"
+
+
+def test_every_row_has_a_warm_card() -> None:
+    """The warm card is the number that can be bad — the only part of the
+    assignment that carries meaning."""
+    warm = {"k-orange", "k-coral", "k-rose", "k-magenta"}
+    for faces in _rows():
+        assert [f for f in faces if f in warm], f"a row has nothing warm in it: {faces}"
+
+
+def test_the_glyph_sprite_is_complete_and_currentcolor_only() -> None:
+    sprite = SRC[SRC.index('<svg width="0" height="0"') :]
+    sprite = sprite[: sprite.index("</svg>") + 6]
+    ids = set(re.findall('id="(g-[a-z]+)"', sprite))
+    assert len(ids) == 18, f"expected 18 glyphs, found {len(ids)}: {sorted(ids)}"
+    used = set(re.findall('href="#(g-[a-z]+)"', SRC))
+    assert used <= ids, f"a card points at a glyph that does not exist: {sorted(used - ids)}"
+    # currentColor is the point: the glyph inherits the card's ink, so it can
+    # never wash out against the face it sits on and it re-themes for free.
+    for bad in ("#", "rgb(", "hsl("):
+        for attr in ('fill="', 'stroke="'):
+            assert attr + bad not in sprite, f"a glyph carries its own colour ({attr}{bad})"
+
+
+def test_glyphs_inherit_the_card_ink() -> None:
+    css = _style_block()
+    rule = css[css.index(".kpi .gly{") :]
+    rule = rule[: rule.index("}")]
+    assert "color:var(--foxink)" in rule
+
+
+def test_the_label_is_not_dimmed_on_a_face() -> None:
+    """The mock ran its label at opacity .82, which drops seven of the nine faces
+    under 4.5:1 (indigo 3.89). At full strength the worst face is 4.64:1."""
+    css = _style_block()
+    i = css.index(".kpi .face .klabel")
+    rule = css[i : css.index("}", i)]
+    assert "opacity" not in rule, "the label is dimmed again"
+
+
+def test_chart_series_is_split_from_chip_ink() -> None:
+    """Worth Noting #34: --warnc drove both .chip.warn ink and slot 6 of the
+    chart palette. Measured with the dataviz validator, the split lifts the light
+    palette's worst adjacent pair from delta-E 15.5 to 22.0 (normal vision) and
+    clears one of its two chroma failures."""
+    assert "--warn-series" in _defined_tokens()
+    assert "_cssvar('--warn-series'" in SRC, "the chart palette still reads the chip ink"
+    assert "--warnc" in _defined_tokens(), "--warnc is still the chip/annbar ink"
+    for block_start in (":root{", 'html[data-theme="light"]{'):
+        b = SRC[SRC.index(block_start) :]
+        b = b[: b.index("}")]
+        assert "--warn-series:" in b, f"{block_start} does not set --warn-series"
+
+
+def test_chart_palette_keeps_its_cvd_order() -> None:
+    """P1 changed only the fallback hexes; the order is still load-bearing."""
+    i = SRC.index("function _chartPalette()")
+    body = SRC[i : SRC.index("}", i)]
+    order = re.findall("_cssvar[(]'(--[a-z-]+)'", body)
+    assert order == ["--fox", "--blue", "--ok", "--violet", "--teal", "--warn-series"], order
+
+
+def test_beam_respects_reduced_motion() -> None:
+    css = _style_block()
+    i = css.rindex("@media(prefers-reduced-motion:reduce)", 0, css.index(".k-azure"))
+    block = css[i : css.index("}", css.index("{", i) + 1) + 1]
+    assert ".kpi .beam" in block and "display:none" in block, block
+
+
+def test_no_invented_numbers_in_a_kpi_card() -> None:
+    """Every value comes from a loader. Static markup ships an em dash; the
+    org drill-down row is a JS template, so its slots are interpolations."""
+    for c in _kpi_cards():
+        for m in re.findall('class="kval"[^>]*>([^<]*)<', c):
+            m = m.strip()
+            interpolated = m.startswith("'+") and m.endswith("+'")
+            assert m in ("", "—") or interpolated, (
+                f"a KPI card ships a literal value: {m!r}"
+            )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))
