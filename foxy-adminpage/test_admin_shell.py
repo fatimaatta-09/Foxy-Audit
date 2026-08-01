@@ -697,5 +697,149 @@ def test_shown_once_secret_warning_is_not_a_blurb() -> None:
     assert "shown once" in SRC
 
 
+# ── 9. responsive consistency (P6) ───────────────────────────────────────────
+# The owner's complaint was that the console shows DIFFERENT CONTENT at
+# different widths. The rule this group enforces: nothing that is information
+# may be removed by a media query. Measured headless, no horizontal body scroll
+# and nothing hidden at 1414 / 998 / 742 / 594 / 494 / 365 — the last inside a
+# sized iframe, because Chrome clamps --window-size to ~490px and a naive "375px
+# screenshot" is a lie.
+
+def _width_media_blocks() -> list[tuple[str, str]]:
+    """(condition, body) for every width-based media query in the stylesheet."""
+    css = _style_block()
+    out = []
+    for m in re.finditer(r"@media\((max|min)-width:(\d+)px\)\s*\{", css):
+        depth, i = 1, m.end()
+        while i < len(css) and depth:
+            if css[i] == "{":
+                depth += 1
+            elif css[i] == "}":
+                depth -= 1
+            i += 1
+        out.append((f"{m.group(1)}-width:{m.group(2)}px", css[m.end(): i - 1]))
+    return out
+
+
+# Each entry is a deliberate exception with the reason it is allowed. Anything
+# else that hides itself by width is the defect this phase exists to remove.
+HIDE_ALLOWLIST = {
+    ".pg-wm":                 "decoration — a 72px word behind a 44px band, the plan's one exception",
+    ".crumb-sep":             "a box-drawing glyph, already aria-hidden; it carries nothing",
+    ".tbl.cardify td:empty":  "a cell with no value, which the desktop table also renders blank",
+}
+
+
+def test_nothing_is_hidden_by_width_except_the_named_exceptions() -> None:
+    offenders = []
+    for cond, body in _width_media_blocks():
+        for m in re.finditer(r"([^{};]+)\{[^{}]*display:none", body):
+            sel = m.group(1).strip().splitlines()[-1].strip()
+            for one in (x.strip() for x in sel.split(",")):
+                if one not in HIDE_ALLOWLIST:
+                    offenders.append(f"@media({cond}) {one}")
+    assert not offenders, (
+        "these disappear at some width — reinstate them in a width-appropriate "
+        f"form instead: {offenders}"
+    )
+
+
+def test_the_controls_that_used_to_vanish_are_back() -> None:
+    """Below 760px the rail used to drop .dock-mark, .dock-ops and .dock-foot,
+    which took the avatar AND the sign-out button with it — a lost control, not
+    a lost decoration. .topuser-meta took the signed-in identity."""
+    css = _style_block()
+    for sel in (".dock-mark,.dock-ops,.dock-foot{display:none}",
+                ".topuser-meta{display:none}",
+                ".crumb-brand,.crumb-sep,.crumb-logo{display:none}"):
+        assert sel not in css.replace(" ", ""), f"{sel} is back"
+
+
+def test_sign_out_stays_reachable_in_the_bottom_bar() -> None:
+    """The bar scrolls horizontally, so .dock-foot is pinned to its trailing
+    edge rather than sitting behind thirteen nav items."""
+    css = _style_block()
+    i = css.index(".dock-foot{", css.index("@media(max-width:760px)"))
+    rule = css[i: css.index("}", i)]
+    assert "position:sticky" in rule and "right:0" in rule, rule
+
+
+def test_the_top_bar_wraps_rather_than_dropping_its_right_half() -> None:
+    css = _style_block()
+    i = css.index(".topbar{", css.index("@media(max-width:760px)"))
+    rule = css[i: css.index("}", i)]
+    assert "flex-wrap:wrap" in rule, rule
+
+
+# ── every table stacks, and every stacked cell names its column ──────────────
+
+def _tables() -> list[str]:
+    out, cur = [], 0
+    while True:
+        m = re.search(r'<table class="tbl[^"]*"[^>]*>', SRC[cur:])
+        if not m:
+            return out
+        start = cur + m.start()
+        depth, i = 0, start
+        while i < len(SRC):
+            if SRC.startswith("<table", i):
+                depth += 1; i += 6
+            elif SRC.startswith("</table>", i):
+                depth -= 1; i += 8
+                if depth == 0:
+                    break
+            else:
+                i += 1
+        out.append(SRC[start:i])
+        cur = i
+
+
+def test_every_table_cardifies() -> None:
+    """One table opting in and eighteen scrolling sideways is exactly the
+    'different pages behave differently' that was reported."""
+    tables = _tables()
+    assert len(tables) == 19, f"expected 19 tables, found {len(tables)}"
+    missing = [t[:70] for t in tables if "tbl cardify" not in t[:60]]
+    assert not missing, f"tables that still scroll sideways instead of stacking: {missing}"
+
+
+def test_every_labelled_column_labels_its_cells() -> None:
+    """A stacked card shows attr(data-label) as the cell's name. A cell with no
+    label in a table that has headers is a value with nothing to identify it.
+
+    Cells legitimately without one: an empty-state row (colspan), and an action
+    column whose own <th> is blank because the button says what it does.
+    """
+    bad = []
+    for t in _tables():
+        heads = [re.sub(r"<[^>]+>", "", h).strip()
+                 for h in re.findall(r"<th\b[^>]*>(.*?)</th>", t, re.S)]
+        if not heads:
+            continue          # the activity feeds have no header row at all
+        for row in re.findall(r"<tr\b[^>]*>.*?</tr>", t, re.S):
+            if "colspan" in row:
+                continue
+            for idx, td in enumerate(re.findall(r"<td\b[^>]*>", row)):
+                if idx < len(heads) and heads[idx] and "data-label" not in td:
+                    bad.append(f"{heads[idx]}: {td[:70]}")
+    assert not bad, f"cells with no card label: {bad}"
+
+
+def test_the_pagers_survived_the_restructure() -> None:
+    """P5's hosts sit outside the <table>, so stacking must not have eaten them."""
+    hosts = set(re.findall('id="([a-zA-Z0-9]+Pager)"', SRC))
+    assert len(hosts) >= 14, f"pager hosts lost in the restructure: {sorted(hosts)}"
+    for t in _tables():
+        assert "Pager" not in t, "a pager host ended up inside a <table>"
+
+
+def test_the_wordmark_clip_is_still_load_bearing() -> None:
+    """P3 measured it at 64/43/44/30px of horizontal body scroll without it."""
+    css = _style_block()
+    block = css[css.index(".pagehead{"):]
+    block = block[: block.index("}")]
+    assert "overflow:hidden" in block
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

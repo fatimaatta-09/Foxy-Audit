@@ -362,7 +362,10 @@ html[data-theme="light"] .crumb-logo{filter:brightness(0);opacity:.42}
 .crumb-dot{margin-left:-8px;font-size:20px;line-height:1;letter-spacing:0;font-weight:800;
   position:relative;top:-2px;user-select:none;color:var(--fox)}
 html[data-theme="light"] .crumb-dot{color:var(--fox2)}
-@media(max-width:520px){.crumb-brand,.crumb-sep,.crumb-logo{display:none}}
+/* P6 · only the separator goes. It is a box-drawing glyph and already
+   aria-hidden; the mark and the product name are information and stay at every
+   width. The page title ellipsizes instead — .crumb b already does that. */
+@media(max-width:520px){.crumb-sep{display:none}.crumb{gap:6px;letter-spacing:.08em}}
 .topbar-actions{display:flex;align-items:center;gap:8px}
 .topbtn{
   position:relative;width:38px;height:38px;flex-shrink:0;border-radius:11px;
@@ -938,30 +941,71 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .notif-empty{padding:30px 14px;text-align:center;color:var(--muted);font-size:12.5px}
 
 /* ════════ RESPONSIVE ════════ */
+/* ════════ P6 · THE SAME INFORMATION AT EVERY WIDTH ════════
+   The rail becomes a bottom bar and the tables become stacked cards, but
+   nothing leaves the page on the way down. What used to go:
+
+     .dock-foot   the avatar AND the EXIT button — signing out was impossible
+                  below 760px, which is a lost control, not a lost decoration
+     .dock-mark   the brand plate
+     .dock-ops    the "INTERNAL" chip, which is the one thing on screen that
+                  says this is the staff console and not the customer app
+     .topuser-meta  who you are signed in as, and with which role
+
+   All four are back, laid out for the width instead. The single deliberate
+   exception in this file is .pg-wm under 620px — a 72px word behind a 44px
+   band is decoration, and it says so where it is defined. */
 @media(max-width:760px){
+  /* the rail turns on its side. Same items, same order, so muscle memory from
+     the desktop layout still points at the right thing; it scrolls rather than
+     dropping whatever did not fit. */
   .dock{
-    width:100%;height:60px;flex-direction:row;top:auto;bottom:0;
+    width:100%;height:60px;flex-direction:row;align-items:center;top:auto;bottom:0;
     padding:0 8px;gap:2px;border-right:none;border-top:1px solid var(--line);box-shadow:none;
     overflow-x:auto;justify-content:flex-start;
   }
-  .dock-mark,.dock-ops,.dock-foot{display:none}
+  .dock-mark{width:34px;height:34px;border-radius:10px;margin-bottom:0;flex-shrink:0}
+  .dock-mark img{width:22px;height:22px}
+  .dock-ops{margin-bottom:0;flex-shrink:0;align-self:center}
   .dock-item{width:60px;height:52px;flex-shrink:0;border-radius:12px}
-  /* wide tables → stacked cards (opt-in via .cardify + per-cell data-label; else they still scroll in .twrap) */
+  /* the bar scrolls, so signing out would otherwise sit behind thirteen nav
+     items. Pinned to the trailing edge instead: same place it occupies on the
+     desktop rail — the end — but always reachable. */
+  .dock-foot{margin-top:0;flex-direction:row;align-items:center;gap:8px;flex-shrink:0;
+    position:sticky;right:0;padding:0 2px 0 10px;background:var(--surf);
+    box-shadow:-10px 0 12px -6px var(--surf)}
+  .dock-user{width:34px;height:34px;border-radius:10px;font-size:12px}
+
+  /* every table stacks; every cell names its column. This is no longer opt-in —
+     one table opting in and eighteen scrolling sideways is exactly the
+     "different pages behave differently" the owner reported. */
   .tbl.cardify thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
   .tbl.cardify tr{display:block;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;padding:6px 11px;background:var(--surf2)}
   .tbl.cardify td{display:flex;justify-content:space-between;align-items:center;gap:12px;border:none;padding:5px 0;
     max-width:none!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
   .tbl.cardify td::before{content:attr(data-label);font-family:var(--mono);font-size:9px;letter-spacing:.5px;
     text-transform:uppercase;color:var(--muted);flex-shrink:0}
+  /* a cell with no value renders nothing — it is not a column that vanished,
+     it is a row that has no value there, which the desktop table also shows
+     as blank. An action cell carries its own button and needs no label. */
   .tbl.cardify td:empty{display:none}
+  .tbl.cardify tr:last-child{margin-bottom:0}
+
+  /* the top bar wraps rather than dropping its right-hand half: the crumb takes
+     the first row, the actions and the signed-in identity the second. */
+  .topbar{top:6px;flex-wrap:wrap;row-gap:8px}
+  .topbar .crumb{flex:1 1 100%;min-width:0}
+  .topbar-actions{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;row-gap:8px}
+  .topuser{padding:4px 10px 4px 4px;margin-left:auto}
+  .topuser-meta{max-width:min(46vw,220px)}
+
   .main{margin-left:0;padding:14px 14px calc(60px + 24px)}
   .pagehead{min-height:44px;margin-bottom:12px}
-  .topbar{top:6px}
-  .topuser-meta{display:none}
-  .topuser{padding:4px}
 }
 @media(max-width:520px){
   .kpis{grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
+  /* the identity keeps both lines; it just stops competing for the row */
+  .topuser-meta{max-width:min(58vw,220px)}
 }
 
 /* ════════ REDUCED MOTION ════════ */
@@ -1359,7 +1403,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </div>
         <div class="clay pad b-orgs k-azure">
           <div class="panel-h"><div><div class="eyebrow">tenants</div><div class="panel-t">Recent organizations</div></div><a class="linklike" onclick="navTo('orgs')">all orgs →</a></div>
-          <div class="twrap"><table class="tbl"><thead><tr><th>Org</th><th>Plan</th><th>Access</th><th>Created</th></tr></thead><tbody id="ovOrgs"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table></div>
+          <div class="twrap"><table class="tbl cardify"><thead><tr><th>Org</th><th>Plan</th><th>Access</th><th>Created</th></tr></thead><tbody id="ovOrgs"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table></div>
         </div>
         <div class="clay pad b-alerts k-orange">
           <div class="panel-h"><div><div class="eyebrow">attention</div><div class="panel-t">Open alerts</div></div><a class="linklike" onclick="goOps('alerts')">view →</a></div>
@@ -1393,14 +1437,14 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-deadletter">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm pri" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
-      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table><div id="deadPager"></div></div>
+      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table><div id="deadPager"></div></div>
     </section>
 
     <section class="page" id="page-anchors">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm pri" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
       <div class="split" style="margin-bottom:18px;"><div class="clay pad" id="anchorSummary"><div class="sub mono">loading…</div></div><div class="clay pad" id="anchorWallet"><div class="sub mono">loading…</div></div></div>
-      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="anchorPager"></div></div>
+      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="anchorPager"></div></div>
     </section>
 
     <section class="page" id="page-alerts">
@@ -1416,7 +1460,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </label>
       </div>
       <div class="clay pad twrap">
-        <table class="tbl" id="orgTbl">
+        <table class="tbl cardify" id="orgTbl">
           <thead><tr>
             <th>Org</th><th>Plan</th><th>Subscription</th><th>Access</th><th>Contact</th><th>Created</th>
           </tr></thead>
@@ -1517,7 +1561,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="split">
         <div class="clay pad twrap">
-          <table class="tbl">
+          <table class="tbl cardify">
             <thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>Last login</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
             <tbody id="staffRows"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody>
           </table><div id="staffPager"></div>
@@ -1578,7 +1622,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <div class="sub mono" id="dataCount"></div>
         </div>
         <div id="dataPager"></div>
-        <table class="tbl" id="dataTbl">
+        <table class="tbl cardify" id="dataTbl">
           <thead><tr id="dataHead"></tr></thead>
           <tbody id="dataRows"></tbody>
         </table>
@@ -1630,7 +1674,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <div class="fauxselect-list"><div class="fauxselect-opt sel" data-value="">all statuses</div><div class="fauxselect-opt" data-value="failed">failed</div><div class="fauxselect-opt" data-value="processed">processed</div><div class="fauxselect-opt" data-value="ignored">ignored</div><div class="fauxselect-opt" data-value="received">received</div></div>
           </div>
         </div>
-        <div class="twrap"><table class="tbl"><thead><tr><th>Type</th><th>Status</th><th>Org</th><th>Received</th><th>Error</th><th style="text-align:right;">Action</th></tr></thead><tbody id="seRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="sePager"></div></div>
+        <div class="twrap"><table class="tbl cardify"><thead><tr><th>Type</th><th>Status</th><th>Org</th><th>Received</th><th>Error</th><th style="text-align:right;">Action</th></tr></thead><tbody id="seRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="sePager"></div></div>
       </div>
     </section>
 
@@ -1642,8 +1686,8 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by IP</div><div class="panel-t">Top offenders</div></div></div><div id="secOffenders" style="min-height:190px;"></div></div>
       </div>
       <div class="split" style="margin-top:16px;">
-        <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl"><thead><tr><th>Email</th><th style="text-align:right;">Fails · 24h</th><th>Last</th></tr></thead><tbody id="secWatch"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table><div id="secWatchPager"></div></div></div>
-        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap" style="max-height:360px;overflow:auto;"><table class="tbl"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table><div id="secRecentPager"></div></div></div>
+        <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl cardify"><thead><tr><th>Email</th><th style="text-align:right;">Fails · 24h</th><th>Last</th></tr></thead><tbody id="secWatch"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table><div id="secWatchPager"></div></div></div>
+        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap" style="max-height:360px;overflow:auto;"><table class="tbl cardify"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table><div id="secRecentPager"></div></div></div>
       </div>
     </section>
 
@@ -1656,7 +1700,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">since</div><input class="cin" id="auSince" type="date" onchange="loadAudit()"></div>
         <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">until</div><input class="cin" id="auUntil" type="date" onchange="loadAudit()"></div>
       </div>
-      <div class="clay pad twrap"><table class="tbl"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Org</th><th>IP</th></tr></thead><tbody id="auRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
+      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Org</th><th>IP</th></tr></thead><tbody id="auRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
     </section>
 
     <!-- ──────────────── LEADS ──────────────── -->
@@ -2034,7 +2078,7 @@ async function refreshData(){
       else if(typeof v==='object')v=JSON.stringify(v);
       v=String(v);
       const short=v.length>60?v.slice(0,60)+'…':v;
-      return `<td class="mono" style="font-size:10.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-tip="${esc(v)}">${esc(short)}</td>`;
+      return `<td data-label="${esc(c)}" class="mono" style="font-size:10.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-tip="${esc(v)}">${esc(short)}</td>`;
     }).join('');
     let actionsCell='';
     if(showActions){
@@ -2341,7 +2385,7 @@ async function loadDeadletter(page){
   window.foxPager('deadPager',{page:st.page,pageSize:st.size,total:d.total||rows.length,
     label:'Dead-letter pages',onPage:loadDeadletter});
   if(!rows.length){$('deadRows').innerHTML='<tr><td colspan="7" class="sub mono">no failed grading rows</td></tr>';return}
-  $('deadRows').innerHTML=rows.map(x=>`<tr><td><b>${esc(x.org_name||'unknown organization')}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td class="mono">${num(x.seq)}</td><td class="mono">${num(x.grading_attempts)}</td><td class="mono">${esc(x.policy_tag||'—')}</td><td class="mono" style="font-size:10px;">${fmtTime(x.created_at)}</td><td class="sub" style="max-width:230px;">${esc(x.failure_detail||'not recorded')}</td><td>${can('operator')?`<button class="btn sm pri" onclick="requeueDeadletter('${x.id}')">requeue</button>`:'<span class="sub mono">operator required</span>'}</td></tr>`).join('');
+  $('deadRows').innerHTML=rows.map(x=>`<tr><td data-label="Organization"><b>${esc(x.org_name||'unknown organization')}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td data-label="Seq" class="mono">${num(x.seq)}</td><td data-label="Attempts" class="mono">${num(x.grading_attempts)}</td><td data-label="Policy" class="mono">${esc(x.policy_tag||'—')}</td><td data-label="Created" class="mono" style="font-size:10px;">${fmtTime(x.created_at)}</td><td data-label="Detail" class="sub" style="max-width:230px;">${esc(x.failure_detail||'not recorded')}</td><td>${can('operator')?`<button class="btn sm pri" onclick="requeueDeadletter('${x.id}')">requeue</button>`:'<span class="sub mono">operator required</span>'}</td></tr>`).join('');
 }
 async function requeueDeadletter(id){
   const r=await api('/admin/v1/grading/deadletter/'+id+'/requeue',{method:'POST'});
@@ -2360,7 +2404,7 @@ let ANCHORS_ALL=[];
 function renderAnchors(){
   const rows=window.foxPageSlice(ANCHORS_ALL,pgState('anchors',25),'anchorPager',renderAnchors,'Anchor pages');
   if(!ANCHORS_ALL.length){$('anchorRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
-  $('anchorRows').innerHTML=rows.map(x=>{const a=x.latest,status=a?a.status:'never',receipt=a?(a.tx_hash||a.chain||'receipt'):'—',act=can('operator')&&x.current_head_seq>0?`<button class="btn sm pri" onclick="reanchor('${x.org_id}')">re-anchor</button>`:'<span class="sub mono">'+(can('operator')?'no logs':'operator required')+'</span>';return `<tr><td><b>${esc(x.org_name)}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td class="mono">${num(x.current_head_seq)}</td><td class="mono" style="font-size:10px;">${fmtTime(x.last_confirmed_at)}</td><td>${opsChip(status)}${x.stale?'<span class="chip warn" style="margin-left:5px;">stale</span>':''}</td><td class="mono" style="font-size:10px;max-width:190px;overflow:hidden;text-overflow:ellipsis;">${esc(receipt)}</td><td>${act}</td></tr>`}).join('');
+  $('anchorRows').innerHTML=rows.map(x=>{const a=x.latest,status=a?a.status:'never',receipt=a?(a.tx_hash||a.chain||'receipt'):'—',act=can('operator')&&x.current_head_seq>0?`<button class="btn sm pri" onclick="reanchor('${x.org_id}')">re-anchor</button>`:'<span class="sub mono">'+(can('operator')?'no logs':'operator required')+'</span>';return `<tr><td data-label="Organization"><b>${esc(x.org_name)}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td data-label="Head seq" class="mono">${num(x.current_head_seq)}</td><td data-label="Last confirmed" class="mono" style="font-size:10px;">${fmtTime(x.last_confirmed_at)}</td><td data-label="Latest">${opsChip(status)}${x.stale?'<span class="chip warn" style="margin-left:5px;">stale</span>':''}</td><td data-label="Receipt" class="mono" style="font-size:10px;max-width:190px;overflow:hidden;text-overflow:ellipsis;">${esc(receipt)}</td><td>${act}</td></tr>`}).join('');
 }
 async function reanchor(id){
   const r=await api('/admin/v1/anchors/'+id+'/anchor',{method:'POST'});
@@ -2409,8 +2453,8 @@ async function loadAlertHistory(){
   if(!r||!r.ok){ el.innerHTML='<div class="sub mono">unavailable</div>'; return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="chart-empty" style="min-height:60px;">No alerts have been acknowledged yet.</div>'; return; }
-  el.innerHTML='<div class="twrap"><table class="tbl"><thead><tr><th>When</th><th>Staff</th><th>Alert</th></tr></thead><tbody>'+items.map(x=>
-    '<tr><td class="mono" style="font-size:11px;white-space:nowrap;">'+fmtTime(x.at)+'</td><td class="mono" style="font-size:11px;">'+esc(x.actor||'—')+'</td><td class="mono" style="font-size:11px;">'+esc((x.detail&&x.detail.title)||x.target_id||'alert')+'</td></tr>'
+  el.innerHTML='<div class="twrap"><table class="tbl cardify"><thead><tr><th>When</th><th>Staff</th><th>Alert</th></tr></thead><tbody>'+items.map(x=>
+    '<tr><td data-label="When" class="mono" style="font-size:11px;white-space:nowrap;">'+fmtTime(x.at)+'</td><td data-label="Staff" class="mono" style="font-size:11px;">'+esc(x.actor||'—')+'</td><td data-label="Alert" class="mono" style="font-size:11px;">'+esc((x.detail&&x.detail.title)||x.target_id||'alert')+'</td></tr>'
   ).join('')+'</tbody></table></div>';
 }
 
@@ -2555,10 +2599,10 @@ async function loadSessions(){
   const d=await r.json();
   const ll=$('setLastLogin'); if(ll) ll.textContent=d.last_login_at?('Last sign-in · '+fmtTime(d.last_login_at)):'';
   if(!d.items||!d.items.length){ el.innerHTML='<div class="sub mono">no active sessions</div>'; return; }
-  el.innerHTML='<div class="twrap"><table class="tbl"><thead><tr><th>Device</th><th>IP</th><th>Last seen</th><th></th></tr></thead><tbody>'
-    +d.items.map(s=>'<tr><td style="font-size:12px;">'+_uaLabel(s.user_agent)+(s.current?' <span class="chip safe">this device</span>':'')+'</td>'
-      +'<td style="font-size:10.5px;">'+(s.ip?sens(s.ip,{short:s.ip}):'—')+'</td>'
-      +'<td class="mono" style="font-size:10px;white-space:nowrap;">'+(s.last_seen_at?fmtTime(s.last_seen_at):'—')+'</td>'
+  el.innerHTML='<div class="twrap"><table class="tbl cardify"><thead><tr><th>Device</th><th>IP</th><th>Last seen</th><th></th></tr></thead><tbody>'
+    +d.items.map(s=>'<tr><td data-label="Device" style="font-size:12px;">'+_uaLabel(s.user_agent)+(s.current?' <span class="chip safe">this device</span>':'')+'</td>'
+      +'<td data-label="IP" style="font-size:10.5px;">'+(s.ip?sens(s.ip,{short:s.ip}):'—')+'</td>'
+      +'<td data-label="Last seen" class="mono" style="font-size:10px;white-space:nowrap;">'+(s.last_seen_at?fmtTime(s.last_seen_at):'—')+'</td>'
       +'<td style="text-align:right;">'+(s.current?'':'<button class="btn sm" onclick="revokeSession(\''+esc(s.id)+'\')">Revoke</button>')+'</td></tr>').join('')
     +'</tbody></table></div>';
 }
@@ -2830,7 +2874,7 @@ async function loadOverviewExtras(){
   }}catch(e){}
   try{const r=await api('/admin/v1/organizations');if(r.ok){const orgs=await r.json();
     if(!orgs.length){$('ovOrgs').innerHTML='<tr><td colspan="4" class="sub mono">no organizations yet</td></tr>';}
-    else{$('ovOrgs').innerHTML=orgs.slice(0,6).map(o=>{const access=o.deleted?'<span class="chip dim">offboarded</span>':o.suspended?'<span class="chip bad">suspended</span>':'<span class="chip safe">active</span>';return `<tr class="rowbtn" onclick="navTo('orgs')"><td><b>${esc(o.name)}</b><div class="sub mono" style="font-size:9px;">${(o.id||'').slice(0,8)}…</div></td><td class="mono">${esc(o.plan_tier||'—')}</td><td>${access}</td><td class="mono" style="font-size:10px;">${fmtDay(o.created_at)}</td></tr>`;}).join('');}
+    else{$('ovOrgs').innerHTML=orgs.slice(0,6).map(o=>{const access=o.deleted?'<span class="chip dim">offboarded</span>':o.suspended?'<span class="chip bad">suspended</span>':'<span class="chip safe">active</span>';return `<tr class="rowbtn" onclick="navTo('orgs')"><td data-label="Org"><b>${esc(o.name)}</b><div class="sub mono" style="font-size:9px;">${(o.id||'').slice(0,8)}…</div></td><td data-label="Plan" class="mono">${esc(o.plan_tier||'—')}</td><td data-label="Access">${access}</td><td data-label="Created" class="mono" style="font-size:10px;">${fmtDay(o.created_at)}</td></tr>`;}).join('');}
   }}catch(e){}
 }
 
@@ -2917,11 +2961,11 @@ function renderOrgs(){
       ?`<span class="chip ${o.subscription_status==='active'?'safe':'warn'}">${esc(o.subscription_status)}</span>`
       :'<span class="chip dim">none</span>';
     return `<tr class="rowbtn" onclick="openOrg('${o.id}')">
-      <td><b>${esc(o.name)}</b><div class="sub" style="font-size:9px;">${sens(o.id,{short:o.id.slice(0,8)+'…'})}</div></td>
-      <td class="mono">${esc(o.plan_tier||'—')}</td>
-      <td>${sub}</td><td>${access}</td>
-      <td class="mono" style="font-size:11px;">${esc(o.contact_email||'—')}</td>
-      <td class="mono" style="font-size:11px;">${fmtDay(o.created_at)}</td>
+      <td data-label="Org"><b>${esc(o.name)}</b><div class="sub" style="font-size:9px;">${sens(o.id,{short:o.id.slice(0,8)+'…'})}</div></td>
+      <td data-label="Plan" class="mono">${esc(o.plan_tier||'—')}</td>
+      <td data-label="Subscription">${sub}</td><td data-label="Access">${access}</td>
+      <td data-label="Contact" class="mono" style="font-size:11px;">${esc(o.contact_email||'—')}</td>
+      <td data-label="Created" class="mono" style="font-size:11px;">${fmtDay(o.created_at)}</td>
     </tr>`;
   }).join('');
 }
@@ -3089,15 +3133,15 @@ async function o3LoadList(kind,render){
 }
 function renderO3Users(rows){
   if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No dashboard users.</div></div>'; return; }
-  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>SSO</th><th>Status</th><th>Created</th></tr></thead><tbody>'+rows.map(u=>
-    '<tr><td><b>'+esc(u.email)+'</b></td><td><span class="chip '+(u.role==='admin'?'info':'dim')+'">'+esc(u.role)+'</span></td><td>'+(u.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>')+'</td><td class="mono" style="font-size:11px;">'+(u.google_linked?'google':'—')+'</td><td>'+(u.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>')+'</td><td class="mono" style="font-size:11px;">'+fmtDay(u.created_at)+'</td></tr>'
+  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>SSO</th><th>Status</th><th>Created</th></tr></thead><tbody>'+rows.map(u=>
+    '<tr><td data-label="Email"><b>'+esc(u.email)+'</b></td><td data-label="Role"><span class="chip '+(u.role==='admin'?'info':'dim')+'">'+esc(u.role)+'</span></td><td data-label="MFA">'+(u.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>')+'</td><td data-label="SSO" class="mono" style="font-size:11px;">'+(u.google_linked?'google':'—')+'</td><td data-label="Status">'+(u.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>')+'</td><td data-label="Created" class="mono" style="font-size:11px;">'+fmtDay(u.created_at)+'</td></tr>'
   ).join('')+'</tbody></table></div>';
 }
 function renderO3Keys(rows){
   if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No API keys.</div></div>'; return; }
   const act=can('operator');
-  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl"><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last used</th><th>Created</th><th>Expires</th>'+(act?'<th style="text-align:right;">Action</th>':'')+'</tr></thead><tbody>'+rows.map(k=>
-    `<tr><td><b>${esc(k.name)}</b></td><td class="mono" style="font-size:11px;">${esc(k.key_prefix)}</td><td>${k.status==='active'?'<span class="chip safe">active</span>':'<span class="chip bad">'+esc(k.status)+'</span>'}</td><td class="mono" style="font-size:11px;">${k.last_used_at?fmtTime(k.last_used_at):'never'}</td><td class="mono" style="font-size:11px;">${fmtDay(k.created_at)}</td><td class="mono" style="font-size:11px;">${k.expires_at?fmtDay(k.expires_at):'—'}</td>${act?('<td style="text-align:right;">'+(k.status==='active'?`<button class="btn danger sm" onclick="keyRevoke('${O3_ID}','${k.id}','${esc(k.name)}')">Revoke</button>`:'')+'</td>'):''}</tr>`
+  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last used</th><th>Created</th><th>Expires</th>'+(act?'<th style="text-align:right;">Action</th>':'')+'</tr></thead><tbody>'+rows.map(k=>
+    `<tr><td data-label="Name"><b>${esc(k.name)}</b></td><td data-label="Prefix" class="mono" style="font-size:11px;">${esc(k.key_prefix)}</td><td data-label="Status">${k.status==='active'?'<span class="chip safe">active</span>':'<span class="chip bad">'+esc(k.status)+'</span>'}</td><td data-label="Last used" class="mono" style="font-size:11px;">${k.last_used_at?fmtTime(k.last_used_at):'never'}</td><td data-label="Created" class="mono" style="font-size:11px;">${fmtDay(k.created_at)}</td><td data-label="Expires" class="mono" style="font-size:11px;">${k.expires_at?fmtDay(k.expires_at):'—'}</td>${act?('<td data-label="Action" style="text-align:right;">'+(k.status==='active'?`<button class="btn danger sm" onclick="keyRevoke('${O3_ID}','${k.id}','${esc(k.name)}')">Revoke</button>`:'')+'</td>'):''}</tr>`
   ).join('')+'</tbody></table></div>';
 }
 
@@ -3204,8 +3248,8 @@ async function o3LoadLedger(page){
   const d=await r.json();
   const head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;"><label class="sub mono" style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:11px;"><input type="checkbox" '+(O3_LEDGER_BREACH?'checked':'')+' onchange="O3_LEDGER_BREACH=this.checked;O3_LEDGER_OFF=0;o3LoadLedger()"> breaches only</label><span class="sub mono" style="font-size:11px;">'+num(d.total)+' rows'+(d.total?(' · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)):'')+'</span></div>';
   const body=d.items.length
-    ? '<div class="twrap"><table class="tbl"><thead><tr><th style="text-align:right;">Seq</th><th>Type</th><th>Policy</th><th>Agent</th><th style="text-align:right;">Tokens</th><th>Grading</th><th>Hash</th><th>Time</th></tr></thead><tbody>'+d.items.map(x=>
-        '<tr><td class="mono" style="text-align:right;">'+num(x.seq)+'</td><td class="mono">'+esc(x.event_type||'—')+'</td><td><span class="chip '+(x.breach?'bad':'dim')+'">'+esc(x.policy_tag||'—')+'</span></td><td class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td class="mono" style="text-align:right;">'+num(x.token_count)+'</td><td>'+(x.breach?'<span class="chip bad">breach</span>':'<span class="chip '+(x.grading_status==='graded'?'safe':x.grading_status==='failed'?'bad':'warn')+'">'+esc(x.grading_status||'—')+'</span>')+'</td><td class="mono" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">'+esc((x.chain_hash||'').slice(0,12))+'…</td><td class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>'
+    ? '<div class="twrap"><table class="tbl cardify"><thead><tr><th style="text-align:right;">Seq</th><th>Type</th><th>Policy</th><th>Agent</th><th style="text-align:right;">Tokens</th><th>Grading</th><th>Hash</th><th>Time</th></tr></thead><tbody>'+d.items.map(x=>
+        '<tr><td data-label="Seq" class="mono" style="text-align:right;">'+num(x.seq)+'</td><td data-label="Type" class="mono">'+esc(x.event_type||'—')+'</td><td data-label="Policy"><span class="chip '+(x.breach?'bad':'dim')+'">'+esc(x.policy_tag||'—')+'</span></td><td data-label="Agent" class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td data-label="Tokens" class="mono" style="text-align:right;">'+num(x.token_count)+'</td><td data-label="Grading">'+(x.breach?'<span class="chip bad">breach</span>':'<span class="chip '+(x.grading_status==='graded'?'safe':x.grading_status==='failed'?'bad':'warn')+'">'+esc(x.grading_status||'—')+'</span>')+'</td><td data-label="Hash" class="mono" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">'+esc((x.chain_hash||'').slice(0,12))+'…</td><td data-label="Time" class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>'
       ).join('')+'</tbody></table></div>'
     : '<div class="chart-empty">No ledger rows'+(O3_LEDGER_BREACH?' with breaches':'')+'.</div>';
   $('o3Panel').innerHTML='<div class="clay pad">'+head+body+'<div id="o3LedgerPager"></div></div>';
@@ -3219,10 +3263,10 @@ async function o3LoadBreaches(page){
   const d=await r.json();
   if(!d.total){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy breaches for this tenant.</div></div>'; return; }
   const rows=d.items.map(x=>{ const v=x.verdict||{}; const reason=v.reason||v.rationale||(Array.isArray(v.labels)?v.labels.join(', '):'')||'—'; return
-    '<tr><td class="mono" style="text-align:right;">'+num(x.seq)+'</td><td><span class="chip bad">'+esc(x.policy_tag||'—')+'</span></td><td class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td class="sub" style="max-width:360px;">'+esc(String(reason).slice(0,180))+'</td><td class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>';
+    '<tr><td data-label="Seq" class="mono" style="text-align:right;">'+num(x.seq)+'</td><td data-label="Policy"><span class="chip bad">'+esc(x.policy_tag||'—')+'</span></td><td data-label="Agent" class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td data-label="Verdict" class="sub" style="max-width:360px;">'+esc(String(reason).slice(0,180))+'</td><td data-label="Time" class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>';
   }).join('');
   const head='<div class="sub mono" style="margin-bottom:12px;font-size:11px;">'+num(d.total)+' breaches · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)+'</div>';
-  $('o3Panel').innerHTML='<div class="clay pad">'+head+'<div class="twrap"><table class="tbl"><thead><tr><th style="text-align:right;">Seq</th><th>Policy</th><th>Agent</th><th>Verdict</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+'<div id="o3BreachPager"></div></div>';
+  $('o3Panel').innerHTML='<div class="clay pad">'+head+'<div class="twrap"><table class="tbl cardify"><thead><tr><th style="text-align:right;">Seq</th><th>Policy</th><th>Agent</th><th>Verdict</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+'<div id="o3BreachPager"></div></div>';
   window.foxPager('o3BreachPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
     total:d.total,label:'Breach pages',onPage:o3LoadBreaches});
 }
@@ -3293,12 +3337,12 @@ function renderStaff(){
   $('staffRows').innerHTML=rows.map(s=>{
     const self=ME&&s.id===ME.id;
     return `<tr class="rowbtn" onclick="staffManage('${s.id}')">
-      <td class="mono" style="font-size:11.5px;">${esc(s.email)}${self?' <span class="chip dim">you</span>':''}</td>
-      <td><span class="chip ${s.platform_role==='superadmin'?'warn':s.platform_role==='operator'?'info':'dim'}">${esc(s.platform_role)}</span></td>
-      <td>${s.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>'}</td>
-      <td class="mono" style="font-size:10.5px;white-space:nowrap;">${s.last_login?fmtTime(s.last_login):'never'}</td>
-      <td>${s.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>'}</td>
-      <td style="text-align:right;"><button class="btn sm" onclick="event.stopPropagation();staffManage('${s.id}')">Manage</button></td>
+      <td data-label="Email" class="mono" style="font-size:11.5px;">${esc(s.email)}${self?' <span class="chip dim">you</span>':''}</td>
+      <td data-label="Role"><span class="chip ${s.platform_role==='superadmin'?'warn':s.platform_role==='operator'?'info':'dim'}">${esc(s.platform_role)}</span></td>
+      <td data-label="MFA">${s.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>'}</td>
+      <td data-label="Last login" class="mono" style="font-size:10.5px;white-space:nowrap;">${s.last_login?fmtTime(s.last_login):'never'}</td>
+      <td data-label="Status">${s.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>'}</td>
+      <td data-label="Actions" style="text-align:right;"><button class="btn sm" onclick="event.stopPropagation();staffManage('${s.id}')">Manage</button></td>
     </tr>`;
   }).join('');
 }
@@ -3420,7 +3464,7 @@ async function loadStaffActivity(id){
   if(!r||!r.ok){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">activity unavailable</div>'; return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No recorded activity.</div>'; return; }
-  el.innerHTML='<table class="tbl"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}${a.by_self?'':' <span class="chip dim">to them</span>'}</td></tr>`).join('')+'</tbody></table>';
+  el.innerHTML='<table class="tbl cardify"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}${a.by_self?'':' <span class="chip dim">to them</span>'}</td></tr>`).join('')+'</tbody></table>';
 }
 async function staffRole(id,role){
   const r=await api('/admin/v1/staff/'+id+'/role',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({platform_role:role})});
@@ -3454,7 +3498,7 @@ async function loadSelfActivity(){
   if(!r||!r.ok){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">unavailable</div>'; return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No recent activity.</div>'; return; }
-  el.innerHTML='<table class="tbl"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td></tr>`).join('')+'</tbody></table>';
+  el.innerHTML='<table class="tbl cardify"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td></tr>`).join('')+'</tbody></table>';
 }
 function pwModal(){
   openModal({eyebrow:'your account', title:'Change password',
@@ -3594,7 +3638,7 @@ async function loadStripeEvents(page){
   $('seRows').innerHTML=items.map(e=>{
     const cls=e.status==='processed'?'safe':e.status==='failed'?'bad':e.status==='ignored'?'dim':'warn';
     const act=(canReplay&&(e.status==='failed'))?`<button class="btn sm pri" onclick="replayStripe('${e.id}')">Replay</button>`:'';
-    return `<tr><td class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td><span class="chip ${cls}">${esc(e.status)}</span></td><td class="mono" style="font-size:10px;">${e.org_id?sens(e.org_id,{short:e.org_id.slice(0,8)+'…'}):'—'}</td><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td style="text-align:right;">${act}</td></tr>`;
+    return `<tr><td data-label="Type" class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td data-label="Status"><span class="chip ${cls}">${esc(e.status)}</span></td><td data-label="Org" class="mono" style="font-size:10px;">${e.org_id?sens(e.org_id,{short:e.org_id.slice(0,8)+'…'}):'—'}</td><td data-label="Received" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td data-label="Error" class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td data-label="Action" style="text-align:right;">${act}</td></tr>`;
   }).join('');
 }
 async function replayStripe(id){
@@ -3621,11 +3665,11 @@ async function loadSecurity(){
 let SEC_WATCH=[],SEC_RECENT=[];
 function renderSecWatch(){
   const wl=window.foxPageSlice(SEC_WATCH,pgState('secWatch',15),'secWatchPager',renderSecWatch,'Watchlist pages');
-  $('secWatch').innerHTML=wl.length?wl.map(w=>`<tr><td class="mono" style="font-size:11px;">${esc(w.email)}</td><td class="mono" style="text-align:right;color:var(--danger);font-weight:700;">${num(w.failed_24h)}</td><td class="mono" style="font-size:10px;">${fmtTime(w.last_at)}</td></tr>`).join(''):'<tr><td colspan="3" class="sub mono">no lockout signals</td></tr>';
+  $('secWatch').innerHTML=wl.length?wl.map(w=>`<tr><td data-label="Email" class="mono" style="font-size:11px;">${esc(w.email)}</td><td data-label="Fails · 24h" class="mono" style="text-align:right;color:var(--danger);font-weight:700;">${num(w.failed_24h)}</td><td data-label="Last" class="mono" style="font-size:10px;">${fmtTime(w.last_at)}</td></tr>`).join(''):'<tr><td colspan="3" class="sub mono">no lockout signals</td></tr>';
 }
 function renderSecRecent(){
   const rec=window.foxPageSlice(SEC_RECENT,pgState('secRecent',25),'secRecentPager',renderSecRecent,'Login attempt pages');
-  $('secRecent').innerHTML=rec.length?rec.map(x=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(x.at)}</td><td class="mono" style="font-size:11px;">${esc(x.email)}</td><td class="mono" style="font-size:10px;">${esc(x.ip||'—')}</td><td>${x.success?'<span class="chip safe">ok</span>':'<span class="chip bad">fail</span>'}</td></tr>`).join(''):'<tr><td colspan="4" class="sub mono">no attempts recorded</td></tr>';
+  $('secRecent').innerHTML=rec.length?rec.map(x=>`<tr><td data-label="When" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(x.at)}</td><td data-label="Email" class="mono" style="font-size:11px;">${esc(x.email)}</td><td data-label="IP" class="mono" style="font-size:10px;">${esc(x.ip||'—')}</td><td data-label="Result">${x.success?'<span class="chip safe">ok</span>':'<span class="chip bad">fail</span>'}</td></tr>`).join(''):'<tr><td colspan="4" class="sub mono">no attempts recorded</td></tr>';
 }
 let AU_OFF=0, _auT;
 function auditDebounced(){ clearTimeout(_auT); _auT=setTimeout(()=>loadAudit(),300); }
@@ -3644,7 +3688,7 @@ async function loadAudit(keepOff){
   if(!r||!r.ok){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">unavailable</td></tr>'; return; }
   const d=await r.json();
   if(!d.items.length){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">no matching actions</td></tr>'; $('auPager').innerHTML=''; return; }
-  $('auRows').innerHTML=d.items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.actor||'—')}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td><td class="mono" style="font-size:10px;">${esc(a.target_type||'—')}${a.target_id?(' '+esc(a.target_id.slice(0,8))+'…'):''}</td><td class="mono" style="font-size:10px;">${esc(a.org_name||'—')}</td><td class="mono" style="font-size:10px;">${esc(a.ip||'—')}</td></tr>`).join('');
+  $('auRows').innerHTML=d.items.map(a=>`<tr><td data-label="When" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td data-label="Actor" class="mono" style="font-size:11px;">${esc(a.actor||'—')}</td><td data-label="Action" class="mono" style="font-size:11px;">${esc(a.action)}</td><td data-label="Target" class="mono" style="font-size:10px;">${esc(a.target_type||'—')}${a.target_id?(' '+esc(a.target_id.slice(0,8))+'…'):''}</td><td data-label="Org" class="mono" style="font-size:10px;">${esc(a.org_name||'—')}</td><td data-label="IP" class="mono" style="font-size:10px;">${esc(a.ip||'—')}</td></tr>`).join('');
   window.foxPager('auPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
     total:d.total,label:'Audit log pages',
     onPage:function(pg){ AU_OFF=(pg-1)*50; loadAudit(true); }});
