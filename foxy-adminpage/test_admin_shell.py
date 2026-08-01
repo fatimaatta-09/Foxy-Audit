@@ -841,5 +841,124 @@ def test_the_wordmark_clip_is_still_load_bearing() -> None:
     assert "overflow:hidden" in block
 
 
+# ── the change-password modal (round 2 · P2) ─────────────────────────────────
+# The lockout guard. A password manager only learns a new credential from a form
+# submission or an explicit navigator.credentials.store. The modal used to be two
+# bare inputs and an onclick, which fires neither — so the manager kept re-filling
+# the OLD password at the gate and locked staff out of the console with a password
+# they had just changed. Everything below holds that shape in place.
+
+def _js_func(name: str) -> str:
+    """The source of `function name(…){…}`, sliced by brace balance."""
+    m = re.search(r"(?:async\s+)?function\s+" + re.escape(name) + r"\s*\(", SRC)
+    assert m, f"{name}() is gone"
+    i = SRC.index("{", m.end() - 1)
+    depth, j = 0, i
+    while j < len(SRC):
+        if SRC[j] == "{":
+            depth += 1
+        elif SRC[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return SRC[i: j + 1]
+        j += 1
+    raise AssertionError(f"{name}() never closes")
+
+
+def _pw_modal_body() -> str:
+    return _js_func("pwModal")
+
+
+def test_the_change_password_modal_body_is_a_form() -> None:
+    """Not a <div> with an onclick. This is the whole point of the phase."""
+    body = _pw_modal_body()
+    assert '<form id="pwForm"' in body, "the modal body is not a form"
+    assert "</form>" in body
+    assert "onsubmit=" in body, "the form has no submit handler"
+
+
+def test_the_form_carries_a_username_for_the_password_manager() -> None:
+    """A manager needs a username in the same form to know which credential to
+    update, and skips display:none — hence off-screen positioning."""
+    body = _pw_modal_body()
+    m = re.search(r'<input id="pwUser"[^>]*>', body)
+    assert m, "no username field for the manager"
+    tag = m.group(0)
+    assert 'autocomplete="username"' in tag
+    assert "left:-9999px" in tag, "the field is not positioned off-screen"
+    assert "display:none" not in tag, "an off-screen field became display:none — managers skip those"
+    assert 'tabindex="-1"' in tag, "the manager's field is in the tab order"
+
+
+def test_the_submit_button_is_a_real_submit_bound_to_the_form() -> None:
+    """The footer lives outside #pwForm, so the button needs form= to submit it."""
+    body = _pw_modal_body()
+    assert 'type="submit" form="pwForm"' in body, "the footer button does not submit the form"
+
+
+def test_the_modal_has_a_confirm_field() -> None:
+    """There is no way back from a password typed only once."""
+    body = _pw_modal_body()
+    for field in ('id="pwCur"', 'id="pwNew"', 'id="pwNew2"'):
+        assert field in body, f"{field} is missing"
+    assert body.count('autocomplete="new-password"') == 2, "new and confirm must both be new-password"
+
+
+def test_a_mismatched_confirm_blocks_the_request() -> None:
+    """The comparison has to sit before the fetch and return, not warn after it."""
+    fn = _js_func("_doChangePw")
+    mismatch = fn.index("nw.value!==nw2.value")
+    assert "return" in fn[mismatch: fn.index("\n", mismatch)], "mismatch does not return"
+    assert mismatch < fn.index("api("), "the request is sent before the confirm is checked"
+    assert "nw2.focus()" in fn, "the field that failed is not focused"
+
+
+def test_the_meter_never_gates_the_submit() -> None:
+    """It advises. The only hard rule is the 8-character minimum the server
+    enforces — a meter that refuses to submit turns a heuristic into a policy."""
+    fn = _js_func("_doChangePw")
+    for name in ("_pwScore", "_pwMeter", "PW_STATES"):
+        assert name not in fn, f"{name} is consulted before submitting"
+    assert "disabled" not in _js_func("_pwMeter"), "the meter disables a control"
+    assert "disabled" not in _pw_modal_body(), "the modal ships a disabled control"
+
+
+def test_the_meter_has_four_labelled_states_and_no_dependency() -> None:
+    assert "const PW_STATES=['weak','fair','good','strong']" in SRC
+    assert SRC.count('class="pwm-seg"') == 4, "the track is not four segments"
+    # Named in a comment as the thing NOT shipped; called or fetched would be a
+    # 400 KB dependency on a surface that has none.
+    assert "zxcvbn(" not in SRC and "zxcvbn." not in SRC, \
+        "a strength library was added to a zero-dependency surface"
+    assert not re.search(r"<script[^>]*\bsrc=", SRC), "the console loaded an external script"
+    for cls in (".pwm.s0", ".pwm.s1", ".pwm.s2", ".pwm.s3"):
+        assert cls in _style_block(), f"{cls} has no fill"
+
+
+def test_success_tells_the_password_manager() -> None:
+    """The store call is the belt to the form submit's braces."""
+    fn = _js_func("_doChangePw")
+    assert "_storeCredential(" in fn, "nothing tells the manager the credential changed"
+    assert fn.index("_storeCredential(") > fn.index("if(!r.ok)"), "stored before the server agreed"
+    assert "navigator.credentials.store" in _js_func("_storeCredential")
+
+
+def test_both_password_fields_can_be_revealed() -> None:
+    """Three fields, three toggles, each naming its input and its state."""
+    body = _pw_modal_body()
+    assert body.count("data-pw-toggle") >= 1 and "eye('pwCur')" in body
+    for field in ("pwCur", "pwNew", "pwNew2"):
+        assert f"eye('{field}')" in body, f"{field} has no reveal toggle"
+    eye = _js_func("_pwEyes")
+    assert "aria-pressed" in eye and "aria-label" in eye, "the toggle does not announce its state"
+    assert ".pw-eye{" in _style_block()
+
+
+def test_the_offscreen_username_does_not_steal_the_modal_focus() -> None:
+    """openModal focuses the first field; the manager's username must not be it."""
+    assert 'querySelector(\'input:not([tabindex="-1"])' in SRC, \
+        "openModal would focus the off-screen username field"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

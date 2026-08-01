@@ -653,6 +653,46 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   text-transform:uppercase;color:var(--muted);margin:12px 0 6px;
 }
 
+/* ════════ PASSWORD FIELDS — reveal toggle + strength readout ════════════════
+   Ported from the dashboard's sign-in card (foxy-audit-premium.html) so the two
+   surfaces share one vocabulary rather than growing two. The button is
+   transparent and sits inside the field's right edge; the hit area is 42px even
+   though the glyph is 20px, because the target is the control, not the drawing.
+   .cin carries margin-bottom:4px, so centring is offset by half of it. */
+.pw-wrap{position:relative}
+.pw-wrap .cin{padding-right:46px}
+.pw-eye{
+  position:absolute;right:2px;top:calc(50% - 2px);transform:translateY(-50%);
+  width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+  background:none;border:0;padding:0;margin:0;cursor:pointer;color:var(--muted);
+  border-radius:10px;-webkit-tap-highlight-color:transparent;
+}
+.pw-eye:hover{color:var(--ink)}
+.pw-eye svg{width:20px;height:20px;display:block}
+/* The slash draws itself rather than popping in: you struck the eye through. */
+.pw-eye .pw-slash{stroke-dasharray:26;stroke-dashoffset:26;transition:stroke-dashoffset .18s ease-out}
+.pw-eye[aria-pressed="true"] .pw-slash{stroke-dashoffset:0}
+@media (prefers-reduced-motion: reduce){.pw-eye .pw-slash{transition:none}}
+
+/* Four segments and a mono readout, in the console's own register. It advises:
+   the only rule is the 8-character minimum the server enforces, so the meter
+   never disables anything. The word is always present — the colour repeats it
+   rather than carrying it alone. */
+.pwm{display:flex;align-items:center;gap:9px;margin:2px 0 4px}
+.pwm-track{display:flex;gap:3px;flex:1;min-width:0}
+.pwm-seg{height:4px;flex:1;border-radius:2px;background:var(--line);transition:background var(--dur) ease}
+/* The *-bg half of each status pair, not the *c/ink half: these are fills, and
+   the ink tokens are dark browns and greens on paper — a muddy ramp. */
+.pwm.s0 .pwm-seg:nth-child(-n+1){background:var(--breach-bg)}
+.pwm.s1 .pwm-seg:nth-child(-n+2){background:var(--warn-bg)}
+.pwm.s2 .pwm-seg:nth-child(-n+3){background:var(--fox)}
+.pwm.s3 .pwm-seg{background:var(--safe-bg)}
+.pwm-lab{
+  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.1px;
+  text-transform:uppercase;color:var(--ink2);white-space:nowrap;min-height:12px;
+}
+.pwm-hint{font-family:var(--mono);font-size:10px;line-height:1.4;color:var(--muted);min-height:14px;margin-bottom:2px}
+
 /* ════════ NATIVE FORM CONTROLS — themed so bare <input> checkboxes / date pickers
    stop rendering as the browser default. color-scheme flips the OS-drawn calendar,
    spinners and native scrollbars to match light/dark. (This rule sits BEFORE
@@ -3375,7 +3415,9 @@ function openModal(opts){
   $('fxmodalFoot').innerHTML=opts.footHTML||'';
   $('fxmodal').classList.add('on');
   _modalOnOpen=opts.onOpen||null;
-  setTimeout(()=>{ if(_modalOnOpen)_modalOnOpen(); const f=$('fxmodalBody').querySelector('input,textarea,button'); if(f)f.focus(); },30);
+  // `:not([tabindex="-1"])` skips the off-screen username field the password
+  // manager reads — it is in the form for the manager, not for the user.
+  setTimeout(()=>{ if(_modalOnOpen)_modalOnOpen(); const f=$('fxmodalBody').querySelector('input:not([tabindex="-1"]),textarea,button'); if(f)f.focus(); },30);
 }
 function closeModal(){ $('fxmodal').classList.remove('on'); $('fxmodalBody').innerHTML=''; $('fxmodalFoot').innerHTML=''; _modalOnOpen=null; }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('fxmodal').classList.contains('on'))closeModal(); });
@@ -3500,17 +3542,114 @@ async function loadSelfActivity(){
   if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No recent activity.</div>'; return; }
   el.innerHTML='<table class="tbl cardify"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}</td></tr>`).join('')+'</tbody></table>';
 }
+/* ──────────── change password ────────────
+   The body is a REAL <form> submitted normally. Browser password managers only
+   offer to update a stored credential on a form submission (or an explicit
+   navigator.credentials.store) — an onclick+fetch fires neither, so the manager
+   kept re-filling the OLD password at the sign-in gate and locked staff out of
+   the console with a password they had just changed themselves. */
+function _pwEyes(root){
+  const SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"'
+    +' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+    +'<path d="M2.4 12S6 5.2 12 5.2 21.6 12 21.6 12 18 18.8 12 18.8 2.4 12 2.4 12Z"/>'
+    +'<circle cx="12" cy="12" r="3.1"/>'
+    +'<line class="pw-slash" x1="4.2" y1="19.8" x2="19.8" y2="4.2"/></svg>';
+  (root||document).querySelectorAll('.pw-eye[data-pw-toggle]').forEach(btn=>{
+    btn.innerHTML=SVG;
+    btn.addEventListener('click',()=>{
+      const inp=$(btn.getAttribute('data-pw-toggle')); if(!inp)return;
+      const show=inp.type==='password';
+      inp.type=show?'text':'password';
+      btn.setAttribute('aria-pressed',show?'true':'false');
+      // aria-pressed alone is announced inconsistently and this is an auth
+      // control, so the name changes too and the state is never ambiguous.
+      btn.setAttribute('aria-label',show?'Hide password':'Show password');
+      // Flipping `type` sends the caret to 0; put it back where it was.
+      try{ const p=inp.value.length; inp.focus(); inp.setSelectionRange(p,p); }catch(e){}
+    });
+  });
+}
+/* Strength is ADVICE. The only hard rule is the 8-character minimum the server
+   enforces — this never blocks a submit. Scored on length and character-class
+   variety, in-file: zxcvbn is ~400 KB and this console ships no runtime
+   dependencies. It cannot know "Passw0rd!" is common; it is a heuristic and the
+   copy says so by naming a lever rather than passing a verdict. */
+const PW_STATES=['weak','fair','good','strong'];
+function _pwScore(v){
+  v=v||''; if(!v)return -1;
+  if(/^(.)\1*$/.test(v))return 0;                       // "aaaaaaaa" is one character, typed often
+  let p=0;
+  [8,12,16,20].forEach(n=>{ if(v.length>=n)p++; });
+  let cls=0;
+  [/[a-z]/,/[A-Z]/,/[0-9]/,/[^A-Za-z0-9]/].forEach(re=>{ if(re.test(v))cls++; });
+  p+=cls-1;                                             // one alphabet earns nothing
+  return p<=1?0:p<=3?1:p<=5?2:3;
+}
+let _pwLastScore=-2;
+function _pwMeter(){
+  const inp=$('pwNew'), box=$('pwMeter'), lab=$('pwMeterLab'), hint=$('pwHint');
+  if(!inp||!box)return;
+  const v=inp.value||'', s=_pwScore(v);
+  box.className='pwm'+(s<0?'':' s'+s);
+  // Only rewrite the live region when the bucket changes: a polite region that
+  // fires on every keystroke is unusable with a screen reader on.
+  if(s!==_pwLastScore){ if(lab)lab.textContent=s<0?'':'strength · '+PW_STATES[s]; _pwLastScore=s; }
+  if(hint)hint.textContent=!v?''
+    :v.length<8?'at least 8 characters'
+    :s<2?'length helps most — 12+ characters, or add a symbol':'';
+}
+// Tell the browser's password manager the credential changed. Without this the
+// manager keeps the old password and re-fills it at the gate — the lockout this
+// fixes. Chromium implements PasswordCredential; elsewhere the form submit is
+// the signal.
+async function _storeCredential(id,password){
+  try{
+    if(!window.PasswordCredential||!navigator.credentials||!id)return;
+    await navigator.credentials.store(new window.PasswordCredential({id:id,password:password}));
+  }catch(e){ /* manager declined or unsupported — the form submit still signals it */ }
+}
 function pwModal(){
+  _pwLastScore=-2;
+  const eye=id=>`<button type="button" class="pw-eye" data-pw-toggle="${id}" aria-pressed="false" aria-label="Show password" aria-controls="${id}"></button>`;
   openModal({eyebrow:'your account', title:'Change password',
-    bodyHTML:`<div class="flabel" style="margin-top:0;">current password</div><input class="cin" id="pwCur" type="password" autocomplete="current-password"><div class="flabel">new password (min 8 characters)</div><input class="cin" id="pwNew" type="password" autocomplete="new-password"><div id="pwErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doChangePw()">Change password</button>`});
+    bodyHTML:`<form id="pwForm" autocomplete="on" onsubmit="event.preventDefault();_doChangePw();return false;">`
+      // The manager needs a username in the same form to know WHICH credential to
+      // update. Off-screen rather than display:none, which managers skip.
+      +`<input id="pwUser" autocomplete="username" readonly tabindex="-1" aria-hidden="true" value="${esc(ME?ME.email:'')}" style="position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;">`
+      +`<div class="flabel" style="margin-top:0;">current password</div>`
+      +`<div class="pw-wrap"><input class="cin" id="pwCur" type="password" autocomplete="current-password" required>${eye('pwCur')}</div>`
+      +`<div class="flabel">new password <span style="text-transform:none;letter-spacing:0;font-weight:400;">(at least 8 characters)</span></div>`
+      +`<div class="pw-wrap"><input class="cin" id="pwNew" type="password" autocomplete="new-password" minlength="8" required oninput="_pwMeter()">${eye('pwNew')}</div>`
+      +`<div class="pwm" id="pwMeter"><div class="pwm-track" aria-hidden="true"><i class="pwm-seg"></i><i class="pwm-seg"></i><i class="pwm-seg"></i><i class="pwm-seg"></i></div><span class="pwm-lab" id="pwMeterLab" role="status" aria-live="polite"></span></div>`
+      +`<div class="pwm-hint" id="pwHint"></div>`
+      +`<div class="flabel">confirm new password</div>`
+      +`<div class="pw-wrap"><input class="cin" id="pwNew2" type="password" autocomplete="new-password" minlength="8" required>${eye('pwNew2')}</div>`
+      +`<div id="pwErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;min-height:14px;" role="status" aria-live="polite"></div>`
+      +`</form>`,
+    footHTML:`<button class="btn" type="button" onclick="closeModal()">Cancel</button><button class="btn pri" type="submit" form="pwForm">Change password</button>`,
+    onOpen:()=>{ _pwEyes($('fxmodalBody')); _pwMeter(); }});
 }
 async function _doChangePw(){
-  const cur=$('pwCur').value, nw=$('pwNew').value;
-  if((nw||'').length<8){ $('pwErr').textContent='New password must be at least 8 characters.'; return; }
-  const r=await api('/admin/v1/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+  const cur=$('pwCur'), nw=$('pwNew'), nw2=$('pwNew2'), st=$('pwErr');
+  if(!cur||!nw||!nw2)return;
+  const say=(m,bad)=>{ if(st){ st.textContent=m; st.style.color=bad?'var(--danger)':'var(--muted)'; } };
+  say('');
+  if(!cur.value||!nw.value){ say('Enter your current and new password.',true); (cur.value?nw:cur).focus(); return; }
+  if(nw.value.length<8){ say('New password must be at least 8 characters.',true); nw.focus(); return; }
+  // Catch the typo here. There is no way back from a password typed only once.
+  if(nw.value!==nw2.value){ say('The two new passwords do not match.',true); nw2.focus(); return; }
+  let r; try{ r=await api('/admin/v1/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current_password:cur.value,new_password:nw.value})}); }
+  catch(e){ say('Could not reach the server.',true); return; }
   const d=await r.json().catch(()=>({}));
-  if(r.ok){ closeModal(); toast('password changed','success'); } else $('pwErr').textContent=d.detail||'Change failed.';
+  if(!r.ok){
+    const m=d.detail||'Change failed.';
+    say(m,true);
+    (/current/i.test(m)?cur:nw).focus();   // land on the field the server rejected
+    return;
+  }
+  await _storeCredential(($('pwUser')||{}).value||'',nw.value);
+  closeModal();
+  toast('password changed — check your manager saved the new one','success');
 }
 async function mfaEnableFlow(){
   const r=await api('/admin/v1/auth/mfa/enable',{method:'POST'});
