@@ -193,6 +193,13 @@ AUDIT_LABELS = {
     # reveal, which is audited — so "who un-masked it, and when" reads as a
     # sentence here rather than as a raw action id.
     "account.org_id_reveal": "Revealed the organization id",
+    # P6c added profile photos, the first file upload in this backend, and both
+    # of its actions are audited. They shipped without labels here and the guard
+    # below caught it — but CI was refused on an unpaid Actions bill for the
+    # days in between, so a red build sat unread. Reading the failure, not just
+    # its colour, is the whole point of having the guard.
+    "account.avatar_set": "Set a profile photo",
+    "account.avatar_clear": "Removed the profile photo",
 }
 
 AUDIT_EMPTY = ("No account changes recorded yet",
