@@ -59,7 +59,7 @@ rule as last time.
 |---|---|---|
 | ~~P1~~ | ~~`feat/admin-pw-reuse-block`~~ | **✅ merged 2026-08-02 at `f4d2889`** — both surfaces |
 | ~~P2~~ | ~~`feat/admin-pw-modal`~~ | **✅ merged 2026-08-02 at `05a390a`** — form, confirm, meter |
-| P3 | `feat/admin-chips-info` | 4, 5, 6, 9 — chips, hero info button, drop Recent Activity |
+| ~~P3~~ | ~~`feat/admin-chips-info`~~ | **✅ merged 2026-08-02 at `c31fb57`** — chips, (i), Recent Activity |
 | P4 | `feat/admin-credit-link` | 7 — credit via shareable link |
 
 Every phase: `git fetch origin && git worktree add ../wt-<phase> origin/main`.
@@ -175,6 +175,26 @@ not shout in a status colour.
 page surface *and* on each of the nine card faces it can appear over
 (`.k-azure` … `.k-teal`). The faces are listed in
 `docs/done/admin-console-punchlist.md`.
+
+**✅ Measured at `c31fb57` — and "a solid chip makes the face irrelevant" was
+half wrong.** Solid fill fixes the *text* and breaks the *edge*.
+
+| | worst | where |
+|---|---|---|
+| old translucent ink over a face | **1.55:1** | `.chip.safe` over `.k-teal` — item 4, quantified |
+| new ink on its own fill | **4.78:1** | light `.safe` — every chip clears 4.5 |
+| new **fill against the face behind it** | **1.01:1** | `#3ddc84` on `.k-teal`'s light stop |
+
+At 1.01 the word is perfectly legible while the pill dissolves into the card and
+reads as loose text. The owner ruled out a border, so the boundary comes from a
+1px drop shadow: `border:0` still holds, and a shadow is this surface's own
+language rather than the `color-mix` outline that was removed. One dark shadow
+covers all eighteen face stops because every face is bright in both themes, and
+it is invisible on the page surface where the fill already carries 4.2–11.2:1.
+
+Both worst-case figures were reproduced independently before the merge and
+matched exactly. **Measuring only the ink would have passed this and shipped a
+dissolving pill** — the fill needs measuring against its background too.
 
 ### Item 5 — the info button
 
