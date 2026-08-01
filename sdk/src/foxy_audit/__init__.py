@@ -24,6 +24,9 @@ the application must fail closed if evidence delivery cannot be confirmed.
 from .client import FoxyClient, FoxyPolicyBlocked
 from .config import FoxyConfig
 
+# 1.3.0 — the guard message names sdk_enforcement, the field org_policy.py
+# actually reads. It said enforcement_mode for two releases, which is the
+# judge-response setting on a different page.
 __version__ = "1.3.0"
 __all__ = ["FoxyClient", "FoxyConfig", "FoxyPolicyBlocked", "audit", "__version__"]
 
