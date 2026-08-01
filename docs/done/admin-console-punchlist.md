@@ -1,5 +1,43 @@
 # Admin Console punch-list — the plan
 
+> ## ✅ COMPLETE — all seven phases merged, 2026-08-01
+>
+> `1d2fafb` → `92f34e8`, fifteen commits. **Read this banner before the plan
+> body: the body was corrected repeatedly as the code disproved it, and the
+> corrections are the useful part.**
+>
+> | Phase | Commit |
+> |---|---|
+> | P0 staff new-device email | `9cfe3cb` |
+> | P1 one skin, Dashboard palettes | `1bc39b9` |
+> | P2 crumb, rail, page heads | `19e5d2a` |
+> | P3 bloom + wordmark | `3eaf44a` |
+> | P4 hero faces + drawn glyphs | `ccb5406` |
+> | P5 one pager, 14 hosts | `fb3d7dd` |
+> | P6 responsive consistency | `92f34e8` |
+>
+> **Six things in this plan were wrong and were corrected from the code.** They
+> are marked in place; if you are reading this file as a reference, trust the
+> corrections over the original text:
+> 1. `.dock-mark` inversion — the plate is orange in both themes (P2)
+> 2. The `livedot` — this console measures no health signal (P2)
+> 3. P2 "strip all 17 `.sub`" vs P5 "keep the Data page warning" — contradiction
+> 4. The wordmark clamp and bloom inset — tuned for a hero, not a 68px band (P3)
+> 5. The label at `opacity:.82` — seven of nine faces fail 4.5:1 under it (P4)
+> 6. The server/client pager split — wrong on **four** endpoints (P5)
+>
+> **Two defects existed on `main` and were found by doing this work, not by
+> looking for them:** `.dock-foot` was `display:none` below 760px, so **sign-out
+> was unreachable on a phone**; and the reduced-motion block zeroed
+> `animation-duration` but not `animation-delay`, so staggered rows faded in for
+> a reduced-motion reader regardless.
+>
+> **Not deployed.** CI/CD fail on GitHub Actions billing, not on code. `main` is
+> fifteen commits ahead of production and the console should go out as one piece.
+>
+> Guards grew 0 → **98**. `foxy-adminpage/index.html` 436 KB → 450 KB.
+
+
 Source: `G:\My Drive\Life\03 Projects\Foxy Audit\Admin Console\changes Admin website.md`
 (filed 2026-07-31, 13 items, 8 screenshots). Planned 2026-08-01.
 Interactive mock of the result: https://claude.ai/code/artifact/95899398-74be-4a83-990a-9ffc63f1722c
@@ -86,7 +124,7 @@ phases are done rather than putting a half-finished redesign in front of staff;
 | ~~P3~~ | ~~`feat/admin-p3-identity`~~ | **✅ merged 2026-08-01 at `3eaf44a`** — bloom + wordmark |
 | ~~P4~~ | ~~`feat/admin-p4-heroes`~~ | **✅ merged 2026-08-01 at `ccb5406`** — faces, glyphs, panel tints |
 | ~~P5~~ | ~~`feat/admin-p5-pagination`~~ | **✅ merged 2026-08-01 at `fb3d7dd`** — one pager, 14 hosts |
-| P6 | `feat/admin-p6-responsive` | same information at every breakpoint |
+| ~~P6~~ | ~~`feat/admin-p6-responsive`~~ | **✅ merged 2026-08-01 at `92f34e8`** — 19/19 cardify, five hidden elements reinstated |
 
 Mandatory skills: `ui-ux-pro-max` **first**, then `frontend-design`, on P1–P6.
 `dataviz` on P4. `code-review` before every merge.
