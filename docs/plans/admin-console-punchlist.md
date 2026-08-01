@@ -83,7 +83,7 @@ phases are done rather than putting a half-finished redesign in front of staff;
 | ~~P0~~ | ~~`feat/admin-staff-device-alert`~~ | **✅ merged 2026-08-01 at `9cfe3cb`** — staff new-device sign-in email |
 | ~~P1~~ | ~~`feat/admin-p1-one-skin`~~ | **✅ merged 2026-08-01 at `1bc39b9`** — one skin, Dashboard palettes |
 | ~~P2~~ | ~~`feat/admin-p2-shell`~~ | **✅ merged 2026-08-01 at `19e5d2a`** — crumb, rail, page heads, Settings |
-| P3 | `feat/admin-p3-identity` | corner glow + per-page wordmark |
+| ~~P3~~ | ~~`feat/admin-p3-identity`~~ | **✅ merged 2026-08-01 at `3eaf44a`** — bloom + wordmark |
 | P4 | `feat/admin-p4-heroes` | hero cards, colour and life on every page |
 | P5 | `feat/admin-p5-pagination` | pagination on every scrollable table, blurb sweep |
 | P6 | `feat/admin-p6-responsive` | same information at every breakpoint |
@@ -306,16 +306,37 @@ Port both from the Dashboard verbatim (`foxy-audit-premium.html:1077-1100`):
   `.pagehead`. Its own `overflow:hidden` is what stops a 100px+ word from ever
   producing horizontal body scroll.
 - `.pg-wm` — absolute, right-bleeding, vertically centred, never centred
-  horizontally; `clamp()` sized, `opacity:.05` dark / `.06` light; hidden under
-  620px (it is decoration, not information — the one intentional exception to P6).
+  horizontally; `opacity:.05` dark / `.06` light; hidden under 620px (decoration,
+  not information — the one intentional exception to P6).
+  **Two values were deliberately not ported verbatim, both measured first.** The
+  Dashboard's `clamp(70px,12.8vw,168px)` hangs on a tall hero; in P2's 68px band
+  it renders the middle slice of the letterforms rather than a word, so it is
+  `clamp(38px,6.4vw,72px)` here. And the bloom's `-60%` top inset put the
+  gradient's bright corner ~40px *above* the clip, so only its tail landed inside
+  — the top edge is pinned to the band instead (`inset:0 -8% -60% 34%`).
+  **Keep `.pagehead>*` before `.pg-wm` in source order**: equal specificity, so
+  order is the only thing stopping the child rule overriding the wordmark's
+  position and z-index.
 - `.pg-head::before` with `background:var(--bloom)` — the corner glow. `--bloom`
   arrives with P1 and is **already re-tuned per theme** (`.16` dark, `.10`
   light). Do not use one alpha for both: the value that reads as light on
   near-black reads as a printing smudge on paper.
 
-Feed the word from the same `CTX` map P2 built, so the top-bar title and the
-wordmark can never disagree. Home reads "Foxy Audit" per the request; every other
-page reads its short name.
+Feed the word from the same `CTX` map P2 built — it now carries
+`[crumb title, wordmark]`, so both read from one source. Home reads "Foxy Audit";
+every other page its short name.
+
+**`org360` is the one place the two differ, on purpose.** The crumb carries the
+tenant's own name; the wordmark says "Organization". They cannot *disagree* —
+both come from `CTX` — but they are not identical: the crumb answers *which* org,
+the word answers *what kind of page this is*, and a 40-character tenant name at
+72px would answer neither.
+
+**The clip is load-bearing, and that is measured, not assumed.** With
+`overflow:hidden` on, body scroll is zero at 1440 / 1024 / 768 / 600. Forced off,
+the same page reports **64 / 43 / 44 / 30 px** of horizontal body scroll.
+Reproduce with `--dump-dom` and read `scrollWidth` vs `clientWidth`; do not
+delete that `overflow:hidden` to "fix" a clipped word.
 
 ---
 
