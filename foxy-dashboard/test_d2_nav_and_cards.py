@@ -142,6 +142,27 @@ def test_the_rail_scrollbar_follows_the_theme(html):
     assert ".dock::-webkit-scrollbar-thumb{background:var(--muted2)" in html
 
 
+def test_the_standard_scrollbar_properties_stay_behind_the_gecko_gate(html):
+    """The two ways to style a scrollbar do not compose.
+
+    Since Chrome 121 any non-initial scrollbar-width/-color makes Blink discard
+    the ::-webkit-scrollbar rules and paint its own Fluent bar — square track,
+    stepper arrows. Both declared unconditionally renders the OS scrollbar on
+    every Chromium surface while the CSS still *reads* as a 6px themed thumb,
+    which is why this needs a guard and not a comment. Rendered both ways at
+    900x500 before writing it.
+    """
+    gate = re.search(r"@supports \(-moz-appearance:none\)\{(.*?)\n\}", html, re.S)
+    assert gate, "the Gecko-only gate is gone"
+    assert "scrollbar-width:thin" in gate.group(1)
+    assert "scrollbar-color:var(--muted2) transparent" in gate.group(1)
+    # and nowhere else — one stray declaration outside the gate undoes the whole
+    # thing. Counting the colon, so the prose in the comment above it is not a
+    # second hit.
+    assert html.count("scrollbar-width:") == 1
+    assert html.count("scrollbar-color:") == 1
+
+
 def test_the_drawer_breakpoint_is_untouched(html):
     """Below 820px the rail is a drawer, which is why this bug only lived between
     "wide enough for the rail" and "tall enough for its items"."""

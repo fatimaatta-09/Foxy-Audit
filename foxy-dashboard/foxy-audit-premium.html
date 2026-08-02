@@ -270,13 +270,21 @@ body{
      "wide enough for the rail" and "tall enough for its items" — the column
      measures 846px, so any viewport shorter than that. */
   overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
-  scrollbar-width:thin;scrollbar-color:var(--muted2) transparent;
 }
-/* Older WebKit ignores scrollbar-width/-color; same 6px thumb, same token, so
-   the two themes stay in step without a second colour to maintain. */
 .dock::-webkit-scrollbar{width:6px;}
 .dock::-webkit-scrollbar-track{background:transparent;}
 .dock::-webkit-scrollbar-thumb{background:var(--muted2);border-radius:3px;}
+/* Gecko only, and the gate is load-bearing rather than tidiness. The two ways
+   to style a scrollbar do not compose: since Chrome 121, ANY non-initial
+   scrollbar-width/-color makes Blink ignore the ::-webkit-scrollbar rules above
+   and paint its own Fluent bar instead — square track, stepper arrows, nothing
+   like the 6px thumb. Setting them unconditionally silently replaces the themed
+   scrollbar with the OS one on every Chromium surface, this app's majority and
+   the desktop companion's only engine. Verified by render, not by reading:
+   Chrome 151 reports -moz-appearance unsupported, so it never enters here. */
+@supports (-moz-appearance:none){
+  .dock{scrollbar-width:thin;scrollbar-color:var(--muted2) transparent;}
+}
 /* Without this the scrollport changes nothing: flex would still shrink the
    items to fit rather than let the column overflow. */
 .dock-mark,.dock-item,.dock-foot{flex-shrink:0;}
