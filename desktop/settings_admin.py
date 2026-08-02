@@ -200,6 +200,11 @@ AUDIT_LABELS = {
     # its colour, is the whole point of having the guard.
     "account.avatar_set": "Set a profile photo",
     "account.avatar_clear": "Removed the profile photo",
+    # An evaluation offer redeemed onto an EXISTING workspace (2026-08-02). It
+    # swaps the free monthly quota for a finite, expiring allowance, so it is one
+    # of the more consequential things a customer can do to their own account —
+    # exactly the kind of entry that must not read as a raw action id.
+    "billing.redeem_evaluation": "Redeemed an evaluation offer",
 }
 
 AUDIT_EMPTY = ("No account changes recorded yet",
