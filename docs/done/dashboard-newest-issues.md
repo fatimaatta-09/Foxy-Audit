@@ -1,3 +1,75 @@
+> ## ✅ Complete — 2026-08-03. Read this banner before the plan.
+>
+> All four phases merged, CI and CD green on each.
+>
+> | Phase | Commit | Items |
+> |---|---|---|
+> | D1 | `de4fa9b` | 6 (backend) — what counts as unpaid |
+> | D2 | `d6a93bc` | 1, 3, 5 — cards, Back, the rail |
+> | D3 | `d3626e9` | 2, 4 — Settings in seven collapsible sections |
+> | D4 | `4fe611c` | 6 (UI) — the locked state |
+>
+> Dashboard guards **249 → 311**. Backend **886 passed, 3 skipped**. One
+> migration, `0060_past_due_since`, nullable and un-backfilled.
+>
+> ### What this plan got wrong — the part worth reading
+>
+> **I told two different executors to reuse things that do not exist.** D2's
+> "the thin themed scrollbar the rest of the surface uses": the file contained
+> zero `::-webkit-scrollbar` rules and zero `scrollbar-width` declarations. D1's
+> "a grace window measured from `current_period_end`": there is no such column on
+> `organizations` and never has been, and the one real period field bills for the
+> month *ahead*, so a window measured from it would start in the future and never
+> expire. One `grep` each.
+>
+> **My reference CSS for D3 would have shipped text under AA.** `.sgrp-c` pointed
+> live text at `--muted2` — 3.01:1 dark, 2.71:1 light — which is the
+> disabled-only ramp and precisely what `test_p1_contrast` exists to prevent.
+>
+> **Every count in the plan was wrong.** The dock column is 846px, not ~818. The
+> rail has twelve children, not eleven. The content-blindness claim survives in
+> six places, not five. Settings held 21 cards, not the 18 the plan's own
+> arithmetic produced. The rail's foot control is "Open settings", not log out.
+>
+> ### What the plan got right, and why it mattered
+>
+> Two items were already half-built and saying so shrank the work: item 4's
+> confirm field and reuse check were live (only the meter was missing), and item
+> 6's lock was fully built server-side and referenced zero times by the UI.
+> Ordering D1 in parallel and D2→D3→D4 strictly sequential held — all four rebased
+> or merged without a conflict.
+>
+> ### Three findings that outlive this plan
+>
+> 1. **The two ways to style a scrollbar do not compose.** Since Chrome 121 any
+>    non-initial `scrollbar-width`/`scrollbar-color` makes Blink discard the
+>    `::-webkit-scrollbar` rules and paint its own bar with stepper arrows. CSS
+>    that reads correctly and reviews correctly renders wrong. Only a render
+>    catches it.
+> 2. **`assert status != 402` passes for every reason, including "the request
+>    never arrived".** Two guards named *SDK ingest is never gated* posted to
+>    `/v1/logs` — a GET-only listing — collected a 405 every run, and had never
+>    once tested the guarantee D1 depends on. Assert what you want, not what you
+>    fear.
+> 3. **The reduced-motion register is protected by whitespace.**
+>    `test_p1_contrast` reads the *first* `@media(prefers-reduced-motion:reduce)`
+>    as the register of everything that loops; declaring an earlier one silently
+>    replaces it with nothing going red. See `Worth Noting — Issues` #43.
+>
+> ### Open after this plan
+>
+> `Worth Noting — Issues` **#38** (tour can spotlight an off-screen rail item),
+> **#39** (desktop mirrors a deleted card), **#40** (`foxSkel` orphaned), **#41**
+> (`unpaid` stored as `past_due`), **#42** (desktop has no locked state), **#43**
+> (the register), **#44** (two cards called "Breach alerts"), **#45** (section
+> state does not persist), plus D4's own: no focus trap on the overlay,
+> `grace_ends_at` returned and unused, and the near-black light-theme scrim.
+>
+> **Nothing locks in production until `require_card_on_file` is turned on.** It is
+> still `false`, and that is a business decision, not a deploy.
+
+---
+
 # Customer Dashboard — newest issues
 
 Source: `G:\My Drive\Life\03 Projects\Foxy Audit\Dashboard\NEWEST DASHBAORD ISSUES.md`
