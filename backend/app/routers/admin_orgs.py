@@ -203,6 +203,7 @@ def set_organization_plan(
         if plan == "free" else None
     )
     org.subscription_status = "active"
+    org.past_due_since = None            # no stale clock left behind a staff reactivation
     record_admin_action(
         db, staff, "org.plan.set", target_org_id=org.id,
         target_type="organization", target_id=str(org.id),

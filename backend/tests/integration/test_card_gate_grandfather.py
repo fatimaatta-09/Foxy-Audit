@@ -17,6 +17,7 @@ changes it — these tests flip it locally to prove what WOULD happen.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -167,15 +168,19 @@ def test_the_flag_is_still_off(make_org):
 
 
 def test_sdk_ingest_is_still_never_gated(make_org, client, gate_on):
-    """Blocking ingest makes a paying customer lose the evidence they bought."""
+    """Blocking ingest makes a paying customer lose the evidence they bought.
+
+    D1: this posted to `/v1/logs` — a GET-only listing — and asserted only
+    `!= 402`. Every run got 405 and passed, so the guarantee it names was never
+    once tested. It now posts a real batch and asserts the success status, which
+    405 cannot satisfy."""
     org = make_org()
     _stamp(org["org_id"], created=_after_cutoff(), card=False)
-    r = client.post("/v1/logs", headers=org["auth"], json={
-        "event_id": str(uuid.uuid4()), "policy_tag": "test",
-        "prompt_commitment": "a" * 64, "response_commitment": "b" * 64,
-        "prompt_len": 1, "response_len": 1, "model": "test", "agent": "test",
-    })
-    assert r.status_code != 402, r.text
+    h = hashlib.sha256(str(uuid.uuid4()).encode()).hexdigest()
+    r = client.post("/v1/logs/batch", headers=org["auth"], json=[{
+        "prompt_hash": h, "response_hash": h, "token_count": 8, "policy_tag": "test",
+    }])
+    assert r.status_code == 202, r.text
 
 
 def test_a_gated_org_can_still_reach_billing_and_auth(make_org, login, gate_on):

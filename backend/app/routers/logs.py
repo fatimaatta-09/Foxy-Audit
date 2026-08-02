@@ -21,6 +21,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
 
+from .. import billing_state
 from ..anchor import latest_anchor
 from ..auth import require_org, resolve_org
 from ..chain import CHAIN_VERSION_POLICY_V3, GENESIS_HASH, compute_chain_hash
@@ -120,17 +121,16 @@ def ingest_batch(
             new_items.append(item)
 
     now = datetime.now(timezone.utc)
-    if (org.plan_tier or "").lower() == "free" and org.trial_ends_at and now >= org.trial_ends_at:
-        raise HTTPException(
-            status_code=402,
-            detail={"code": "trial_expired", "message": "Your 7-day trial has ended. Upgrade to continue capturing events."},
-        )
-    if ((org.plan_tier or "").lower() not in {"", "free"}
-            and org.subscription_status in {"cancelled", "unpaid"}):
-        raise HTTPException(
-            status_code=402,
-            detail={"code": "subscription_inactive", "message": "Your subscription is not active. Update billing to continue capturing events."},
-        )
+    # trial_expired → subscription_inactive, in that order. D1 moved the set
+    # itself into billing_state so the dashboard gate and this one can no longer
+    # disagree about what "not paying" means — and so that the difference between
+    # them is deliberate and written down: `past_due` and `incomplete` lock the
+    # DASHBOARD and never stop capture, because evidence cannot be re-created
+    # after the fact and a declined card can be.
+    blocked = billing_state.capture_block(org, now)
+    if blocked is not None:
+        raise HTTPException(status_code=402,
+                            detail={"code": blocked.reason, "message": blocked.message})
 
     # Enforce credits against the ledger, not the eventually-consistent usage
     # rollup. The sequence row is already locked, so concurrent writers cannot

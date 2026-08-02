@@ -31,7 +31,16 @@ class Organization(Base):
     stripe_subscription_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, default=None)
     subscription_status: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, default=None)             # active | past_due | cancelled
+        String(32), nullable=True, default=None)             # active | past_due | cancelled | incomplete
+    # When the subscription FIRST went past_due (migration 0060). The dashboard
+    # lock's grace window is measured from here rather than from a billing period
+    # boundary, because this is a fact this system owns: it is stamped by the
+    # webhook that set the status, and it is not re-stamped by the repeated
+    # `customer.subscription.updated` events Stripe sends while it retries — or
+    # the window would restart on every retry and never expire. NULL means "we do
+    # not know", and an org with no stamp is never locked.
+    past_due_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None)
     # Key rotation tracking
     key_rotated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None)

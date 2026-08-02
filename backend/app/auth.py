@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -19,12 +18,10 @@ from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from . import ip_allow
+from . import billing_state, ip_allow
 from .config import get_settings
 from .db import get_db
 from .models import ApiKey, Organization, StaffSession, StaffUser, User, UserSession
-
-log = logging.getLogger("foxy.auth")
 
 
 def _bearer_token(authorization: str) -> str:
@@ -120,81 +117,41 @@ def require_org(
     return org
 
 
-# Paths that must stay reachable while the dashboard is card-locked (P3 §4.3).
+# Paths that must stay reachable while the dashboard is locked (P3 §4.3).
 # Getting this wrong bricks the product: lock somebody out of /v1/billing and they
-# cannot add the card that would unlock them, and lock them out of /v1/auth and
-# they cannot even sign out. The gate is a dashboard gate — SDK ingest authenticates
-# with an API key and never passes through here, so a missing card can never cause
-# a customer to silently lose audit evidence.
-_CARD_GATE_EXEMPT = ("/v1/auth/", "/v1/billing/", "/v1/account/preferences")
+# cannot add the card — or fix the payment — that would unlock them, and lock them
+# out of /v1/auth and they cannot even sign out. These gates are DASHBOARD gates —
+# SDK ingest authenticates with an API key and never passes through here, so
+# neither a missing card nor a failed payment can cause a customer to silently
+# lose audit evidence.
+_GATE_EXEMPT = ("/v1/auth/", "/v1/billing/", "/v1/account/preferences")
 
 
-def _grandfathered(org: Organization) -> bool:
-    """True when this org must never be card-gated, whatever the flag says.
-
-    Two independent exemptions, and both are needed:
-
-    * **Created before the cutoff.** This is the rule that makes the flag safe to
-      turn on. `card_on_file` is false on every row written before that column
-      existed, so without a date exemption, enabling the gate locks out every
-      customer the product already has — all at once, for a card they were never
-      asked for. The cutoff is UNSET by default, which exempts everyone: a date
-      baked into config is wrong the moment it passes.
-
-    * **Has a Stripe subscription.** A paying customer demonstrably has a card at
-      Stripe; `card_on_file` only tracks the newer $0-authorisation flow and so
-      under-reports reality for anyone who subscribed before it existed. Locking
-      a paying customer out over a flag that post-dates their payment would be
-      absurd, and it stays true for anyone who subscribes through Checkout rather
-      than the setup session.
-
-    The date rule alone satisfies "flipping the flag locks nobody out today". The
-    subscription rule is what keeps that true tomorrow.
-    """
-    if getattr(org, "stripe_subscription_id", None):
-        return True
-    raw = (get_settings().card_gate_grandfather_before or "").strip()
-    if not raw:
-        # No cutoff chosen, so nobody has decided which orgs are new enough to
-        # gate. Exempt everyone rather than guess — the alternative is locking
-        # out every existing customer on a config nobody set.
-        return True
-    created = getattr(org, "created_at", None)
-    if created is None:
-        # A row with no creation stamp predates the columns we could judge it by;
-        # exempt it rather than lock somebody out on missing data.
-        return True
-    try:
-        cutoff = datetime.fromisoformat(raw)
-    except ValueError:
-        log.warning("card_gate_grandfather_before is not an ISO datetime; "
-                    "treating every org as grandfathered")
-        return True
-    if cutoff.tzinfo is None:
-        cutoff = cutoff.replace(tzinfo=timezone.utc)
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-    return created < cutoff
-
-
-def _enforce_card_gate(request: Request, org: Organization) -> None:
-    """402 when the deployment requires a card on file and this org has none.
+def _enforce_dashboard_gates(request: Request, org: Organization) -> None:
+    """402 when this org's dashboard is locked, saying which condition applies.
 
     Distinct status from 401/403 on purpose: the SPA needs to tell "sign in again"
-    apart from "you are signed in, we just need a card" — and only the second one
+    apart from "you are signed in, we just need paying" — and only the second one
     should render the locked state rather than bouncing to the login screen.
+
+    TWO independent conditions — a failed subscription and a missing card — both
+    resolved by `billing_state.dashboard_lock`, which also decides which one to
+    report when an org is in both. D1: the subscription lock is NOT behind
+    `require_card_on_file`. They are separate decisions with separate switches
+    (`subscription_lock_enabled`), because one is about collecting cards and the
+    other is about being paid.
+
+    The exempt-path check comes AFTER working out the lock, and stays that way:
+    the escape hatches must be reachable in every locked state, not just the card
+    one.
     """
-    if not get_settings().require_card_on_file or org.card_on_file:
+    lock = billing_state.dashboard_lock(org)
+    if lock is None:
         return
-    if _grandfathered(org):
+    if request.url.path.startswith(_GATE_EXEMPT):
         return
-    if request.url.path.startswith(_CARD_GATE_EXEMPT):
-        return
-    raise HTTPException(status_code=402, detail={
-        "code": "card_required",
-        "message": "Add a payment method to unlock your dashboard. "
-                   "Your card is verified, not charged — the free tier stays free.",
-    })
+    raise HTTPException(status_code=402,
+                        detail={"code": lock.reason, "message": lock.message})
 
 
 def require_user(request: Request, db: Session = Depends(get_db)) -> User:
@@ -212,7 +169,7 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     if org is None:
         raise HTTPException(status_code=403, detail="This workspace is unavailable")
     _ensure_org_access(org)
-    _enforce_card_gate(request, org)
+    _enforce_dashboard_gates(request, org)
     if org.ip_allowlist and not ip_allow.ip_allowed(
             ip_allow.client_ip(request), ip_allow.parse_allowlist(org.ip_allowlist)):
         raise HTTPException(status_code=403, detail="Access from this IP is not allowed")
@@ -265,9 +222,9 @@ def resolve_org(
         if user is not None and not user.disabled:
             org = db.get(Organization, user.org_id)
             if org is not None and org.deleted_at is None and not org.suspended:
-                # Dashboard path — same gate as require_user, or the lock would be
+                # Dashboard path — same gates as require_user, or the lock would be
                 # trivially bypassed by every read endpoint that accepts a cookie.
-                _enforce_card_gate(request, org)
+                _enforce_dashboard_gates(request, org)
                 if org.ip_allowlist and not ip_allow.ip_allowed(
                         ip_allow.client_ip(request), ip_allow.parse_allowlist(org.ip_allowlist)):
                     raise HTTPException(status_code=403, detail="Access from this IP is not allowed")

@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import Date, func, select
 from sqlalchemy.orm import Session
 
-from .. import account_audit, ip_allow
+from .. import account_audit, billing_state, ip_allow
 from ..auth import require_role, require_step_up_user, require_user, resolve_org
 from ..config import get_settings
 from ..db import get_db
@@ -184,10 +184,9 @@ def get_usage(
         and org.trial_ends_at is not None
         and now < org.trial_ends_at
     )
-    inactive_subscription = (
-        (org.plan_tier or "").lower() not in {"", "free"}
-        and org.subscription_status in {"cancelled", "unpaid"}
-    )
+    # Same source of truth as the gate that actually rejects the write (D1), so
+    # this widget can no longer say "capturing" while /v1/logs returns 402.
+    capture_blocked = billing_state.capture_block(org, now)
     seat_limit = get_settings().seat_limit_for(org.plan_tier)
     api_key_limit = get_settings().api_key_limit_for(org.plan_tier)
     active_seats = db.execute(
@@ -199,9 +198,7 @@ def get_usage(
             ApiKey.org_id == org.id, ApiKey.status == "active")
     ).scalar_one()
     ingestion_blocked = bool(
-        ((org.plan_tier or "").lower() == "free" and org.trial_ends_at is not None
-         and now >= org.trial_ends_at)
-        or inactive_subscription
+        capture_blocked is not None
         or (quota is not None and used >= quota)
     )
     evaluation = None

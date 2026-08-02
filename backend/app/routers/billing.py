@@ -33,7 +33,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
-from .. import account_audit, password_reset
+from .. import account_audit, billing_state, password_reset
 from ..auth import hash_key, require_role, require_step_up_user, resolve_org
 from ..config import get_settings
 from ..db import SessionLocal, get_db
@@ -514,10 +514,22 @@ def _deliver_credentials(db: Session, org_id: str | None) -> None:
 
 
 def _handle_subscription_change(db: Session, subscription: dict) -> tuple[dict, str | None]:
-    """Update org subscription_status when Stripe notifies us."""
+    """Update org subscription_status when Stripe notifies us.
+
+    Also stamps `past_due_since` on the way IN to past_due and clears it on the
+    way out, which is what makes the D1 grace window measurable. Only on the
+    transition: Stripe emits `customer.subscription.updated` repeatedly while it
+    works through its retry schedule, and re-stamping on each one would restart
+    the window every time, so it would never expire and the lock would never
+    fire.
+    """
     customer_id = subscription.get("customer", "")
     status_map = {
         "active": "active", "past_due": "past_due", "canceled": "cancelled",
+        # Stripe's `unpaid` means the retries are exhausted, which is strictly
+        # worse than past_due — but it has always been stored as past_due, and
+        # the D1 grace window is what now separates the two: an org whose retries
+        # ran out is well beyond the window by the time Stripe gives up.
         "unpaid": "past_due", "trialing": "active",
     }
     mapped = status_map.get(subscription.get("status", "unknown"),
@@ -528,7 +540,13 @@ def _handle_subscription_change(db: Session, subscription: dict) -> tuple[dict, 
     ).scalar_one_or_none()
     if org is None:
         return {"status": "org_not_found", "customer": customer_id}, None
+    was = (org.subscription_status or "").strip().lower()
     org.subscription_status = mapped
+    if mapped in billing_state.PAST_DUE:
+        if was not in billing_state.PAST_DUE:
+            org.past_due_since = datetime.now(timezone.utc)
+    elif org.past_due_since is not None:
+        org.past_due_since = None            # paid, cancelled, or otherwise moved on
     log.info("Updated org %s status → %s", org.id, mapped)
     return {"status": "updated", "subscription_status": mapped}, str(org.id)
 
@@ -660,21 +678,50 @@ def billing_access(org: Organization = Depends(resolve_org)):
 
     Honest locked state (§4.6): the UI has to be able to say what is missing and
     why, instead of rendering a broken dashboard. Always 200 — this is the
-    endpoint that EXPLAINS the 402, so it must stay readable while locked."""
+    endpoint that EXPLAINS the 402, so it must stay readable while locked.
+
+    D1 — `locked` and `reason` answer DIFFERENT questions and the dashboard needs
+    both:
+
+    * **`locked`** — is the dashboard actually blocked? Render the locked state
+      from this, and only this.
+    * **`reason`** — which condition applies, locked or not. A `past_due` org
+      inside its grace window is *not* locked and very much needs telling; that
+      warning is the entire purpose of the window. It carries the same vocabulary
+      as the 402 body's `code`, so the UI switches on one set of strings:
+      `none` · `card_required` · `subscription_incomplete` ·
+      `subscription_past_due` · `subscription_cancelled` · `trial_expired`.
+
+    `capture_blocked` is reported separately because it does not follow `locked`:
+    a `past_due` org keeps recording evidence while its dashboard is locked, and
+    a `cancelled` org stops recording while its dashboard stays open.
+    """
     s = get_settings()
     required = bool(s.require_card_on_file)
-    locked = required and not org.card_on_file
+    now = datetime.now(timezone.utc)
+    lock = billing_state.dashboard_lock(org, now)
+    condition = billing_state.describe(org, now)
+    grace = billing_state.grace_ends_at(org)
     return {
         "card_required": required,
         "card_on_file": bool(org.card_on_file),
-        "locked": locked,
+        "locked": lock is not None,
+        "reason": condition.reason,
         "card": ({"brand": org.card_brand, "last4": org.card_last4,
                   "added_at": org.card_added_at.isoformat() if org.card_added_at else None}
                  if org.card_on_file else None),
         "plan_tier": org.plan_tier,
+        "subscription_status": org.subscription_status,
         "free_tier_is_free": True,
-        "message": ("Add a payment method to unlock your dashboard. Your card is "
-                    "verified, not charged." if locked else "No action needed."),
+        # Only meaningful while `reason` is subscription_past_due; null otherwise,
+        # and null WHILE past_due means no start was ever recorded — which is
+        # exactly why that org is not locked.
+        "grace_ends_at": (grace.isoformat()
+                          if grace is not None and lock is None
+                          and condition.reason == billing_state.SUBSCRIPTION_PAST_DUE
+                          else None),
+        "capture_blocked": billing_state.capture_block(org, now) is not None,
+        "message": condition.message,
     }
 
 

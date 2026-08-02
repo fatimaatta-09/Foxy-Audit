@@ -126,13 +126,16 @@ def test_access_reports_the_card_once_present(make_org, login, gate_on):
 
 def test_sdk_ingest_is_never_card_gated(make_org, client, gate_on):
     """The gate is a DASHBOARD gate. Blocking ingest on a missing card would make
-    a customer silently lose audit evidence — the one thing they bought."""
-    r = client.post("/v1/logs", headers=make_org()["auth"], json={
-        "event_id": str(uuid.uuid4()), "policy_tag": "test",
-        "prompt_commitment": "a" * 64, "response_commitment": "b" * 64,
-        "prompt_len": 1, "response_len": 1, "model": "test", "agent": "test",
-    })
-    assert r.status_code != 402, r.text
+    a customer silently lose audit evidence — the one thing they bought.
+
+    D1: this posted to `/v1/logs`, which only serves GET, so it collected a 405
+    and passed its `!= 402` assertion without ever reaching the ingest path. It
+    now posts a real batch and asserts 202."""
+    h = hashlib.sha256(str(uuid.uuid4()).encode()).hexdigest()
+    r = client.post("/v1/logs/batch", headers=make_org()["auth"], json=[{
+        "prompt_hash": h, "response_hash": h, "token_count": 8, "policy_tag": "test",
+    }])
+    assert r.status_code == 202, r.text
 
 
 # ── §4.1 · $0 authorisation, not a charge ───────────────────────────────────

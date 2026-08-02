@@ -138,6 +138,30 @@ class Settings(BaseSettings):
     # you enable it, then set require_card_on_file. One without the other is
     # either a no-op or an outage.
     card_gate_grandfather_before: str = ""
+    # ── D1 · the subscription lock ───────────────────────────────────────────
+    # ON by default, unlike the card gate directly above, because the blast
+    # radius is a different shape. The card gate had to ship off because its
+    # input was BAD DATA: `card_on_file` reads false for every org that predates
+    # the column, so the flag would have locked out customers who had done
+    # nothing wrong. `subscription_status` is not that — it is live state Stripe
+    # told us about, and an org only reads `incomplete` or `past_due` because a
+    # payment genuinely did not happen.
+    #
+    # It is still a kill switch rather than a launch gate: set
+    # SUBSCRIPTION_LOCK_ENABLED=false and every subscription lock is gone on the
+    # next request, no deploy required. The card gate is unaffected either way.
+    subscription_lock_enabled: bool = True
+    # How long a failed payment is given before the dashboard locks, measured
+    # from the moment the webhook first told us (`organizations.past_due_since`).
+    # Stripe retries a declined charge over days — its default schedule runs to
+    # roughly a week — so locking on the first failure would lock people out
+    # whose bank was about to approve the retry. An org with no recorded start
+    # is never locked, whatever this is set to.
+    #
+    # Capture is NEVER blocked by this: evidence keeps recording while a card is
+    # being fixed, because a customer cannot go back and re-create the calls
+    # their agents made yesterday.
+    subscription_past_due_grace_days: int = 7
     # Days of warning before a billing change. The owner asked for "3-4 days before
     # anything changes"; 4 leaves a working day of slack.
     billing_change_notice_days: int = 4
