@@ -1,5 +1,41 @@
 # Admin Console — issues round 2
 
+> ## ✅ COMPLETE — all four phases merged, 2026-08-02
+>
+> `b682bc5` → `5c17c31`. **Read this before the plan body: two of the four guards
+> I wrote for P4 were wrong, and the code is what said so.**
+>
+> | Phase | Commit | Items |
+> |---|---|---|
+> | P1 | `f4d2889` | 2 — reuse blocked on **both** surfaces |
+> | P2 | `05a390a` | 1, 3 — confirm field, strength meter, and the form defect |
+> | P3 | `c31fb57` | 4, 5, 6, 9 — chips, the (i), Recent Activity |
+> | P4 | `5c17c31` | 7 — redeem endpoint, step-up, link, landing |
+>
+> **What this plan got wrong, corrected in place:**
+> 1. **P4 guard 3** was narrower than the schema — the UNIQUE is on `org_id`
+>    alone, so one redemption per org *ever*. Mine would have 500'd.
+> 2. **P4 guard 4** would have granted something unusable — earlier ingestion
+>    gates block before the evaluation pair is ever reached.
+> 3. **P4 guard order** — a granted offer sets `plan_tier="premium"`, so a second
+>    attempt looked "paid" and got an untrue reason.
+> 4. **P2's focus routing** matched `/current/i`, which P1's reuse message would
+>    also have matched — caught at the seam, before P1 landed.
+> 5. **"A solid chip makes the face irrelevant"** was half true: the ink clears
+>    4.5:1 everywhere, the *fill* hits 1.01:1 against `.k-teal` and dissolves.
+>
+> **Two defects the items never named** were found and fixed: the change-password
+> modal was not a `<form>`, so the password manager never learned the new
+> credential (**changing an admin password could lock you out**); and the customer
+> surface had the same reuse gap as staff.
+>
+> **Open, filed rather than fixed:** `Worth Noting` **#35** (reset path reuse),
+> **#36** (an expired offer leaves an org worse off than before it redeemed —
+> the serious one), **#37** (`.fb-res` used 11 times, defined never).
+>
+> Guards: 98 → **372** front-end across three surfaces, plus 26 new backend tests.
+
+
 **This file is the single source of truth.** If scope changes, it changes here
 first and the executor prompt is re-issued.
 
@@ -60,7 +96,7 @@ rule as last time.
 | ~~P1~~ | ~~`feat/admin-pw-reuse-block`~~ | **✅ merged 2026-08-02 at `f4d2889`** — both surfaces |
 | ~~P2~~ | ~~`feat/admin-pw-modal`~~ | **✅ merged 2026-08-02 at `05a390a`** — form, confirm, meter |
 | ~~P3~~ | ~~`feat/admin-chips-info`~~ | **✅ merged 2026-08-02 at `c31fb57`** — chips, (i), Recent Activity |
-| P4 | `feat/admin-credit-link` | 7 — credit via shareable link |
+| ~~P4~~ | ~~`feat/admin-credit-link`~~ | **✅ merged 2026-08-02 at `5c17c31`** — redeem endpoint, step-up, link, landing |
 
 Every phase: `git fetch origin && git worktree add ../wt-<phase> origin/main`.
 Re-check `git merge-base --is-ancestor origin/main HEAD` **immediately before
@@ -282,7 +318,45 @@ break its ingestion when the offer lapses. On a free-tier org that is an upgrade
 on anything else it is a downgrade wearing a gift's clothes.
 
 **Guards — refuse rather than guess. All four are assumptions; overrule any of
-them and say so:**
+them and say so.**
+
+> **✅ Two of the four were wrong, and the code said so. Verified at `5c17c31`.**
+>
+> **Guard 3 was narrower than the schema.** `EvaluationRedemption` carries
+> `UniqueConstraint("org_id", name="uq_evaluation_redemption_org")` — confirmed in
+> `models.py:94` and migration `0051`. The database allows **one redemption per
+> org, ever**, not one per campaign. A per-`offer_id` check would have let a
+> second campaign past the guard and then died on an `IntegrityError` instead of
+> answering 409. The schema's rule is the rule.
+>
+> **Guard 4 would have made the gift inert.** `logs.py` gates capture in order:
+> `trial_expired` (126) → `subscription_inactive` (132) → `credits_exhausted`
+> from `monthly_log_quota` (138-148) → the evaluation pair (175-181). Guard 1
+> already limits this to free orgs, so an org reaching the apply step is either
+> past its trial — where gate 1 rejects every capture and the credits can never be
+> spent — or inside it, where the free quota caps the grant below the credits
+> issued. Setting *only* the evaluation fields grants something unusable. The
+> redeem applies **signup's exact field set** instead, verified identical
+> programmatically. On a free org that is an upgrade, which is not what guard 4
+> was written to prevent.
+>
+> **And the order was wrong.** A granted offer sets `plan_tier="premium"`, so an
+> org that already redeemed *looks* paid — running the paid-plan guard first
+> answered a second attempt with "you are on a paid plan", which is both untrue
+> and unactionable. Evaluation-specific reasons come first, and the paid check
+> now treats `plan_tier` as paid only when no evaluation offer explains it.
+
+### ⚠ Open, disclosed rather than solved
+
+**Nothing clears the evaluation fields when the window closes.** After
+`evaluation_ends_at` passes, a free org that redeemed can capture nothing — gate
+4 refuses, and the `monthly_log_quota` that used to let it capture on the free
+tier was set to `NULL` on redemption. It is *worse off than before it redeemed*.
+
+The landing states this above the confirm button, and
+`test_the_landing_states_the_trade_before_the_button` asserts the position, not
+just the presence. **Fixing it properly needs a sweep that restores free-tier
+defaults on expiry — its own change, with its own review.**
 
 1. Refuse if the org has an active Stripe subscription or `plan_tier` is not
    `free`. Never let a gift silently replace a paid plan.
