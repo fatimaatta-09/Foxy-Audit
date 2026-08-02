@@ -1372,6 +1372,60 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 .usermenu-item.danger{color:var(--breach-ink);}
 .usermenu-item.danger:hover{color:var(--breach-ink);}
 
+/* ════════ D4 · THE PAYMENT LOCK ════════
+   Two surfaces, driven by two DIFFERENT fields of GET /v1/billing/access:
+
+     .lock-ov     ← `locked`, and only `locked`.
+     #billBanner  ← `reason`, whenever it is not `none` and nothing is locked.
+
+   They answer different questions. A past_due org inside its grace window
+   reports reason=subscription_past_due with locked=false: it gets the banner,
+   keeps its dashboard, and is exactly the org that most needs telling. Driving
+   the overlay off `reason` would shut out the customer the grace window exists
+   to protect.
+
+   The banner is .annbanner — the announcement component, reused whole — with no
+   dismiss button. A billing condition is not an announcement you read once and
+   are done with; it leaves when the condition does.
+
+   The overlay sits at 9990, BELOW #authGate (9999), so a session that expires
+   while locked still shows the sign-in card rather than a lock nobody can act
+   on. Nothing here animates: #authGate does not either, and a blocking state
+   should arrive at once rather than fade in decoratively. */
+.lock-ov{display:none;position:fixed;inset:0;z-index:9990;background:rgba(6,5,4,.88);
+  align-items:center;justify-content:center;padding:20px;overflow:auto;}
+.lock-ov.on{display:flex;}
+.lockcard{width:470px;max-width:100%;}
+.lock-t{font-size:19px;font-weight:800;letter-spacing:-.4px;line-height:1.2;}
+.lock-d{font-size:12.5px;line-height:1.65;color:var(--ink2);margin-top:9px;}
+
+/* The evidence strip — and the one thing a payment wall usually gets wrong here.
+   `capture_blocked` does NOT follow `locked`: a past_due org keeps recording
+   while its dashboard is shut, and a cancelled org stops recording while its
+   dashboard stays open. Rendering the two as one state tells a customer
+   something untrue about their audit trail, which is the product. When the
+   strip's state is UNKNOWN — a 402 caught before /v1/billing/access could
+   answer — it is not drawn at all, because a guess about someone's evidence is
+   worse than a silence. */
+.lock-ev{display:flex;gap:12px;align-items:flex-start;margin-top:16px;
+  padding:12px 14px;border-radius:var(--r-md);border:var(--border-sm);}
+.lock-ev svg{flex-shrink:0;width:58px;height:13px;margin-top:3px;}
+.lock-ev.rec{background:var(--surf2);border-color:var(--line);color:var(--safe-ink);}
+.lock-ev.stop{background:rgba(255,200,61,.13);border-color:var(--warn-bg);color:var(--warn-ink);}
+.lock-ev-t{font-size:12px;font-weight:800;line-height:1.35;}
+/* --ink2, never --muted2: this is live text and muted2 is 3.01:1 dark / 2.71:1
+   light. §13's contrast guard exists to catch exactly that substitution. */
+.lock-ev-d{font-size:11.5px;line-height:1.55;color:var(--ink2);margin-top:4px;}
+.lock-alt{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:15px;
+  font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;}
+.lock-alt a,.lock-alt button{background:none;border:0;padding:0;cursor:pointer;
+  font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--muted);text-decoration:none;}
+.lock-alt a:hover,.lock-alt button:hover{color:var(--ink);}
+.lock-alt a:focus-visible,.lock-alt button:focus-visible{outline:2px solid var(--fox);outline-offset:3px;border-radius:4px;}
+/* .ann-act ships as an <a>; the billing banner's action is a button, which needs
+   the chrome reset an anchor never needed. */
+.annbanner button.ann-act{background:none;border:0;padding:0;font-family:var(--mono);}
+
 /* motion respect */
 @media(prefers-reduced-motion:reduce){
   .skel{animation:none;}
@@ -1574,6 +1628,10 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
       </div>
     </header>
     <div class="annbanner" id="annBanner" role="status"></div>
+    <!-- D4 · the NOT-locked half of the billing state: reason != none while
+         locked == false. Same component as the announcement above it, and
+         deliberately without its dismiss button — see .lock-ov's note. -->
+    <div class="annbanner" id="billBanner" role="status"></div>
 
     <!-- ═════════════ DASHBOARD ═════════════ -->
     <div class="page active" id="page-dashboard">
@@ -2817,6 +2875,34 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
   </form>
 </div>
 
+<!-- ═══ D4 · the payment lock ═══
+     Shown ONLY when GET /v1/billing/access reports locked:true, or when a
+     request comes back 402. Everything in it is filled from the wire; nothing
+     is hardcoded, because which condition applies changes both what is true and
+     what the customer has to go and do about it.
+
+     Every control in here reaches a path auth.py exempts from the gate
+     (`/v1/billing/`, `/v1/auth/`) or leaves the product entirely. That is the
+     point: a customer who cannot reach billing cannot fix what they are locked
+     for, and a lock with no way out is a support ticket, not a payment wall. -->
+<div class="lock-ov" id="billLock" role="dialog" aria-modal="true" aria-labelledby="billLockT">
+  <div class="clay pad lockcard">
+    <div class="eyebrow" style="margin-bottom:7px;">billing</div>
+    <div class="lock-t" id="billLockT"></div>
+    <!-- The server's own `message`, verbatim. Not a second copy of that sentence
+         kept here, so the two can never drift out of agreement. -->
+    <div class="lock-d" id="billLockD"></div>
+    <div id="billLockEv"></div>
+    <div id="billLockErr" role="status" aria-live="polite" style="min-height:14px;margin-top:12px;
+      font-size:11.5px;line-height:1.5;color:var(--breach-ink);font-weight:600;"></div>
+    <button class="btn pri" type="button" id="billLockGo"></button>
+    <div class="lock-alt">
+      <button type="button" id="billLockOut">Sign out</button>
+      <a href="mailto:foxyaudit@gmail.com?subject=Dashboard%20locked">Contact support</a>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ── password reveal toggles (P3 §2.2) ──────────────────────────────
    One eye, one slash that draws itself. Built here rather than shipped as markup
@@ -3948,7 +4034,16 @@ async function loadLoginHistory(scope){
       showToast('Compliance passport generated');
     }catch(e){ if(win)win.close(); if(plbl){plbl.textContent='could not reach the server'; plbl.style.color='var(--breach-bg)';} }
   };
-  async function loadAll(){ await Promise.all([loadStats(),loadLogs(),loadChainMeta(),loadCoverage()]); }
+  async function loadAll(){
+    /* D4 · boot. Deliberately NOT awaited and NOT inside the Promise.all: the
+       billing state is not a panel and must not hold the dashboard back, and
+       /v1/billing/access is the one call auth.py exempts from the gate, so it
+       still answers when everything beside it is coming back 402. Hooked here
+       rather than at the five separate sign-in success paths that all funnel
+       into it. */
+    if(window.foxBillingAccess)window.foxBillingAccess();
+    await Promise.all([loadStats(),loadLogs(),loadChainMeta(),loadCoverage()]);
+  }
 
   async function check(){
     if(new URLSearchParams(location.search).get('reset_token')){   // arrived via reset link
@@ -5603,10 +5698,25 @@ async function loadLoginHistory(scope){
     return window.__stepUpPromise;
   };
   // interceptor: a 403 {detail:"step_up_required"} → prompt → retry once. Wraps the CSRF-patched fetch.
+  // D4 also reads 402 here rather than adding a THIRD window.fetch patch to a
+  // file that already has two.
   var _f=window.fetch;
   window.fetch=function(input,init){
     init=init||{};
     return _f.call(this,input,init).then(function(res){
+      /* D4 · the payment lock. 402 is not 401, and the difference is the whole
+         reason auth.py picked it: "the SPA needs to tell 'sign in again' apart
+         from 'you are signed in, we just need paying' — and only the second one
+         should render the locked state rather than bouncing to the login
+         screen." So this renders the lock and never touches #authGate.
+         The response is passed through untouched: every caller keeps whatever
+         error handling it already had, and this observes rather than intercepts. */
+      if(res.status===402&&window.foxLock402){
+        res.clone().json().then(function(d){
+          var det=(d&&d.detail)||{};
+          window.foxLock402(det.code,det.message);
+        },function(){ window.foxLock402(null,null); });
+      }
       if(res.status!==403||init.__stepUpRetried)return res;
       return res.clone().json().then(function(d){
         if(d&&d.detail==='step_up_required'){
@@ -5616,6 +5726,198 @@ async function loadLoginHistory(scope){
       },function(){ return res; });
     });
   };
+})();
+</script>
+
+<!-- ═══ D4 · the payment lock, UI half ═══
+     Consumes D1 and the gate that was already there. NO LOCK LOGIC LIVES HERE:
+     this file decides nothing about who is locked, it renders what
+     GET /v1/billing/access and the 402 body say. The 402 is caught in the
+     step-up fetch patch above rather than in a third patch of its own. -->
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id);};
+  var api=function(p,o){return fetch(p,Object.assign({credentials:'same-origin'},o||{}));};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+
+  /* The reason vocabulary is billing_state.py's, shared verbatim with the 402
+     body's `code`, so ONE table covers both paths and they cannot drift into two
+     switches that disagree. It carries only what the server cannot know: the
+     single action that clears this particular condition. "Add a card" and "your
+     last payment failed" want different things from the customer, which is the
+     whole reason D1 reports which one applies.
+
+     There is deliberately NO title here. The first draft had one and the render
+     put it straight above the server's message, which opens with the same
+     sentence — "Your last payment failed / Your last payment failed and the
+     grace period has ended." The wording that names the condition is already on
+     the wire, written once, per reason, by the code that decided it. So the
+     heading is that sentence (see `split`) and this table stops at the verb.
+
+     `none` is absent on purpose: nothing to say, nothing to do. */
+  var REASON={
+    card_required:          {cta:'Add payment method',        act:'card'},
+    subscription_incomplete:{cta:'Finish setting up billing',  act:'portal'},
+    subscription_past_due:  {cta:'Update payment method',      act:'portal'},
+    subscription_cancelled: {cta:'See upgrade options',        act:'upgrade'},
+    trial_expired:          {cta:'See upgrade options',        act:'upgrade'}
+  };
+  /* A reason this build has not heard of still has to render something the
+     customer can act on — a newer server can add one at any time. */
+  var UNKNOWN={cta:'Manage billing', act:'portal'};
+  var FALLBACK_MSG='This workspace needs a billing change before the dashboard unlocks.';
+  function copyFor(reason){ return REASON[reason]||UNKNOWN; }
+
+  /* Lead sentence, then the rest. Every message billing_state.py writes is two
+     sentences: what happened, then what to do about it. Splitting there gives
+     the card a heading and the banner a bold lead without keeping a second copy
+     of either anywhere in this file. */
+  function split(msg){
+    var i=String(msg||'').indexOf('. ');
+    return i>0?[msg.slice(0,i+1),msg.slice(i+2)]:[msg||'',''];
+  }
+
+  /* Five links of the hash chain. The last one goes dashed when capture has
+     stopped — the chain is the product, and whether it is still extending is
+     the one fact this screen exists to get right. */
+  function chain(broken){
+    var s='<svg viewBox="0 0 62 14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">';
+    for(var i=0;i<5;i++){
+      s+='<rect x="'+(1+i*12)+'" y="1" width="12" height="12" rx="6"'
+        +((broken&&i===4)?' stroke-dasharray="2.6 2.6"':'')+'/>';
+    }
+    return s+'</svg>';
+  }
+
+  /* Read from `capture_blocked`, NEVER from `locked`. The two do not track each
+     other: past_due locks the dashboard and keeps recording; cancelled stops
+     recording and leaves the dashboard open. `null` means we have not been able
+     to ask — draw nothing rather than assert something about an audit trail we
+     have not checked. */
+  function evidence(blocked){
+    if(blocked===true)
+      return '<div class="lock-ev stop">'+chain(true)+'<div>'
+        +'<div class="lock-ev-t">New evidence is not being recorded</div>'
+        +'<div class="lock-ev-d">Everything captured so far stays intact, verifiable and exportable.</div>'
+        +'</div></div>';
+    if(blocked===false)
+      return '<div class="lock-ev rec">'+chain(false)+'<div>'
+        +'<div class="lock-ev-t">Your evidence is still being recorded</div>'
+        +'<div class="lock-ev-d">The chain keeps extending while this is open, and nothing already captured is affected.</div>'
+        +'</div></div>';
+    return '';
+  }
+
+  /* Both actions POST to /v1/billing/*, which auth.py exempts from the gate, so
+     they work from inside the locked state. That is the point of the exemption. */
+  function run(kind,btn,say){
+    if(kind==='upgrade'&&!$('billLock').classList.contains('on')){ window.go('upgrade',null); return; }
+    /* From inside the overlay the upgrade page is unreachable — it sits behind
+       the lock — so an upgrade-shaped condition falls back to the portal. Only
+       reachable defensively: today neither cancelled nor trial_expired locks. */
+    var path=(kind==='card')?'/v1/billing/card-setup-session':'/v1/billing/portal';
+    var label=btn.textContent;
+    btn.disabled=true; btn.textContent='opening…'; say('');
+    api(path,{method:'POST'}).then(function(r){
+      return r.json().catch(function(){return {};}).then(function(d){
+        var url=d.checkout_url||d.portal_url;
+        if(r.ok&&url){ location.href=url; return; }
+        btn.disabled=false; btn.textContent=label;
+        say(r.status===403?'Only a workspace admin can change billing. Ask an admin on your team to do this.'
+          :r.status===503?'Billing is not switched on for this workspace. Email support and we will sort it out.'
+          :r.status===400?'There is no billing account to open yet. Email support and we will sort it out.'
+          :'Could not open billing ('+r.status+'). Try again in a moment.');
+      });
+    }).catch(function(){
+      btn.disabled=false; btn.textContent=label;
+      say('Could not reach the server. Check your connection and try again.');
+    });
+  }
+
+  function banner(tone,c,st){
+    var ban=$('billBanner');
+    /* Two independent fields, two independent sentences. The capture clause is
+       read off `capture_blocked` and appended, never inferred from the reason. */
+    var tail=(st.capture_blocked===true)?' New evidence is not being recorded.'
+            :(st.capture_blocked===false)?' Your evidence is still being recorded.':'';
+    var p=split(st.message||FALLBACK_MSG);
+    ban.className='annbanner on '+tone;
+    ban.innerHTML='<span class="ann-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+      +'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">'
+      +'<path d="M12 3.6 21 19H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg></span>'
+      +'<div class="ann-body"><b>'+esc(p[0])+'</b> '+esc(p[1]+tail)+'</div>'
+      +'<button class="ann-act" type="button" id="billBanGo">'+esc(c.cta)+' →</button>';
+    var go=$('billBanGo');
+    go.onclick=function(){ run(c.act,go,function(m){ if(m)window.showToast(m); }); };
+  }
+
+  function clearBanner(){ var b=$('billBanner'); b.className='annbanner'; b.innerHTML=''; }
+
+  function render(st){
+    var ov=$('billLock'); if(!ov||!$('billBanner'))return;
+    var c=copyFor(st.reason), wasOn=ov.classList.contains('on');
+
+    /* THE ONE RULE. `locked` decides whether the dashboard is blocked; `reason`
+       only decides what is said. Nothing below reads `reason` to choose the
+       overlay, and nothing reads `locked` to choose the words. */
+    if(st.locked){
+      clearBanner();
+      var p=split(st.message||FALLBACK_MSG);
+      $('billLockT').textContent=p[0];
+      $('billLockD').textContent=p[1];
+      $('billLockEv').innerHTML=evidence(st.capture_blocked);
+      var go=$('billLockGo');
+      go.textContent=(c.act==='upgrade')?'Manage billing':c.cta;
+      go.onclick=function(){ run(c.act,go,function(m){ $('billLockErr').textContent=m; }); };
+      ov.classList.add('on');
+      document.body.style.overflow='hidden';
+      if(!wasOn){ $('billLockErr').textContent=''; try{ go.focus(); }catch(e){} }
+      return;
+    }
+
+    ov.classList.remove('on');
+    document.body.style.overflow='';
+    if(st.reason&&st.reason!=='none')banner(st.capture_blocked===true?'bad':'warn',c,st);
+    else if(st.capture_blocked===true)banner('bad',UNKNOWN,st);
+    else clearBanner();
+  }
+
+  var inflight=false, throttle=null;
+  function refresh(){
+    if(inflight)return;
+    inflight=true;
+    api('/v1/billing/access').then(function(r){
+      inflight=false;
+      // 401 is the sign-in card's business, not this module's. Say nothing.
+      if(r.status===401||!r.ok)return;
+      return r.json().then(render);
+    }).catch(function(){ inflight=false; });
+  }
+
+  // Boot: called from loadAll(), which every successful sign-in path runs.
+  window.foxBillingAccess=refresh;
+
+  window.foxLock402=function(code,message){
+    /* Render straight from the 402 first, so the locked state never lags the
+       request that was refused and a failure to reach /v1/billing/access can
+       never leave a blank dashboard. capture_blocked stays null: the 402 body
+       does not carry it, and this is not a thing to guess at. */
+    if(!$('billLock').classList.contains('on'))
+      render({locked:true, reason:code||null, message:message||FALLBACK_MSG, capture_blocked:null});
+    /* Then ask the endpoint that knows the rest. Throttled because one page load
+       can 402 on every panel at once. */
+    if(throttle)return;
+    throttle=setTimeout(function(){ throttle=null; },1500);
+    refresh();
+  };
+
+  function wire(){
+    var out=$('billLockOut');
+    if(out)out.onclick=function(){ if(window.foxLogout)window.foxLogout(); };
+  }
+  if(document.readyState!=='loading')wire(); else document.addEventListener('DOMContentLoaded',wire);
 })();
 </script>
 
