@@ -677,6 +677,38 @@ html[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator{f
   .pw-eye .pw-slash{transition:none;}
 }
 
+/* ════════ D3 item 4 · PASSWORD STRENGTH READOUT ════════
+   Four segments and a mono word, brought back from foxy-adminpage where P2
+   built it — this file is where the console copied .pw-eye FROM, so the two
+   surfaces keep one vocabulary instead of growing two.
+
+   IT ADVISES, IT DOES NOT BLOCK. Nothing here disables the submit and nothing
+   refuses a password: the 8-character minimum is the server's and it is the
+   only hard rule. The readout names a lever ("length helps most") rather than
+   passing a verdict it cannot support — this is a heuristic, it cannot know
+   "Passw0rd!" is common, and zxcvbn is ~400 KB against a page with no runtime
+   dependencies at all.
+
+   The word is always present; colour repeats it rather than carrying it alone.
+   Ported note: the console writes `transition:background var(--dur)`, and this
+   file has no --dur token — a straight copy would have made the segments jump. */
+.pwm{display:flex;align-items:center;gap:9px;margin:6px 0 2px;}
+.pwm-track{display:flex;gap:3px;flex:1;min-width:0;}
+.pwm-seg{height:4px;flex:1;border-radius:2px;background:var(--line);
+  transition:background .18s ease;}
+/* The *-bg half of each status pair, not the *-ink half: these are fills, and
+   the ink tokens are dark browns and greens on paper — a muddy ramp. */
+.pwm.s0 .pwm-seg:nth-child(-n+1){background:var(--breach-bg);}
+.pwm.s1 .pwm-seg:nth-child(-n+2){background:var(--warn-bg);}
+.pwm.s2 .pwm-seg:nth-child(-n+3){background:var(--fox);}
+.pwm.s3 .pwm-seg{background:var(--safe-bg);}
+.pwm-lab{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.1px;
+  text-transform:uppercase;color:var(--ink2);white-space:nowrap;min-height:12px;}
+.pwm-hint{font-family:var(--mono);font-size:10px;line-height:1.4;color:var(--muted);
+  min-height:14px;}
+/* .pwm-seg's reduced-motion rule lives in the canonical block near the end of
+   this stylesheet, not here — see the note there. */
+
 /* Secondary actions on the auth card. "Forgot password?" carries the form's own
    body size and ink; the rest stay genuinely tertiary. Both are real controls, so
    they are focusable and keyboard-operable rather than clickable divs. */
@@ -961,14 +993,74 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
    order that does not exist. Capped so the lines stay readable on a wide
    screen rather than stretching to the viewport. */
 .setcol{display:flex;flex-direction:column;gap:clamp(20px,3vw,30px);max-width:760px;}
-.setsec{display:flex;flex-direction:column;gap:12px;}
-.setsec-h{display:flex;align-items:center;gap:10px;padding-bottom:9px;
-  border-bottom:2px dashed var(--line);}
-.setsec-ic{width:26px;height:26px;flex-shrink:0;color:var(--fox2);}
-.setsec-ic svg{width:100%;height:100%;display:block;}
-.setsec h2{font-size:13.5px;font-weight:800;letter-spacing:-.2px;color:var(--ink);}
-.setsec .clay{margin-top:0!important;}
-.setsec .stitle{margin-bottom:0;}
+
+/* ════════════════ D3 §2c · THE SEVEN SECTIONS COLLAPSE ════════════════
+   Five open sections became seven <details>, ordered by how often you need
+   them. A native disclosure, not a JS accordion: keyboard operation, the open
+   state exposed to assistive tech, and browser find-in-page reaching INSIDE a
+   collapsed section all come free here and none of them survives being
+   hand-rolled.
+
+   The numeral is not decoration. The order IS the argument — "Your account"
+   first because it is what you came for, "Data & privacy" sixth because you
+   should have to travel to the delete button — so the number carries the one
+   thing that ordering is trying to say, and a reader who wonders why Danger
+   is at the bottom has an answer on the row. */
+.setwrap{max-width:760px;}
+.sgrp{margin-bottom:12px;background:var(--bg2);border-radius:var(--r-lg);
+  box-shadow:var(--raise-sm);overflow:hidden;}
+/* A grid, not a flex row: <summary> may hold phrasing content intermixed with
+   heading content, so the subtitle cannot be a <p> inside a wrapper <div>
+   without making the markup invalid. Two grid rows in column 2 give the
+   stacked title/subtitle that a nested block element would have. */
+.sgrp-h{display:grid;grid-template-columns:auto 1fr auto auto;
+  column-gap:11px;align-items:center;padding:13px 16px;min-height:44px;
+  cursor:pointer;list-style:none;user-select:none;}
+/* Safari draws its own triangle from ::-webkit-details-marker and ignores
+   list-style; Firefox uses ::marker. All three have to be suppressed or the
+   row grows a disclosure arrow next to the chevron it already has. */
+.sgrp-h::-webkit-details-marker{display:none;}
+.sgrp-h::marker{content:"";}
+.sgrp-h:hover{background:var(--surf);}
+/* Not optional: the row IS the button, and it is the only control that opens a
+   section. --fox measures 6.94:1 on --bg2 in dark and 2.92:1 on paper — the
+   same figure every .ic-chip and .ldg-row:focus-visible in this file already
+   carries, so the ring matches the system rather than inventing a second one.
+   The hover fill is a second channel; focus is never colour alone. */
+.sgrp-h:focus-visible{outline:2px solid var(--fox);outline-offset:-2px;}
+/* Same --fox/--foxink pair as every other chip here (.ic-chip, .seg[aria-pressed],
+   .btn.pri): numeral 7.46:1 dark / 5.60:1 light against the plate it sits on. */
+.sgrp-n{grid-row:1/span 2;font-family:var(--mono);font-size:11px;font-weight:800;
+  color:var(--foxink);background:var(--fox);width:24px;height:24px;
+  border-radius:8px;display:grid;place-items:center;}
+.sgrp-h h2{grid-column:2;grid-row:1;font-size:15px;font-weight:800;
+  color:var(--ink);letter-spacing:-.01em;}
+.sgrp-sub{grid-column:2;grid-row:2;font-size:11.5px;color:var(--muted);
+  margin-top:1px;}
+/* --muted, NOT --muted2. The count is live text and muted2 is the disabled-only
+   ramp: it measures 3.01:1 dark and 2.71:1 on paper, both under AA, and
+   test_p1_contrast names "points live text at it" as the thing to prevent.
+   --muted is 5.38:1 / 5.11:1 on this shell. */
+.sgrp-c{grid-column:3;grid-row:1/span 2;font-family:var(--mono);font-size:9px;
+  color:var(--muted);letter-spacing:.04em;white-space:nowrap;}
+.sgrp-v{grid-column:4;grid-row:1/span 2;width:17px;height:17px;color:var(--muted);
+  transition:transform .18s ease;}
+.sgrp[open] .sgrp-v{transform:rotate(180deg);}
+/* .sgrp-v's reduced-motion rule lives in the canonical block near the end of
+   this stylesheet, not here — see the note there. */
+/* Carried over from .setsec so spacing INSIDE a section is unchanged. */
+.sgrp-b{display:flex;flex-direction:column;gap:12px;padding:2px 14px 12px;}
+.sgrp-b .clay{margin-top:0!important;}
+.sgrp-b .stitle{margin-bottom:0;}
+/* The cards carry their own bottom margin; the last one would otherwise leave
+   a dead gap between it and the bottom of the shell. */
+.sgrp-b > :last-child{margin-bottom:0!important;}
+@media(max-width:560px){
+  .sgrp-h{padding:12px 13px;column-gap:9px;}
+  /* The subtitle is the first thing to go: the title, the count and the
+     chevron all still say what the row is. */
+  .sgrp-sub{display:none;}
+}
 
 /* ════════════════ P2 §9.3 · THE THEMED DIALOG ════════════════ */
 .foxdlg{display:none;position:fixed;inset:0;z-index:11000;background:rgba(6,5,4,.62);
@@ -1306,6 +1398,13 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
   .hb-live i,.badge.live i{animation:none;}
   .stat.kpi,.tool,.htile,.btn,.topbtn{transition:none;}
   .lvbar i{transition:none;}
+  /* D3 · the Settings chevron and the strength segments belong HERE rather than
+     in their own @media next to the rules they modify. §13's guard reads the
+     FIRST @media(prefers-reduced-motion:reduce) in the file as the register of
+     everything that moves; a second one declared earlier silently becomes that
+     register, and every looping animation listed here stops being checked. */
+  .sgrp-v{transition:none;}
+  .pwm-seg{transition:none;}
   /* the final state, immediately — not a half-swept ring frozen in place */
   .vbar,.vtick{transition:none;}
 }
@@ -1339,6 +1438,11 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 <symbol id="dg-anchor" viewBox="0 0 24 24"><path opacity=".18" fill="currentColor" d="M12 2.8a2.4 2.4 0 110 4.8 2.4 2.4 0 010-4.8z"/><g opacity=".5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5.2" r="2.4"/><path d="M12 7.6v13.2"/><path d="M8 10.4h8"/><path d="M4 14.4a8 8 0 0016 0"/></g></symbol>
 <symbol id="dg-agent" viewBox="0 0 24 24"><path opacity=".18" fill="currentColor" d="M4.5 7.6h15v11.8h-15z"/><g opacity=".5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="7.6" width="15" height="11.8" rx="2.8"/><path d="M12 3.2v4.4"/><circle cx="9.2" cy="12.8" r="1.3"/><circle cx="14.8" cy="12.8" r="1.3"/><path d="M9.6 16.4h4.8"/></g></symbol>
 <symbol id="dg-quota" viewBox="0 0 24 24"><path opacity=".18" fill="currentColor" d="M12 4.2a8.4 8.4 0 018.4 8.4H3.6A8.4 8.4 0 0112 4.2z"/><g opacity=".5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 15.6a8.4 8.4 0 1116.8 0"/><path d="M12 15.6l4.4-5"/><path d="M3.6 18.8h16.8"/></g></symbol>
+<!-- D3 · the only non-duotone symbol here, and deliberately so: the others are
+     section identities, this is a state indicator for the seven Settings
+     disclosure rows. A single stroke reads at 17px where a two-layer glyph
+     turns to mud. -->
+<symbol id="ic-chev" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M6 9.5l6 6 6-6"/></symbol>
 <symbol id="dg-member" viewBox="0 0 24 24"><path opacity=".18" fill="currentColor" d="M12 3.4a4.2 4.2 0 110 8.4 4.2 4.2 0 010-8.4z"/><g opacity=".5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7.6" r="4.2"/><path d="M4.6 20.6a7.4 7.4 0 0114.8 0"/></g></symbol>
 <symbol id="dg-webhook" viewBox="0 0 24 24"><path opacity=".18" fill="currentColor" d="M12 3.4a3.4 3.4 0 110 6.8 3.4 3.4 0 010-6.8z"/><g opacity=".5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6.8" r="3.4"/><circle cx="5.4" cy="18" r="3.2"/><circle cx="18.6" cy="18" r="3.2"/><path d="M10.4 9.8L7 15.2"/><path d="M13.6 9.8L17 15.2"/><path d="M8.6 18h6.8"/></g></symbol>
 <symbol id="dg-session" viewBox="0 0 24 24"><path opacity=".18" fill="currentColor" d="M3 4.6h18v11.2H3z"/><g opacity=".5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.6" width="18" height="11.2" rx="2.2"/><path d="M8.4 19.8h7.2"/><path d="M12 15.8v4"/></g></symbol>
@@ -2112,13 +2216,20 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
     <!-- ═════════════ SETTINGS ═════════════ -->
     <div class="page" id="page-settings">
       <div class="pg-head"><span class="pg-wm" aria-hidden="true">SETTINGS</span><div></div></div>
-      <div class="setcol">
-      <section class="setsec" aria-labelledby="sec-accountidentity">
-        <div class="setsec-h">
-          <span class="setsec-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#dg-member"/></svg></span>
-          <h2 id="sec-accountidentity">Account & identity</h2>
-        </div>
-<div class="clay pad">
+      <div class="setwrap">
+      <details class="sgrp" id="sgrp-account" open>
+        <summary class="sgrp-h">
+          <span class="sgrp-n" aria-hidden="true">1</span>
+          <!-- The id outlives the <section> it used to sit on: test_p6c_avatar_ui
+               anchors its "just the account card" fixture here, and this row is
+               still that section's heading. -->
+          <h2 id="sec-accountidentity">Your account</h2>
+          <span class="sgrp-sub">The things you came here to change</span>
+          <span class="sgrp-c" data-sgrp-count></span>
+          <svg class="sgrp-v" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>
+        </summary>
+        <div class="sgrp-b">
+          <div class="clay pad">
                     <div class="flabel" style="margin-top:0;">display name <span style="color:var(--muted);font-weight:400;">(your avatar + greeting)</span></div>
           <div style="display:flex;gap:8px;">
             <input class="cin" id="setName" placeholder="e.g. Ada Lovelace" style="margin:0;flex:1;" maxlength="120" onkeydown="if(event.key==='Enter')saveName()">
@@ -2185,7 +2296,8 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <button type="button" id="setPwForgot" class="pw-link-sm" style="margin-top:7px;">Don't know your current password? We'll email you a reset link.</button>
             <div class="flabel">new password <span style="color:var(--muted);font-weight:400;">(at least 8 characters)</span></div>
             <div class="pw-wrap">
-              <input class="cin" id="setNewPw" type="password" autocomplete="new-password" minlength="8" required>
+              <input class="cin" id="setNewPw" type="password" autocomplete="new-password" minlength="8" required
+                     oninput="window._setPwMeter&amp;&amp;window._setPwMeter()">
               <button type="button" class="pw-eye" data-pw-toggle="setNewPw"
                       aria-pressed="false" aria-label="Show password" aria-controls="setNewPw"></button>
             </div>
@@ -2195,83 +2307,18 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
               <button type="button" class="pw-eye" data-pw-toggle="setNewPw2"
                       aria-pressed="false" aria-label="Show password" aria-controls="setNewPw2"></button>
             </div>
+            <!-- D3 item 4 · under the confirm field, above the status line. It
+                 advises; the submit below is never disabled by it. -->
+            <div class="pwm" id="setPwMeter">
+              <div class="pwm-track" aria-hidden="true"><i class="pwm-seg"></i><i class="pwm-seg"></i><i class="pwm-seg"></i><i class="pwm-seg"></i></div>
+              <span class="pwm-lab" id="setPwMeterLab" role="status" aria-live="polite"></span>
+            </div>
+            <div class="pwm-hint" id="setPwHint"></div>
             <div id="setPwStatus" style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:5px;min-height:12px;" role="status" aria-live="polite"></div>
             <button class="btn pri" type="submit">change password</button>
           </form>
         </div>
-<div class="clay pad" style="margin-bottom:14px;">
-            <div class="stitle" style="margin-bottom:10px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Data &amp; privacy</div></div></div>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;cursor:pointer;">
-              <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Mask sensitive metadata</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">hide org id, chain head &amp; anchor roots by default (reveal per-field)</div></div>
-              <span class="toggle"><input type="checkbox" id="prefHideSensitive" onchange="savePref('hide_sensitive_metadata',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
-            </label>
-          </div>
-<div class="clay pad" style="margin-bottom:14px;">
-            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Trust badge</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Embed a live, public “audited by Foxy” badge on your site. It shows aggregate status only — verified state, audited count, last-anchor freshness — never your logs or workspace id.</div>
-            <button class="btn" onclick="mintBadge()">Generate badge</button>
-            <button class="btn ghost" onclick="revokeBadge()" style="margin-left:8px;">Revoke</button>
-            <div id="badgeOut" style="margin-top:12px;display:none;"></div>
-          </div>
-<!-- D2 item 1 · the two explainer cards that stood here — "How the fingerprint
-     works" and "What Foxy stores" — are gone at the owner's request. They were
-     reference reading in a page of controls. The content-blindness claim they
-     carried is not lost; it is still made in five other places, on three pages:
-     Home's capture-coverage card ("it never reads raw prompts or responses",
-     twice), Policy ("the Judge is content-blind either way — never your prompts
-     or responses", and the Judge-key card), Export's report configuration —
-     and, closest to here, "Connect the SDK" a few cards below on this page. -->
-<div class="clay pad" style="margin-bottom:14px;">
-            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Desktop app</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Run the Foxy compliance-officer fox on your machine — it reacts to live audit events and hosts the chat copilot. Signs you in automatically from this workspace.</div>
-            <a class="btn" href="https://foxyaudit.tech/download/FoxyAudit-Setup.exe" style="text-decoration:none;display:inline-block;">Download for Windows</a>
-            <a class="btn ghost" href="https://foxyaudit.tech/download/FoxyAudit-x86_64.AppImage" style="text-decoration:none;display:inline-block;margin-left:8px;">Linux (AppImage)</a>
-            <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5;">Early build — Windows may show a SmartScreen notice (More info → Run anyway); on Linux <code>chmod +x</code> the AppImage.</div>
-          </div>
-<!-- P6b §3 · moved here from Access. window.checkSdkConnection resolves
-     #sdkCheckOut by id at call time, so it keeps working from where it is —
-     the id travels with this markup and nothing had to follow it.
-     Step 2 used to read "from '+ new key' above"; the key table is on Access
-     now, so the instruction names the page instead of pointing at a direction. -->
-<div class="clay pad" style="margin-bottom:14px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Connect the SDK</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Wrap any AI call with the decorator — only SHA-256 hashes + metadata leave your machine, never the prompt or response text.</div>
-        <div class="flabel" style="margin-top:0;">1 · install</div>
-        <div class="codebox">pip install foxy-audit</div>
-        <div class="flabel">2 · set your key (mint one under Access → “+ new key”)</div>
-        <div class="codebox">export FOXY_API_KEY=foxy_sk_your_key_here</div>
-        <div class="flabel">3 · decorate your model call</div>
-        <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.audit(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
-        <div class="btnrow" style="flex-wrap:wrap;align-items:center;">
-          <button class="btn half" onclick="checkSdkConnection(this)" style="margin-top:0;">Test connection</button>
-          <a class="btn ghost half" style="margin-top:0;text-decoration:none;" href="https://foxyaudit.tech/blog/connect-the-sdk.html" target="_blank" rel="noopener">Read the setup guide</a>
-        </div>
-        <span id="sdkCheckOut" style="font-size:11px;font-weight:700;"></span>
-      </div>
-<div class="clay pad" style="margin-bottom:14px;">
-            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Help &amp; support</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Questions, a bug, or help getting set up? We read every message.</div>
-            <a class="btn" href="mailto:foxyaudit@gmail.com" style="text-decoration:none;display:inline-block;">Email support</a>
-            <a class="btn ghost" href="https://foxyaudit.tech/#support" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;margin-left:8px;">Contact form</a>
-          </div>
-<div class="clay pad" id="teamCard" style="margin-top:14px;display:none;">
-        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" fill="#000"/></svg></span></div><div class="txt">Team — dashboard users</div></div><span class="stitle-act" onclick="addUser()">+ add auditor</span></div>
-        <div id="teamList"></div>
-      </div>
-      </section>
-
-      <section class="setsec" aria-labelledby="sec-securityfa">
-        <div class="setsec-h">
-          <span class="setsec-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#dg-lock"/></svg></span>
-          <h2 id="sec-securityfa">Security & 2FA</h2>
-        </div>
-<div class="clay pad" style="margin-bottom:14px;">
-            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Access control</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Restrict dashboard access to specific IPs / CIDRs (comma-separated). Blank = allow all. Include your own IP or you'll lock yourself out.</div>
-            <input class="cin" id="ipAllowInput" placeholder="e.g. 203.0.113.4, 10.0.0.0/24" style="margin-bottom:8px;">
-            <button class="btn" onclick="saveIpAllowlist()">Save IP allow-list</button>
-          </div>
-<div class="clay pad" style="margin-bottom:14px;">
+          <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Two-factor authentication</div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Require an emailed one-time code at sign-in for your own account. <span id="mfaState" style="font-weight:700;"></span></div>
             <div id="mfaOff" style="display:none;">
@@ -2289,12 +2336,12 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
               <button class="btn danger" onclick="mfaDisable()" style="margin-top:0;">Turn off 2FA</button>
             </div>
           </div>
-<div class="clay pad" style="margin-bottom:14px;">
+          <div class="clay pad" style="margin-bottom:14px;">
             <div class="stitle" style="margin-bottom:8px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2" width="14" height="20" rx="2" fill="#000"/><path d="M12 18h.01" stroke="var(--fox)" stroke-width="2.5" stroke-linecap="round"/></svg></span></div><div class="txt">Devices &amp; sessions</div></div><button class="btn ghost sm" onclick="logoutEverywhere()" style="margin:0;">Log out everywhere</button></div>
             <div style="font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:10px;">Active devices signed in to your account · revoke any you don't recognise.</div>
             <div id="devicesList"><div class="skel line" style="width:70%"></div><div class="skel line" style="width:55%;margin-top:8px"></div></div>
           </div>
-<div class="clay pad" style="margin-bottom:14px;">
+          <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Recent sign-ins</div>
             <div style="font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.4;">Sign-in attempts on your account, successful and failed. A sign-in you do not recognise is worth acting on — revoke the device above and change your password.</div>
             <button class="btn" onclick="loadLoginHistory('me')">Load sign-ins</button>
@@ -2306,12 +2353,38 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <div id="loginHistOut" style="margin-top:6px;font-size:11px;"></div>
             <div id="loginHistPager"></div>
           </div>
-<div class="clay pad" id="auditCard" style="margin-top:14px;display:none;">
+          <div class="clay pad" id="auditCard" style="margin-top:14px;display:none;">
         <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4z" fill="none" stroke="#000" stroke-width="2"/><path d="M8 9h8M8 13h8M8 17h5" stroke="#000" stroke-width="2" stroke-linecap="round"/></svg></span></div><div class="txt">Account activity</div></div><span class="stitle-act" onclick="loadAccountAudit()">↻ refresh</span></div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">A record of changes to keys, policy, team, and 2FA in this workspace.</div>
         <div id="auditList"><div style="font-size:11px;color:var(--muted);">loading…</div></div>
       </div>
-<div class="clay pad" id="ssoCard" style="margin-top:14px;display:none;">
+          <div class="clay pad" style="margin-bottom:14px;">
+                        <div class="prow"><div><div class="pname">Breach alerts</div><div class="pdesc">immediate notice on every breach verdict</div></div><span class="toggle"><input type="checkbox" id="prefNotifyBreach" checked onchange="savePref('notify_breach_alerts',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
+            <div class="prow"><div><div class="pname">Weekly digest</div><div class="pdesc">summary of activity every Monday</div></div><span class="toggle"><input type="checkbox" id="prefNotifyDigest" checked onchange="savePref('notify_weekly_digest',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
+            <div class="prow"><div><div class="pname">Key rotation reminders</div><div class="pdesc">nudge after 90 days unrotated</div></div><span class="toggle"><input type="checkbox" id="prefNotifyRotation" onchange="savePref('notify_key_rotation_reminders',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
+          </div>
+        </div>
+      </details>
+      <details class="sgrp" id="sgrp-team">
+        <summary class="sgrp-h">
+          <span class="sgrp-n" aria-hidden="true">2</span>
+          <h2>Team &amp; access</h2>
+          <span class="sgrp-sub">Who can get into this workspace</span>
+          <span class="sgrp-c" data-sgrp-count></span>
+          <svg class="sgrp-v" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>
+        </summary>
+        <div class="sgrp-b">
+          <div class="clay pad" id="teamCard" style="margin-top:14px;display:none;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" fill="#000"/></svg></span></div><div class="txt">Team — dashboard users</div></div><span class="stitle-act" onclick="addUser()">+ add teammate</span></div>
+        <div id="teamList"></div>
+      </div>
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Access control</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Restrict dashboard access to specific IPs / CIDRs (comma-separated). Blank = allow all. Include your own IP or you'll lock yourself out.</div>
+            <input class="cin" id="ipAllowInput" placeholder="e.g. 203.0.113.4, 10.0.0.0/24" style="margin-bottom:8px;">
+            <button class="btn" onclick="saveIpAllowlist()">Save IP allow-list</button>
+          </div>
+          <div class="clay pad" id="ssoCard" style="margin-top:14px;display:none;">
         <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/><path d="M9 12l2 2 4-4" stroke="var(--fox)" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Enterprise SSO (OIDC)</div></div><span class="stitle-act" id="ssoStatus"></span></div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Route users whose email matches your domain to your identity provider. Works with any OIDC IdP (Okta, Entra ID, Auth0, Google Workspace). New users join this workspace as members.</div>
         <div class="flabel" style="margin-top:0;">email domain</div><input class="cin" id="ssoDomain" placeholder="acme.com">
@@ -2323,37 +2396,18 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
         <button class="btn pri" onclick="saveSso()" style="margin-top:0;">Save SSO</button>
         <button class="btn ghost" onclick="removeSso()" style="margin-top:0;margin-left:8px;">Remove</button>
       </div>
-      </section>
-
-      <section class="setsec" aria-labelledby="sec-notifications">
-        <div class="setsec-h">
-          <span class="setsec-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#dg-bell"/></svg></span>
-          <h2 id="sec-notifications">Notifications</h2>
         </div>
-<div class="clay pad" style="margin-bottom:14px;">
-                        <div class="prow"><div><div class="pname">Breach alerts</div><div class="pdesc">immediate notice on every breach verdict</div></div><span class="toggle"><input type="checkbox" id="prefNotifyBreach" checked onchange="savePref('notify_breach_alerts',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
-            <div class="prow"><div><div class="pname">Weekly digest</div><div class="pdesc">summary of activity every Monday</div></div><span class="toggle"><input type="checkbox" id="prefNotifyDigest" checked onchange="savePref('notify_weekly_digest',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
-            <div class="prow"><div><div class="pname">Key rotation reminders</div><div class="pdesc">nudge after 90 days unrotated</div></div><span class="toggle"><input type="checkbox" id="prefNotifyRotation" onchange="savePref('notify_key_rotation_reminders',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span></div>
-          </div>
-<div class="clay pad" id="webhookCard" style="margin-top:14px;display:none;">
-        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M7 8a5 5 0 019 3M17 16a5 5 0 01-9-3" stroke="#000" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Outbound webhooks</div></div><span class="stitle-act" onclick="loadWebhooks()">↻ refresh</span></div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">POST a signed JSON event to your endpoint when an interaction is graded or breaches. Each request carries an <span style="font-family:var(--mono);">X-Foxy-Signature</span> HMAC you verify with the signing secret.</div>
-        <div id="webhookList" style="margin-bottom:12px;"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <input class="cin" id="whUrl" type="url" placeholder="https://yourapp.com/foxy-events" style="margin:0;flex:1;min-width:180px;">
-          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="whEvBreach" checked> breach</label>
-          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="whEvGraded"> graded</label>
-          <button class="btn pri sm" style="margin:0;" onclick="addWebhook()">Add</button>
-        </div>
-      </div>
-      </section>
-
-      <section class="setsec" aria-labelledby="sec-judgepolicy">
-        <div class="setsec-h">
-          <span class="setsec-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#dg-policy"/></svg></span>
-          <h2 id="sec-judgepolicy">Judge & policy</h2>
-        </div>
-<div class="clay pad">
+      </details>
+      <details class="sgrp" id="sgrp-policy">
+        <summary class="sgrp-h">
+          <span class="sgrp-n" aria-hidden="true">3</span>
+          <h2>Policy &amp; grading</h2>
+          <span class="sgrp-sub">Read often, changed rarely</span>
+          <span class="sgrp-c" data-sgrp-count></span>
+          <svg class="sgrp-v" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>
+        </summary>
+        <div class="sgrp-b">
+          <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#000"/></svg></span></div><div class="txt">Judge sensitivity</div></div></div>
           <div class="flabel" style="margin-top:0;">judge sensitivity</div>
           <input id="polMaxTokens" type="hidden" value="50000">
@@ -2376,7 +2430,46 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div class="lvbar" aria-hidden="true"><i id="polConfidenceBar"></i></div>
           <div class="lvdesc" id="polConfidenceDesc">—</div>
         </div>
-<div class="clay pad">
+          <div class="clay pad">
+          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/><path d="M9 12l2 2 4-4" stroke="var(--fox)" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Before the call — what the SDK does</div></div></div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:10px;">
+            Applies <strong>before</strong> a prompt reaches a model, on your own machines, inside
+            the SDK. This is the only setting on this page that can stop a call from happening.
+          </div>
+          <div class="flabel" style="margin-top:0;">workspace SDK enforcement</div>
+          <div class="lvseg" id="polSdkSeg" role="radiogroup" aria-label="Workspace SDK enforcement">
+            <button type="button" role="radio" aria-checked="true" data-val="">Not set</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="low" data-val="observe">Observe</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="medium" data-val="redact">Redact</button>
+            <button type="button" role="radio" aria-checked="false" data-lv="high" data-val="block">Block</button>
+          </div>
+          <div class="lvbar" aria-hidden="true"><i id="polSdkBar"></i></div>
+          <div class="lvdesc" id="polSdkDesc">—</div>
+          <details class="polgroup" style="margin-top:12px;">
+            <summary style="font-size:11px;font-weight:700;cursor:pointer;">How this combines with your code</summary>
+            <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:8px;">
+              Enforcement really lives in your code — the <span style="font-family:var(--mono);">mode=</span>
+              argument on <span style="font-family:var(--mono);">@foxy.audit()</span>. This setting
+              is resolved against it on every call, and it can only ever do three things:
+              <ul style="margin:8px 0 0 16px;padding:0;">
+                <li style="margin-bottom:5px;"><strong>Tighten to block.</strong> Set Block here and every
+                  decorated call blocks, whatever the code says.</li>
+                <li style="margin-bottom:5px;"><strong>Fill a gap.</strong> Where the code passes no
+                  <span style="font-family:var(--mono);">mode=</span> and no
+                  <span style="font-family:var(--mono);">FOXY_MODE</span>, this supplies the default.</li>
+                <li style="margin-bottom:5px;"><strong>Nothing else.</strong> It can never weaken what the
+                  code asked for — code that says block keeps blocking — and it can never introduce
+                  redaction into code that did not ask for it. Blocking raises an error a developer
+                  can see; redaction silently rewrites the prompt, and nobody finds out.</li>
+              </ul>
+              <div style="margin-top:8px;">A deployment can opt out entirely with
+              <span style="font-family:var(--mono);">FOXY_ORG_POLICY=off</span>, which only ever
+              lands on what the code already said. Changes reach running processes within five
+              minutes.</div>
+            </div>
+          </details>
+        </div>
+          <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span></div><div class="txt">After grading — what happens to a verdict</div></div></div>
           <div style="font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:10px;">
             Applies <strong>after</strong> the AI judge has graded an interaction that already
@@ -2437,46 +2530,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             SDK enforcement setting below.</div>
           </div>
         </div>
-<div class="clay pad">
-          <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/><path d="M9 12l2 2 4-4" stroke="var(--fox)" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Before the call — what the SDK does</div></div></div>
-          <div style="font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:10px;">
-            Applies <strong>before</strong> a prompt reaches a model, on your own machines, inside
-            the SDK. This is the only setting on this page that can stop a call from happening.
-          </div>
-          <div class="flabel" style="margin-top:0;">workspace SDK enforcement</div>
-          <div class="lvseg" id="polSdkSeg" role="radiogroup" aria-label="Workspace SDK enforcement">
-            <button type="button" role="radio" aria-checked="true" data-val="">Not set</button>
-            <button type="button" role="radio" aria-checked="false" data-lv="low" data-val="observe">Observe</button>
-            <button type="button" role="radio" aria-checked="false" data-lv="medium" data-val="redact">Redact</button>
-            <button type="button" role="radio" aria-checked="false" data-lv="high" data-val="block">Block</button>
-          </div>
-          <div class="lvbar" aria-hidden="true"><i id="polSdkBar"></i></div>
-          <div class="lvdesc" id="polSdkDesc">—</div>
-          <details class="polgroup" style="margin-top:12px;">
-            <summary style="font-size:11px;font-weight:700;cursor:pointer;">How this combines with your code</summary>
-            <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:8px;">
-              Enforcement really lives in your code — the <span style="font-family:var(--mono);">mode=</span>
-              argument on <span style="font-family:var(--mono);">@foxy.audit()</span>. This setting
-              is resolved against it on every call, and it can only ever do three things:
-              <ul style="margin:8px 0 0 16px;padding:0;">
-                <li style="margin-bottom:5px;"><strong>Tighten to block.</strong> Set Block here and every
-                  decorated call blocks, whatever the code says.</li>
-                <li style="margin-bottom:5px;"><strong>Fill a gap.</strong> Where the code passes no
-                  <span style="font-family:var(--mono);">mode=</span> and no
-                  <span style="font-family:var(--mono);">FOXY_MODE</span>, this supplies the default.</li>
-                <li style="margin-bottom:5px;"><strong>Nothing else.</strong> It can never weaken what the
-                  code asked for — code that says block keeps blocking — and it can never introduce
-                  redaction into code that did not ask for it. Blocking raises an error a developer
-                  can see; redaction silently rewrites the prompt, and nobody finds out.</li>
-              </ul>
-              <div style="margin-top:8px;">A deployment can opt out entirely with
-              <span style="font-family:var(--mono);">FOXY_ORG_POLICY=off</span>, which only ever
-              lands on what the code already said. Changes reach running processes within five
-              minutes.</div>
-            </div>
-          </details>
-        </div>
-<div class="clay pad">
+          <div class="clay pad">
           <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 9.8a5.8 5.8 0 10-11.6 0c0 5.6-2.2 7-2.2 7h16s-2.2-1.4-2.2-7z"/><path d="M13.7 20a2 2 0 01-3.4 0"/></svg></span></div><div class="txt">Where breach alerts go</div></div></div>
           <details class="polgroup" open style="margin-top:0;border-top:0;">
             <summary style="display:none;">Alerts</summary>
@@ -2499,24 +2553,115 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <input class="cin" id="polNotifyWebhook" type="url" placeholder="https://yourco.com/foxy-hook">
           </details>
         </div>
-          <div class="clay pad" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div class="clay pad" data-nocount style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <span id="setPolicyStatus" style="font-family:var(--mono);font-size:10px;color:var(--muted);"></span>
             <button class="btn pri sm" type="button" style="margin:0;" onclick="savePolicy()">Save judge settings</button>
           </div>
-      </section>
-
-      <section class="setsec" aria-labelledby="sec-dangerzone">
-        <div class="setsec-h">
-          <span class="setsec-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#dg-threats"/></svg></span>
-          <h2 id="sec-dangerzone">Danger zone</h2>
         </div>
-<div class="clay pad">
+      </details>
+      <details class="sgrp" id="sgrp-connect">
+        <summary class="sgrp-h">
+          <span class="sgrp-n" aria-hidden="true">4</span>
+          <h2>Connect</h2>
+          <span class="sgrp-sub">Set up once per surface</span>
+          <span class="sgrp-c" data-sgrp-count></span>
+          <svg class="sgrp-v" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>
+        </summary>
+        <div class="sgrp-b">
+          <div class="clay pad" style="margin-bottom:14px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Connect the SDK</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Wrap any AI call with the decorator — only SHA-256 hashes + metadata leave your machine, never the prompt or response text.</div>
+        <div class="flabel" style="margin-top:0;">1 · install</div>
+        <div class="codebox">pip install foxy-audit</div>
+        <div class="flabel">2 · set your key (mint one under Access → “+ new key”)</div>
+        <div class="codebox">export FOXY_API_KEY=foxy_sk_your_key_here</div>
+        <div class="flabel">3 · decorate your model call</div>
+        <div class="codebox">from foxy_audit import FoxyClient<br>foxy = FoxyClient()&nbsp;&nbsp;# reads FOXY_API_KEY<br><br>@foxy.audit(policy="chat", agent="gpt-4o")<br>def ask(prompt):<br>&nbsp;&nbsp;&nbsp;&nbsp;return llm(prompt)</div>
+        <div class="btnrow" style="flex-wrap:wrap;align-items:center;">
+          <button class="btn half" onclick="checkSdkConnection(this)" style="margin-top:0;">Test connection</button>
+          <a class="btn ghost half" style="margin-top:0;text-decoration:none;" href="https://foxyaudit.tech/blog/connect-the-sdk.html" target="_blank" rel="noopener">Read the setup guide</a>
+        </div>
+        <span id="sdkCheckOut" style="font-size:11px;font-weight:700;"></span>
+      </div>
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Desktop app</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Run the Foxy compliance-officer fox on your machine — it reacts to live audit events and hosts the chat copilot. Signs you in automatically from this workspace.</div>
+            <a class="btn" href="https://foxyaudit.tech/download/FoxyAudit-Setup.exe" style="text-decoration:none;display:inline-block;">Download for Windows</a>
+            <a class="btn ghost" href="https://foxyaudit.tech/download/FoxyAudit-x86_64.AppImage" style="text-decoration:none;display:inline-block;margin-left:8px;">Linux (AppImage)</a>
+            <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5;">Early build — Windows may show a SmartScreen notice (More info → Run anyway); on Linux <code>chmod +x</code> the AppImage.</div>
+          </div>
+          <div class="clay pad" id="webhookCard" style="margin-top:14px;display:none;">
+        <div class="stitle"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M7 8a5 5 0 019 3M17 16a5 5 0 01-9-3" stroke="#000" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></div><div class="txt">Outbound webhooks</div></div><span class="stitle-act" onclick="loadWebhooks()">↻ refresh</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">POST a signed JSON event to your endpoint when an interaction is graded or breaches. Each request carries an <span style="font-family:var(--mono);">X-Foxy-Signature</span> HMAC you verify with the signing secret.</div>
+        <div id="webhookList" style="margin-bottom:12px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input class="cin" id="whUrl" type="url" placeholder="https://yourapp.com/foxy-events" style="margin:0;flex:1;min-width:180px;">
+          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="whEvBreach" checked> breach</label>
+          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="whEvGraded"> graded</label>
+          <button class="btn pri sm" style="margin:0;" onclick="addWebhook()">Add</button>
+        </div>
+      </div>
+        </div>
+      </details>
+      <details class="sgrp" id="sgrp-share">
+        <summary class="sgrp-h">
+          <span class="sgrp-n" aria-hidden="true">5</span>
+          <h2>Share &amp; verify</h2>
+          <span class="sgrp-sub">What other people can see</span>
+          <span class="sgrp-c" data-sgrp-count></span>
+          <svg class="sgrp-v" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>
+        </summary>
+        <div class="sgrp-b">
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Trust badge</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Embed a live, public “audited by Foxy” badge on your site. It shows aggregate status only — verified state, audited count, last-anchor freshness — never your logs or workspace id.</div>
+            <button class="btn" onclick="mintBadge()">Generate badge</button>
+            <button class="btn ghost" onclick="revokeBadge()" style="margin-left:8px;">Revoke</button>
+            <div id="badgeOut" style="margin-top:12px;display:none;"></div>
+          </div>
+        </div>
+      </details>
+      <details class="sgrp" id="sgrp-data">
+        <summary class="sgrp-h">
+          <span class="sgrp-n" aria-hidden="true">6</span>
+          <h2>Data &amp; privacy</h2>
+          <span class="sgrp-sub">Kept last on purpose</span>
+          <span class="sgrp-c" data-sgrp-count></span>
+          <svg class="sgrp-v" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>
+        </summary>
+        <div class="sgrp-b">
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div class="stitle" style="margin-bottom:10px;"><div class="stitle-l"><div class="ic-chip sm"><span class="glyph"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 6-4 9-8 11-4-2-8-5-8-11V5z" fill="#000"/></svg></span></div><div class="txt">Data &amp; privacy</div></div></div>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;cursor:pointer;">
+              <div style="min-width:0;"><div style="font-weight:700;font-size:12.5px;">Mask sensitive metadata</div><div style="font-size:10.5px;color:var(--muted);line-height:1.4;">hide org id, chain head &amp; anchor roots by default (reveal per-field)</div></div>
+              <span class="toggle"><input type="checkbox" id="prefHideSensitive" onchange="savePref('hide_sensitive_metadata',this.checked)"><div class="ttrack" onclick="var cb=this.previousElementSibling;cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));"></div></span>
+            </label>
+          </div>
+          <div class="clay pad">
             <div style="font-weight:700;font-size:13px;margin-bottom:11px;color:var(--breach-bg);">Danger zone</div>
             <button class="btn ghost" onclick="exportWorkspaceData()" style="margin-top:0;">export ledger (CSV)</button>
             <button class="btn ghost" onclick="downloadAccountExport(this)" style="margin-top:0;margin-left:8px;">full account export (JSON)</button>
             <button class="btn danger" onclick="deleteWorkspace()">delete workspace</button>
           </div>
-      </section>
+        </div>
+      </details>
+      <details class="sgrp" id="sgrp-help">
+        <summary class="sgrp-h">
+          <span class="sgrp-n" aria-hidden="true">7</span>
+          <h2>Help &amp; support</h2>
+          <span class="sgrp-sub">Not a setting — a way out of the page</span>
+          <span class="sgrp-c" data-sgrp-count></span>
+          <svg class="sgrp-v" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-chev"/></svg>
+        </summary>
+        <div class="sgrp-b">
+          <div class="clay pad" style="margin-bottom:14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Help &amp; support</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5;">Questions, a bug, or help getting set up? We read every message.</div>
+            <a class="btn" href="mailto:foxyaudit@gmail.com" style="text-decoration:none;display:inline-block;">Email support</a>
+            <a class="btn ghost" href="https://foxyaudit.tech/#support" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;margin-left:8px;">Contact form</a>
+          </div>
+        </div>
+      </details>
       </div>
     </div>
 
@@ -4576,15 +4721,23 @@ async function loadLoginHistory(scope){
   }
   async function loadTeam(){
     const box=$('teamList'); if(!box)return;
-    try{ const r=await api('/v1/auth/users'); if(!r.ok){ box.innerHTML=''; return; }
-      const users=await r.json(); box.innerHTML=Array.isArray(users)?users.map(userRow).join(''):'';
-    }catch(e){}
+    // D3 item 2b · the states this used to render as an identical blank box.
+    // A workspace always contains at least you, so an empty list is a signal,
+    // not a resting state — saying nothing made a failed fetch look like an
+    // empty team.
+    const note=m=>'<div style="font-size:11px;color:var(--muted);padding:6px 0;">'+m+'</div>';
+    try{ const r=await api('/v1/auth/users');
+      if(!r.ok){ box.innerHTML=note('Could not load the team ('+r.status+').'); return; }
+      const users=await r.json();
+      box.innerHTML=(Array.isArray(users)&&users.length)?users.map(userRow).join('')
+        :note('No teammates yet — add one to share this workspace.');
+    }catch(e){ box.innerHTML=note('Could not reach the server.'); }
   }
   window.addUser=async function(){
     const got=await foxConfirm({
       title:'Invite someone to this workspace', confirm:'Send invite',
       body:'A member can read the ledger, run verifications and export. An admin can also change policy and keys.',
-      fields:[{name:'email', label:'email', placeholder:'auditor@firm.com'},
+      fields:[{name:'email', label:'email', placeholder:'teammate@yourco.com'},
               {name:'role', label:'role — admin or member', value:'member'}]});
     if(got===null||!String(got.email||'').trim())return;
     const email=String(got.email).trim();
@@ -4593,7 +4746,7 @@ async function loadLoginHistory(scope){
       if(!r.ok){ toast('Add failed — '+await errText(r)); return; }
       const u=await r.json();
       if(u.invited){ toast('Invite email sent to '+u.email); }
-      else{ revealSecret('Temp password · '+u.email, u.temp_password); toast('Auditor added'); }
+      else{ revealSecret('Temp password · '+u.email, u.temp_password); toast('Teammate added'); }
       loadTeam();
     }catch(e){ toast('Could not reach the server'); }
   };
@@ -4665,6 +4818,35 @@ async function loadLoginHistory(scope){
       await navigator.credentials.store(new window.PasswordCredential({id:id,password:password}));
     }catch(e){ /* manager declined or unsupported — the form submit still signals it */ }
   }
+  /* ── D3 item 4 · the strength readout ──────────────────────────────────
+     Ported verbatim from foxy-adminpage/index.html (P2) so a password scores
+     the same on both surfaces. A heuristic, not a verdict: length is worth
+     four points and character variety three, because length is the lever that
+     actually helps and the one the hint names. It gates nothing. */
+  const _PW_STATES=['weak','fair','good','strong'];
+  function _pwScore(v){
+    v=v||''; if(!v)return -1;
+    if(/^(.)\1*$/.test(v))return 0;                 // "aaaaaaaa" is one character, typed often
+    let p=0;
+    [8,12,16,20].forEach(n=>{ if(v.length>=n)p++; });
+    let cls=0;
+    [/[a-z]/,/[A-Z]/,/[0-9]/,/[^A-Za-z0-9]/].forEach(re=>{ if(re.test(v))cls++; });
+    p+=cls-1;                                       // one alphabet earns nothing
+    return p<=1?0:p<=3?1:p<=5?2:3;
+  }
+  let _pwLastScore=-2;
+  window._setPwMeter=function(){
+    const inp=$('setNewPw'), box=$('setPwMeter'), lab=$('setPwMeterLab'), hint=$('setPwHint');
+    if(!inp||!box)return;
+    const v=inp.value||'', s=_pwScore(v);
+    box.className='pwm'+(s<0?'':' s'+s);
+    // Only rewrite the live region when the bucket changes: a polite region
+    // that fires on every keystroke is unusable with a screen reader on.
+    if(s!==_pwLastScore){ if(lab)lab.textContent=s<0?'':'strength · '+_PW_STATES[s]; _pwLastScore=s; }
+    if(hint)hint.textContent=!v?''
+      :v.length<8?'at least 8 characters'
+      :s<2?'length helps most — 12+ characters, or add a symbol':'';
+  };
   window.changePassword=async function(){
     const cur=$('setCurPw'), nw=$('setNewPw'), nw2=$('setNewPw2'), st=$('setPwStatus');
     if(!cur||!nw||!nw2)return;
@@ -4678,12 +4860,41 @@ async function loadLoginHistory(scope){
       if(!r.ok){ const m=await errText(r); say('Change failed — '+m,true); toast('Change failed — '+m); return; }
       await _storeCredential(($('pwUser')||{}).value||($('setEmail')||{}).value||'',nw.value);
       cur.value=''; nw.value=''; nw2.value='';
+      window._setPwMeter();          // the fields are empty; the bars must say so
       say('Password changed. Make sure your password manager saved the new one.');
       toast('Password changed');
     }catch(e){ say('Could not reach the server',true); toast('Could not reach the server'); }
   };
   const _pwForm=$('pwForm');
   if(_pwForm)_pwForm.addEventListener('submit',function(e){ e.preventDefault(); window.changePassword(); });
+
+  /* ── D3 item 2c · the settings count on each disclosure row ─────────────
+     Counted from the DOM, not written into the markup. Two cards are hidden
+     unless the workspace has them — #ssoCard and #webhookCard are revealed by
+     the admin check during boot — so a hardcoded number would tell a member
+     the section holds three settings when they can reach one. Recounted every
+     time Settings is opened, which is after that reveal has happened.
+
+     The judge save bar carries data-nocount: it is the section's submit row,
+     not a setting, and counting it would claim five where four exist. */
+  window.foxCountSettings=function(){
+    document.querySelectorAll('.sgrp').forEach(function(grp){
+      var slot=grp.querySelector('[data-sgrp-count]'); if(!slot)return;
+      var n=0;
+      grp.querySelectorAll('.sgrp-b > .clay').forEach(function(card){
+        if(card.hasAttribute('data-nocount'))return;
+        if((card.style.display||'')==='none')return;
+        n++;
+      });
+      slot.textContent=n+(n===1?' setting':' settings');
+    });
+  };
+  if(typeof window.go==='function'){
+    const _goCount=window.go;
+    window.go=function(p,el){ _goCount(p,el); if(p==='settings')window.foxCountSettings(); };
+  }
+  if(document.readyState!=='loading')window.foxCountSettings();
+  else document.addEventListener('DOMContentLoaded',window.foxCountSettings);
 
   // ── lazy-load each page's live data on navigation ──
   const _go=window.go;

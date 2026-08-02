@@ -30,8 +30,11 @@ def html() -> str:
 def account_card(html) -> str:
     """Just the Account & identity card — assertions must not pass because of
     the sign-in gate's own password fields somewhere else in the file."""
+    # D3 turned the five <section>s into seven <details>. The heading id this
+    # anchors on moved onto the summary row and kept its name deliberately, so
+    # the slice is the same region bounded by the element that replaced it.
     start = html.index('id="sec-accountidentity"')
-    return html[start:html.index("</section>", start)]
+    return html[start:html.index("</details>", start)]
 
 
 # ══ the avatar block ═══════════════════════════════════════════════════════
