@@ -263,7 +263,23 @@ body{
   padding:22px 0 18px;
   position:fixed;top:0;left:0;bottom:0;z-index:300;
   gap:6px;
+  /* The rail is a scrollport, not a spring. Pinned top:0;bottom:0 with no
+     overflow, a short viewport left the twelve children nowhere to go and flex
+     compressed them into slivers — a HEIGHT failure, not a width one. Below
+     820px WIDE the rail is already a drawer, so this only ever bit between
+     "wide enough for the rail" and "tall enough for its items" — the column
+     measures 846px, so any viewport shorter than that. */
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
+  scrollbar-width:thin;scrollbar-color:var(--muted2) transparent;
 }
+/* Older WebKit ignores scrollbar-width/-color; same 6px thumb, same token, so
+   the two themes stay in step without a second colour to maintain. */
+.dock::-webkit-scrollbar{width:6px;}
+.dock::-webkit-scrollbar-track{background:transparent;}
+.dock::-webkit-scrollbar-thumb{background:var(--muted2);border-radius:3px;}
+/* Without this the scrollport changes nothing: flex would still shrink the
+   items to fit rather than let the column overflow. */
+.dock-mark,.dock-item,.dock-foot{flex-shrink:0;}
 .dock-mark{
   width:48px;height:48px;border-radius:16px;background:var(--fox);
   box-shadow:var(--raise-sm);
@@ -2189,28 +2205,14 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
             <button class="btn ghost" onclick="revokeBadge()" style="margin-left:8px;">Revoke</button>
             <div id="badgeOut" style="margin-top:12px;display:none;"></div>
           </div>
-<!-- P6b §2 · moved here from Verify. It explains how the proof is CONSTRUCTED,
-     which is reference material, not part of running a check — it belongs with
-     the trust badge and "What Foxy stores", not above the button you came to
-     press. Static markup, no JS depends on it. -->
-<details class="clay pad" style="margin-bottom:14px;">
-            <summary style="font-weight:700;font-size:11.5px;cursor:pointer;">How the fingerprint works <span style="color:var(--muted);font-weight:500;">· advanced</span></summary>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin:10px 0;">For current SDK capture, raw content stays local while customer-keyed commitments are sent to Foxy. The backend canonically serializes those commitments with operational metadata and the preceding chain hash. Altering a stored record breaks verification; the full-ledger check on Verify also detects gaps.</div>
-            <div class="codebox">
-              prompt_commitment &nbsp;= HMAC-SHA256(customer_key, canonical_prompt)<br>
-              response_commitment = HMAC-SHA256(customer_key, canonical_response)<br>
-              chain_hash &nbsp;= SHA256(canonical_record + previous_chain_hash)
-            </div>
-            <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:10px;">For independent offline proof, export your ledger and run <code>python verifier/foxy_verify.py foxy-audit-logs.json</code>. Known-content checks require your customer-held commitment key and an events sidecar; neither is sent to Foxy.</div>
-          </details>
-<div class="clay pad" style="margin-bottom:14px;">
-            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">What Foxy stores</div>
-            <div style="font-size:11px;color:var(--muted);line-height:1.65;">
-              <div style="display:flex;gap:8px;margin-bottom:7px;"><span style="color:var(--safe-bg);font-weight:900;">✓</span><div><b>Stored:</b> per-interaction SHA-256 / customer-keyed HMAC commitments, a token count, your policy tag + agent label, the Judge verdict, and the tamper-evident chain hash.</div></div>
-              <div style="display:flex;gap:8px;margin-bottom:7px;"><span style="color:var(--breach-bg);font-weight:900;">✕</span><div><b>Never stored or transmitted:</b> your raw prompts or responses. They are hashed locally by the SDK and discarded — Foxy never receives them.</div></div>
-              <div style="display:flex;gap:8px;"><span style="color:var(--fox2);font-weight:900;">↗</span><div>Anchoring publishes only a chain-head hash to a public blockchain — no content, no workspace identity. Export or delete your data anytime from the danger zone below.</div></div>
-            </div>
-          </div>
+<!-- D2 item 1 · the two explainer cards that stood here — "How the fingerprint
+     works" and "What Foxy stores" — are gone at the owner's request. They were
+     reference reading in a page of controls. The content-blindness claim they
+     carried is not lost; it is still made in five other places, on three pages:
+     Home's capture-coverage card ("it never reads raw prompts or responses",
+     twice), Policy ("the Judge is content-blind either way — never your prompts
+     or responses", and the Judge-key card), Export's report configuration —
+     and, closest to here, "Connect the SDK" a few cards below on this page. -->
 <div class="clay pad" style="margin-bottom:14px;">
             <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Desktop app</div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Run the Foxy compliance-officer fox on your machine — it reacts to live audit events and hosts the chat copilot. Signs you in automatically from this workspace.</div>
@@ -5678,20 +5680,10 @@ async function loadLoginHistory(scope){
     .livedot.off{animation:livefade 2.4s ease-in-out infinite;}
   }
   @keyframes livefade{0%,100%{opacity:1;}50%{opacity:.4;}}
-  /* global activity feed */
-  .afeed{display:flex;flex-direction:column;}
-  .aitem{display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:2px dashed var(--line);}
-  .aitem:last-child{border-bottom:none;}
-  .aic{width:28px;height:28px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--surf2);color:var(--muted);}
-  .aic svg{width:15px;height:15px;}
-  .aic.login{background:rgba(61,220,132,.14);color:#1f9d57;}
-  .aic.danger{background:rgba(255,77,77,.13);color:var(--breach-bg);}
-  .aic.key{background:rgba(255,122,46,.15);color:var(--fox2);}
-  .atxt{flex:1;min-width:0;}
-  .atxt .at-t{font-size:12px;font-weight:700;color:var(--ink);}
-  .atxt .at-s{font-size:9.5px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .awhen{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0;}
-  @media(prefers-reduced-motion:no-preference){ .aitem{animation:afade .22s ease both;} @keyframes afade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}} }
+  /* D2 item 1 · the .afeed/.aitem/.aic/.atxt/.awhen rules that lived here dressed
+     the home "Recent activity" card, which is gone. afade survives because the
+     shortcuts overlay below borrows it. */
+  @media(prefers-reduced-motion:no-preference){ @keyframes afade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}} }
   /* keyboard shortcuts overlay */
   #shortcutsOverlay{display:none;position:fixed;inset:0;z-index:10001;background:rgba(6,5,4,.6);align-items:center;justify-content:center;padding:20px;}
   #shortcutsOverlay.on{display:flex;}
@@ -5737,7 +5729,6 @@ async function loadLoginHistory(scope){
   'use strict';
   var $=function(id){return document.getElementById(id);};
   var api=function(p,o){return fetch(p,Object.assign({credentials:'same-origin'},o||{}));};
-  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
   /* ── relative, live-updating timestamps ── */
   function rel(iso){
@@ -5784,86 +5775,11 @@ async function loadLoginHistory(scope){
   window.addEventListener('online',pingHealth);
   window.addEventListener('offline',function(){ setLive(false); });
 
-  /* ── global activity feed (account audit + org login events) ── */
-  var LBL={'key.create':'Created an API key','key.revoke':'Revoked an API key','key.regenerate':'Regenerated the API key',
-    'policy.update':'Updated the policy','member.role_change':'Changed a member role','member.enable':'Re-enabled a member',
-    'member.disable':'Disabled a member','mfa.enable':'Enabled two-factor','mfa.disable':'Disabled two-factor',
-    'profile.update':'Updated the profile','preferences.update':'Updated preferences','session.revoke':'Revoked a device session',
-    'export.create':'Started a compliance export'};
-  var IC={
-    login:'<svg viewBox="0 0 24 24" fill="none"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    key:'<svg viewBox="0 0 24 24" fill="none"><circle cx="8" cy="15" r="4" stroke="currentColor" stroke-width="2"/><path d="M10.8 12.2 20 3m-3 0 3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    danger:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    gear:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
-  };
-  function kindFor(action){
-    action=action||'';
-    if(action.indexOf('key.')===0)return 'key';
-    if(action.indexOf('disable')>=0||action.indexOf('revoke')>=0||action.indexOf('breach')>=0)return 'danger';
-    return 'gear';
-  }
-  function merge(audit,logins){
-    var out=[];
-    (audit||[]).forEach(function(a){
-      var k=kindFor(a.action);
-      out.push({when:a.created_at,kind:k,cls:k,title:LBL[a.action]||a.action||'Account change',
-        sub:(a.target?(a.target+' · '):'')+(a.actor_email||'')});
-    });
-    (logins||[]).forEach(function(l){
-      out.push({when:l.created_at,kind:'login',cls:l.success?'login':'danger',
-        title:l.success?'Signed in':'Failed sign-in attempt',
-        sub:(l.email||'')+(l.ip?(' · '+l.ip):'')});
-    });
-    out.sort(function(x,y){ return (new Date(y.when).getTime()||0)-(new Date(x.when).getTime()||0); });
-    return out;
-  }
-  // §3 · the audit log is the seventh scrolling surface. It used to hard-cut at
-  // the newest 30 with nothing to say so — the rest of an org's history was
-  // simply unreachable from the UI.
-  var _feedPage={page:1,size:20};
-  function renderFeed(box,list){
-    if(!list.length){ box.innerHTML='<div style="padding:22px 6px;text-align:center;color:var(--muted);font-size:11.5px;">No account activity yet — key changes and sign-ins show up here as they happen.</div>'; return; }
-    var _slice=list;
-    if(window.foxPageSlice){
-      var host=document.createElement('div');
-      _slice=window.foxPageSlice(list,_feedPage,host,function(){ renderFeed(box,list); },'Account activity pages');
-      box.__pagerHost=host;
-    }
-    box.innerHTML='<div class="afeed">'+_slice.map(function(it){
-      return '<div class="aitem"><div class="aic '+it.cls+'">'+(IC[it.kind]||IC.gear)+'</div>'
-        +'<div class="atxt"><div class="at-t">'+esc(it.title)+'</div><div class="at-s">'+esc(it.sub)+'</div></div>'
-        +'<span class="awhen" data-ago="'+esc(it.when||'')+'">'+esc(rel(it.when))+'</span></div>';
-    }).join('')+'</div>';
-    // the pager was rendered into a detached node before innerHTML replaced the
-    // box's children, so re-attach it afterwards
-    if(box.__pagerHost&&box.__pagerHost.firstChild)box.appendChild(box.__pagerHost);
-  }
-  var _busy=false;
-  window.loadGlobalActivity=function(){
-    var box=$('homeActivityFeed'); if(!box||_busy)return;
-    _busy=true;
-    if(window.foxSkel)window.foxSkel(box,{type:'rows',rows:5});
-    Promise.all([
-      api('/v1/account/audit?limit=50').then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}),
-      api('/v1/auth/login-history').then(function(r){return r.ok?r.json():[];}).catch(function(){return [];})
-    ]).then(function(res){
-      renderFeed(box,merge(res[0],res[1]));
-      var st=$('homeActivityStamp'); if(st){ st.setAttribute('data-ago',new Date().toISOString()); st.textContent='updated just now'; }
-      _busy=false;
-    },function(){ box.innerHTML='<div style="padding:20px 6px;text-align:center;color:var(--muted);font-size:11.5px;">Could not load activity.</div>'; _busy=false; });
-  };
-  function injectHomeCard(){
-    var pd=$('page-dashboard'); if(!pd||$('homeActivityCard'))return;
-    pd.insertAdjacentHTML('beforeend',
-      '<div class="clay pad" id="homeActivityCard" style="margin-top:18px;">'
-      +'<div class="stitle" style="margin-bottom:10px;"><div class="stitle-l">'
-      +'<div class="ic-chip sm"><span class="glyph">'+IC.gear+'</span></div>'
-      +'<div class="txt">Recent activity</div></div>'
-      +'<span class="stitle-act" role="button" tabindex="0" onclick="window.loadGlobalActivity&&window.loadGlobalActivity()">↻ refresh</span></div>'
-      +'<div id="homeActivityFeed"></div>'
-      +'<div style="margin-top:9px;font-size:9px;color:var(--muted);font-family:var(--mono);"><span id="homeActivityStamp" data-ago=""></span></div>'
-      +'</div>');
-  }
+  /* D2 item 1 · the home "Recent activity" card is gone, and with it the feed
+     that fed it: LBL/IC/kindFor/merge/renderFeed/loadGlobalActivity/injectHomeCard.
+     Neither endpoint it read is orphaned — /v1/account/audit still has the
+     "Account activity" card in Settings (loadAccountAudit) and
+     /v1/auth/login-history still has "Recent sign-ins" (loadLoginHistory). */
 
   /* ── responsive data tables: no page-level horizontal scroll ── */
   function wrapTable(t){
@@ -5914,15 +5830,13 @@ async function loadLoginHistory(scope){
   });
 
   /* ── wire P18 into navigation + startup ── */
-  function authed(){ var g=$('authGate'); if(!g)return true; var d=g.style.display||getComputedStyle(g).display; return d==='none'; }
   if(typeof window.go==='function'){
     var _go=window.go;
-    window.go=function(p,el){ _go(p,el); enhanceTables(); if(p==='dashboard'&&window.loadGlobalActivity)window.loadGlobalActivity(); };
+    window.go=function(p,el){ _go(p,el); enhanceTables(); };
   }
   function init(){
-    injectLiveDot(); injectHomeCard(); enhanceTables(); pingHealth();
+    injectLiveDot(); enhanceTables(); pingHealth();
     setInterval(pingHealth,60000);
-    if(authed()&&window.loadGlobalActivity)window.loadGlobalActivity();
   }
   if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init);
 })();
@@ -6796,6 +6710,61 @@ async function loadLoginHistory(scope){
   };
   if(document.readyState!=='loading')window.foxTourMaybeOffer();
   else document.addEventListener('DOMContentLoaded',window.foxTourMaybeOffer);
+})();
+</script>
+
+<!-- ═══ D2 item 3 · Back stays inside the dashboard ═══
+     Eleven "pages" share one document. Before this, the file called
+     history.replaceState three times and pushState never, so in-dashboard
+     navigation created no history entries at all: the first Back left for
+     whatever preceded the dashboard, usually the sales page. Each go() is a
+     history entry now, Back walks them, and Home is the floor.
+
+     ⚠ READ THIS BEFORE TRUSTING IT. This is not a trap and must not be
+     described as one. Holding the Back button, or opening the browser's history
+     dropdown, jumps straight past every entry we push — in every browser — and
+     leaves. Chrome may additionally mark an entry pushed while handling
+     popstate as skippable, since no click preceded it. What this stops is one
+     accidental Back click, which is what was asked for. It is not a guarantee.
+     Do not "strengthen" it with a beforeunload prompt or a deeper push loop:
+     both are hostile to the user and both still lose to a long-press.
+
+     The three existing replaceState calls stay replaceState on purpose. They
+     exist to strip a one-time token or ?handoff out of the URL, and pushState
+     would file that token in the history instead. Nothing here touches the URL:
+     pushState is called with two arguments, so the current one is reused. -->
+<script>
+(function(){
+  var HOME='dashboard';
+  var _go=window.go;
+  if(typeof _go!=='function')return;
+  var here=HOME, popping=false;
+
+  function entry(page){ try{ history.pushState({foxPage:page},''); }catch(e){} }
+
+  window.go=function(page,el){
+    _go(page,el);
+    page=page||HOME;
+    // Re-selecting the page you are already on must not file an entry, or Back
+    // spends its first few presses doing nothing visible and reads as broken.
+    if(!popping&&page!==here)entry(page);
+    here=page;
+  };
+
+  // The entry the dashboard loaded on is Home. Label it, so the handler below
+  // can tell it apart from an entry left by something else.
+  try{ history.replaceState({foxPage:HOME},''); }catch(e){}
+
+  window.addEventListener('popstate',function(ev){
+    // An unlabelled entry is one cleanUrl() rewrote — its state is null. Home
+    // is the safe reading: it navigates rather than unloads.
+    var page=(ev.state&&ev.state.foxPage)||HOME;
+    popping=true;
+    try{ window.go(page,null); }finally{ popping=false; }
+    // Home is the floor. Put an entry back underneath the user so the next Back
+    // has somewhere to land that is not the sales page.
+    if(page===HOME)entry(HOME);
+  });
 })();
 </script>
 </body>
