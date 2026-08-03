@@ -63,8 +63,25 @@ principle, already shipped in `billing_state.py`: *"`cancelled` does not lock th
 dashboard… someone who left can still read and export the evidence they already
 paid for. Leaving is not owing."* An expired evaluation is closer to leaving than
 to owing. Stranding an auditor's evidence behind a paywall is also the exact
-shape of thing this product exists to argue against. **If the owner wants a hard
-lock with no export, it is one line — drop the secondary action.**
+shape of thing this product exists to argue against.
+
+> ### ⛔ WITHDRAWN 2026-08-03, after E1 (`e34e909`)
+>
+> **The export carve-out is dropped. E3 does not build it.** The E1 executor
+> found the mechanics I had assumed: `auth._GATE_EXEMPT` is
+> `("/v1/auth/", "/v1/billing/", "/v1/account/preferences")` — `/v1/logs/export`
+> is **not** in it, so a locked org's dashboard cannot export at all. That is not
+> new behaviour; `incomplete` and `past_due` have always worked this way.
+>
+> Making my carve-out real means adding `/v1/logs/export` to the exempt tuple,
+> which would **also unlock export for every other locked condition** — a change
+> to D1's shipped lock, smuggled in through a UI phase, that nobody asked for.
+> The owner chose the harder option deliberately; widening the gate to soften it
+> is not a UI decision to make on their behalf.
+>
+> The evidence is not stranded either way: export over the **SDK Bearer key**
+> still works (verified live in E1), and everything returns on upgrade. Filed as
+> a register entry rather than dropped, so the concern survives the decision.
 
 ---
 
@@ -229,10 +246,13 @@ Consume E1. **No new lock logic.** D4 (`4fe611c`) already built all of this.
 - Add `evaluation_expired` (and the credits case) to `copyFor`'s reason table in
   `foxy-dashboard/foxy-audit-premium.html`. Expiry gets the overlay and an
   **Upgrade** CTA; credits-exhausted gets the banner, not the overlay.
-- The upgrade CTA must POST to the **authenticated** checkout from E1, not the
-  anonymous one, or the customer buys a second empty workspace.
-- Add **"Export your evidence"** as a secondary action on the overlay for this
-  reason only — see the assumption above.
+- The upgrade CTA must POST **`/v1/billing/upgrade-session`** — the authenticated
+  route E1 added (`billing.py`, admin-only, sends `foxy_org_id`). **Not**
+  `/v1/billing/checkout-session`: that one is anonymous and org-blind, and the
+  webhook would provision a second empty workspace while the original stays
+  locked. That is the whole defect #36 turned out to be.
+- **No export action on the overlay** — withdrawn, see the banner above.
+  `/v1/logs/export` is not gate-exempt and must not be made so here.
 - **Desktop follows** (`desktop/dashboard.py:3078`, `:4293`): register #42 says it
   handles 402 by surfacing the message as a toast. Under the standing *web wins*
   rule it should show the same explained state. Add the audit label for any new
