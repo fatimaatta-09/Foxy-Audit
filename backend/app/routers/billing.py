@@ -337,6 +337,73 @@ def checkout_session(payload: CheckoutRequest, request: Request):
         raise HTTPException(status_code=502, detail="could not start checkout")
 
 
+class UpgradeRequest(BaseModel):
+    plan: str = "pro"
+
+
+@router.post("/v1/billing/upgrade-session")
+@limiter.limit("5/minute")
+def upgrade_session(request: Request, payload: UpgradeRequest,
+                    admin: User = Depends(require_role("admin")),
+                    db: Session = Depends(get_db)):
+    """Buy a plan for the workspace you are ALREADY signed in to (E1 · #36).
+
+    A SECOND DOOR, NOT A REWRITE
+    ----------------------------
+    ``/v1/billing/checkout-session`` above is the acquisition flow: anonymous, by
+    email, and the webhook provisions a brand-new org from it. That works and the
+    sale page depends on it, so it is untouched. What it cannot do is upgrade
+    somebody who already has a workspace — its Stripe metadata carries no org
+    identity, so the webhook has nothing to match on, misses the customer lookup
+    (an org that never paid has no ``stripe_customer_id``), and provisions a
+    SECOND organisation. The customer pays and lands in an empty workspace while
+    the original — holding every audit event they have — stays locked.
+
+    That is the exit door an expired evaluation needs and did not have. This
+    route is it: same Checkout, plus ``foxy_org_id``, which is the only thing
+    ``_handle_checkout`` needs to upgrade instead of provision. It follows the
+    card-setup session's existing pattern for carrying the org.
+
+    Reachable while locked: ``/v1/billing/`` is in ``auth._GATE_EXEMPT``, and it
+    has to be — a lock whose only remedy is behind the lock is a brick.
+    """
+    s = get_settings()
+    if not s.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="billing not configured")
+    org = db.get(Organization, admin.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="workspace not found")
+    requested_plan = payload.plan.strip().lower()
+    plan = _PLANS.get(requested_plan)
+    price_id = getattr(s, plan[0], "") if plan else ""
+    if not plan or not price_id:
+        raise HTTPException(status_code=422, detail="unknown or unconfigured plan")
+    try:
+        import stripe
+        stripe.api_key = s.stripe_secret_key
+        kwargs = {
+            "mode": plan[1],
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "metadata": {"foxy_org_id": str(org.id),
+                         "foxy_plan": s.canonical_plan(requested_plan)},
+            "success_url": f"{s.dashboard_url}?checkout=success",
+            "cancel_url": f"{s.dashboard_url}?checkout=cancel",
+        }
+        # Reuse the Stripe customer if this org has ever had one, so an upgrade
+        # does not fork a second customer record against the same workspace.
+        if org.stripe_customer_id:
+            kwargs["customer"] = org.stripe_customer_id
+        elif org.contact_email:
+            kwargs["customer_email"] = org.contact_email
+        session = stripe.checkout.Session.create(**kwargs)
+        return {"checkout_url": session.url, "plan": s.canonical_plan(requested_plan)}
+    except HTTPException:
+        raise
+    except Exception as exc:                # noqa: BLE001
+        log.warning("upgrade session failed for org %s: %s", org.id, exc)
+        raise HTTPException(status_code=502, detail="could not start checkout")
+
+
 def _ts(value) -> datetime | None:
     """Stripe unix timestamp → tz-aware datetime (or None)."""
     if not value:
@@ -436,9 +503,68 @@ async def stripe_webhook(
         db.close()
 
 
+def _upgrade_existing_org(db: Session, org_id: str, customer_id: str,
+                          subscription_id: str, plan_tier: str) -> tuple[dict, str | None]:
+    """A signed-in workspace paid: upgrade THAT org rather than making a new one.
+
+    Reached only from ``/v1/billing/upgrade-session``, which is the only thing
+    that puts ``foxy_org_id`` in the Checkout metadata.
+
+    THE CLEAR IS THE POINT (E1 · #36)
+    ---------------------------------
+    Wiping the four evaluation fields is what actually ends the evaluation
+    regime. Leave them and ``billing_state`` keeps entering the evaluation branch
+    forever: the window is still in the past, ``evaluation_lock`` still fires,
+    the dashboard stays locked and capture stays refused — the customer paid and
+    nothing changed. Before this, no code path in the product ever unset
+    ``evaluation_offer_id``.
+
+    The ``EvaluationRedemption`` row is NOT deleted. ``models.py`` puts a UNIQUE
+    on ``org_id`` alone: one redemption per org, ever. That row is the record
+    that this workspace already had its offer, and deleting it would silently
+    re-arm a second redemption. Clearing the org's LIVE fields is what ends the
+    regime; the history stays.
+    """
+    try:
+        oid = uuid.UUID(str(org_id))
+    except (TypeError, ValueError):
+        log.warning("checkout carried an unparseable foxy_org_id: %r", org_id)
+        return {"status": "org_not_found", "org": str(org_id)}, None
+    org = db.execute(
+        select(Organization).where(Organization.id == oid)
+    ).scalar_one_or_none()
+    if org is None:
+        log.warning("checkout carried an unknown foxy_org_id: %s", org_id)
+        return {"status": "org_not_found", "org": str(org_id)}, None
+
+    org.plan_tier = plan_tier
+    org.monthly_log_quota = get_settings().quota_for(plan_tier)
+    if customer_id:
+        org.stripe_customer_id = customer_id
+    if subscription_id:
+        org.stripe_subscription_id = subscription_id
+    org.subscription_status = "active"
+    org.past_due_since = None            # nothing is owed the moment this lands
+
+    org.evaluation_offer_id = None
+    org.evaluation_credit_limit = None
+    org.evaluation_credits_used = 0
+    org.evaluation_ends_at = None
+
+    log.info("Upgraded org %s to %s for customer %s", org.id, plan_tier, customer_id)
+    return {"status": "upgraded", "org_id": str(org.id), "plan_tier": plan_tier}, str(org.id)
+
+
 def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     """Provision a new Organization when a Stripe checkout completes, and mark the
-    matching marketing lead converted. No commit here — the caller commits once."""
+    matching marketing lead converted. No commit here — the caller commits once.
+
+    Two doors arrive here. An ANONYMOUS checkout (the sale page) carries only
+    ``foxy_plan`` and provisions. An AUTHENTICATED one carries ``foxy_org_id``
+    too and upgrades the org that bought it — see ``_upgrade_existing_org``. The
+    branch is on the metadata alone, so the acquisition flow is bit-for-bit what
+    it was.
+    """
     customer_id = session.get("customer", "")
     customer_email = (session.get("customer_email") or "unknown").strip().lower()
     subscription_id = session.get("subscription", "")
@@ -446,6 +572,13 @@ def _handle_checkout(db: Session, session: dict) -> tuple[dict, str | None]:
     plan_tier = get_settings().canonical_plan(metadata.get("foxy_plan") or "pro")
     if plan_tier not in {"pro", "max", "premium"}:
         plan_tier = "pro"
+
+    upgrading = (metadata.get("foxy_org_id") or "").strip()
+    if upgrading:
+        # Deliberately BEFORE the stripe_customer_id lookup below. An evaluation
+        # org that never paid has no customer id, so that lookup would miss and
+        # fall through to provisioning a second workspace — the exact bug.
+        return _upgrade_existing_org(db, upgrading, customer_id, subscription_id, plan_tier)
 
     existing = db.execute(
         select(Organization).where(Organization.stripe_customer_id == customer_id)

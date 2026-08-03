@@ -121,13 +121,15 @@ def ingest_batch(
             new_items.append(item)
 
     now = datetime.now(timezone.utc)
-    # trial_expired → subscription_inactive, in that order. D1 moved the set
-    # itself into billing_state so the dashboard gate and this one can no longer
-    # disagree about what "not paying" means — and so that the difference between
-    # them is deliberate and written down: `past_due` and `incomplete` lock the
-    # DASHBOARD and never stop capture, because evidence cannot be re-created
-    # after the fact and a declined card can be.
-    blocked = billing_state.capture_block(org, now)
+    # trial_expired → subscription_inactive → the evaluation pair, in that order.
+    # D1 moved the set itself into billing_state so the dashboard gate and this
+    # one can no longer disagree about what "not paying" means — and so that the
+    # difference between them is deliberate and written down: `past_due` and
+    # `incomplete` lock the DASHBOARD and never stop capture, because evidence
+    # cannot be re-created after the fact and a declined card can be. E1 moved
+    # the evaluation pair in too; it was the one D1 left behind, which is why
+    # /v1/billing/access could not report it.
+    blocked = billing_state.capture_block(org, now, pending=len(new_items))
     if blocked is not None:
         raise HTTPException(status_code=402,
                             detail={"code": blocked.reason, "message": blocked.message})
@@ -163,24 +165,22 @@ def ingest_batch(
         snapshot = capture_policy_snapshot(policy)
         snapshot_hash = policy_snapshot_hash(snapshot)
 
-    # Enforce evaluation-offer credits (judge access) under a row lock so concurrent
+    # Spend evaluation-offer credits (judge access) under a row lock so concurrent
     # batches can't overspend a capped, non-billable evaluation campaign. Existing
     # logs, exports, and verification stay available even once the credits run out.
+    #
+    # The RULE lives in billing_state (E1) and is re-asked here rather than
+    # re-implemented: the check above ran against an unlocked read, so it can be
+    # stale by the time we get the row. What is local to this router is only the
+    # SPENDING — the increment, and the lock that makes it safe.
     if org.evaluation_offer_id and new_items:
         locked_org = db.execute(
             select(Organization).where(Organization.id == org.id).with_for_update()
         ).scalar_one()
-        if locked_org.evaluation_ends_at and now >= locked_org.evaluation_ends_at:
-            raise HTTPException(status_code=402, detail={
-                "code": "evaluation_expired",
-                "message": "This evaluation offer has ended. Existing evidence remains available.",
-            })
-        credit_limit = locked_org.evaluation_credit_limit or 0
-        if locked_org.evaluation_credits_used + len(new_items) > credit_limit:
-            raise HTTPException(status_code=402, detail={
-                "code": "evaluation_credits_exhausted",
-                "message": "This evaluation offer has no remaining event credits.",
-            })
+        blocked = billing_state.capture_block(locked_org, now, pending=len(new_items))
+        if blocked is not None:
+            raise HTTPException(status_code=402,
+                                detail={"code": blocked.reason, "message": blocked.message})
         locked_org.evaluation_credits_used += len(new_items)
         org = locked_org
 

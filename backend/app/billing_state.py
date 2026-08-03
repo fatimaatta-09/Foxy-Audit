@@ -40,6 +40,9 @@ The dashboard lock and the capture block are deliberately NOT the same set:
 * **``cancelled`` does not lock the dashboard**, though it does stop capture.
   That is today's shipped behaviour and it is kind: someone who left can still
   read and export the evidence they already paid for. Leaving is not owing.
+* **An evaluation whose CREDITS ran out does not lock either** (E1). That org is
+  still inside a live offer — the window is open, the allowance is simply spent —
+  so it keeps reading its own evidence. Only the WINDOW closing locks.
 
 Which leaves the lock meaning one thing: **you owe us, or you never paid.**
 """
@@ -77,6 +80,11 @@ SUBSCRIPTION_PAST_DUE = "subscription_past_due"
 SUBSCRIPTION_CANCELLED = "subscription_cancelled"
 TRIAL_EXPIRED = "trial_expired"
 SUBSCRIPTION_INACTIVE = "subscription_inactive"   # capture-side name, unchanged
+# E1 — the evaluation pair, moved here from logs.py. These two strings are
+# unchanged from the 402 bodies logs.py used to build inline, so the SDK and any
+# client already switching on them keep working.
+EVALUATION_EXPIRED = "evaluation_expired"
+EVALUATION_CREDITS_EXHAUSTED = "evaluation_credits_exhausted"
 
 
 @dataclass(frozen=True)
@@ -210,25 +218,84 @@ def card_lock(org) -> Condition | None:
     )
 
 
+#: One message for both surfaces. The expiry is the same fact whether it is
+#: refusing a capture or explaining a locked dashboard, and the action is the
+#: same action, so saying it twice in two voices would only invite drift.
+_EVALUATION_EXPIRED_MESSAGE = (
+    "Your evaluation offer has ended. Upgrade to unlock your workspace and "
+    "continue capturing events — everything you already recorded is kept, and "
+    "stays verifiable."
+)
+
+
+def evaluation_lock(org, now: datetime | None = None) -> Condition | None:
+    """The evaluation WINDOW has closed. This one locks (E1 · register #36).
+
+    The owner's decision is a lock that requires an upgrade, not a quiet fall
+    back to the free tier — the evaluation is the whole relationship, and when it
+    ends the org is told to buy rather than silently demoted to something it
+    never signed up for.
+
+    WHY ``plan_tier`` STILL READS "premium" ON A LOCKED ORG
+    ------------------------------------------------------
+    Granting an offer sets ``plan_tier="premium"`` (``billing.py`` signup and
+    redeem), and nothing here resets it, so a locked org still reads premium and
+    still gets premium seat limits and anchor cadence. That looks like a bug and
+    is not: "correcting" it to ``free`` would hand back the free monthly quota,
+    ``capture_block`` would stop firing, and capture would resume — which is the
+    opposite of the decision above. The lock is what ends the regime; the tier
+    label is left alone until money changes it. ``_upgrade_existing_org`` in
+    ``billing.py`` is the one place that rewrites both, together.
+    """
+    if not getattr(org, "evaluation_offer_id", None):
+        return None
+    ends = _aware(getattr(org, "evaluation_ends_at", None))
+    if ends is None or (now or datetime.now(timezone.utc)) < ends:
+        return None
+    return Condition(EVALUATION_EXPIRED, _EVALUATION_EXPIRED_MESSAGE)
+
+
 def dashboard_lock(org, now: datetime | None = None) -> Condition | None:
     """Everything that locks the dashboard, most actionable condition first.
 
-    The money one is reported ahead of the card one. A failed or never-completed
+    The evaluation one is reported first because it is the most specific: an
+    expired-evaluation org reads ``plan_tier="premium"`` with no subscription at
+    all, so any other gate that fired would describe it in terms of a plan it
+    never bought.
+
+    Then the money one, ahead of the card one. A failed or never-completed
     payment is a specific thing the customer must go and do; a missing card is a
     policy requirement of this deployment. An org in both states is better told
     "your payment failed" than "add a card" — the first is what is actually
     costing them access, and the card they would be asked for is very likely the
     one that just declined.
     """
-    return subscription_lock(org, now) or card_lock(org)
+    return evaluation_lock(org, now) or subscription_lock(org, now) or card_lock(org)
 
 
-def capture_block(org, now: datetime) -> Condition | None:
-    """The condition that stops this org capturing new evidence, if any.
+def capture_block(org, now: datetime, pending: int = 1) -> Condition | None:
+    """The condition that stops this org capturing ``pending`` more events, if any.
 
-    Ordered exactly as ``logs.py`` has always ordered it — trial before
-    subscription — because that order is asserted elsewhere and the message a
-    customer gets should name the first thing that went wrong, not the last.
+    Ordered exactly as ``logs.py`` has always ordered it — trial → subscription →
+    the evaluation pair, expiry before credits — because that order is asserted
+    elsewhere and the message a customer gets should name the first thing that
+    went wrong, not the last.
+
+    ``pending`` is the size of the batch being asked about. It exists because the
+    evaluation allowance is all-or-nothing per batch: eight credits spent of ten
+    refuses a batch of five outright rather than part-writing it. The default of
+    1 answers the question every OTHER caller is asking — "can this org capture
+    at all?" — which is what ``/v1/billing/access`` and ``/v1/usage`` need.
+
+    One ordering caveat, stated because it is a real (if unreachable) change:
+    ``logs.py``'s monthly-quota gate (``credits_exhausted``) sits BETWEEN the
+    subscription gate and the evaluation pair and is not in this function, so
+    moving the evaluation pair in here puts it ahead of the quota. That is
+    unobservable for every org the product creates — both grant paths set
+    ``monthly_log_quota = NULL`` alongside the evaluation fields, so the quota
+    gate is inert on exactly the orgs this pair applies to — and where staff
+    tooling has set both by hand, naming the expired offer is the better answer
+    anyway.
 
     Deliberately unchanged by D1: ``past_due`` and ``incomplete`` lock the
     dashboard and DO NOT appear here. See the module docstring.
@@ -245,6 +312,21 @@ def capture_block(org, now: datetime) -> Condition | None:
             SUBSCRIPTION_INACTIVE,
             "Your subscription is not active. Update billing to continue capturing events.",
         )
+    # `pending <= 0` means a batch that adds nothing new — every row was a
+    # duplicate of one already in the chain. That has always been answered with
+    # the original receipts rather than a 402, and re-answering it with money
+    # talk would break idempotent retries for no gain: no credit is spent.
+    if getattr(org, "evaluation_offer_id", None) and pending > 0:
+        expired = evaluation_lock(org, now)
+        if expired is not None:
+            return expired
+        limit = org.evaluation_credit_limit or 0
+        if (org.evaluation_credits_used or 0) + pending > limit:
+            return Condition(
+                EVALUATION_CREDITS_EXHAUSTED,
+                "This evaluation offer has no remaining event credits. "
+                "Upgrade to continue capturing events.",
+            )
     return None
 
 
