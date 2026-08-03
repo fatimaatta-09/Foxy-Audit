@@ -1,3 +1,74 @@
+> ## Complete — 2026-08-04. Read this banner before the plan.
+>
+> | | Commit | What |
+> |---|---|---|
+> | H1 | `c2b2e6e` | chain V4 — the local verdict is bound and tamper-evident |
+> | H2 | `2e924b9` | a per-event salt on top of the HMAC commitment |
+>
+> Backend **925 → 928** · SDK **→ 143** · verifier **→ 31** · one migration (0061,
+> nullable, un-backfilled). CI and CD green on both.
+>
+> ### The brief was wrong about the problem, and that was the finding
+>
+> It asked to eliminate a "Privacy Paradox" in which the backend "sends the raw
+> prompt to Gemini/OpenAI". **It cannot.** `worker._grade_one` builds the judge
+> payload from hashes, token count, policy tag and pii_signals, and `AuditLog`
+> has **no raw-text column at all**. The SDK already used customer-keyed HMAC
+> rather than a bare digest, and `policy_engine` was already local-first for
+> enforcement events.
+>
+> Built as written, the three "fixes" would have been **one no-op, one downgrade**
+> (`SHA256(prompt+salt)` is length-extension vulnerable; HMAC exists to prevent
+> exactly that) **and one security regression** — the literal formula
+> `SHA256(prompt_hash + response_hash + verdict_hash + H_{n-1})` drops `org_id`
+> and `seq`, making rows reorderable within a ledger and transplantable between
+> tenants while still verifying.
+>
+> ### What the plan itself got wrong
+>
+> **The binding without the check.** The chain binds `verdict_hash`, not the
+> verdict — so rewriting `local_verdict` in an export and leaving the digest alone
+> still passed a pure chain recompute. As specified, V4 was **decorative**. The
+> executor added a re-derivation of the digest from the exported body; proven at
+> the gate on a real bundle, that tamper now exits 1 where it would have exited 0.
+>
+> **Five recompute sites the plan never named.** `verify.py` (×2), `anchor.py`
+> (×2) and `passport.py` each rebuild a row's hash from its columns. Without
+> `verdict_hash` threaded through, every V4 row would have read as **tampered**
+> from `/v1/verify`, the Compliance Passport and the anchor cross-check.
+>
+> **A sidecar that could not be read.** The plan said the salt goes in "the
+> sidecar the customer already owns" — but that file is a hand-written JSON object
+> and the SDK can only append. Without the merge step H2 added, the round trip did
+> not exist.
+>
+> ### Verified rather than reported
+>
+> **V1–V3 have not moved**: `origin/main`'s `chain.py` and the branch's loaded as
+> separate modules, 144 historical inputs, byte-identical. **Commitments have not
+> moved**: same technique on `hashing.py`, 52 (value, key) pairs with the salt
+> omitted, unchanged. **Three implementations agree** — writer, verifier, and the
+> vendored copy that ships to auditors — at every version.
+>
+> A golden-vector file written on a branch proves only that the branch agrees with
+> itself. That is why both checks were run against the pre-change module.
+>
+> ### The gap H2 closed that nobody had asked about
+>
+> **CI never ran `pytest verifier`.** So `test_writer_and_verifier_agree_at_every_version`
+> and `test_matches_backend_recipe` — the guards protecting three-way agreement on
+> a hash chain — were not enforced anywhere automatic. H2 added the step.
+>
+> ### Open after this plan
+>
+> #59 (`verify_chain.py` has cried tamper since V2) · #60 (seven callers
+> hand-enumerate every hashed column) · plus H2's own notes: the SDK's catch-all
+> logs `str(exc)` (considered and deliberately left — narrowing it costs real
+> debuggability, and no exception in that path carries the salt), `_record_salt`
+> appends without locking, and `commitment_alg` is unconstrained at ingest.
+
+---
+
 # Bind the verdict into the chain, and salt the commitments
 
 Planned 2026-08-04 against `main` @ `e8de6b6`.
@@ -159,7 +230,7 @@ pytest verifier/ -q                            # the second implementation
 pytest sdk/tests -q                            # H2
 
 cd backend && DATABASE_URL=postgresql+psycopg://foxy:foxy@localhost:5433/foxy_pytest \
-  python -m pytest tests/integration -q        # 925 today
+  python -m pytest tests/integration -q        # 928 after H1
 ```
 
 The explicit `DATABASE_URL` is not optional — conftest defaults to 5432, Postgres
