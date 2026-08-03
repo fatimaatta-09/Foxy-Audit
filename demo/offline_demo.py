@@ -102,7 +102,17 @@ def main() -> int:
 
     checks = {
         "chain": chain_result.get("ok") is True,
-        "commitments": commitment_result == {"ok": True, "checked": len(EVENTS)},
+        # Assert the FIELDS, not the whole dict. Exact-equality against a result
+        # shape breaks whenever the verifier learns to report something new: H2
+        # added `unprovable` (a salted row whose sidecar has no salt), the
+        # commitments here verified perfectly, and this line still went red.
+        # Naming the fields is also stricter than the old comparison was — it now
+        # requires the unprovable list to be empty rather than merely absent.
+        "commitments": (
+            commitment_result.get("ok") is True
+            and commitment_result.get("checked") == len(EVENTS)
+            and not commitment_result.get("unprovable")
+        ),
         "anchor": bool(anchor_result and anchor_result.get("matches")),
         "tamper_detection": (
             tamper_result.get("ok") is False
