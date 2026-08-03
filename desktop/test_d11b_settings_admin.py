@@ -144,6 +144,19 @@ def test_every_recorded_action_has_a_label():
     import re
     recorded = set()
     for path in root.rglob("*.py"):
+        # `app/bundled/` is a VERBATIM copy of verifier/foxy_verify.py, shipped
+        # inside the export bundle (E2, `56840d6`). It is a standalone CLI, not
+        # application code: it records no audit action, and a byte-identity guard
+        # forbids editing it. Its argparse calls read `action="store_true"`,
+        # which this regex cannot tell apart from an audit action — so the
+        # directory is skipped rather than the pattern loosened.
+        #
+        # Do NOT "fix" a future failure here by adding the offending string to
+        # AUDIT_LABELS. That labels a thing which is not an action, and the next
+        # genuinely unlabelled action then passes unnoticed — which is the one
+        # job this test has.
+        if "bundled" in path.parts:
+            continue
         recorded |= set(re.findall(r'action="([a-z_.]+)"',
                                    path.read_text(encoding="utf-8")))
     assert recorded - set(sa.AUDIT_LABELS) == set()
