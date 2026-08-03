@@ -527,19 +527,25 @@ code.cmd{font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace;
     </p>
     <ol class="steps">
       <li>
-        Ask {{ org_name }} for a ledger export covering
-        <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong>.
+        Ask {{ org_name }} for a <strong>verification bundle</strong> covering
+        <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong> — the
+        archive <span class="mono">foxy-audit-export.zip</span>, produced by
+        their dashboard's Export page. It contains the ledger and the verifier
+        together, so nothing further has to be obtained from anyone.
       </li>
-      {# The invocation line was removed on the owner's instruction; the STEP stays,
-         because it is the only thing in this document that turns an export into a
-         recomputed root hash — step 3's "it" and the no-anchor paragraph's "step 2"
-         both point here, and §Trust model (which carried the chain formula) is gone.
-         NOT SAID HERE: where to obtain the verifier. There is currently no honest
-         answer — no route serves it, the SDK wheel does not carry it, and no public
-         repository URL exists anywhere in the product. Reported rather than
-         invented; when a real source exists, name it in this sentence. #}
+      {# The step, and now its source. This used to say only "run the standalone
+         verifier" with a comment admitting there was no honest way for the reader
+         to obtain one — no route served it, the SDK wheel does not carry it, and
+         no public repository URL exists. `format=bundle` (app/export_bundle.py)
+         is that source, so the sentence can finally name it. The STEP itself is
+         load-bearing regardless: it is the only thing in this document that turns
+         an export into a recomputed root hash — step 3's "it" and the no-anchor
+         paragraph's "step 2" both point here, and §Trust model (which carried the
+         chain formula) is gone. #}
       <li>
-        Run the standalone verifier, which has no dependencies and makes no network calls.
+        Unzip it and run the standalone verifier it ships with, which has no
+        dependencies and makes no network calls:
+        <br><span class="mono">python foxy_verify.py foxy-audit-logs.json</span>
       </li>
       <li>
         Compare the root hash it prints with the value recorded in section

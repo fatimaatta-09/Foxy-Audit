@@ -21,7 +21,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
 
-from .. import billing_state
+from .. import billing_state, export_bundle
 from ..anchor import latest_anchor
 from ..auth import require_org, resolve_org
 from ..chain import CHAIN_VERSION_POLICY_V3, GENESIS_HASH, compute_chain_hash
@@ -426,13 +426,21 @@ def export_logs(
     request: Request,
     org: Organization = Depends(resolve_org),
     db: Session = Depends(get_db),
-    format: str = Query(default="json", pattern="^(json|csv)$"),
+    format: str = Query(default="json", pattern="^(json|csv|bundle)$"),
     date_from: str | None = Query(default=None, description="ISO date YYYY-MM-DD, inclusive"),
     date_to: str | None = Query(default=None, description="ISO date YYYY-MM-DD, inclusive"),
 ):
-    """Download the org's audit-log ledger (its own data) as JSON or CSV — data
-    portability for the tenant. Scoped by org_id (+ RLS). Declared BEFORE
-    /v1/logs/{seq} so the literal path isn't captured as a seq int.
+    """Download the org's audit-log ledger (its own data) as JSON, CSV, or a
+    verification bundle — data portability for the tenant. Scoped by org_id
+    (+ RLS). Declared BEFORE /v1/logs/{seq} so the literal path isn't captured as
+    a seq int.
+
+    `format=bundle` returns a ZIP holding the identical JSON body plus the
+    standalone verifier and its instructions (app/export_bundle.py). It exists
+    because the Compliance Passport tells a third party to run that verifier and
+    the product had no way to hand it over. Built in memory; nothing is archived
+    server-side, matching ExportJob's contract that a re-download re-runs the
+    producer.
 
     The date range is optional and, with neither bound, this is still the whole
     ledger. It exists because the dashboard's Export page has always shown two
@@ -482,6 +490,25 @@ def export_logs(
          "anchor": _anchor_export(latest_anchor(db, org.id)),
          "logs": [_export_row(r) for r in rows]},
         default=str, indent=2)
+
+    if format == "bundle":
+        # The SAME bytes go into the archive, so unzipping a bundle and running
+        # format=json are interchangeable inputs to the verifier.
+        try:
+            blob = export_bundle.build(body.encode("utf-8"))
+        except export_bundle.VerifierUnavailable as exc:
+            # 503, not a short bundle. An archive that quietly omits the tool it
+            # exists to deliver fails at the auditor's desk instead of here.
+            raise HTTPException(
+                status_code=503,
+                detail=("the verification bundle is unavailable — the standalone "
+                        f"verifier could not be read ({exc}). Use format=json for "
+                        "the ledger on its own."))
+        return Response(
+            content=blob, media_type="application/zip",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{export_bundle.BUNDLE_FILENAME}"'})
+
     return Response(
         content=body, media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="foxy-audit-logs.json"'})

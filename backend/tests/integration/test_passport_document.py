@@ -356,6 +356,19 @@ def test_the_document_says_how_to_check_it_without_us(make_org, client, monkeypa
     assert re.search(r'<div class="hash">[0-9a-f]{64}</div>', doc)
 
 
+def test_the_document_says_where_to_get_the_verifier(make_org, client, monkeypatch):
+    """The gap this section used to carry in a comment: it told the reader to run
+    a verifier and named no way to obtain one. `format=bundle` is that way, so the
+    document must point at it — otherwise the instruction is still unfollowable
+    and register #27 is not closed."""
+    org = make_org()
+    _ingest(client, org, 3)
+    flat = _flat(_html(client, org, monkeypatch))
+    assert "foxy-audit-export.zip" in flat, \
+        "the reader is told to run a verifier with no stated source for it"
+    assert "python foxy_verify.py foxy-audit-logs.json" in flat
+
+
 def test_no_verification_url_is_invented(make_org, client, monkeypatch):
     """The org has published no badge token and has no confirmed anchor, so there
     is no public URL that would work. Printing one that 404s is worse than

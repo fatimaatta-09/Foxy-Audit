@@ -566,7 +566,9 @@ def put_onboarding(body: OnboardingUpdate, user: User = Depends(require_user),
 
 
 # ─────────────────────────── export history / jobs (P11) ─────────────────────
-_EXPORT_TYPES = {"passport", "logs_csv", "logs_json"}
+# "logs_bundle" is /v1/logs/export?format=bundle — the ledger plus the standalone
+# verifier. ExportJob.type is String(32), so it needed no migration.
+_EXPORT_TYPES = {"passport", "logs_csv", "logs_json", "logs_bundle"}
 
 
 class ExportCreate(BaseModel):
