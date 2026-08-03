@@ -74,13 +74,24 @@ class Verdict(BaseModel):
     # P6f provenance: WHICH model produced this grade. A model id is not a secret;
     # a provider key is, and none is ever recorded here — see judge_routing.py:1-8.
     #
-    # This is the right home for it because the verdict is NOT hashed chain
-    # material. compute_chain_hash (chain.py) enumerates every hashed field and no
-    # verdict field appears in either the V2/V3 dict or the legacy string; the
-    # chain hash is fixed at ingest (routers/logs.py), before any grade exists; the
-    # worker adds the verdict later with an UPDATE that never touches chain_hash;
-    # and verifier/foxy_verify.py does not read a verdict at all. Note the contrast
-    # with event_metadata, which IS hashed — putting the model there would have
+    # This is the right home for it because THIS verdict is not hashed chain
+    # material. Since chain version 4 the line runs between two verdicts, not
+    # around all of them:
+    #
+    #   audit_logs.local_verdict — the deterministic verdict policy_engine
+    #     decides synchronously at ingest. Its digest IS bound: V4 puts
+    #     `verdict_hash` in the hashed event (chain.py), so editing that verdict
+    #     in the database now breaks the chain.
+    #   audit_logs.gemini_verdict — this model's grade, the one carrying the
+    #     provenance below. NOT bound, and cannot be: the chain hash is fixed at
+    #     ingest (routers/logs.py) and this grade does not exist yet — the worker
+    #     adds it asynchronously, with an UPDATE that never touches chain_hash.
+    #     Binding it would mean re-hashing the row after grading, invalidating
+    #     every block after it, or waiting on an LLM inside ingest.
+    #
+    # So the chain binds what the system DECIDED, deterministically; the AI grade
+    # stays advisory metadata beside it. Note the contrast with event_metadata,
+    # which has been hashed since V2 — putting the model there would have
     # invalidated every existing chain.
     #
     # Both stay None unless a model actually answered. An evaluator that never ran
@@ -184,6 +195,11 @@ class LogListItem(BaseModel):
     agent: str | None = None
     pii_signals: list[str] | None = None
     chain_hash: str
+    # Both carried for the same reason _EXPORT_COLS carries them: from
+    # chain_version 4 `verdict_hash` is hashed material, so a row without it
+    # cannot be recomputed by anything reading this route.
+    verdict_hash: str | None = None
+    local_verdict: dict[str, Any] | None = None
     gemini_verdict: dict[str, Any] | None = None
     grading_status: str = "pending"
     created_at: datetime

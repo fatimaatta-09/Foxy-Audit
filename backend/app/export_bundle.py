@@ -102,24 +102,42 @@ What this proves
 
 The verifier re-implements the hash-chain recipe from scratch - it imports
 nothing from Foxy - and recomputes your entire ledger from genesis, reporting
-the first tampered row (if any). Each row's hash is:
+the first tampered row (if any).
+
+Each row declares its own chain_version, and every version is frozen forever: a
+new one may only ADD a field, never reorder or remove one, so an export you
+downloaded years ago still verifies with this script. Version 1 hashes a
+pipe-delimited string; version 2 onward hashes canonical JSON of the event:
 
   Hn = SHA256( "org_id|prompt_hash|response_hash|token_count|policy_tag|seq"
-               [+ "|agent=<agent>"]  +  Hn-1 )
+               [+ "|agent=<agent>"]  +  Hn-1 )              # version 1
+  Hn = SHA256( canonical_json(event)  +  Hn-1 )             # version 2+
   H0 = "0" x 64   (genesis)
 
 The |agent=<agent> segment is appended only when the row has an agent, so rows
-logged before agent attribution hash identically.
+logged before agent attribution hash identically. Version 2 added the capture
+fields (event_id, client ids, event_type, metadata, pii_signals, occurred_at),
+version 3 bound chain_version itself, and version 4 bound verdict_hash.
 
 If Foxy - or anyone with database access - altered a historical interaction, the
 recomputed chain hash for that row no longer matches the stored one, and every
 row after it breaks too (avalanche effect). Only the SHA-256 hashes of your
 prompts and responses are ever stored - never the raw text.
 
+WHICH VERDICT VERSION 4 BINDS. local_verdict is the deterministic verdict decided
+by policy rules on the row's metadata at the moment it was recorded; that is what
+verdict_hash covers, and editing it afterwards breaks the chain. gemini_verdict
+is the AI judge's later grade - not bound, and it cannot be, because the chain
+hash is fixed when the row is written and the judge grades asynchronously
+afterwards. The chain covers what the system DECIDED; the model's opinion sits
+beside it, labelled, and this script does not check it.
+
   Check                       When                        Proves
   --------------------------  --------------------------  ------------------------
   Chain integrity             always                      no historical row was
                                                           altered (pure recompute)
+  Verdict binding             chain_version 4 or later    the row's local verdict
+                                                          is the one recorded
   Anchor, offline             if a receipt is present     the export's chain
                                                           matches the anchored
                                                           root Foxy recorded

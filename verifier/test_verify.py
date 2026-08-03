@@ -104,6 +104,125 @@ def test_matches_backend_recipe():
     assert fv.GENESIS_HASH == bc.GENESIS_HASH
 
 
+def _backend_chain():
+    """Load backend/app/chain.py by path, or skip. It imports only hashlib+json,
+    so this needs no FastAPI, no SQLAlchemy and no database."""
+    import importlib.util
+
+    import pytest
+    path = os.path.join(os.path.dirname(__file__), "..", "backend", "app", "chain.py")
+    if not os.path.isfile(path):
+        pytest.skip("backend tree not alongside the verifier")
+    spec = importlib.util.spec_from_file_location("backend_chain", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_PARITY_ARGS = dict(
+    org_id=ORG, prompt_hash="a" * 64, response_hash="b" * 64, token_count=100,
+    policy_tag="hipaa_basic", seq=1, prev_hash=fv.GENESIS_HASH, agent="gpt-4o",
+    event_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", client_id="sdk-a",
+    client_seq=7, event_type="interaction", commitment_alg="hmac-sha256",
+    event_metadata={"policy_snapshot_hash": "c" * 64, "request_id": "req-1"},
+    pii_signals=["email"], occurred_at="2026-07-18T18:00:00+00:00",
+)
+
+
+def test_writer_and_verifier_agree_at_every_version():
+    """The chain has two implementations by design — this one, and the backend's.
+    They drift silently, and when they do a genuine export fails to verify at a
+    customer's desk with no test having said anything. So: identical inputs into
+    both, at every version the product has ever written, including V4 with and
+    without a verdict."""
+    bc = _backend_chain()
+    for version in (1, 2, 3, 4):
+        for verdict_hash in (None, "d" * 64):
+            args = dict(_PARITY_ARGS, chain_version=version, verdict_hash=verdict_hash)
+            assert fv.compute_chain_hash(**args) == bc.compute_chain_hash(**args), (
+                f"writer/verifier disagree at chain_version {version} "
+                f"(verdict_hash={'set' if verdict_hash else 'None'})")
+
+
+def test_the_two_verdict_digests_agree():
+    """`verdict_hash` is only meaningful if both sides derive it the same way."""
+    bc = _backend_chain()
+    verdict = {"policy_breach": False, "reason": "checks passed", "risk_score": 0,
+               "decision": "clean", "rules": [], "judge_provider": None,
+               "judge_model": None}
+    assert fv.verdict_hash_hex(verdict) == bc.verdict_hash_hex(verdict)
+
+
+# ── V4: the verdict is inside the chain ──────────────────────────────────────
+
+_V4_VERDICT = {"policy_breach": False, "reason": "deterministic metadata checks passed",
+               "risk_score": 0, "decision": "clean", "rules": []}
+
+
+def _v4_export(verdict=None):
+    verdict = _V4_VERDICT if verdict is None else verdict
+    row = {
+        "seq": 1, "prev_hash": fv.GENESIS_HASH,
+        "prompt_hash": "a" * 64, "response_hash": "b" * 64,
+        "token_count": 10, "policy_tag": "chat", "agent": None,
+        "event_id": None, "client_id": None, "client_seq": None,
+        "event_type": "interaction", "commitment_alg": "hmac-sha256",
+        "event_metadata": None, "pii_signals": None, "occurred_at": None,
+        "chain_version": 4,
+        "local_verdict": verdict, "verdict_hash": fv.verdict_hash_hex(verdict),
+    }
+    row["chain_hash"] = fv.compute_chain_hash(
+        org_id=ORG, prev_hash=fv.GENESIS_HASH, **{k: row[k] for k in (
+            "prompt_hash", "response_hash", "token_count", "policy_tag", "seq",
+            "agent", "event_id", "client_id", "client_seq", "event_type",
+            "commitment_alg", "event_metadata", "pii_signals", "occurred_at",
+            "chain_version", "verdict_hash")})
+    return {"org_id": ORG, "count": 1, "logs": [row]}
+
+
+def test_v4_export_verifies():
+    assert fv.verify_export(_v4_export())["ok"] is True
+
+
+def test_v4_catches_a_swapped_verdict_hash():
+    """Editing the bound digest breaks the chain hash itself."""
+    export = _v4_export()
+    export["logs"][0]["verdict_hash"] = "d" * 64
+    res = fv.verify_export(export)
+    assert res["ok"] is False
+    assert res["first_broken_seq"] == 1
+
+
+def test_v4_catches_a_rewritten_verdict_body():
+    """The chain binds the DIGEST, so rewriting the verdict alone leaves the chain
+    hash valid. Re-deriving the digest from the exported body is what catches it —
+    without that check this tampering would pass, and V4 would be decorative."""
+    export = _v4_export()
+    export["logs"][0]["local_verdict"] = dict(_V4_VERDICT, decision="breach",
+                                              policy_breach=True)
+    res = fv.verify_export(export)
+    assert res["ok"] is False
+    assert res["first_broken_seq"] == 1
+    assert "verdict" in res["detail"]
+
+
+def test_a_v3_row_is_unaffected_by_the_verdict_columns():
+    """A pre-V4 row carries no verdict, and must verify exactly as it always did
+    even sitting in an export whose schema now has the columns."""
+    row = {"seq": 1, "prev_hash": fv.GENESIS_HASH, "prompt_hash": "a" * 64,
+           "response_hash": "b" * 64, "token_count": 10, "policy_tag": "chat",
+           "event_id": None, "client_id": None, "client_seq": None,
+           "event_type": "interaction", "commitment_alg": "sha256-legacy",
+           "event_metadata": None, "pii_signals": None, "occurred_at": None,
+           "chain_version": 3, "local_verdict": None, "verdict_hash": None}
+    row["chain_hash"] = fv.compute_chain_hash(
+        org_id=ORG, prev_hash=fv.GENESIS_HASH, **{k: row[k] for k in (
+            "prompt_hash", "response_hash", "token_count", "policy_tag", "seq",
+            "event_id", "client_id", "client_seq", "event_type", "commitment_alg",
+            "event_metadata", "pii_signals", "occurred_at", "chain_version")})
+    assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is True
+
+
 def test_capture_v2_export_includes_all_chain_fields():
     fields = {
         "event_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",

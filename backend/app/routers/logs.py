@@ -21,14 +21,18 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_202_ACCEPTED
 
-from .. import billing_state, export_bundle
+from .. import billing_state, export_bundle, policy_engine
 from ..anchor import latest_anchor
 from ..auth import require_org, resolve_org
-from ..chain import CHAIN_VERSION_POLICY_V3, GENESIS_HASH, compute_chain_hash
+from ..chain import (
+    CHAIN_VERSION_VERDICT_V4, GENESIS_HASH, compute_chain_hash, verdict_hash_hex,
+)
 from ..config import get_settings
 from ..db import get_db
 from ..models import AuditLog, OrgPolicy, Organization, OrganizationSequence
-from ..policy_snapshot import capture_policy_snapshot, policy_snapshot_hash
+from ..policy_snapshot import (
+    capture_policy_snapshot, judge_policy_config, policy_snapshot_hash,
+)
 from ..schemas import (
     ActivityDay, GradingCounts, LogIngest, LogListItem, LogListResponse,
     StatsResponse,
@@ -156,6 +160,7 @@ def ingest_batch(
     # later policy update cannot rewrite the configuration that was assessed.
     snapshot = None
     snapshot_hash = None
+    policy_config = None
     if new_items:
         policy = db.get(OrgPolicy, org.id)
         if policy is None:
@@ -164,6 +169,9 @@ def ingest_batch(
             db.flush()
         snapshot = capture_policy_snapshot(policy)
         snapshot_hash = policy_snapshot_hash(snapshot)
+        # The same projection the worker hands a judge, so the verdict chained
+        # here was decided under exactly the config the snapshot records.
+        policy_config = judge_policy_config(snapshot)
 
     # Spend evaluation-offer credits (judge access) under a row lock so concurrent
     # batches can't overspend a capped, non-billable evaluation campaign. Existing
@@ -222,7 +230,35 @@ def ingest_batch(
                 warnings.append({"client_id": item.client_id,
                                  "expected": expected, "received": item.client_seq})
             client_last[item.client_id] = item.client_seq
-        chain_version = CHAIN_VERSION_POLICY_V3
+        # Decide the LOCAL verdict before hashing, so V4 can bind it. Both
+        # policy_engine entry points are pure — they import only `typing` and
+        # `.schemas`, make no network call and reach no model — which is the only
+        # reason a verdict can be produced inside the synchronous ingest path at
+        # all. The AI judge's grade is NOT chained: it does not exist yet.
+        #
+        # The routing mirrors worker._grade_one exactly. A blocked/redacted event
+        # is terminal and locally decided: `evaluate_enforcement` records it as
+        # prevented egress (policy_breach False), while `evaluate` would read its
+        # pii_signals and chain the word "breach" onto an interaction that never
+        # left the host. Two verdicts for the same row would be worse than none.
+        meta = {
+            "prompt_hash": item.prompt_hash,
+            "response_hash": item.response_hash,
+            "token_count": item.token_count,
+            "policy_tag": item.policy_tag,
+            "pii_signals": item.pii_signals,
+            "event_id": str(item.event_id) if item.event_id else None,
+            "event_type": item.event_type,
+            "commitment_alg": item.commitment_alg,
+            "event_metadata": metadata or None,
+        }
+        if item.event_type in policy_engine.ENFORCEMENT_EVENT_TYPES:
+            local_verdict = policy_engine.evaluate_enforcement(meta)
+        else:
+            local_verdict = policy_engine.evaluate(meta, policy_config)
+        local_verdict = local_verdict.model_dump()
+        row_verdict_hash = verdict_hash_hex(local_verdict)
+        chain_version = CHAIN_VERSION_VERDICT_V4
         chain_hash = compute_chain_hash(
             org_id=org.id,
             prompt_hash=item.prompt_hash,
@@ -241,6 +277,7 @@ def ingest_batch(
             event_metadata=metadata or None,
             pii_signals=item.pii_signals,
             occurred_at=item.occurred_at,
+            verdict_hash=row_verdict_hash,
         )
         row = AuditLog(
             org_id=org.id, seq=seq,
@@ -253,6 +290,7 @@ def ingest_batch(
             token_count=item.token_count, policy_tag=item.policy_tag,
             agent=item.agent,
             pii_signals=item.pii_signals,
+            local_verdict=local_verdict, verdict_hash=row_verdict_hash,
             prev_hash=prev_hash, chain_hash=chain_hash,
             gemini_verdict=None,          # grading_status defaults to 'pending'
         )
@@ -373,10 +411,15 @@ def list_breaches(
     ]
 
 
+# `verdict_hash` and `local_verdict` are not optional extras: from chain_version 4
+# the verdict hash IS part of the hashed event, so an export without it cannot be
+# recomputed at all, and without the verdict body a reader cannot check that the
+# bound digest still describes the verdict they are being shown.
 _EXPORT_COLS = ["seq", "event_id", "client_id", "client_seq", "event_type",
                 "commitment_alg", "event_metadata", "chain_version", "occurred_at", "created_at",
                 "policy_tag", "agent", "token_count", "prompt_hash",
                 "response_hash", "pii_signals", "prev_hash", "chain_hash",
+                "verdict_hash", "local_verdict",
                 "gemini_verdict", "grading_status", "graded_at"]
 
 
@@ -400,6 +443,8 @@ def _export_row(r: AuditLog) -> dict:
         "pii_signals": r.pii_signals,
         "prev_hash": r.prev_hash,
         "chain_hash": r.chain_hash,
+        "verdict_hash": r.verdict_hash,
+        "local_verdict": r.local_verdict,
         "gemini_verdict": r.gemini_verdict,
         "grading_status": r.grading_status,
         "graded_at": r.graded_at.isoformat() if r.graded_at else None,
@@ -475,6 +520,7 @@ def export_logs(
             d["pii_signals"] = "" if d["pii_signals"] is None else json.dumps(d["pii_signals"])
             d["event_metadata"] = "" if d["event_metadata"] is None else json.dumps(d["event_metadata"])
             d["gemini_verdict"] = "" if d["gemini_verdict"] is None else json.dumps(d["gemini_verdict"])
+            d["local_verdict"] = "" if d["local_verdict"] is None else json.dumps(d["local_verdict"])
             w.writerow(d)
         return Response(
             content=buf.getvalue(), media_type="text/csv",

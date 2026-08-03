@@ -17,6 +17,23 @@ GENESIS_HASH = "0" * 64
 CHAIN_VERSION_LEGACY = 1
 CHAIN_VERSION_CAPTURE_V2 = 2
 CHAIN_VERSION_POLICY_V3 = 3
+CHAIN_VERSION_VERDICT_V4 = 4
+
+
+def verdict_hash_hex(verdict: dict | None) -> str | None:
+    """The digest V4 binds: SHA-256 over the canonical JSON of a LOCAL verdict.
+
+    The same canonical form the chain itself uses, so key order can never move a
+    hash. Returns None for None, which is what an un-evaluated row carries.
+
+    Only the DIGEST goes into the chain, so the chain alone cannot notice an
+    edited verdict body — a verifier has to re-derive this from the exported
+    `local_verdict` and compare. verifier/foxy_verify.py does exactly that.
+    """
+    if verdict is None:
+        return None
+    canonical = json.dumps(verdict, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def compute_chain_hash(
@@ -38,6 +55,7 @@ def compute_chain_hash(
     event_metadata: dict | None = None,
     pii_signals: list[str] | None = None,
     occurred_at=None,
+    verdict_hash: str | None = None,
 ) -> str:
     if chain_version >= CHAIN_VERSION_CAPTURE_V2:
         event = {
@@ -55,6 +73,15 @@ def compute_chain_hash(
         # byte-compatible so their historic hashes continue to verify.
         if chain_version >= CHAIN_VERSION_POLICY_V3:
             event["chain_version"] = chain_version
+        # V4 binds the LOCAL, deterministic verdict — the one policy_engine
+        # decided at ingest, so a verdict can no longer be edited in the database
+        # without breaking the chain. NOT the AI judge's grade: that does not
+        # exist yet when this runs (the worker adds it asynchronously), so
+        # chaining it would mean re-hashing the row afterwards and invalidating
+        # every block after it. See schemas.Verdict for the full line.
+        # V1/V2/V3 stay byte-identical, exactly as V3 did for V2.
+        if chain_version >= CHAIN_VERSION_VERDICT_V4:
+            event["verdict_hash"] = verdict_hash
         data_blob = json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256((data_blob + prev_hash).encode("utf-8")).hexdigest()
     data_blob = f"{org_id}|{prompt_hash}|{response_hash}|{token_count}|{policy_tag}|{seq}"

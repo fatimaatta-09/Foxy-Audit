@@ -92,7 +92,7 @@ def test_policy_snapshot_is_bound_and_used_after_a_later_policy_change(
     ]).status_code == 202
     item = client.get("/v1/logs?limit=1", headers=org["auth"]).json()["items"][0]
     metadata = item["event_metadata"]
-    assert item["chain_version"] == 3
+    assert item["chain_version"] == 4    # V4 since H1; the V3 snapshot still binds
     assert metadata["policy_snapshot_hash"] == policy_snapshot_hash(metadata["policy_snapshot"])
     assert metadata["policy_snapshot"]["max_token_threshold"] == 777
 

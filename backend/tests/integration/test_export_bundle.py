@@ -269,3 +269,76 @@ def test_the_shipped_verifier_catches_a_tampered_bundle(make_org, client, tmp_pa
     report = _json.loads(proc.stdout.decode("utf-8"))
     assert report["chain"]["ok"] is False
     assert report["chain"]["first_broken_seq"] == 2
+
+
+# ── V4: the same proof, for the verdict (H1) ─────────────────────────────────
+
+def _unzip(client, org, tmp_path, name: str) -> pathlib.Path:
+    r = client.get("/v1/logs/export?format=bundle", headers=org["auth"])
+    assert r.status_code == 200, r.text
+    workdir = tmp_path / name
+    workdir.mkdir()
+    zipfile.ZipFile(io.BytesIO(r.content)).extractall(workdir)
+    return workdir
+
+
+def _run_verifier(workdir: pathlib.Path):
+    return subprocess.run(
+        [sys.executable, "foxy_verify.py", "foxy-audit-logs.json", "--json"],
+        cwd=workdir, capture_output=True,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"}, timeout=120)
+
+
+def test_the_bundle_carries_what_a_v4_row_needs_to_be_verified(make_org, client, tmp_path):
+    """From chain_version 4 the verdict hash IS hashed material. If the export
+    omitted it, a stranger could not recompute the row at all — so this asserts
+    the columns are really in the archive, not just in the database."""
+    import json as _json
+
+    org = make_org()
+    _ingest(client, org, 3)
+    data = _json.loads((_unzip(client, org, tmp_path, "v4") / "foxy-audit-logs.json")
+                       .read_text(encoding="utf-8"))
+    for row in data["logs"]:
+        assert row["chain_version"] == 4
+        assert len(row["verdict_hash"]) == 64
+        assert row["local_verdict"]["decision"] == "clean"
+        # The AI grade is a separate, unbound field and is still ungraded here.
+        assert row["gemini_verdict"] is None
+
+
+@pytest.mark.skipif(not REAL_VERIFIER.exists(), reason="verifier/ not checked out")
+def test_a_stranger_can_verify_a_v4_ledger_from_a_bare_folder(make_org, client, tmp_path):
+    """The #27 proof, re-run now that ingest writes V4. A row whose verdict is
+    chained but which no longer verifies from its own bundle would have broken
+    the product's central claim, and no unit test would have said so."""
+    import json as _json
+
+    org = make_org()
+    _ingest(client, org, 5)
+    proc = _run_verifier(_unzip(client, org, tmp_path, "v4-desk"))
+    out = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+    assert proc.returncode == 0, f"the shipped verifier refused a V4 bundle:\n{out}"
+    assert _json.loads(proc.stdout.decode("utf-8"))["chain"]["count"] == 5
+
+
+@pytest.mark.skipif(not REAL_VERIFIER.exists(), reason="verifier/ not checked out")
+def test_the_shipped_verifier_catches_an_edited_verdict(make_org, client, tmp_path):
+    """The point of H1, end to end: flip a verdict in the evidence and the tool an
+    auditor was handed says so. Before V4 this edit verified clean."""
+    import json as _json
+
+    org = make_org()
+    _ingest(client, org, 4)
+    workdir = _unzip(client, org, tmp_path, "verdict-tamper")
+    ledger = workdir / "foxy-audit-logs.json"
+    data = _json.loads(ledger.read_text(encoding="utf-8"))
+    data["logs"][2]["local_verdict"]["decision"] = "clean-ish"
+    ledger.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+
+    proc = _run_verifier(workdir)
+    assert proc.returncode == 1, "an edited verdict went unreported"
+    report = _json.loads(proc.stdout.decode("utf-8"))
+    assert report["chain"]["ok"] is False
+    assert report["chain"]["first_broken_seq"] == 3
+    assert "verdict" in report["chain"]["detail"]

@@ -17,7 +17,9 @@ Input: the JSON you download from the dashboard (GET /v1/logs/export?format=json
                   "chain": "sepolia", "contract": "0x…" },   # optional
       "logs": [ { "seq": 1, "prompt_hash": "…", "response_hash": "…",
                   "token_count": 10, "policy_tag": "chat", "agent": "gpt-4o"|null,
-                  "prev_hash": "…", "chain_hash": "…" }, … ]
+                  "prev_hash": "…", "chain_hash": "…",
+                  # chain_version 4 and later:
+                  "verdict_hash": "…", "local_verdict": {…} }, … ]
     }
 
 Exit code 0 = intact, 1 = tampering / anchor mismatch. `--json` for machine output.
@@ -43,7 +45,7 @@ def compute_chain_hash(*, org_id, prompt_hash, response_hash, token_count,
                        policy_tag, seq, prev_hash, agent=None, chain_version=1,
                        event_id=None, client_id=None, client_seq=None,
                        event_type=None, commitment_alg=None, event_metadata=None,
-                       pii_signals=None, occurred_at=None):
+                       pii_signals=None, occurred_at=None, verdict_hash=None):
     if chain_version >= 2:
         event = {
             "org_id": str(org_id), "event_id": str(event_id) if event_id else None,
@@ -57,6 +59,11 @@ def compute_chain_hash(*, org_id, prompt_hash, response_hash, token_count,
         }
         if chain_version >= 3:
             event["chain_version"] = chain_version
+        # V4 binds the digest of the row's LOCAL, deterministic verdict (the one
+        # decided at ingest). The AI judge's grade arrives later and is NOT bound
+        # — see verdict_hash_hex below for what that means for a reader.
+        if chain_version >= 4:
+            event["verdict_hash"] = verdict_hash
         blob = json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256((blob + prev_hash).encode("utf-8")).hexdigest()
     data_blob = f"{org_id}|{prompt_hash}|{response_hash}|{token_count}|{policy_tag}|{seq}"
@@ -75,7 +82,24 @@ def _row_hash(org_id, row, prev_hash):
         event_id=row.get("event_id"), client_id=row.get("client_id"),
         client_seq=row.get("client_seq"), event_type=row.get("event_type"),
         commitment_alg=row.get("commitment_alg"), event_metadata=row.get("event_metadata"),
-        pii_signals=row.get("pii_signals"), occurred_at=row.get("occurred_at"))
+        pii_signals=row.get("pii_signals"), occurred_at=row.get("occurred_at"),
+        verdict_hash=row.get("verdict_hash"))
+
+
+def verdict_hash_hex(verdict):
+    """Re-derive the digest a V4 row binds, from the verdict body it exported.
+
+    The chain binds `verdict_hash`, not the verdict itself, so the chain recompute
+    alone would still pass if someone rewrote `local_verdict` and left the digest
+    in place. Comparing this against the stored `verdict_hash` closes that: the
+    verdict body is tamper-evident too.
+
+    `local_verdict` is the LOCAL, deterministic verdict — decided by policy rules
+    at ingest. `gemini_verdict` is the AI judge's later, advisory grade; it is not
+    hashed and this tool does not check it.
+    """
+    canonical = json.dumps(verdict, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def commitment_hex(value, key):
@@ -122,6 +146,13 @@ def verify_export(data):
             return {"ok": False, "count": len(rows), "first_broken_seq": row["seq"],
                     "detail": f"chain hash mismatch at seq {row['seq']}",
                     "head": None, "head_seq": None}
+        # The chain binds the verdict's DIGEST; this binds the digest to the body.
+        # Without it, `local_verdict` could be rewritten and the chain still pass.
+        if row.get("local_verdict") is not None:
+            if verdict_hash_hex(row["local_verdict"]) != row.get("verdict_hash"):
+                return {"ok": False, "count": len(rows), "first_broken_seq": row["seq"],
+                        "detail": f"local verdict does not match its bound hash at seq {row['seq']}",
+                        "head": None, "head_seq": None}
         prev = row["chain_hash"]
         expected_seq += 1
     anchor = data.get("anchor") or {}

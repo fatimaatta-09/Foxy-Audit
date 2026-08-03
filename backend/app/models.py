@@ -178,6 +178,12 @@ class AuditLog(Base):
     pii_signals: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     chain_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # The LOCAL, deterministic verdict decided at ingest, and its digest — which
+    # IS bound into the chain from chain_version 4 on. Both nullable and never
+    # backfilled: V1–V3 rows were hashed without them and must stay that way.
+    local_verdict: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    verdict_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The AI judge's later, advisory grade. NOT hashed — see schemas.Verdict.
     gemini_verdict: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # ── durable grading queue (Postgres outbox) ──
     grading_status: Mapped[str] = mapped_column(

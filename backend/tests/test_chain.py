@@ -77,6 +77,86 @@ def test_agent_is_bound_into_the_hash():
     assert with_agent == hashlib.sha256((blob + GENESIS_HASH).encode()).hexdigest()
 
 
+# ── golden vectors: the whole history, pinned ────────────────────────────────
+# One fixed input set, hashed at every version the product has ever written. The
+# values below were computed from the chain.py at origin/main BEFORE V4 was added
+# — they are what customers already hold in exports, not what this file happens
+# to produce today. A new version must extend the event dict, never reorder it;
+# if any of these move, every historical export stops verifying and the change is
+# a breaking one, whatever it looked like in the diff.
+
+_V2_ARGS = dict(
+    org_id="org-1", prompt_hash="a" * 64, response_hash="b" * 64,
+    token_count=100, policy_tag="hipaa_basic", seq=1, prev_hash=GENESIS_HASH,
+    agent="gpt-4o", event_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    client_id="sdk-a", client_seq=7, event_type="interaction",
+    commitment_alg="hmac-sha256",
+    event_metadata={"policy_snapshot_hash": "c" * 64, "request_id": "req-1"},
+    pii_signals=["email"], occurred_at="2026-07-18T18:00:00+00:00",
+)
+
+GOLDEN = {
+    1: "872eb2c206bcb995773ab1b9a43a031c6d8488761c976ce3d341921a81aa2f79",
+    2: "f482c1b75554b3fdbe286d849906418ca5f0939365f2ed5155d542909ce31157",
+    3: "b2201ad5e70f74b8a2bd266c8a25fd7b04de073ed181ee2c5ceb6ea648dc22dc",
+}
+
+
+def test_golden_v1_legacy_string_is_frozen():
+    """The pre-V2 pipe-delimited blob, with and without the 6B agent segment."""
+    args = dict(org_id="org-1", prompt_hash="a" * 64, response_hash="b" * 64,
+                token_count=100, policy_tag="hipaa_basic", seq=1, prev_hash=GENESIS_HASH)
+    assert compute_chain_hash(**args) == GOLDEN[1]
+    assert (compute_chain_hash(**args, agent="gpt-4o")
+            == "460227f579683edaaca8edb80cecb455e9c8fa523a17ce1336d8f3118535cdd8")
+
+
+def test_golden_v2_capture_dict_is_frozen():
+    assert compute_chain_hash(chain_version=2, **_V2_ARGS) == GOLDEN[2]
+
+
+def test_golden_v3_policy_dict_is_frozen():
+    assert compute_chain_hash(chain_version=3, **_V2_ARGS) == GOLDEN[3]
+
+
+def test_v4_does_not_disturb_the_older_versions():
+    """V4 adds a key to the event dict. Adding it must not leak into V1-V3, and
+    passing a verdict_hash to an older version must be inert — otherwise a
+    recompute of a historical row could be poisoned by a column added later."""
+    poison = dict(_V2_ARGS, verdict_hash="d" * 64)
+    assert compute_chain_hash(chain_version=2, **poison) == GOLDEN[2]
+    assert compute_chain_hash(chain_version=3, **poison) == GOLDEN[3]
+    assert compute_chain_hash(
+        org_id="org-1", prompt_hash="a" * 64, response_hash="b" * 64,
+        token_count=100, policy_tag="hipaa_basic", seq=1, prev_hash=GENESIS_HASH,
+        verdict_hash="d" * 64) == GOLDEN[1]
+
+
+# ── V4: the verdict is bound ─────────────────────────────────────────────────
+
+def test_v4_binds_the_verdict_hash():
+    """Same inputs, different verdict → different chain hash. This is the whole
+    point of V4: a verdict can no longer be rewritten in the database without
+    breaking the chain."""
+    base = dict(_V2_ARGS, chain_version=4)
+    clean = compute_chain_hash(**base, verdict_hash="1" * 64)
+    breach = compute_chain_hash(**base, verdict_hash="2" * 64)
+    assert clean != breach
+    # …and V4 with a verdict is not V3 with the same fields.
+    assert clean != compute_chain_hash(chain_version=3, **_V2_ARGS)
+
+
+def test_verdict_hash_hex_is_canonical_and_order_blind():
+    """Key order in the stored JSONB must never move the digest — Postgres does
+    not promise to give a dict back in the order it went in."""
+    a = {"decision": "clean", "policy_breach": False, "risk_score": 0, "rules": []}
+    b = {"rules": [], "risk_score": 0, "policy_breach": False, "decision": "clean"}
+    assert chain.verdict_hash_hex(a) == chain.verdict_hash_hex(b)
+    assert chain.verdict_hash_hex(a) != chain.verdict_hash_hex(dict(a, decision="breach"))
+    assert chain.verdict_hash_hex(None) is None
+    assert len(chain.verdict_hash_hex(a)) == 64
+
+
 def test_chain_recomputes_intact():
     """An untampered chain re-verifies exactly like the /v1/verify route does."""
     stored = _build_chain(ROWS)

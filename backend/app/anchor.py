@@ -101,7 +101,7 @@ def recompute_head(db: Session, org_id, upto_seq: int) -> str | None:
             event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
             event_type=row.event_type, commitment_alg=row.commitment_alg,
             event_metadata=row.event_metadata, pii_signals=row.pii_signals,
-            occurred_at=row.occurred_at,
+            occurred_at=row.occurred_at, verdict_hash=row.verdict_hash,
         )
         last = prev
     return last
@@ -129,7 +129,7 @@ def validate_chain(db: Session, org_id, upto_seq: int) -> tuple[bool, str, str |
             event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
             event_type=row.event_type, commitment_alg=row.commitment_alg,
             event_metadata=row.event_metadata, pii_signals=row.pii_signals,
-            occurred_at=row.occurred_at,
+            occurred_at=row.occurred_at, verdict_hash=row.verdict_hash,
         )
         if expected != row.chain_hash:
             return False, f"chain hash mismatch at seq {row.seq}", last

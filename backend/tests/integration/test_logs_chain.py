@@ -31,7 +31,7 @@ def _expected_hash(org, item, prev_hash):
         client_seq=item.get("client_seq"), event_type=item.get("event_type"),
         commitment_alg=item.get("commitment_alg"),
         event_metadata=item.get("event_metadata"), pii_signals=item.get("pii_signals"),
-        occurred_at=item.get("occurred_at"),
+        occurred_at=item.get("occurred_at"), verdict_hash=item.get("verdict_hash"),
     )
 
 

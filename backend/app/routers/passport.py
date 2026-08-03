@@ -143,7 +143,7 @@ def generate_passport(
             event_id=row.event_id, client_id=row.client_id, client_seq=row.client_seq,
             event_type=row.event_type, commitment_alg=row.commitment_alg,
             event_metadata=row.event_metadata, pii_signals=row.pii_signals,
-            occurred_at=row.occurred_at,
+            occurred_at=row.occurred_at, verdict_hash=row.verdict_hash,
         )
         if expected != row.chain_hash:
             chain_verified = False
