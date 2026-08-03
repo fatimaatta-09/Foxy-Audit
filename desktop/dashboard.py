@@ -79,7 +79,7 @@ from access_page import (
 from export_page import ExportSections, history_row
 import policy_page
 from policy_page import PolicySections
-from billing_page import BillingSections, invoice_row, usage_row
+from billing_page import BillingSections, PlanDialog, invoice_row, usage_row
 from settings_page import SettingsSections, device_row, login_row
 from settings_admin_page import (
     AddUserDialog, audit_row, set_status_chip, user_row, webhook_row,
@@ -3694,8 +3694,10 @@ class DashboardWindow(QWidget):
         admin = self._is_billing_admin()
         has_account = bool(self._bil_plan["has_billing_account"])
         self.bil_manage.setVisible(admin and has_account)
-        # Upgrade goes to the public pricing page — no account, no role needed.
-        self.bil_upgrade.setVisible(bool(self._bil_plan["known"])
+        # E3: upgrading now buys for THIS workspace through an admin-only route,
+        # so it takes the role too. It used to open the public pricing page,
+        # which needed neither — and bought the wrong workspace (#36).
+        self.bil_upgrade.setVisible(admin and bool(self._bil_plan["known"])
                                     and not has_account)
 
     def open_billing_portal(self):
@@ -3739,8 +3741,62 @@ class DashboardWindow(QWidget):
                      on_err=lambda err: self.toast.show_message(
                          bd.invoice_link_result(status_of(err) or 0)))
 
-    def open_pricing(self):
-        QDesktopServices.openUrl(QUrl(bd.PRICING_URL))
+    def open_upgrade(self):
+        """Buy a plan for THIS workspace (E3 · #36).
+
+        Two calls, and both are load-bearing. `GET /v1/billing/plans` because
+        only the server knows which tiers this deployment has a Stripe price
+        for — offering one it cannot sell ends in a 422 after the customer has
+        already decided. Then `POST /v1/billing/upgrade-session`, which is the
+        one route that puts `foxy_org_id` in the Checkout metadata.
+
+        This button used to open foxyaudit.tech/pricing.html. That page checks
+        out anonymously, so the webhook could not tell which workspace had paid,
+        missed the customer lookup and provisioned a SECOND, empty organisation
+        — leaving the customer's evidence behind a lock their money had not
+        touched. The payment still happens in the browser; what changed is that
+        the workspace is now named before it opens.
+        """
+        self.bil_upgrade.setEnabled(False)
+        self.bil_upgrade.setText("opening…")
+
+        def restore():
+            self.bil_upgrade.setEnabled(True)
+            self.bil_upgrade.setText("Upgrade plan ↗")
+
+        def chose(data):
+            restore()
+            choices = bd.plan_choices(data)
+            if not choices:
+                self.toast.show_message(bd.UPGRADE_NONE)
+                return
+            dialog = PlanDialog(choices, self)
+            if dialog.exec() != PlanDialog.DialogCode.Accepted:
+                return
+            self._start_checkout(dialog.tier())
+
+        def failed(err):
+            restore()
+            self.toast.show_message(bd.upgrade_result(status_of(err) or 0))
+
+        spawn_worker(self.client, "GET", "/v1/billing/plans", timeout=15,
+                     parent=self, track=self._page_workers, on_ok=chose,
+                     on_err=failed)
+
+    def _start_checkout(self, tier: str):
+        def opened(data):
+            url = (data or {}).get("checkout_url") if isinstance(data, dict) else ""
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+                self.toast.show_message("Opening checkout in your browser")
+            else:
+                self.toast.show_message(bd.upgrade_result(None))
+
+        spawn_worker(self.client, "POST", "/v1/billing/upgrade-session",
+                     body={"plan": tier}, timeout=20, parent=self,
+                     track=self._page_workers, on_ok=opened,
+                     on_err=lambda err: self.toast.show_message(
+                         bd.upgrade_result(status_of(err) or 0)))
 
     # -- Settings, account half (D11a) --------------------------------------
     def _init_settings(self):

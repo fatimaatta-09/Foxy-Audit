@@ -16,11 +16,12 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
-    QVBoxLayout, QWidget,
+    QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from charts import FoxChart
+from export_page import _combo_qss, _field_label
 from foxy_tokens import BAD_RED, OK_GREEN, RADIUS, WARN_AMBER, WEB, pick_font
 from home_page import _card, _elide_to_width, _label, _stat_tile, scroll_qss
 from panel_state import StatusStrip
@@ -221,7 +222,7 @@ class BillingSections:
         o.bil_upgrade.setObjectName("ghostBtn")
         o.bil_upgrade.setMinimumHeight(44)
         o.bil_upgrade.setCursor(Qt.CursorShape.PointingHandCursor)
-        o.bil_upgrade.clicked.connect(lambda: o.open_pricing())
+        o.bil_upgrade.clicked.connect(lambda: o.open_upgrade())
         o.bil_upgrade.hide()
         lay.addWidget(o.bil_upgrade)
 
@@ -253,6 +254,63 @@ class BillingSections:
 # ── rows ────────────────────────────────────────────────────────────────────
 _WEIGHTS_USAGE = (3, 2, 2, 2)
 _WEIGHTS_INVOICE = (3, 3, 2, 4)
+
+
+class PlanDialog(QDialog):
+    """Which plan, asked before Checkout opens (E3 · #36).
+
+    The desktop still hands the payment itself to the browser — it does not try
+    to be Stripe. What it stopped handing over is the QUESTION of whose
+    workspace is being bought for: the pricing page this button used to open
+    checks out anonymously, and the webhook answers that by creating a second,
+    empty organisation. The tiers come from `GET /v1/billing/plans`, so this
+    only ever offers what the deployment can complete, and it shows no price —
+    the amount lives in Stripe and is confirmed at checkout.
+    """
+
+    def __init__(self, choices: list[dict], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Choose a plan")
+        self.setModal(True)
+        self.setMinimumWidth(440)
+        self.setStyleSheet(f"QDialog {{ background: {WEB['surf']}; }}")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 20)
+        lay.setSpacing(10)
+        lay.addWidget(_label("Choose a plan", size=15, bold=True))
+        lay.addWidget(_label(bd.UPGRADE_BLURB, size=10.5, colour=WEB["muted"],
+                             wrap=True))
+
+        lay.addWidget(_field_label("Plan"))
+        self.plans = QComboBox()
+        self.plans.setAccessibleName("Plan to buy for this workspace")
+        self.plans.setMinimumHeight(44)
+        self.plans.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.plans.setStyleSheet(_combo_qss())
+        for choice in choices:
+            self.plans.addItem(choice["label"], choice["tier"])
+        lay.addWidget(self.plans)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        buttons.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.setObjectName("ghostBtn")
+        cancel.setMinimumHeight(44)
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        self.go = QPushButton("Continue to checkout ↗")
+        self.go.setObjectName("ctaBtn")
+        self.go.setMinimumHeight(44)
+        self.go.setDefault(True)
+        self.go.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.go.clicked.connect(self.accept)
+        buttons.addWidget(self.go)
+        lay.addLayout(buttons)
+
+    def tier(self) -> str:
+        return str(self.plans.currentData() or "")
 
 
 def usage_row(row: dict) -> QWidget:

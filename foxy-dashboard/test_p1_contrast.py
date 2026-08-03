@@ -182,6 +182,9 @@ BODY_TEXT = [
     ("muted",  "surf2", ".dtbl .mono on a hovered row"),
     ("fox2",   "bg",    ".eyebrow"),
     ("fox2",   "surf",  ".gauge-row b, .codebox, .notif-head a"),
+    # E3: --fox2, never --fox. #f05700 is 3.16:1 on the light raised surface and
+    # .lock-plan-go is 10px, so the brand fill is not a colour for this text.
+    ("fox2",   "surf2", ".lock-plan-go, in the locked overlay's plan buttons"),
     ("safe-ink",   "surf", ".eval.ok, .fb-res.ok"),
     ("warn-ink",   "surf", ".eval.unknown"),
     ("breach-ink", "surf", ".fb-res.bad, .usermenu-item.danger, .stat .v.danger"),

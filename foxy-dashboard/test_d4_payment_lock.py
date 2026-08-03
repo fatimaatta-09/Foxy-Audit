@@ -102,7 +102,7 @@ def test_every_condition_carries_its_own_action(lockjs):
     the customer. A table entry with no `act` renders a lock with no way out."""
     table = lockjs[lockjs.index("var REASON={"):lockjs.index("var UNKNOWN=")]
     rows = re.findall(r"^\s{4}[a-z_]+:\s*\{(.*)\}", table, re.M)
-    assert len(rows) == 5, f"expected five conditions, found {len(rows)}"
+    assert len(rows) == 7, f"expected seven conditions, found {len(rows)}"
     for row in rows:
         for field in ("cta:", "act:"):
             assert field in row, f"a condition is missing {field}: {row}"
@@ -130,7 +130,7 @@ def test_the_wording_of_a_condition_is_never_kept_here_as_well(lockjs):
 def test_capture_state_is_read_from_its_own_field(lockjs):
     """Never from `locked`, and never inferred. The strip's three states are the
     three values `capture_blocked` can hold."""
-    fn = lockjs[lockjs.index("function evidence(blocked){"):lockjs.index("/* Both actions POST")]
+    fn = lockjs[lockjs.index("function evidence(blocked){"):lockjs.index("/* Every action POSTs")]
     assert "blocked===true" in fn and "blocked===false" in fn, (
         "the evidence strip is no longer switching on capture_blocked exactly")
     # String literals first — the markup names the .lock-ev classes. What is left
@@ -227,6 +227,98 @@ def test_the_lock_sits_below_the_sign_in_card(html):
     z = int(re.search(r"z-index:(\d+)", rule.group(1)).group(1))
     gate = int(re.search(r'id="authGate"[^>]*z-index:(\d+)', html).group(1))
     assert z < gate, f"the lock ({z}) covers the sign-in card ({gate})"
+
+
+# ── E3 · the evaluation pair, and the endpoint that is defect #36 ───────────
+
+def test_the_evaluation_pair_is_covered_and_both_ask_for_an_upgrade(lockjs):
+    """E1 put two reasons on the wire and they mean the same remedy: the offer's
+    window closed, or its allowance is spent, and only buying a plan clears
+    either. A card or a portal visit fixes neither, so an `act` of `card` or
+    `portal` here would send the customer somewhere that cannot help them."""
+    table = lockjs[lockjs.index("var REASON={"):lockjs.index("var UNKNOWN=")]
+    for reason in ("evaluation_expired", "evaluation_credits_exhausted"):
+        row = re.search(rf"^\s{{4}}{reason}:\s*\{{(.*)\}}", table, re.M)
+        assert row, f"{reason} has no copy"
+        assert "act:'upgrade'" in row.group(1).replace(" ", ""), (
+            f"{reason} points at something other than an upgrade: {row.group(1)}")
+
+
+def test_no_signed_in_surface_posts_the_anonymous_checkout(html):
+    """THE regression this phase exists to prevent, and it is invisible on screen.
+
+    `/v1/billing/checkout-session` is the acquisition flow the sale page uses:
+    anonymous, by email, and its Stripe metadata carries NO org id. Posted from
+    a signed-in dashboard it looks like it works — Stripe opens, the card is
+    charged — and then `_handle_checkout` has nothing to match this workspace
+    on, misses the customer lookup (an org that never paid has no
+    `stripe_customer_id`) and provisions a SECOND, empty organisation. The
+    customer pays and finds none of their evidence, while the original stays
+    locked. That is the whole of defect #36.
+
+    `/v1/billing/upgrade-session` is the authenticated twin E1 added: same
+    Checkout, plus `foxy_org_id`. Every purchase made from inside the dashboard
+    must go through it. The prose below names the wrong route deliberately, so
+    this matches the CALL rather than the string."""
+    calls = re.findall(r"""(?:api|fetch)\(\s*['"](/v1/billing/[a-z-]+)""", html)
+    assert "/v1/billing/checkout-session" not in calls, (
+        "a signed-in surface is posting the anonymous, org-blind checkout — "
+        "the webhook will provision a second workspace (#36)")
+    assert calls.count("/v1/billing/upgrade-session") == 2, (
+        f"expected the locked overlay and the upgrade page to buy through "
+        f"upgrade-session, found {calls.count('/v1/billing/upgrade-session')}")
+
+
+def test_the_locked_upgrade_does_not_fall_back_to_the_portal(lockjs):
+    """D4 sent a locked upgrade to `/v1/billing/portal`, which was safe only
+    because nothing upgrade-shaped could lock yet. An expired evaluation can,
+    and it never paid — so it has no Stripe customer and the portal answers 400
+    to precisely the customer this state exists for."""
+    fn = lockjs[lockjs.index("function run(kind,btn,say){"):lockjs.index("var num=")]
+    # Comments first: the branch names the portal in order to rule it out, and a
+    # note about a mistake is not the mistake.
+    code = re.sub(r"/\*.*?\*/", "", fn, flags=re.S)
+    branch = code[code.index("if(kind==='upgrade'){"):code.index("var path=")]
+    assert "chooser(" in branch, "a locked upgrade no longer offers the plans"
+    assert "portal" not in branch, "a locked upgrade is back on the portal"
+    # …and the portal is still there for the conditions it does fix.
+    assert "/v1/billing/portal" in fn, "the portal action was removed outright"
+
+
+def test_the_chooser_asks_which_plans_exist_and_invents_no_price(lockjs):
+    """Two hard rules meeting in one function. The tiers come from
+    `GET /v1/billing/plans`, which lists only what this deployment has a Stripe
+    price configured for — hardcoding one 422s wherever it is not. And NO price
+    is shown: the amount lives in Stripe and is confirmed at checkout, so a
+    number written here would be exactly the fake data this project forbids."""
+    fn = lockjs[lockjs.index("function chooser(btn,say){"):lockjs.index("function banner(")]
+    assert "'/v1/billing/plans'" in fn, "the chooser is not asking which plans are sellable"
+    for tier in ("'pro'", "'max'", "'guardian'", "'companion'"):
+        assert tier not in fn, f"the chooser hardcodes the {tier} tier"
+    assert not re.search(r"[$£€]\s*\d|\d+\s*/\s*mo\b|per month|price", fn), (
+        "the chooser is putting a price on screen")
+    assert "monthly_log_quota" in fn, "the quota shown is no longer the server's"
+
+
+def test_the_chooser_survives_a_deployment_that_sells_nothing(lockjs):
+    """`/v1/billing/plans` returns an empty list when no Stripe price is
+    configured. Rendering nothing there leaves a locked customer staring at a
+    vanished button with no way out and no explanation."""
+    fn = lockjs[lockjs.index("function chooser(btn,say){"):lockjs.index("function banner(")]
+    assert "if(!list.length){" in fn, "an empty plan list renders nothing at all"
+    assert "lock-none" in fn, "the empty case has no words"
+
+
+def test_a_fresh_open_starts_from_the_cta(lockjs):
+    """`refresh()` re-renders on a throttle, so the reset must fire on the open
+    and not on every render — otherwise a plan list the customer is reading is
+    wiped out from under them a second later."""
+    body = lockjs[lockjs.index("function render(st){"):lockjs.index("\n  var inflight")]
+    reset = body[body.index("if(!wasOn){"):]
+    assert "$('billLockPlans').innerHTML=''" in reset, "a stale chooser survives a reopen"
+    assert "go.style.display=''" in reset, "the CTA stays hidden on a reopen"
+    assert body.count("billLockPlans") == 1, (
+        "the chooser is being reset outside the fresh-open branch")
 
 
 # ── the two traps this file has already been bitten by ──────────────────────

@@ -13,6 +13,7 @@ wrong figure is a claim about what somebody is being charged:
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -431,3 +432,102 @@ def test_invoices_empty_and_error_say_different_things(console):
     assert "No invoices yet" in console.bil_inv_empty.title.text()
     console._on_invoices(None, ok=False)
     assert console.bil_inv_empty.title.text() == ERROR_TITLE
+
+
+# ══ E3 · the upgrade, and whose workspace it buys (#36) ═════════════════════
+def test_no_desktop_surface_opens_the_anonymous_checkout():
+    """`Upgrade plan ↗` used to open foxyaudit.tech/pricing.html. That page
+    checks out ANONYMOUSLY: no org id reaches Stripe, so `_handle_checkout`
+    cannot match the workspace the customer is signed in to, misses the customer
+    lookup (an org that never paid has no `stripe_customer_id`) and provisions a
+    SECOND, empty organisation. The customer pays, lands somewhere new, and
+    their evidence stays behind a lock the money never touched.
+
+    `POST /v1/billing/upgrade-session` is the one route that carries
+    `foxy_org_id`. The prose in these modules names the wrong door in order to
+    warn about it, so this reads the CALLS, not the comments."""
+    calls, urls = set(), set()
+    for name in ("dashboard.py", "billing_data.py", "billing_page.py"):
+        tree = ast.parse((_HERE / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if node.value.startswith("/v1/billing/"):
+                    calls.add(node.value)
+                # Real links only. The prose in these modules names the wrong
+                # door in order to warn about it, and a docstring is not a link.
+                if node.value.startswith("http") and "pricing" in node.value:
+                    urls.add(node.value)
+    assert "/v1/billing/checkout-session" not in calls, (
+        "the desktop is buying through the anonymous, org-blind checkout (#36)")
+    assert "/v1/billing/upgrade-session" in calls, "the desktop cannot upgrade at all"
+    assert not urls, f"the desktop still hands a purchase to a public page: {urls}"
+
+
+def test_plan_choices_offers_only_what_the_server_sells():
+    """A tier appears only when the server listed it — it lists nothing it has
+    no Stripe price for, so this is what stops the desktop offering a plan
+    checkout would 422 on."""
+    payload = {"current_tier": "free", "plans": [
+        {"tier": "pro", "mode": "subscription", "monthly_log_quota": 50000},
+        {"tier": "guardian", "mode": "payment", "monthly_log_quota": None},
+    ]}
+    choices = bd.plan_choices(payload)
+    assert [c["tier"] for c in choices] == ["pro", "guardian"]
+    assert choices[0]["label"] == "Pro — 50,000 events / month"
+    assert choices[1]["label"] == "Guardian — unlimited events · one-time"
+    # Nothing to sell, no payload, junk in the list: all say "nothing", never a
+    # default tier the customer could then be charged for.
+    for junk in (None, {}, {"plans": None}, {"plans": [{"tier": ""}, "x", None]}):
+        assert bd.plan_choices(junk) == []
+
+
+def test_no_price_is_invented_anywhere_in_the_upgrade():
+    """The amount lives in Stripe and is confirmed at checkout. A number written
+    in a client is exactly the fake data this project forbids — and here it
+    would be a fake number about money."""
+    choices = bd.plan_choices({"plans": [
+        {"tier": "pro", "mode": "subscription", "monthly_log_quota": 50000}]})
+    text = choices[0]["label"] + bd.UPGRADE_BLURB + bd.UPGRADE_NONE
+    assert not re.search(r"[$£€]\s*\d|\bUSD\b|/\s*mo\b", text), text
+    # A quota the payload never carried is a dash, not "unlimited": promising
+    # capacity because a field was missing is the same class of invention.
+    absent = bd.plan_choices({"plans": [{"tier": "pro"}]})
+    assert absent[0]["label"] == f"Pro — {bd.MISSING}"
+
+
+def test_the_upgrade_failures_stay_apart():
+    """Three different situations with three different people who can fix them:
+    a role, a deployment, and a plan. One message would send an admin looking
+    for a setting that is not theirs to change."""
+    seen = {bd.upgrade_result(s) for s in (403, 503, 422, 0, None, 500)}
+    assert len(seen) == 5, seen          # 0 and None are the same situation
+    assert "admin" in bd.upgrade_result(403)
+    assert bd.upgrade_result(None) == "Could not reach the server."
+
+
+def test_the_upgrade_button_now_takes_the_role_the_route_takes(console):
+    """`/v1/billing/upgrade-session` is admin-only. While this button opened a
+    public page it needed no role — and this page's own rule is that a control
+    which cannot work is worse than no control."""
+    _as_admin(console, admin=False)
+    console._on_billing_plan({"plan_tier": "free", "has_billing_account": False})
+    assert console.bil_upgrade.isHidden(), "a member is offered an admin-only checkout"
+    _as_admin(console, admin=True)
+    console._on_billing_plan({"plan_tier": "free", "has_billing_account": False})
+    assert not console.bil_upgrade.isHidden()
+
+
+def test_the_plan_dialog_carries_the_tier_and_not_the_label(app):
+    """The label is for the human; `plan` on the wire is the tier the server
+    named. Sending the label would 422 every time."""
+    from billing_page import PlanDialog
+    dialog = PlanDialog(bd.plan_choices({"plans": [
+        {"tier": "pro", "mode": "subscription", "monthly_log_quota": 50000},
+        {"tier": "max", "mode": "subscription", "monthly_log_quota": None}]}))
+    try:
+        assert dialog.plans.count() == 2
+        assert dialog.tier() == "pro"
+        dialog.plans.setCurrentIndex(1)
+        assert dialog.tier() == "max"
+    finally:
+        dialog.deleteLater()

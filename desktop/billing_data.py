@@ -309,7 +309,74 @@ def plan_view(data: dict | None) -> dict:
     }
 
 
-PRICING_URL = "https://foxyaudit.tech/pricing.html"
+# ── the upgrade (E3 · #36) ──────────────────────────────────────────────────
+# `Upgrade plan ↗` used to open https://foxyaudit.tech/pricing.html, which is
+# the ANONYMOUS acquisition flow: it checks out by email and its Stripe metadata
+# carries no org id, so `_handle_checkout` cannot match the workspace the
+# customer is signed in to, misses the customer lookup (an org that never paid
+# has no `stripe_customer_id`) and provisions a SECOND, empty organisation. The
+# customer pays and finds none of their evidence.
+#
+# `POST /v1/billing/upgrade-session` is the authenticated twin E1 added: same
+# Checkout, plus `foxy_org_id`. Admin-only, and under `/v1/billing/`, so it stays
+# reachable from a locked workspace — which is the only kind an expired
+# evaluation leaves behind. The web made the same swap in the same phase; these
+# two surfaces have to tell one story about whose workspace got bought.
+
+
+def plan_choices(data) -> list[dict]:
+    """`GET /v1/billing/plans` → what this deployment can actually sell.
+
+    A tier only appears when its Stripe price is configured server-side, so the
+    desktop never offers a plan checkout cannot complete. NO PRICE is shaped
+    here and none is available to shape: the amount lives in Stripe and is
+    confirmed at checkout, and a number invented in a client would be exactly
+    the fake data this project forbids. The quota is real — it comes from config.
+    """
+    out = []
+    plans = (data or {}).get("plans") if isinstance(data, dict) else None
+    for row in dict_rows(plans):
+        tier = str(row.get("tier") or "").strip()
+        if not tier:
+            continue
+        quota = row.get("monthly_log_quota", ABSENT)
+        events = ("unlimited events" if quota is None
+                  else MISSING if quota is ABSENT
+                  else f"{count(quota)} events / month")
+        once = " · one-time" if str(row.get("mode") or "") == "payment" else ""
+        out.append({"tier": tier, "label": f"{tier.capitalize()} — {events}{once}"})
+    return out
+
+
+#: Shown when the server sells nothing from here. The same situation the web's
+#: upgrade page describes, in the same words, because it is the same fact.
+UPGRADE_NONE = ("This workspace is billed outside self-serve checkout. "
+                "Email support and we will move you across.")
+
+#: The dialog's own line. It says which workspace, because that is the only
+#: thing this flow decides that the browser could not decide for itself.
+UPGRADE_BLURB = ("Checkout opens in your browser and applies to the workspace "
+                 "you are signed in to. No price is shown here — Stripe "
+                 "confirms the amount before you pay.")
+
+
+def upgrade_result(status: int | None) -> str:
+    """What `POST /v1/billing/upgrade-session` refusing means, in words.
+
+    Kept apart the way `portal_result` keeps its cases apart: 403 is a role the
+    signed-in user does not have, 503 is a deployment with no Stripe keys, and
+    422 is a plan this deployment does not sell. One message for all three would
+    send somebody looking for a setting that is not theirs to change.
+    """
+    if status == 403:
+        return "Buying a plan needs an admin account."
+    if status == 503:
+        return "Checkout isn't switched on for this workspace yet."
+    if status == 422:
+        return "That plan isn't on sale from here."
+    if status is None or status == 0:
+        return "Could not reach the server."
+    return f"Could not start checkout (HTTP {status})."
 
 
 def portal_result(status: int | None) -> str:

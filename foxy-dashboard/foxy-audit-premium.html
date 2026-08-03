@@ -1416,6 +1416,27 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 /* --ink2, never --muted2: this is live text and muted2 is 3.01:1 dark / 2.71:1
    light. §13's contrast guard exists to catch exactly that substitution. */
 .lock-ev-d{font-size:11.5px;line-height:1.55;color:var(--ink2);margin-top:4px;}
+/* E3 · the plan chooser, revealed by the overlay's own CTA.
+   An expired evaluation is the one locked condition the Stripe PORTAL cannot
+   fix: that org never paid, so it has no Stripe customer and /v1/billing/portal
+   answers 400 to exactly the customers this state is for. What clears the lock
+   is buying a plan, so the lock offers the plans. No prices — they live in
+   Stripe and are confirmed at checkout, and a number invented here would be the
+   fake data this project forbids. --fox2 carries the action word, never --fox:
+   #f05700 is 3.16:1 on the light raised surface and this text is 10px. */
+.lock-plans:empty{display:none;}
+.lock-plans{display:grid;gap:8px;margin-top:10px;}
+.lock-plan{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;
+  cursor:pointer;padding:11px 13px;border-radius:var(--r-md);border:var(--border-sm);
+  background:var(--surf2);color:var(--ink);font-family:inherit;}
+.lock-plan:hover{border-color:var(--fox);}
+.lock-plan:focus-visible{outline:2px solid var(--fox);outline-offset:2px;}
+.lock-plan[disabled]{cursor:default;}
+.lock-plan-t{font-size:13px;font-weight:800;letter-spacing:-.2px;text-transform:capitalize;}
+.lock-plan-q{font-size:11.5px;color:var(--ink2);}
+.lock-plan-go{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:800;
+  letter-spacing:.6px;text-transform:uppercase;color:var(--fox2);white-space:nowrap;}
+.lock-none{font-size:12px;line-height:1.6;color:var(--ink2);margin-top:12px;}
 .lock-alt{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:15px;
   font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;}
 .lock-alt a,.lock-alt button{background:none;border:0;padding:0;cursor:pointer;
@@ -2896,6 +2917,10 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
     <div id="billLockErr" role="status" aria-live="polite" style="min-height:14px;margin-top:12px;
       font-size:11.5px;line-height:1.5;color:var(--breach-ink);font-weight:600;"></div>
     <button class="btn pri" type="button" id="billLockGo"></button>
+    <!-- E3 · filled from GET /v1/billing/plans when the CTA above asks for it,
+         and empty every other time. The plans are the remedy for a lock the
+         billing portal cannot clear; see .lock-plans. -->
+    <div class="lock-plans" id="billLockPlans"></div>
     <div class="lock-alt">
       <button type="button" id="billLockOut">Sign out</button>
       <a href="mailto:foxyaudit@gmail.com?subject=Dashboard%20locked">Contact support</a>
@@ -5756,13 +5781,19 @@ async function loadLoginHistory(scope){
      the wire, written once, per reason, by the code that decided it. So the
      heading is that sentence (see `split`) and this table stops at the verb.
 
-     `none` is absent on purpose: nothing to say, nothing to do. */
+     `none` is absent on purpose: nothing to say, nothing to do.
+
+     E3 adds the evaluation pair. Both say "upgrade", because buying a plan is
+     the only thing that clears either — the offer's window has closed or its
+     allowance is spent, and neither is a card problem a portal could fix. */
   var REASON={
     card_required:          {cta:'Add payment method',        act:'card'},
     subscription_incomplete:{cta:'Finish setting up billing',  act:'portal'},
     subscription_past_due:  {cta:'Update payment method',      act:'portal'},
     subscription_cancelled: {cta:'See upgrade options',        act:'upgrade'},
-    trial_expired:          {cta:'See upgrade options',        act:'upgrade'}
+    trial_expired:          {cta:'See upgrade options',        act:'upgrade'},
+    evaluation_expired:     {cta:'See upgrade options',        act:'upgrade'},
+    evaluation_credits_exhausted:{cta:'See upgrade options',   act:'upgrade'}
   };
   /* A reason this build has not heard of still has to render something the
      customer can act on — a newer server can add one at any time. */
@@ -5810,13 +5841,18 @@ async function loadLoginHistory(scope){
     return '';
   }
 
-  /* Both actions POST to /v1/billing/*, which auth.py exempts from the gate, so
+  /* Every action POSTs to /v1/billing/*, which auth.py exempts from the gate, so
      they work from inside the locked state. That is the point of the exemption. */
   function run(kind,btn,say){
-    if(kind==='upgrade'&&!$('billLock').classList.contains('on')){ window.go('upgrade',null); return; }
-    /* From inside the overlay the upgrade page is unreachable — it sits behind
-       the lock — so an upgrade-shaped condition falls back to the portal. Only
-       reachable defensively: today neither cancelled nor trial_expired locks. */
+    if(kind==='upgrade'){
+      /* Not locked: the upgrade page is reachable and is the fuller surface. */
+      if(!$('billLock').classList.contains('on')){ window.go('upgrade',null); return; }
+      /* Locked: that page sits behind this overlay, so the choice is offered
+         here. NOT the portal, which was D4's fallback — an expired evaluation
+         never paid, has no Stripe customer, and /v1/billing/portal answers 400
+         to precisely the customer this state exists for. */
+      return chooser(btn,say);
+    }
     var path=(kind==='card')?'/v1/billing/card-setup-session':'/v1/billing/portal';
     var label=btn.textContent;
     btn.disabled=true; btn.textContent='opening…'; say('');
@@ -5834,6 +5870,76 @@ async function loadLoginHistory(scope){
       btn.disabled=false; btn.textContent=label;
       say('Could not reach the server. Check your connection and try again.');
     });
+  }
+
+  var num=function(v){return String(v).replace(/\B(?=(\d{3})+(?!\d))/g,',');};
+
+  /* ── the upgrade, and the endpoint that is the whole of defect #36 ────────
+     POST /v1/billing/upgrade-session — NEVER /v1/billing/checkout-session. The
+     second one is the anonymous acquisition flow the sale page uses: its Stripe
+     metadata carries no org identity, so the webhook has nothing to match on,
+     misses the customer lookup (an org that never paid has no Stripe customer)
+     and provisions a SECOND, empty organisation. The customer pays and lands in
+     a new workspace while this one — holding every event they have — stays
+     locked. One route upgrades a workspace; the other creates a customer. */
+  function buy(tier,btn,say){
+    var label=btn.innerHTML;
+    btn.disabled=true; btn.textContent='opening…'; say('');
+    api('/v1/billing/upgrade-session',{method:'POST',
+        headers:{'content-type':'application/json'},body:JSON.stringify({plan:tier})})
+      .then(function(r){
+        return r.json().catch(function(){return {};}).then(function(d){
+          if(r.ok&&d.checkout_url){ location.href=d.checkout_url; return; }
+          btn.disabled=false; btn.innerHTML=label;
+          say(r.status===403?'Only a workspace admin can buy a plan. Ask an admin on your team to do this.'
+            :r.status===503?'Checkout is not switched on for this workspace. Email support and we will sort it out.'
+            :r.status===422?'That plan is not on sale here. Email support and we will sort it out.'
+            :'Could not open checkout ('+r.status+'). Try again in a moment.');
+        });
+      }).catch(function(){
+        btn.disabled=false; btn.innerHTML=label;
+        say('Could not reach the server. Check your connection and try again.');
+      });
+  }
+
+  /* The plans this deployment can actually sell, asked for rather than assumed:
+     hardcoding a tier here would 422 on a deployment that has not configured it,
+     and picking one on the customer's behalf is not ours to do. GET
+     /v1/billing/plans is under /v1/billing/, so it answers from inside the lock. */
+  function chooser(btn,say){
+    var box=$('billLockPlans'), label=btn.textContent;
+    btn.disabled=true; btn.textContent='loading…'; say('');
+    api('/v1/billing/plans').then(function(r){ return r.ok?r.json():null; },
+                                  function(){ return null; })
+      .then(function(d){
+        if(!d){
+          btn.disabled=false; btn.textContent=label;
+          say('Could not load the plans. Check your connection and try again.');
+          return;
+        }
+        var list=Array.isArray(d.plans)?d.plans:[];
+        btn.style.display='none';
+        if(!list.length){
+          /* Honest, and it matches the upgrade page's wording for the same
+             deployment state rather than inventing a second explanation. */
+          box.innerHTML='<div class="lock-none">This workspace is billed outside self-serve '
+            +'checkout. Email support and we will move you across.</div>';
+          return;
+        }
+        box.innerHTML=list.map(function(p){
+          var q=(p.monthly_log_quota==null)?'unlimited events'
+               :(num(p.monthly_log_quota)+' events / month');
+          return '<button class="lock-plan" type="button" data-plan="'+esc(p.tier)+'">'
+            +'<span class="lock-plan-t">'+esc(p.tier)+'</span>'
+            +'<span class="lock-plan-q">'+esc(q)+'</span>'
+            +'<span class="lock-plan-go">'+(p.mode==='payment'?'Buy once':'Subscribe')+' →</span>'
+            +'</button>';
+        }).join('');
+        Array.prototype.forEach.call(box.querySelectorAll('button[data-plan]'),function(b){
+          b.onclick=function(){ buy(b.getAttribute('data-plan'),b,say); };
+        });
+        try{ box.querySelector('button').focus(); }catch(e){}
+      });
   }
 
   function banner(tone,c,st){
@@ -5869,11 +5975,21 @@ async function loadLoginHistory(scope){
       $('billLockD').textContent=p[1];
       $('billLockEv').innerHTML=evidence(st.capture_blocked);
       var go=$('billLockGo');
-      go.textContent=(c.act==='upgrade')?'Manage billing':c.cta;
+      /* D4 relabelled an upgrade-shaped condition "Manage billing" because the
+         action behind it was the portal. E3 made the action the real one, so
+         the button says what the table says again. */
+      go.textContent=c.cta;
       go.onclick=function(){ run(c.act,go,function(m){ $('billLockErr').textContent=m; }); };
       ov.classList.add('on');
       document.body.style.overflow='hidden';
-      if(!wasOn){ $('billLockErr').textContent=''; try{ go.focus(); }catch(e){} }
+      /* A fresh open starts from the CTA, never mid-way through somebody else's
+         plan choice: refresh() re-renders on a throttle and must not wipe an
+         open chooser, so the reset lives here rather than above. */
+      if(!wasOn){
+        $('billLockErr').textContent='';
+        $('billLockPlans').innerHTML=''; go.style.display='';
+        try{ go.focus(); }catch(e){}
+      }
       return;
     }
 
@@ -6804,21 +6920,33 @@ async function loadLoginHistory(scope){
   document.addEventListener('click',async function(e){
     var b=e.target.closest&&e.target.closest('#upgradeList button[data-plan]');
     if(!b)return;
-    var tier=b.getAttribute('data-plan');
+    var tier=b.getAttribute('data-plan'), label=b.textContent;
     b.disabled=true; b.textContent='opening checkout…';
     try{
-      var r=await api('/v1/billing/checkout-session',{method:'POST',
+      /* E3 · /v1/billing/upgrade-session, NOT /v1/billing/checkout-session.
+         Everyone reaching this page is signed in, and the checkout route is the
+         ANONYMOUS acquisition flow: it sends Stripe no org id, so the webhook
+         cannot match this workspace, misses the customer lookup and provisions a
+         SECOND, empty organisation. The customer pays and finds none of their
+         evidence. That was defect #36, and this page was one of its two doors. */
+      var r=await api('/v1/billing/upgrade-session',{method:'POST',
         headers:{'content-type':'application/json'},body:JSON.stringify({plan:tier})});
       if(!r.ok){
-        b.disabled=false; b.textContent='Choose';
-        try{ showToast('Could not start checkout ('+r.status+')'); }catch(_){}
+        b.disabled=false; b.textContent=label;
+        try{ showToast(r.status===403
+          ? 'Only a workspace admin can buy a plan. Ask an admin on your team to do this.'
+          : r.status===503
+          ? 'Checkout is not switched on for this workspace. Email support and we will sort it out.'
+          : r.status===422
+          ? 'That plan is not on sale here. Email support and we will sort it out.'
+          : 'Could not start checkout ('+r.status+')'); }catch(_){}
         return;
       }
       var j=await r.json();
       if(j&&j.checkout_url)location.href=j.checkout_url;
-      else { b.disabled=false; b.textContent='Choose'; }
+      else { b.disabled=false; b.textContent=label; }
     }catch(_){
-      b.disabled=false; b.textContent='Choose';
+      b.disabled=false; b.textContent=label;
       try{ showToast('Could not reach the server'); }catch(e2){}
     }
   });
