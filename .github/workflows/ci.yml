@@ -110,10 +110,23 @@ jobs:
         run: pytest sdk/tests -q
       - name: Hash-chain regression test
         run: pytest backend/tests/test_chain.py -q
-      - name: Dashboard contrast + theme audit
-        # Rides an already-running, dependency-light job: it parses the shipped
-        # CSS with the standard library and needs no browser and no Postgres.
-        run: pytest foxy-dashboard/test_p1_contrast.py foxy-dashboard/test_p2_structure.py -q
+      - name: Dashboard guards
+        # THE WHOLE DIRECTORY, not two files from it. Register #55: this ran
+        # test_p1_contrast.py and test_p2_structure.py only, so 9 of the 11 guard
+        # files never executed in CI — and the unrun ones are the CROSS-SURFACE
+        # guards, the ones that catch a backend change whose UI half has not
+        # landed yet. Not hypothetical: E1 (`e34e909`) added two reason codes to
+        # billing_state.py without the dashboard copy that test_d4_payment_lock.py
+        # requires, and that guard sat red on main for three commits — two of them
+        # production deploys — with nothing reporting it. A phase split is exactly
+        # the window where the two halves disagree, so the guards that span both
+        # are the ones that must always run.
+        #
+        # Still dependency-light: stdlib + pytest, no browser, no Postgres. One
+        # file (test_p4c_policy_ui.py) shells out to `node` to drive the real
+        # controller through a DOM stub; ubuntu-latest ships Node, which is why
+        # this stays on this runner rather than needing a setup step.
+        run: pytest foxy-dashboard -q
       - name: Offline judge demo
         run: python demo/offline_demo.py
       - name: Live OpenAI demo boundary tests
