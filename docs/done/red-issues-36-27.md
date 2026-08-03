@@ -1,3 +1,71 @@
+> ## Complete — 2026-08-03. Read this banner before the plan.
+>
+> **Both red issues are closed.** Three phases plus two corrections, CI and CD
+> green on each.
+>
+> | | Commit | What |
+> |---|---|---|
+> | E1 | `e34e909` | #36 backend — the condition, and the upgrade that clears it |
+> | E2 | `56840d6` | #27 — the verifier ships inside the export |
+> | — | `6e1f988` | CI fix: stop scanning the bundled verifier for audit actions |
+> | E3 | `134c7c1` | #36 UI — the lock, and the plan chooser that ends it |
+> | — | `6ef5de5` | #52 — name a verifier command a customer can run |
+>
+> Backend **907 → 925** passed · dashboard **310 → 321** · desktop **768 → 775**.
+> One migration in the whole plan: none. Every column already existed.
+>
+> ### The finding that changed what #36 was
+>
+> The owner chose *lock, and require an upgrade*. **There was no upgrade to
+> require.** `evaluation_offer_id` was written twice and cleared nowhere;
+> `/v1/billing/checkout-session` carried no org identity; `_handle_checkout` only
+> ever *provisioned*. So an expired-evaluation customer who did exactly what the
+> product asked **paid money and got a second, empty workspace** while the
+> original — holding every audit event they had — stayed locked forever.
+>
+> Closing #36 meant building the exit door. The banner was the easy half.
+>
+> E3 then found the defect was wider still: two signed-in surfaces were posting
+> the anonymous checkout, one of them the credits-exhausted banner's own CTA.
+>
+> ### What this plan got wrong
+>
+> **The export carve-out.** I specified an "Export your evidence" action on the
+> locked overlay so an expired org would not be stranded, having assumed
+> `/v1/logs/export` was reachable while locked. It is not in `_GATE_EXEMPT` and
+> never has been. Making it real would have widened the gate for *every* locked
+> condition — a change to a shipped lock, made through a UI phase, that nobody
+> asked for. **Withdrawn** (`665d1e9`), filed as #49.
+>
+> **The drift guard's home.** The plan said `pytest verifier/` would catch a
+> vendored copy drifting. CI does not run `pytest verifier/` — it runs six
+> specific paths and that is not one. The guard would have been **silent**, which
+> is the exact failure vendoring introduces. Moved to `backend/tests/integration/`.
+>
+> **The E1 test list.** Backend phase, backend tests — so I ran those and merged.
+> `test_the_reason_vocabulary_matches_the_backends` spans both surfaces and sat
+> **red on `main` for three commits**, two of them deploys, because CI runs 2 of
+> the 11 dashboard guard files. Filed as #55.
+>
+> ### Verified rather than reported
+>
+> #27's close was proven by round trip, not by test: a real bundle unzipped into
+> a folder where `git rev-parse` says *not a git repository*, run under a stock
+> interpreter with no venv — `[OK] chain intact`, `exit=0`; then one field edited
+> — `[FAIL] CHAIN BROKEN at seq 3`, `exit=1`.
+>
+> ### Open after this plan
+>
+> #49 (locked orgs cannot export) · #51 (nothing renders the passport) · #52 →
+> closed · #53 (the CLI round-trips the server) · #54 (stale README output) ·
+> #55 (CI runs 2 of 11 dashboard guards) · #56 (members see no upgrade control) ·
+> #57 (the upgrade is not audited) · #58 (desktop cannot branch on a 402 code).
+>
+> **The register stands at 47 open, 2 closed.** These were the two that made a
+> claim the product could not keep; the rest are contained.
+
+---
+
 # The two red issues — #36 and #27
 
 Source: `Worth Noting — Issues.md`. Planned 2026-08-03 against `main` @ `73b575c`.
