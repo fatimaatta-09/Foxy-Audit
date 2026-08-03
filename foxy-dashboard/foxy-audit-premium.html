@@ -3976,7 +3976,14 @@ async function loadLoginHistory(scope){
   function notVerifiedNote(count){
     var n=Number(count||0);
     if(n<50000)return 'The server did not report a result for this check. Nothing is claimed about the ledger either way — try again, or verify offline.';
-    return 'This ledger holds '+n.toLocaleString()+' records; above 50,000 the server does not recompute the whole chain on request. Nothing was checked here — this is neither a pass nor a failure. Export the ledger and run <code>python verifier/foxy_verify.py foxy-audit-logs.json</code> for a full, independent check.';
+    /* E2 (56840d6) put the verifier INSIDE the export, so this sentence can
+       finally name a command the reader can actually run. It used to point at
+       the script's path inside this repository — which resolves only in a git
+       checkout, and nobody reading this has one. Register #52.
+       The old path is not quoted here on purpose: test_verifier_source.py greps
+       the whole file for it, and a comment mentioning it would fail that guard
+       as surely as a live string would. */
+    return 'This ledger holds '+n.toLocaleString()+' records; above 50,000 the server does not recompute the whole chain on request. Nothing was checked here — this is neither a pass nor a failure. Download the verification bundle from Export, unzip it, and run <code>python foxy_verify.py foxy-audit-logs.json</code> for a full, independent check.';
   }
 
   async function verifyChain(){

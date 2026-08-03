@@ -168,7 +168,8 @@ def partial_window_note(data: dict | None) -> str:
     return (f"This ledger holds {thousands(count)} records; above "
             f"{thousands(PARTIAL_WINDOW_AT)} the server does not recompute the "
             f"whole chain on request. Nothing was checked here — this is "
-            f"neither a pass nor a failure. Export the ledger and run "
+            f"neither a pass nor a failure. Download the verification bundle "
+            f"from Export, unzip it, and run "
             f"`{OFFLINE_COMMAND}` for a full, independent check.")
 
 
@@ -238,7 +239,12 @@ def sla_text(data: dict | None) -> str:
 
 #: The offline proof, quoted verbatim so the desktop and the site tell the user
 #: to run the same command.
-OFFLINE_COMMAND = "python verifier/foxy_verify.py foxy-audit-logs.json"
+#:
+#: E2 (`56840d6`) ships the verifier INSIDE the export bundle, beside the ledger
+#: it checks. Before that this read `python verifier/foxy_verify.py …` — a
+#: relative repo path that resolves only inside a git checkout, which no customer
+#: has. It was unfollowable then and would be simply wrong now. Register #52.
+OFFLINE_COMMAND = "python foxy_verify.py foxy-audit-logs.json"
 
 HOW_IT_WORKS = (
     "For current SDK capture, raw content stays local while customer-keyed "

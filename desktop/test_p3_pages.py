@@ -621,3 +621,20 @@ def test_spawn_worker_accepts_the_raw_flag():
     import inspect
     from foxy_client import spawn_worker
     assert "raw" in inspect.signature(spawn_worker).parameters
+
+
+def test_the_offline_command_is_runnable_from_the_export_bundle():
+    """Register #52. This used to read `python verifier/foxy_verify.py …` — a
+    path inside this repository, which a customer running the desktop app does
+    not have. E2 (`56840d6`) ships the verifier inside the export bundle beside
+    the ledger, so the command is relative to what they downloaded.
+
+    Pinned on both surfaces: foxy-dashboard/test_verifier_source.py is the web
+    half, and the two must not drift (web wins).
+    """
+    assert "verifier/" not in vd.OFFLINE_COMMAND, (
+        "the desktop is quoting a repo path a customer cannot resolve")
+    assert vd.OFFLINE_COMMAND == "python foxy_verify.py foxy-audit-logs.json"
+    note = vd.partial_window_note({"count": 60_000})
+    assert "verification bundle" in note, (
+        "the command is named but not the download that provides it")
