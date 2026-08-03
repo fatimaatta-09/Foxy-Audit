@@ -7,8 +7,11 @@ byte-for-byte parity (skipped if the backend tree isn't alongside)."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -290,4 +293,155 @@ def test_customer_key_verifies_known_event_sidecar():
             "event_metadata", "pii_signals", "occurred_at", "chain_version")})
     data = {"org_id": ORG, "logs": [row]}
     assert fv.verify_known_events(data, {event_id: {"prompt": "prompt", "response": "response"}}, key) == {
-        "ok": True, "checked": 1}
+        "ok": True, "checked": 1, "unprovable": []}
+
+
+# ── H2: the per-event salt ───────────────────────────────────────────────────
+
+SALT = "0123456789abcdef0123456789abcdef"
+
+
+def _row(key, event_id, salt=None, prompt="prompt", response="response"):
+    alg = "hmac-sha256-salted" if salt else "hmac-sha256"
+    row = {
+        "seq": 1, "prev_hash": fv.GENESIS_HASH, "event_id": event_id,
+        "client_id": "sdk-a", "client_seq": 1, "event_type": "interaction",
+        "commitment_alg": alg, "event_metadata": None,
+        "pii_signals": None, "occurred_at": None, "chain_version": 2,
+        "prompt_hash": fv.commitment_hex(prompt, key, salt),
+        "response_hash": fv.commitment_hex(response, key, salt),
+        "token_count": 2, "policy_tag": "chat",
+    }
+    row["chain_hash"] = fv.compute_chain_hash(
+        org_id=ORG, prev_hash=fv.GENESIS_HASH, **{k: row[k] for k in (
+            "prompt_hash", "response_hash", "token_count", "policy_tag", "seq",
+            "event_id", "client_id", "client_seq", "event_type", "commitment_alg",
+            "event_metadata", "pii_signals", "occurred_at", "chain_version")})
+    return row
+
+
+def test_an_unsalted_commitment_is_unchanged_by_the_salt_parameter():
+    """Every row written before H2 must keep verifying under the recipe it was
+    written with. If this moves, every historical sidecar breaks at once."""
+    assert fv.commitment_hex("prompt", "k") == fv.commitment_hex("prompt", "k", None)
+    assert fv.commitment_hex("prompt", "k") == (
+        "b67d0748d80ea2dbe77507ad876a7b2ba8687889079116724d2b9d55fcf6ce4b")
+
+
+def test_two_salts_give_two_commitments_for_the_same_text():
+    a = fv.commitment_hex("prompt", "k", "aa" * 16)
+    b = fv.commitment_hex("prompt", "k", "bb" * 16)
+    assert a != b != fv.commitment_hex("prompt", "k")
+
+
+def test_a_salted_event_round_trips_through_the_sidecar():
+    key, event_id = "customer-secret", "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    data = {"org_id": ORG, "logs": [_row(key, event_id, SALT)]}
+    sidecar = {event_id: {"prompt": "prompt", "response": "response", "salt": SALT}}
+    assert fv.verify_known_events(data, sidecar, key) == {
+        "ok": True, "checked": 1, "unprovable": []}
+
+
+def test_a_salted_event_without_its_salt_reports_honestly():
+    """Not a pass (we proved nothing) and not a mismatch (we accused nobody):
+    the event is named as unprovable and left out of `checked`."""
+    key, event_id = "customer-secret", "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    data = {"org_id": ORG, "logs": [_row(key, event_id, SALT)]}
+    result = fv.verify_known_events(
+        data, {event_id: {"prompt": "prompt", "response": "response"}}, key)
+    assert result == {"ok": True, "checked": 0, "unprovable": [event_id]}
+
+
+def test_a_salted_event_with_the_wrong_salt_is_a_mismatch():
+    key, event_id = "customer-secret", "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+    data = {"org_id": ORG, "logs": [_row(key, event_id, SALT)]}
+    result = fv.verify_known_events(
+        data, {event_id: {"prompt": "prompt", "response": "response",
+                          "salt": "ff" * 16}}, key)
+    assert result["ok"] is False and result["field"] == "prompt_hash"
+
+
+def test_a_salted_event_with_the_wrong_text_is_still_caught():
+    """The salt must not become a way to make tampering unverifiable."""
+    key, event_id = "customer-secret", "aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    data = {"org_id": ORG, "logs": [_row(key, event_id, SALT)]}
+    result = fv.verify_known_events(
+        data, {event_id: {"prompt": "a different prompt", "response": "response",
+                          "salt": SALT}}, key)
+    assert result["ok"] is False and result["field"] == "prompt_hash"
+
+
+def test_an_unsalted_row_ignores_a_salt_left_in_the_sidecar():
+    """`commitment_alg` decides the recipe, not the sidecar. A stale salt beside
+    a pre-H2 row must not turn a good commitment into a false alarm."""
+    key, event_id = "customer-secret", "aaaaaaa2-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    data = {"org_id": ORG, "logs": [_row(key, event_id)]}
+    sidecar = {event_id: {"prompt": "prompt", "response": "response", "salt": SALT}}
+    assert fv.verify_known_events(data, sidecar, key)["ok"] is True
+
+
+def test_commitment_alg_round_trips_through_the_chain_hash():
+    """`commitment_alg` is itself hashed, so an attacker cannot relabel a salted
+    row as unsalted to make it verify against unsalted content."""
+    key, event_id = "customer-secret", "aaaaaaa3-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    row = _row(key, event_id, SALT)
+    assert row["commitment_alg"] == "hmac-sha256-salted"
+    assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is True
+    row["commitment_alg"] = "hmac-sha256"
+    assert fv.verify_export({"org_id": ORG, "count": 1, "logs": [row]})["ok"] is False
+
+
+# ── the sidecar loader ───────────────────────────────────────────────────────
+
+def test_the_loader_reads_the_jsonl_the_sdk_appends(tmp_path):
+    path = tmp_path / "salts.jsonl"
+    path.write_text(
+        '{"event_id": "e1", "salt": "aa"}\n'
+        '{"event_id": "e2", "salt": "bb"}\n'
+        '{"event_id": "e1", "prompt": "hello", "response": "hi"}\n',
+        encoding="utf-8")
+    assert fv._load_sidecar(str(path)) == {
+        "e1": {"salt": "aa", "prompt": "hello", "response": "hi"},
+        "e2": {"salt": "bb"}}
+
+
+def test_the_loader_still_reads_a_hand_written_json_object(tmp_path):
+    path = tmp_path / "events.json"
+    path.write_text('{"e1": {"prompt": "hello", "response": "hi"}}', encoding="utf-8")
+    assert fv._load_sidecar(str(path)) == {"e1": {"prompt": "hello", "response": "hi"}}
+
+
+def test_a_single_jsonl_line_is_not_mistaken_for_an_event_map(tmp_path):
+    """One line is valid JSON on its own; a top-level "event_id" is what tells
+    the two shapes apart."""
+    path = tmp_path / "salts.jsonl"
+    path.write_text('{"event_id": "e1", "salt": "aa"}\n', encoding="utf-8")
+    assert fv._load_sidecar(str(path)) == {"e1": {"salt": "aa"}}
+
+
+def test_a_salted_event_verifies_end_to_end_from_the_sdk(tmp_path):
+    """The real round trip: the SDK salts and records, the verifier reads that
+    exact file back. The two implementations are written independently, which is
+    the only reason this proves anything."""
+    # Same escape hatch as test_matches_backend_recipe: run standalone without
+    # the repo alongside and this one case skips, everything else still runs.
+    sdk_src = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sdk", "src")
+    if os.path.isdir(sdk_src) and sdk_src not in sys.path:
+        sys.path.insert(0, sdk_src)
+    sdk_hashing = pytest.importorskip("foxy_audit.hashing")
+    sdk_sidecar = pytest.importorskip("foxy_audit.sidecar")
+
+    key, event_id = "customer-secret", "aaaaaaa4-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    path = tmp_path / "salts.jsonl"
+    salt = sdk_sidecar.record_salt(str(path), event_id)
+
+    row = _row(key, event_id, salt)
+    assert row["prompt_hash"] == sdk_hashing.commitment_hex("prompt", key, salt)
+
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"event_id": event_id, "prompt": "prompt",
+                             "response": "response"}) + "\n")
+
+    loaded = fv._load_sidecar(str(path))
+    assert fv.verify_known_events({"org_id": ORG, "logs": [row]}, loaded, key) == {
+        "ok": True, "checked": 1, "unprovable": []}

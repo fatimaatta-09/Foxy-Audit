@@ -91,12 +91,43 @@ afterwards. Binding it would mean re-hashing rows after the fact — which would
 every row after them. So the chain covers what the system *decided*; the model's opinion
 sits beside it, clearly labelled, and this script does not check it.
 
+## Optional: prove *which* text a commitment covers
+
+Chain verification never needs your prompts — it recomputes from the stored field values
+alone. Separately, and only if you want it, you can prove that a given row commits to a
+specific piece of text you still hold:
+
+```bash
+python foxy_verify.py foxy-audit-logs.json --commitment-key "$FOXY_COMMITMENT_KEY" \
+                                           --events my-sidecar.jsonl
+```
+
+The sidecar is **yours** — it never goes to Foxy, and Foxy has no copy. Two shapes work:
+
+* a JSON object keyed by `event_id`, values holding `prompt` / `response` / `salt`; or
+* JSON Lines, one `{"event_id": …, …}` per line, merged per event, later lines winning.
+  This is the shape the SDK appends to when `FOXY_SALT_SIDECAR` is set.
+
+### Salted commitments
+
+A commitment is `HMAC-SHA-256(your key, canonical_json(text))`. With `FOXY_SALT_SIDECAR`
+set, the SDK also mixes a fresh 128-bit per-event salt into that HMAC — canonically,
+`HMAC(key, {"s": salt, "v": <canonical text>})`, never by concatenation — and records the
+salt in your sidecar. Those rows declare `commitment_alg: "hmac-sha256-salted"`; rows
+written without a salt keep `"hmac-sha256"` and hash exactly as they always did.
+
+**The trade, stated plainly.** The salt exists only in your sidecar. Lose it and you lose
+the ability to demonstrate which text those commitments cover — this script reports them
+as *not checked* rather than passing or failing them. You do **not** lose chain
+verification: tamper-evidence is recomputed from stored fields and never needs the salt.
+
 ## Trust model
 
 | Check | When | Proves |
 |-------|------|--------|
 | Chain integrity | always | no historical row was altered (pure recompute) |
 | Verdict binding | `chain_version` ≥ 4 | the row's local verdict is the one that was recorded — the digest is in the chain, and the verdict body still matches it |
+| Known content (`--commitment-key --events`) | opt-in, needs your sidecar | a row's commitment covers the exact text you hold — and, for salted rows, only with the salt your SDK recorded locally |
 | Anchor, offline | if a receipt is present | the export's chain matches the anchored root Foxy recorded |
 | Anchor, on-chain (`--anchor`) | opt-in | that root really exists on a public chain, independent of Foxy |
 

@@ -42,6 +42,11 @@ class FoxyConfig:
     desktop_ping: bool = True
     timeout: float = DEFAULT_TIMEOUT
     commitment_key: str = ""
+    # Path to the customer-owned salt sidecar. Empty (the default) = commitments
+    # are unsalted, byte-identical to every row already written. Setting it turns
+    # per-event salting ON, because a salt with nowhere to live is a commitment
+    # nobody can ever prove — the storage IS the feature switch.
+    salt_sidecar_path: str = ""
     spool_path: str = ""
     client_id: str = ""
     audit_required: bool = False
@@ -65,6 +70,7 @@ class FoxyConfig:
         desktop_ping: bool = True,
         timeout: float = DEFAULT_TIMEOUT,
         commitment_key: str | None = None,
+        salt_sidecar_path: str | None = None,
         spool_path: str | None = None,
         client_id: str | None = None,
         audit_required: bool | None = None,
@@ -103,6 +109,8 @@ class FoxyConfig:
             timeout=timeout,
             commitment_key=(commitment_key if commitment_key is not None
                             else os.getenv("FOXY_COMMITMENT_KEY", key)).strip(),
+            salt_sidecar_path=(salt_sidecar_path
+                               or os.getenv("FOXY_SALT_SIDECAR", "")).strip(),
             spool_path=spool_path or os.getenv("FOXY_SPOOL_PATH", ""),
             # FoxyClient persists a generated identity in the local spool when
             # no explicit identity is supplied. Empty here is intentional.

@@ -102,27 +102,62 @@ def verdict_hash_hex(verdict):
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def commitment_hex(value, key):
-    """Match the SDK's HMAC commitment for customer-held known content."""
+def commitment_hex(value, key, salt=None):
+    """Match the SDK's HMAC commitment for customer-held known content.
+
+    `salt` mirrors the SDK's optional per-event salt, mixed in CANONICALLY —
+    HMAC(key, {"s": salt, "v": <canonical value>}) — never by concatenation.
+    Omitting it reproduces the pre-salt digest byte for byte, which is what keeps
+    every row written before salting existed verifiable forever.
+
+    The salt never reaches Foxy. It lives only in the customer's own sidecar, so
+    this check is the ONLY thing that needs it: `verify_export` below recomputes
+    the chain from stored field values and never re-derives a hash from plaintext.
+    """
     canonical = json.dumps(value, ensure_ascii=True, sort_keys=True,
                            separators=(",", ":"), default=str)
+    if salt:
+        canonical = json.dumps({"s": str(salt), "v": canonical},
+                               ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     return hmac.new(str(key).encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _is_salted(row):
+    return str(row.get("commitment_alg") or "").endswith("-salted")
+
+
 def verify_known_events(data, known_events, key):
-    """Check commitments using a customer-owned sidecar without sending content to Foxy."""
+    """Check commitments using a customer-owned sidecar without sending content to Foxy.
+
+    Sidecar entries are keyed by event_id and hold {"prompt", "response"} plus, for
+    a salted row, the "salt" the SDK recorded locally when the event was created.
+
+    A salted row whose sidecar entry has NO salt is reported as `unprovable`, not
+    as a mismatch and not as a pass: without the salt this tool cannot recompute
+    the commitment at all, and calling that "tampered" would be a false accusation
+    while calling it "verified" would be a lie. Same convention as the on-chain
+    check — could-not-run is its own answer.
+    """
     checked = 0
+    unprovable = []
     for row in data.get("logs", []):
         event_id = row.get("event_id")
         known = known_events.get(str(event_id)) if event_id else None
         if not known:
             continue
-        if commitment_hex(known.get("prompt", ""), key) != row.get("prompt_hash"):
-            return {"ok": False, "event_id": str(event_id), "field": "prompt_hash"}
-        if commitment_hex(known.get("response", ""), key) != row.get("response_hash"):
-            return {"ok": False, "event_id": str(event_id), "field": "response_hash"}
+        # An unsalted row hashes unsalted even if the sidecar carries a salt.
+        salt = known.get("salt") if _is_salted(row) else None
+        if _is_salted(row) and not salt:
+            unprovable.append(str(event_id))
+            continue
+        if commitment_hex(known.get("prompt", ""), key, salt) != row.get("prompt_hash"):
+            return {"ok": False, "event_id": str(event_id), "field": "prompt_hash",
+                    "checked": checked, "unprovable": unprovable}
+        if commitment_hex(known.get("response", ""), key, salt) != row.get("response_hash"):
+            return {"ok": False, "event_id": str(event_id), "field": "response_hash",
+                    "checked": checked, "unprovable": unprovable}
         checked += 1
-    return {"ok": True, "checked": checked}
+    return {"ok": True, "checked": checked, "unprovable": unprovable}
 
 
 def verify_export(data):
@@ -235,7 +270,42 @@ def check_anchor_onchain(rpc, tx_hash, expected_root, contract=None):
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
-def _print_human(result, anchor_off, anchor_live):
+def _load_sidecar(path):
+    """Read a known-event sidecar in either shape.
+
+    * one JSON object keyed by event_id — what a customer hand-writes; or
+    * JSON Lines, `{"event_id": …, "salt": …}` per line, which is what the SDK
+      appends. It can only append: it knows the salt when the event happens and
+      never rewrites the file.
+
+    Lines merge per event_id, later wins, so a customer can append their own
+    `{"event_id": …, "prompt": …, "response": …}` line beside the SDK's salt line
+    instead of editing one big object.
+    """
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError:
+        loaded = None
+    # A top-level "event_id" means this is a single JSONL line, not an id → entry map.
+    if isinstance(loaded, dict) and "event_id" not in loaded:
+        return loaded
+    merged = {}
+    for n, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        entry = json.loads(line)
+        event_id = str(entry.get("event_id") or "")
+        if not event_id:
+            raise ValueError(f"sidecar line {n} has no event_id")
+        merged.setdefault(event_id, {}).update(
+            {k: v for k, v in entry.items() if k != "event_id"})
+    return merged
+
+
+def _print_human(result, anchor_off, anchor_live, commitments=None):
     # ASCII-only markers so the tool never crashes on a non-UTF-8 console (Windows
     # cp1252, cp437, …) — it must run for anyone, anywhere.
     if result["ok"]:
@@ -263,6 +333,21 @@ def _print_human(result, anchor_off, anchor_live):
         else:
             print(f"[--]   on-chain check skipped: {anchor_live['detail']}")
 
+    # The known-content check used to set the exit code while printing NOTHING
+    # here, so a mismatch looked like a clean run that mysteriously returned 1.
+    if commitments is not None:
+        if commitments.get("detail"):
+            print(f"[FAIL] known-content check: {commitments['detail']}")
+        elif commitments["ok"]:
+            print(f"[OK]   {commitments['checked']} known event(s) match their commitments")
+        else:
+            print(f"[FAIL] {commitments['field']} does NOT match the known content "
+                  f"for event {commitments['event_id']}")
+        skipped = len(commitments.get("unprovable") or [])
+        if skipped:
+            print(f"[--]   {skipped} salted event(s) not checked - no salt in the sidecar, "
+                  f"so the commitment cannot be recomputed (--json lists them)")
+
 
 def main(argv=None):
     import argparse
@@ -274,7 +359,10 @@ def main(argv=None):
     ap.add_argument("--rpc", help="EVM RPC URL for --anchor, e.g. https://rpc.sepolia.org")
     ap.add_argument("--contract", help="AnchorRegistry address to match (defaults to the export's)")
     ap.add_argument("--commitment-key", help="customer-owned HMAC key for a known-event sidecar")
-    ap.add_argument("--events", help="JSON sidecar mapping event_id to prompt/response values")
+    ap.add_argument("--events",
+                    help="known-event sidecar: a JSON object keyed by event_id, or the "
+                         "JSONL file the SDK appends salts to. Entries hold prompt/response "
+                         "and, for a salted row, the salt (which never leaves your machine)")
     ap.add_argument("--json", action="store_true", help="machine-readable JSON output")
     args = ap.parse_args(argv)
 
@@ -289,10 +377,9 @@ def main(argv=None):
     commitment_result = None
     if args.commitment_key and args.events:
         try:
-            with open(args.events, encoding="utf-8") as f:
-                commitment_result = verify_known_events(
-                    data, json.load(f), args.commitment_key)
-        except (OSError, json.JSONDecodeError) as exc:
+            commitment_result = verify_known_events(
+                data, _load_sidecar(args.events), args.commitment_key)
+        except (OSError, ValueError) as exc:   # ValueError covers JSONDecodeError
             commitment_result = {"ok": False, "detail": f"could not read known-event sidecar: {exc}"}
     anchor_off = check_anchor_offline(data, result)
     anchor_live = None
@@ -307,7 +394,7 @@ def main(argv=None):
                           "anchor_onchain": anchor_live,
                           "commitments": commitment_result}, indent=2))
     else:
-        _print_human(result, anchor_off, anchor_live)
+        _print_human(result, anchor_off, anchor_live, commitment_result)
 
     bad = ((not result["ok"])
            or (commitment_result is not None and not commitment_result["ok"])

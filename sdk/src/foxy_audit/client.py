@@ -4,7 +4,8 @@
 After the wrapped function returns, the SDK:
 
   1. Creates customer-keyed HMAC-SHA-256 commitments of the prompt and response
-     locally, then discards the raw text.
+     locally — optionally salted per event, see `sidecar.py` — then discards the
+     raw text.
   2. Fires best-effort `evaluating` then `hash_ok` UDP pings to the desktop fox.
      These confirm only local hashing and queueing — not a backend verdict.
   3. Enqueues the metadata for background HTTP delivery to the backend (only
@@ -23,7 +24,7 @@ import logging
 import re
 import uuid
 
-from . import dispatch, hashing, org_policy, pii, udp
+from . import dispatch, hashing, org_policy, pii, sidecar, udp
 from . import policy as policy_engine
 from .adapters import response_metadata
 from .config import FoxyConfig
@@ -91,6 +92,7 @@ class FoxyClient:
         desktop_ping: bool = True,
         timeout: float = 5.0,
         commitment_key: str | None = None,
+        salt_sidecar_path: str | None = None,
         spool_path: str | None = None,
         client_id: str | None = None,
         audit_required: bool | None = None,
@@ -104,6 +106,7 @@ class FoxyClient:
             desktop_ping=desktop_ping,
             timeout=timeout,
             commitment_key=commitment_key,
+            salt_sidecar_path=salt_sidecar_path,
             spool_path=spool_path,
             client_id=client_id,
             audit_required=audit_required,
@@ -368,11 +371,21 @@ class FoxyClient:
         try:
             prompt_s = hashing.canonical_json(prompt)
             response_s = hashing.canonical_json(response)
+            event_id = str(uuid.uuid4())
             key = self.cfg.commitment_key or self.cfg.api_key
             if key:
-                prompt_hash = hashing.commitment_hex(prompt, key)
-                response_hash = hashing.commitment_hex(response, key)
-                commitment_alg = "hmac-sha256"
+                # One salt per event, stored ONLY in the customer's local sidecar.
+                # record_salt returns None when it could not be stored, and the
+                # event then commits unsalted — a salt that exists nowhere would
+                # make the commitment permanently unprovable (see sidecar.py).
+                event_salt = (sidecar.record_salt(self.cfg.salt_sidecar_path, event_id)
+                              if self.cfg.salt_sidecar_path else None)
+                prompt_hash = hashing.commitment_hex(prompt, key, event_salt)
+                response_hash = hashing.commitment_hex(response, key, event_salt)
+                # "hmac-sha256" and "sha256-legacy" keep their exact historical
+                # meaning; the salted rows get their own name so old rows keep
+                # verifying under the recipe they were written with.
+                commitment_alg = "hmac-sha256-salted" if event_salt else "hmac-sha256"
             else:
                 prompt_hash = hashing.sha256_hex(prompt_s)
                 response_hash = hashing.sha256_hex(response_s)
@@ -382,7 +395,7 @@ class FoxyClient:
             # link server-side), so the SDK only ships the per-interaction hashes;
             # a client-side chain_hash/timestamp would just be ignored.
             payload = {
-                "event_id": str(uuid.uuid4()),
+                "event_id": event_id,
                 "client_id": self.cfg.client_id,
                 "event_type": event_type,
                 "commitment_alg": commitment_alg,

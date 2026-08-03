@@ -110,6 +110,13 @@ jobs:
         run: pytest sdk/tests -q
       - name: Hash-chain regression test
         run: pytest backend/tests/test_chain.py -q
+      - name: Verifier tests (the second, independent implementation)
+        # These never ran in CI. The verifier is a hand-written second copy of the
+        # chain recipe and of the commitment recipe, and the two drifting apart IS
+        # the classic hash-chain bug — test_matches_backend_recipe and
+        # test_writer_and_verifier_agree_at_every_version exist precisely to catch
+        # it, and nothing was running them. Same runner, stdlib only, no Postgres.
+        run: pytest verifier -q
       - name: Dashboard guards
         # THE WHOLE DIRECTORY, not two files from it. Register #55: this ran
         # test_p1_contrast.py and test_p2_structure.py only, so 9 of the 11 guard

@@ -60,9 +60,24 @@ verifying.
 | Backend URL    | `endpoint`     | `FOXY_BACKEND_URL`  | `http://127.0.0.1:8000`  |
 | Desktop ping   | `desktop_ping` | —                   | `True` (127.0.0.1:9999)  |
 | Commitment key | `commitment_key` | `FOXY_COMMITMENT_KEY` | API key when omitted |
+| Salt sidecar | `salt_sidecar_path` | `FOXY_SALT_SIDECAR` | _(none → commitments unsalted)_ |
 | Durable spool | `spool_path` | `FOXY_SPOOL_PATH` | `~/.foxy-audit/spool.sqlite3` |
 | Stable client id | `client_id` | `FOXY_CLIENT_ID` | persisted in the local spool when omitted |
 | Required capture | `audit_required` | `FOXY_AUDIT_REQUIRED` | `False` |
+
+### Salted commitments (optional)
+
+Set `salt_sidecar_path` and each event gets a fresh 128-bit salt, mixed into the HMAC
+canonically — `HMAC(key, {"s": salt, "v": <canonical text>})`, never by concatenation.
+The salt is appended to that local JSONL file and **never leaves your process**: not the
+wire, not our database, not a response, not a log line. Those rows report
+`commitment_alg: "hmac-sha256-salted"`; leave the setting unset and commitments are
+byte-identical to what the SDK has always produced.
+
+The trade: lose that sidecar and you lose the ability to prove *which* text those
+commitments cover (`foxy_verify.py --commitment-key --events` reports them as not
+checked). You keep chain verification either way — tamper-evidence is recomputed from
+stored fields and never needs the salt.
 
 With no API key the SDK is a **graceful no-op for the cloud path**: it still runs your function and
 still pings the desktop fox, but skips the HTTP upload. In the default mode, delivery is best-effort;
