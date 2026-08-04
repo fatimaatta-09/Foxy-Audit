@@ -813,6 +813,40 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .kpi:not(.quiet) .face .chip.info{color:var(--face-ink-info)}
 .kpi:not(.quiet) .face .chip.dim{color:var(--face-ink-dim)}
 
+/* ── the mask/reveal control on a DECORATIVE HERO FACE ─────────────────────
+   Third context for the same component, and the same failure the chip above
+   had. .sens paints its dots in --muted2 and its two buttons in --muted: greys
+   tuned against a flat --surf. Live on revenue, where sens() writes straight
+   into the .kval of the one card the page is named after. Measured against
+   that face's own two stops, both themes (the faces are theme-invariant):
+     masked value  1.56 / 1.07 dark   ·  2.36 / 1.41 light
+     eye and copy  1.41 / 1.19 dark   ·  2.54 / 1.52 light
+   The page's headline number and the only control that uncovers it were both
+   invisible on their own card, and the eye is a UI component, which 1.4.11
+   asks 3.0:1 of. No grey can fix it, for the reason A0 already wrote out for
+   the chip: the face publishes the one ink that clears every stop, so the
+   control takes it — --foxink, 4.86:1 against this face's deep stop and
+   8.12:1 against its light stop.
+   The hover wash is a translucent --foxink rather than .sens-btn's --surf2,
+   which would have dropped a near-black tile onto a lit card, and focus takes
+   the same --foxink outline .kinfo already uses one rule above.
+   Scoped :not(.quiet) for A1's reason: a quiet face is a tinted --surf2, the
+   flat-panel case the base component was measured for and wins on. */
+.kpi:not(.quiet) .face .sens.masked .sens-val{color:var(--foxink)}
+.kpi:not(.quiet) .face .sens-btn{color:var(--foxink)}
+.kpi:not(.quiet) .face .sens-btn:hover{background:color-mix(in srgb,var(--foxink) 14%,transparent);color:var(--foxink)}
+.kpi:not(.quiet) .face .sens-btn:focus-visible{outline-color:var(--foxink)}
+/* …and the same component's LAYOUT, which the colour fix made visible. .kval is
+   clamp(22px,2.2vw,30px) and the eye and copy take 52px beside it, so at 375px
+   the revealed "$42,189" measured scrollWidth 89 into clientWidth 46 and drew
+   "$42,…": an operator taps the eye and is handed a truncated number, which is
+   the one thing that control exists to prevent. On a face the row wraps and the
+   figure stops eliding. Scoped to .face on purpose — the ellipsis is correct in
+   a table cell, where sens() is showing a truncated id and the short form IS the
+   design, and wrong for a figure whose digits are the content. */
+.kpi .face .sens{flex-wrap:wrap}
+.kpi .face .sens-val{overflow:visible;text-overflow:clip}
+
 /* ── the verdict, at the size of the question it answers ──────────────────
    #hStatus is the console's headline: it is the answer to the only thing the
    health page is asked. It was rendering at 9.5px inside a .kval slot sized
@@ -2238,11 +2272,18 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── REVENUE ──────────────── -->
     <section class="page" id="page-revenue">
+      <h1 class="sr-only">Revenue</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
+      <!-- A4 · the reserved face (#65), the same call A3 made on traffic. All
+           three cards were saturated, so the page named "revenue" gave equal
+           weight to revenue, a subscription count and a trial count. The card
+           that answers the page's own question keeps the face; the two
+           supporting counts go .quiet — hue in the surface, accent bar at full
+           saturation, glyph in the card's deep stop, beam untouched. -->
       <div class="grid kpis">
         <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Invoices Stripe marked paid whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-revenue"/></svg><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
-        <div class="clay kpi k-magenta"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose Stripe subscription status is active right now, offboarded orgs excluded." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-subscription"/></svg><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Trialing orgs" data-tip="Orgs whose trial window has not closed yet. This is independent of subscription status, so an org can be counted here and under active." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-trial"/></svg><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
+        <div class="clay kpi k-magenta quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose Stripe subscription status is active right now, offboarded orgs excluded." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-subscription"/></svg><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Trialing orgs" data-tip="Orgs whose trial window has not closed yet. This is independent of subscription status, so an org can be counted here and under active." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-trial"/></svg><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
       </div>
       <div class="split">
         <div class="clay pad k-violet"><div class="panel-h"><div><div class="eyebrow">monthly</div><div class="panel-t">Revenue trend</div></div></div><div id="rvMonthly" style="min-height:200px;"></div></div>
@@ -2250,12 +2291,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       </div>
       <div class="clay pad" style="margin-top:16px;">
         <div class="panel-h"><div><div class="eyebrow">webhooks</div><div class="panel-t">Stripe events</div></div>
-          <div class="fauxselect" id="seStatus" data-value="" data-onchange="loadStripeEvents" style="min-width:150px;">
+          <div class="fauxselect" id="seStatus" data-value="" data-onchange="stripeFilterChanged" style="min-width:150px;">
             <button type="button" class="cin fauxselect-trigger"><span class="fauxselect-label">all statuses</span><svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
             <div class="fauxselect-list"><div class="fauxselect-opt sel" data-value="">all statuses</div><div class="fauxselect-opt" data-value="failed">failed</div><div class="fauxselect-opt" data-value="processed">processed</div><div class="fauxselect-opt" data-value="ignored">ignored</div><div class="fauxselect-opt" data-value="received">received</div></div>
           </div>
         </div>
-        <div class="twrap"><table class="tbl cardify"><thead><tr><th>Type</th><th>Status</th><th>Org</th><th>Received</th><th>Error</th><th style="text-align:right;">Action</th></tr></thead><tbody id="seRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="sePager"></div></div>
+        <div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Org</th><th scope="col">Received</th><th scope="col">Error</th><th scope="col" style="text-align:right;">Action</th></tr></thead><tbody id="seRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="sePager"></div></div>
       </div>
     </section>
 
@@ -2307,28 +2348,43 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── EVALUATION CAMPAIGNS ──────────────── -->
     <section class="page" id="page-campaigns">
+      <h1 class="sr-only">Evaluation campaigns</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span>
-        <button class="btn" onclick="loadCampaigns()">Refresh</button>
+        <button class="btn" onclick="loadCampaigns(this)">Refresh</button>
       </div>
+      <!-- A4 · every field here was `<label><label for=…>…</label><input></label>`.
+           The outer bare <label> wraps the control, so each input reported TWO
+           labels and a screen reader announced the field name twice with no way
+           to tell which one was authoritative. The outer element was only ever
+           a grid cell, so it is a <div>; the inner label already carries `for`. -->
       <div class="clay pad" id="campaignCreateCard" style="display:none;margin-bottom:18px;">
-        <div class="eyebrow">superadmin</div>
-        <div style="font-weight:800;font-size:15px;margin-bottom:12px;">Issue a new redemption code</div>
+        <div class="panel-h"><div><div class="eyebrow">superadmin</div><h2 class="panel-t">Issue a redemption code</h2></div></div>
         <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
-          <label><label class="flabel" style="margin-top:0;" for="campaignOfferId">offer id</label><input class="cin" id="campaignOfferId" placeholder="judges-july"></label>
-          <label><label class="flabel" style="margin-top:0;" for="campaignLabel">label</label><input class="cin" id="campaignLabel" placeholder="July judge access"></label>
-          <label><label class="flabel" style="margin-top:0;" for="campaignCode">redemption code</label><input class="cin" id="campaignCode" autocomplete="off" placeholder="16+ characters"></label>
-          <label><label class="flabel" style="margin-top:0;" for="campaignCredits">credits</label><input class="cin" id="campaignCredits" type="number" min="1" value="250"></label>
-          <label><label class="flabel" style="margin-top:0;" for="campaignDays">access days</label><input class="cin" id="campaignDays" type="number" min="1" value="31"></label>
-          <label><label class="flabel" style="margin-top:0;" for="campaignMax">max redemptions</label><input class="cin" id="campaignMax" type="number" min="1" value="25"></label>
+          <div><label class="flabel" style="margin-top:0;" for="campaignOfferId">offer id</label><input class="cin" id="campaignOfferId" placeholder="judges-july"></div>
+          <div><label class="flabel" style="margin-top:0;" for="campaignLabel">label</label><input class="cin" id="campaignLabel" placeholder="July judge access"></div>
+          <div><label class="flabel" style="margin-top:0;" for="campaignCode">redemption code</label><input class="cin" id="campaignCode" autocomplete="off" placeholder="16+ characters"></div>
+          <div><label class="flabel" style="margin-top:0;" for="campaignCredits">credits</label><input class="cin" id="campaignCredits" type="number" min="1" value="250"></div>
+          <div><label class="flabel" style="margin-top:0;" for="campaignDays">access days</label><input class="cin" id="campaignDays" type="number" min="1" value="31"></div>
+          <div><label class="flabel" style="margin-top:0;" for="campaignMax">max redemptions</label><input class="cin" id="campaignMax" type="number" min="1" value="25"></div>
         </div>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;">
-          <button class="btn pri" onclick="createCampaign()">Create campaign</button>
-          <span class="sub" id="campaignOut">The plaintext code will be shown once. Store it securely before leaving this page.</span>
+          <button class="btn pri" onclick="createCampaign(this)">Create campaign</button>
+          <span class="sub">The code is shown once. Store it before you leave this page.</span>
         </div>
+        <!-- createCampaign injects a .clay panel here. It used to be written into
+             the <span> beside the button — a block inside an inline element, in a
+             flex row, so the one panel carrying two unrecoverable secrets was
+             both invalid markup and squeezed into a column. Its own block now. -->
+        <div id="campaignOut" role="status" aria-live="polite"></div>
       </div>
       <div class="clay pad">
-        <div class="eyebrow">active and historical</div>
-        <div id="campaignRows"><div class="sub mono">Loading...</div><div id="campaignPager"></div></div>
+        <div class="panel-h"><div><div class="eyebrow">active and historical</div><h2 class="panel-t">Campaigns</h2></div></div>
+        <!-- #campaignPager was INSIDE #campaignRows, and renderCampaigns sets
+             campaignRows.innerHTML — so every render deleted the pager the line
+             above it had just drawn. With 23 campaigns the page showed 10 and
+             offered no way to reach the other 13. The pager is a sibling now. -->
+        <div id="campaignRows" aria-live="polite"><div class="sub mono">loading…</div></div>
+        <div id="campaignPager"></div>
       </div>
     </section>
 
@@ -3130,7 +3186,16 @@ function opsChip(status){
      pill on the alerts page, and the alerts table's own model default is
      level="info". `critical` maps where it already fell; naming it just stops
      the next level added upstream from silently inheriting red. */
-  const cls=s==='ok'||s==='confirmed'?'safe':s==='warning'||s==='stale'||s==='pending'?'warn':s==='never'||s==='not_applicable'?'dim':s==='info'?'info':s==='critical'?'bad':'bad';
+  /* A4: `active` and `revoked`, for the same reason A3 named `info`. Neither was
+     mapped, so both fell to the else and the campaigns list painted three red
+     pills that an operator had to READ to tell apart — including ACTIVE, the
+     healthy state, rendered as an alarm. Only these two names are added:
+     evaluation_campaigns.status is commented `active|revoked` in the model and
+     the router only ever writes those, so anything else here would be a branch
+     with no caller. `revoked` takes .dim on A0's own rule — a campaign that has
+     been switched off is an absence, and absence must not shout in a status hue.
+     Caught by rendering the page, not by reading it. */
+  const cls=s==='ok'||s==='confirmed'||s==='active'?'safe':s==='warning'||s==='stale'||s==='pending'?'warn':s==='never'||s==='not_applicable'||s==='revoked'?'dim':s==='info'?'info':s==='critical'?'bad':'bad';
   return `<span class="chip ${cls}">${esc(s)}</span>`;
 }
 function opsCheck(label,value,detail,neutral){
@@ -3476,21 +3541,36 @@ document.addEventListener('click',function(e){ const w=$('topNotifWrap'); if(w &
 
 /* ──────────── settings / theme ──────────── */
 let CAMPAIGNS=[];
-async function loadCampaigns(){
-  $('campaignCreateCard').style.display=can('superadmin')?'':'none';
-  let r;try{r=await api('/admin/v1/evaluation-campaigns')}catch(e){r=null}
-  if(!r||!r.ok){$('campaignRows').innerHTML='<div class="sub mono">Unable to load campaigns.</div>';return}
-  CAMPAIGNS=await r.json();
-  pgReset('campaigns');renderCampaigns();
+/* A4 · "Unable to load campaigns." was a grey sentence with no cause and no way
+   back; it is on A0's fault contract now, and Refresh carries a busy guard so a
+   second click cannot race the first. */
+async function loadCampaigns(btn){
+  await busy(btn,async function(){
+    $('campaignCreateCard').style.display=can('superadmin')?'':'none';
+    let r;try{r=await api('/admin/v1/evaluation-campaigns')}catch(e){r=null}
+    if(!r||!r.ok){
+      $('campaignRows').innerHTML=fault('The campaign list did not load.',r?('HTTP '+r.status):'no response from the API','loadCampaigns()');
+      $('campaignPager').innerHTML='';CAMPAIGNS=[];return;
+    }
+    CAMPAIGNS=await r.json();
+    pgReset('campaigns');renderCampaigns();
+  });
 }
 function renderCampaigns(){
-  if(!CAMPAIGNS.length){$('campaignRows').innerHTML='<div class="sub mono" style="padding:16px 0;">No campaigns yet.</div>';window.foxPager('campaignPager',{total:0});return}
+  if(!CAMPAIGNS.length){
+    /* "No campaigns yet." named the absence and stopped. A superadmin can act on
+       it from this very page; anyone else cannot, and should be told that rather
+       than left looking for a control that is hidden from them. */
+    $('campaignRows').innerHTML='<div class="sub" style="padding:16px 0;">No campaigns yet. '
+      +(can('superadmin')?'Use <b>Issue a redemption code</b> above to create one.':'A superadmin can issue one.')+'</div>';
+    window.foxPager('campaignPager',{total:0});return;
+  }
   const _c=window.foxPageSlice(CAMPAIGNS,pgState('campaigns',10),'campaignPager',renderCampaigns,'Campaign pages');
   $('campaignRows').innerHTML=_c.map(c=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;flex-wrap:wrap;">
     <div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b>${esc(c.label)}</b>${opsChip(c.status)}</div>
-    <div class="sub mono" style="font-size:10px;margin-top:5px;">${esc(c.offer_id)} Â· ${num(c.credits)} credits Â· ${num(c.duration_days)} days</div></div>
+    <div class="sub mono" style="font-size:10px;margin-top:5px;">${esc(c.offer_id)} · ${num(c.credits)} credits · ${num(c.duration_days)} days</div></div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span class="sub mono">${num(c.redemptions)} / ${num(c.max_redemptions)} redeemed</span>
-    ${c.status==='active'&&can('operator')?`<button class="btn sm" onclick="revokeCampaign('${esc(c.offer_id)}')">revoke</button>`:''}</div>
+    ${c.status==='active'&&can('operator')?`<button class="btn sm" onclick="revokeCampaign('${jsq(c.offer_id)}','${jsq(c.label)}')">revoke</button>`:''}</div>
   </div>`).join('');
 }
 /* One shown-once secret: a label, the value in mono, and a copy button. The value
@@ -3503,14 +3583,19 @@ function _secretRow(label,value){
     +'background:var(--bg2);border-radius:var(--r-sm);padding:8px 10px;">'+esc(value||'')+'</code>'
     +'<button type="button" class="btn sm" data-copy="'+esc(value||'')+'">Copy</button></div>';
 }
-async function createCampaign(){
+/* A4 · busy(): this mints a bearer credential, and a double-click either burns
+   the typed code against a 409 or issues two campaigns. Nothing on screen said
+   the first click was in flight. */
+async function createCampaign(btn){
+ return busy(btn,async function(){
   const code=$('campaignCode').value.trim();
-  if(code.length<16){toast('Use a redemption code of at least 16 characters.');return}
+  if(code.length<16){toast('Use a redemption code of at least 16 characters.','warn');$('campaignCode').focus();return}
   const payload={offer_id:$('campaignOfferId').value.trim(),label:$('campaignLabel').value.trim(),code,
     credits:Number($('campaignCredits').value),duration_days:Number($('campaignDays').value),max_redemptions:Number($('campaignMax').value)};
   let r;try{r=await api('/admin/v1/evaluation-campaigns',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)})}catch(e){r=null}
   const d=r?await r.json().catch(()=>({})):{};
-  if(!r||!r.ok){toast(d.detail||'Campaign creation failed.');return}
+  if(!r){toast('Campaign creation failed — no response from the API.','error');return}
+  if(!r.ok){toast(d.detail||('Campaign creation failed ('+r.status+')'),'error');return}
   // Shown once, and now there are TWO secrets to store rather than one. The link
   // carries the code in a query string, so it is exactly as secret as the code —
   // said here rather than assumed, because a URL reads like something you can
@@ -3529,12 +3614,28 @@ async function createCampaign(){
     +'already redeemed an offer.</div>'
     +'</div>';
   $('campaignCode').value='';
-  toast('Campaign created');loadCampaigns();
+  toast('Campaign created','success');loadCampaigns();
+ });
 }
-async function revokeCampaign(offerId){
-  if(!confirm('Revoke this campaign? New redemptions will stop; existing trials keep their current expiry.'))return;
-  const r=await api('/admin/v1/evaluation-campaigns/'+encodeURIComponent(offerId)+'/revoke',{method:'POST'});
-  if(r.ok){toast('Campaign revoked');loadCampaigns()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'Campaign revoke failed.');}
+/* A4 · was the file's last native confirm(). A0 built the modal to replace
+   prompt()/confirm() and every other mutation on the console already uses it,
+   so this one dialogue was the only place a staff action arrived in the
+   browser's chrome instead of the product's — and it could not name which
+   campaign it was about. Also had a bare `await api(...)`: a dropped connection
+   threw past the caller with nothing on screen. */
+function revokeCampaign(offerId,label){
+  openModal({eyebrow:'ops · stops new redemptions', title:'Revoke '+(label||'this campaign'),
+    bodyHTML:'<div class="sub">No one can redeem <b>'+esc(label||offerId)+'</b> again. Workspaces that already redeemed it keep the credits and the expiry they were given.</div>',
+    footHTML:'<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doRevokeCampaign(\''+jsq(offerId)+'\',this)">Revoke campaign</button>'});
+}
+async function _doRevokeCampaign(offerId,btn){
+  await busy(btn,async function(){
+    let r;try{r=await api('/admin/v1/evaluation-campaigns/'+encodeURIComponent(offerId)+'/revoke',{method:'POST'})}catch(e){r=null}
+    closeModal();
+    if(!r){toast('revoke failed — no response from the API','error');return}
+    if(r.ok){toast('Campaign revoked','success');loadCampaigns()}
+    else{const d=await r.json().catch(()=>({}));toast(d.detail||('Campaign revoke failed ('+r.status+')'),'error');}
+  });
 }
 
 function setTheme(mode){
@@ -4703,14 +4804,39 @@ function dismissAnn(id){
 
 /* ──────────── Phase 4: revenue / security / audit / leads ──────────── */
 function _cents(c){return '$'+num(Math.round((c||0)/100));}
+/* A4 · the last toast()-and-return loader in any phase's scope, and the worst
+   of them, because this page is never empty on a failed RELOAD. Measured under
+   Node against a 500: the three KPI slots kept the numbers from the previous
+   poll, both charts kept the previous series, and #sePager went on reading
+   "1–25 of 240" over them. So a dead /revenue rendered as a healthy revenue
+   page showing yesterday's money, behind a toast that expired in 3.2 seconds —
+   the confident-wrong-answer shape, on the money page.
+   Same contract as the other five: the value slots go to "—", the charts and
+   the table say what failed and offer a retry, and every pager the call
+   invalidates is cleared so no count can sit above a fault row. */
 async function loadRevenue(){
   let r; try{ r=await api('/admin/v1/revenue'); }catch(e){ r=null; }
-  if(!r||!r.ok){ toast('revenue unavailable','error'); return; }
+  if(!r||!r.ok){
+    const why=r?('HTTP '+r.status):'no response from the API';
+    ['rvRev30','rvActive','rvTrial'].forEach(function(id){ $(id).textContent='—'; });
+    $('rvSubFoot').textContent='revenue figures unavailable';
+    $('rvMonthly').innerHTML=fault('The revenue trend did not load.',why,'loadRevenue()');
+    $('rvByPlan').innerHTML=fault('Revenue by plan did not load.',why,'loadRevenue()');
+    $('seRows').innerHTML=faultRow(6,'Stripe events were not requested — the revenue call failed first.','loadRevenue()',why);
+    $('sePager').innerHTML='';
+    return;
+  }
   const d=await r.json();
   $('rvRev30').innerHTML=sens(_cents(d.revenue_30d_cents),{mask:true});   /* masked by default; eye reveals/hides revenue */
   const subs=d.subscriptions||{};
   $('rvActive').textContent=num(subs.active||0);
-  $('rvSubFoot').textContent=Object.entries(subs).filter(([k])=>k!=='active').map(([k,v])=>k+' '+v).join(' · ')||'—';
+  /* the same figures, read as English. Stripe's own enum names went out raw and
+     value-last — "past_due 1" — on the one line that tells an operator how many
+     subscriptions are in trouble. Count first, underscore out; nothing renamed,
+     because these are Stripe's statuses and calling them something else would
+     make the console disagree with the dashboard the operator opens next. */
+  $('rvSubFoot').textContent=Object.entries(subs).filter(([k])=>k!=='active')
+    .map(([k,v])=>num(v)+' '+String(k).replace(/_/g,' ')).join(' · ')||'no other subscription states';
   $('rvTrial').textContent=num(d.trialing||0);
   const months=(d.monthly||[]).map(x=>x.month);
   chart('rvMonthly',{type:'area',height:200,labels:months,xFormat:v=>String(v).slice(2),
@@ -4724,6 +4850,19 @@ async function loadRevenue(){
     yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'revenue by plan', empty:'No paid invoices yet'});
   loadStripeEvents();
 }
+/* A4 · the status select named loadStripeEvents as its own data-onchange, and
+   _fauxCommit invokes that callback as window[cb](root) — it passes the SELECT
+   ELEMENT. loadStripeEvents' first parameter is `page`, so a div landed in
+   pg.page and (element-1)*size made the query string `offset=NaN`.
+   Driven through a real option click on the shipped file: with three failed
+   events present, picking "failed" requested offset=NaN and the table answered
+   "no stripe events with status failed" — a false negative about failed
+   payments, on the money page, and it also stranded pg.page so every later
+   page request from that pager was NaN too.
+   Both halves are the same fix: the callback gets its own name, ignores the
+   element the dispatcher hands it, and resets the page — a new filter is a new
+   question. renderTrafficFiltered is the same shape A3 landed on traffic. */
+function stripeFilterChanged(){ pgReset('stripe'); loadStripeEvents(); }
 async function loadStripeEvents(page){
   const st=fauxVal('seStatus');
   const pg=pgState('stripe',25); if(page)pg.page=page;
@@ -4737,14 +4876,36 @@ async function loadStripeEvents(page){
   const canReplay=can('operator');
   $('seRows').innerHTML=items.map(e=>{
     const cls=e.status==='processed'?'safe':e.status==='failed'?'bad':e.status==='ignored'?'dim':'warn';
-    const act=(canReplay&&(e.status==='failed'))?`<button class="btn sm pri" onclick="replayStripe('${e.id}')">Replay</button>`:'';
+    /* jsq, not raw interpolation: every other inline handler in this file that
+       carries an id through an attribute goes through it, and this one did not. */
+    const act=(canReplay&&(e.status==='failed'))?`<button class="btn sm pri" onclick="replayStripe('${jsq(e.id)}','${jsq(e.type||'this event')}')">Replay</button>`:'';
     return `<tr><td data-label="Type" class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td data-label="Status"><span class="chip ${cls}">${esc(e.status)}</span></td><td data-label="Org" class="mono" style="font-size:10px;">${e.org_id?sens(e.org_id,{short:e.org_id.slice(0,8)+'…'}):'—'}</td><td data-label="Received" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td data-label="Error" class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td data-label="Action" style="text-align:right;">${act}</td></tr>`;
   }).join('');
 }
-async function replayStripe(id){
-  const r=await api('/admin/v1/billing/stripe-events/'+id+'/replay',{method:'POST'});
-  const d=await r.json().catch(()=>({}));
-  if(r.ok){ toast('replayed · '+(d.result||d.event_status||'ok')); loadStripeEvents(); } else toast(d.detail||('replay failed ('+r.status+')'));
+/* A4 · replay re-runs a Stripe webhook, which is A3's re-anchor case exactly:
+   a write into a system Foxy does not control, and one that can move money —
+   a payment_failed handler can downgrade a plan, an invoice handler can dunning-
+   mail a customer. It had no confirmation and no busy guard, and three rapid
+   clicks sent three POSTs (counted under Node). Same two remedies A3 gave
+   re-anchor, in the same shapes: the modal states what will happen and which
+   event, and busy() sets aria-busy, which A0's .btn[aria-busy] already turns
+   into pointer-events:none — so the attribute IS the double-submit guard.
+   The bare `await api(...)` also had no try/catch: a dropped connection threw
+   past the caller and the row simply never answered. */
+function replayStripe(id,type){
+  openModal({eyebrow:'ops · re-sends a Stripe webhook', title:'Replay this event',
+    bodyHTML:`<div class="sub">Foxy will process <b>${esc(type||'this event')}</b> again as if Stripe had just delivered it. Anything that handler does — a plan change, an invoice email, a dunning step — happens a second time.</div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doReplayStripe('${jsq(id)}',this)">Replay event</button>`});
+}
+async function _doReplayStripe(id,btn){
+  await busy(btn,async function(){
+    let r;try{ r=await api('/admin/v1/billing/stripe-events/'+encodeURIComponent(id)+'/replay',{method:'POST'}); }catch(e){ r=null; }
+    closeModal();
+    if(!r){ toast('replay failed — no response from the API','error'); return; }
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ toast('event replayed · '+(d.result||d.event_status||'ok'),'success'); loadStripeEvents(); }
+    else toast(d.detail||('replay failed ('+r.status+')'),'error');
+  });
 }
 async function loadSecurity(){
   let r; try{ r=await api('/admin/v1/security/logins?days=7'); }catch(e){ r=null; }

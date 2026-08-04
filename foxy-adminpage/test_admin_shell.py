@@ -224,8 +224,13 @@ def test_no_visible_h1_and_no_page_without_an_outline() -> None:
 def test_pagehead_controls_survive() -> None:
     """The heads that carried working controls still carry them."""
     joined = " ".join(_pagehead_blocks())
+    # A4 widened the last needle from `loadCampaigns()` to the call prefix. The
+    # guard's claim is that the head still carries a working Refresh control,
+    # not that the handler takes no arguments — and it now takes `this`, so
+    # busy() can disable it while the reload is in flight. Pinning the arity
+    # made this guard fail on a change that strengthened the thing it guards.
     for control in ('id="showDeleted"', 'onclick="orgVerify()"', 'onclick="auditExport()"',
-                    'onclick="loadCampaigns()"'):
+                    'onclick="loadCampaigns('):
         assert control in joined, f"{control} was dropped with its page head"
 
 
@@ -2494,9 +2499,281 @@ def test_an_alert_level_does_not_default_to_red() -> None:
     body = _js_func("opsChip")
     assert "s==='info'?'info'" in body, "an info alert still paints red"
     assert "s==='critical'?'bad'" in body, "critical is back on the unnamed else-branch"
-    assert "s==='never'||s==='not_applicable'?'dim'" in body, (
-        "absence is shouting in a status hue again"
+    # A4 added `revoked` to this same branch, which broke the literal match
+    # while strengthening the claim. The assertion is the claim, not the
+    # spelling: both original names must still land in the dim branch, and the
+    # branch must still be the one that resolves to 'dim'.
+    dim = re.search(r"((?:s==='[a-z_]+'\|\|)*s==='[a-z_]+')\?'dim'", body)
+    assert dim, "the dim branch is gone — absence has no home in the mapping"
+    names = set(re.findall(r"s==='([a-z_]+)'", dim.group(1)))
+    assert {"never", "not_applicable"} <= names, (
+        "absence is shouting in a status hue again — dim now covers %s" % sorted(names)
     )
+
+
+# ── A4 · revenue and campaigns — the money pages ─────────────────────────────
+
+A4_PAGES = ("revenue", "campaigns")
+
+
+def _js_nocomment() -> str:
+    """Every inline script with block comments removed.
+
+    Not cosmetic. This file argues with itself in prose, and the A4 comments
+    quote `confirm()`, `offset=NaN` and `toast(); return` precisely because
+    those are the things being removed — a guard that greps raw script source
+    finds the explanation and calls it the defect. Same trap _nocomment and
+    _css were written for, on the third of the three languages in this file.
+    """
+    return re.sub(r"/\*.*?\*/", "", "\n".join(_script_blocks()), flags=re.S)
+
+
+def test_a4_pages_name_themselves() -> None:
+    """revenue and campaigns were the last two pages with no heading at all, so
+    heading navigation landed nowhere and the page name existed only as a <b>
+    in the crumb."""
+    for p in A4_PAGES:
+        assert '<h1 class="sr-only">' in _a2_page(p), "page-%s has no heading" % p
+
+
+def test_revenue_reserves_its_face_for_the_card_that_answers_the_question() -> None:
+    """#65, on the last KPI row that never adopted it. All three revenue cards
+    were saturated — the pre-A1 state, where the page named "revenue" gave a
+    subscription count and a trial count the same weight as the revenue."""
+    cards = [c for c in _kpi_cards() if any(k in c for k in ("rvRev30", "rvActive", "rvTrial"))]
+    assert len(cards) == 3, "expected 3 revenue KPI cards, found %d" % len(cards)
+    loud = [c for c in cards if "quiet" not in c.split(">")[0]]
+    assert len(loud) == 1, "revenue shows %d emphatic cards, not 1" % len(loud)
+    assert 'id="rvRev30"' in loud[0], (
+        "the revenue face is not on Revenue · 30 days — the one card the page is named after"
+    )
+
+
+def test_the_mask_control_is_legible_on_the_face_it_lands_on() -> None:
+    """A style with a new caller has never been measured. sens() writes into the
+    .kval of a saturated card, and .sens paints its dots in --muted2 and its eye
+    in --muted — greys tuned against a flat --surf. On this page's own face they
+    measured 1.07:1 and 1.04:1 at the deep stop: the headline number and the
+    only control that uncovers it, both invisible on their own card."""
+    css = _css()
+    for sel in (
+        r"\.kpi:not\(\.quiet\) \.face \.sens\.masked \.sens-val\{color:var\((--[a-z0-9-]+)\)\}",
+        r"\.kpi:not\(\.quiet\) \.face \.sens-btn\{color:var\((--[a-z0-9-]+)\)\}",
+    ):
+        m = re.search(sel, css)
+        assert m, "the on-face mask/reveal override is gone: %s" % sel
+        ink = _token(m.group(1))
+        worst, stop = min((_ratio(ink, s), s) for s in _face_stops())
+        assert worst >= 4.5, (
+            "the on-face mask control uses %s (%s), only %.2f:1 against %s"
+            % (m.group(1), ink, worst, stop)
+        )
+    # If either override lost its :not(.quiet) scope it would repaint a
+    # near-black control on a tinted --surf2 — A1's failure, pointed the other
+    # way — so the count of scoped rules is part of the assertion.
+    assert css.count(".kpi:not(.quiet) .face .sens") == 4, (
+        "the on-face .sens overrides are no longer the four scoped rules"
+    )
+
+
+def test_the_revenue_page_says_when_it_cannot_answer() -> None:
+    """The last toast()-and-return loader in any phase's scope, and the worst,
+    because this page is never blank on a failed RELOAD: measured under Node,
+    a 500 left the previous poll's money on screen with #sePager still reading
+    "1-25 of 240" over it."""
+    body = _js_func("loadRevenue")
+    assert "toast(" not in body.split("const d=")[0], "revenue still fails by toast alone"
+    for slot in ("rvMonthly", "rvByPlan"):
+        assert re.search(r"\$\('%s'\)\.innerHTML=fault\(" % slot, body), (
+            "%s does not report the failure" % slot
+        )
+    assert "loadRevenue()" in body, "the revenue fault offers no retry"
+    assert re.search(r"\$\('sePager'\)\.innerHTML=''", body), (
+        "a stale '1-25 of 240' can still sit above a fault row"
+    )
+
+
+def test_a_new_stripe_filter_is_a_new_question() -> None:
+    """_fauxCommit invokes data-onchange as window[cb](root), so naming
+    loadStripeEvents there put the select ELEMENT into its `page` parameter and
+    the query string went out as offset=NaN. Driven through a real option
+    click, picking "failed" answered "no stripe events with status failed"
+    while three failed events existed."""
+    m = re.search(r'id="seStatus"[^>]*data-onchange="([a-zA-Z]+)"', _nocomment(SRC))
+    assert m, "the Stripe status select is gone"
+    assert m.group(1) != "loadStripeEvents", (
+        "the status select still hands the select element to a `page` parameter"
+    )
+    body = _js_func(m.group(1))
+    assert "pgReset('stripe')" in body, "a new Stripe filter still keeps the old offset"
+    assert "loadStripeEvents()" in body, "the filter no longer reloads the table"
+
+
+def test_replaying_a_stripe_webhook_is_confirmed_first() -> None:
+    """Replay re-runs a webhook inside Stripe — A3's re-anchor case: a write to
+    a system Foxy does not control, and one that can move money. It had no
+    confirmation and no busy guard, and three rapid clicks sent three POSTs."""
+    gate = _js_func("replayStripe")
+    assert "openModal(" in gate, "replay fires straight at Stripe with no confirmation"
+    assert "api(" not in gate, "the confirmation step still calls the API itself"
+    assert "_doReplayStripe(" in gate, "the modal does not lead anywhere"
+    run = _js_func("_doReplayStripe")
+    assert "await busy(btn," in run, (
+        "replay is not wrapped in busy() — the aria-busy it sets IS the double-submit guard"
+    )
+    assert "try{" in run and "catch(e)" in run, (
+        "a dropped connection still throws past the caller with nothing on screen"
+    )
+
+
+def test_a_staff_action_is_confirmed_in_the_product_not_the_browser() -> None:
+    """A0 built the modal to replace prompt()/confirm(). revokeCampaign was the
+    last native confirm() in the file, and it could not name which campaign it
+    was about."""
+    assert "confirm(" not in _js_nocomment(), "a native confirm() is back"
+    gate = _js_func("revokeCampaign")
+    assert "openModal(" in gate and "_doRevokeCampaign(" in gate, (
+        "revoke no longer confirms through the product's own modal"
+    )
+    assert "esc(label" in gate, "the confirmation cannot say which campaign it is about"
+    assert "await busy(btn," in _js_func("_doRevokeCampaign"), "revoke can double-submit"
+
+
+def test_the_campaign_pager_is_not_inside_the_element_it_paginates() -> None:
+    """#campaignPager was a CHILD of #campaignRows, and renderCampaigns sets
+    campaignRows.innerHTML — so every render deleted the pager the line above
+    had just drawn. With 23 campaigns the page showed 10 and offered no way to
+    reach the other 13."""
+    # Written first as a non-greedy slice from campaignRows to campaignPager,
+    # which stayed GREEN when the pager was mutated back inside: `.*?` stops at
+    # the first pager either way, so the pattern could not tell a sibling from
+    # a child. Depth has to be walked, not matched.
+    page = _a2_page("campaigns")
+    i = page.index('<div id="campaignRows"')
+    depth, j = 0, i
+    while j < len(page):
+        if page.startswith("<div", j):
+            depth += 1
+            j += 4
+        elif page.startswith("</div>", j):
+            depth -= 1
+            j += 6
+            if depth == 0:
+                break
+        else:
+            j += 1
+    assert depth == 0, "#campaignRows never closes"
+    assert 'id="campaignPager"' not in page[i:j], (
+        "the pager is inside #campaignRows again — renderCampaigns rewrites that "
+        "element wholesale, so the pager it just drew is deleted on every render"
+    )
+    assert 'id="campaignPager"' in page[j:], "the pager is gone from the campaigns page"
+
+
+def test_every_campaign_field_has_exactly_one_label() -> None:
+    """Each field was `<label><label for=…>…</label><input></label>`. The outer
+    bare label wraps the control, so every input reported TWO labels and a
+    screen reader announced the field name twice with no authoritative one."""
+    page = _a2_page("campaigns")
+    assert "<label" in page, "the create form lost its labels entirely"
+    assert not re.search(r"<label[^>]*>\s*<label", page), "a campaign field is double-labelled"
+    for field in ("campaignOfferId", "campaignLabel", "campaignCode",
+                  "campaignCredits", "campaignDays", "campaignMax"):
+        assert page.count('for="%s"' % field) == 1, "%s is not labelled exactly once" % field
+
+
+def test_the_stripe_table_binds_its_columns() -> None:
+    """Under 760px .tbl.cardify removes the header row, so scope + data-label
+    are the only things left tying a value to its column. All six headers here
+    carried neither half."""
+    head = re.search(r"<thead><tr>(.*?)</tr></thead>", _a2_page("revenue"), re.S).group(1)
+    ths = re.findall(r"<th\b([^>]*)>", head)
+    assert len(ths) == 6, "the Stripe events table no longer has six columns"
+    assert all('scope="col"' in t for t in ths), "a Stripe events column does not name itself"
+
+
+def test_the_campaign_list_says_what_to_do_next() -> None:
+    """"No campaigns yet." named the absence and stopped, on a page where a
+    superadmin can act on it from the card directly above."""
+    body = _js_func("renderCampaigns")
+    assert "can('superadmin')" in body, (
+        "the empty state gives the same advice to someone who cannot act on it"
+    )
+    assert "Issue a redemption code" in body, "the empty state names no next step"
+
+
+def test_the_shown_once_panel_is_not_inside_an_inline_element() -> None:
+    """createCampaign injects a .clay panel carrying two unrecoverable secrets.
+    Its host was a <span> in a flex row beside the button, so the one panel that
+    must be read carefully was invalid markup squeezed into a column."""
+    m = re.search(r'<(\w+) id="campaignOut"', _a2_page("campaigns"))
+    assert m and m.group(1) == "div", "the shown-once panel is back inside an inline host"
+    assert "clay pad" in _js_func("createCampaign"), "the shown-once panel is gone"
+
+
+def test_campaign_writes_cannot_double_submit() -> None:
+    """createCampaign mints a bearer credential: a double-click either burns the
+    typed code against a 409 or issues two campaigns, with nothing on screen to
+    say the first click was in flight."""
+    for fn in ("createCampaign", "loadCampaigns"):
+        assert "busy(btn," in _js_func(fn), "%s has no in-flight guard" % fn
+    page = _a2_page("campaigns")
+    assert "createCampaign(this)" in page and "loadCampaigns(this)" in page, (
+        "the guard has no caller — the button never hands itself to busy()"
+    )
+
+
+def test_a_revealed_figure_is_not_truncated_on_the_card_it_leads() -> None:
+    """The colour fix made this one visible. .kval is clamp(22px,2.2vw,30px) and
+    the eye and copy take 52px beside it, so at 375px the revealed "$42,189"
+    measured scrollWidth 89 into clientWidth 46 and drew "$42,…" — the operator
+    taps the eye and is handed a truncated number. Measured again after the fix:
+    89 into 89, clipped=false."""
+    css = _css()
+    assert ".kpi .face .sens{flex-wrap:wrap}" in css, (
+        "the on-face value row cannot wrap, so the controls squeeze the figure again"
+    )
+    assert re.search(r"\.kpi \.face \.sens-val\{[^}]*text-overflow:clip", css), (
+        "a revealed figure elides on the card it leads"
+    )
+    # Scoped to .face deliberately: in a table cell sens() is showing a
+    # truncated id and the short form IS the design.
+    #
+    # Anchored to the start of a rule, not searched as a substring. `_scope(
+    # ".sens-val{")` was written first and it matched `.kpi .face .sens-val{`
+    # — the override — because that rule is declared earlier in the file. The
+    # guard then read the override and reported the base rule as broken. Same
+    # shadowing trap the comment-stripping helpers exist for, one level down.
+    base = re.search(r"(?:^|\})\.sens-val\{([^}]*)\}", css, re.M)
+    assert base, "the base .sens-val rule is gone"
+    assert "text-overflow:ellipsis" in base.group(1), (
+        "the base .sens-val stopped eliding — that is the table's design, not a defect"
+    )
+
+
+def test_a_live_campaign_does_not_render_as_an_alarm() -> None:
+    """Only a render showed this. Neither `active` nor `revoked` was mapped, so
+    both fell to opsChip's else — "unrecognised, assume the worst" — and the
+    campaigns list painted every row the same red, ACTIVE included. The two
+    names are the whole vocabulary: evaluation_campaigns.status is commented
+    `active|revoked` in models.py and admin_campaigns.py writes nothing else."""
+    body = _js_func("opsChip")
+    assert re.search(r"s==='ok'\|\|s==='confirmed'\|\|s==='active'\?'safe'", body), (
+        "an active campaign still paints red — active is not grouped with the healthy states"
+    )
+    assert re.search(r"s==='never'\|\|s==='not_applicable'\|\|s==='revoked'\?'dim'", body), (
+        "a switched-off campaign is shouting in a status hue again"
+    )
+    # A branch with no caller has never been measured, and the vocabulary is two
+    # words — a third would be invention, not coverage.
+    assert "s==='expired'" not in body, "opsChip maps a campaign status the API never emits"
+
+
+def test_no_mojibake_survives() -> None:
+    """The campaigns list shipped `Â·` twice — a UTF-8 middot re-decoded as
+    cp1252 — so every row read "judges-july Â· 250 credits". They were the only
+    two in the file, which is why a whole-file guard is cheap."""
+    assert not re.search(r"[ÂÃ]\S|â€.", SRC), "mojibake is back in the file"
 
 
 if __name__ == "__main__":  # pragma: no cover
