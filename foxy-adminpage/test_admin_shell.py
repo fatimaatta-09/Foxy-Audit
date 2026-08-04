@@ -47,6 +47,19 @@ def _defined_tokens() -> set[str]:
     )
 
 
+def _markup() -> str:
+    """SRC with <style>, <script> and HTML comments removed.
+
+    Guards that look for an ELEMENT must look here, not in SRC. This file
+    explains its own markup in prose, so a comment reading "no <h1> anywhere"
+    is itself an `<h1>` as far as a substring search is concerned — which has
+    now tripped a guard twice.
+    """
+    out = re.sub(r"<style[^>]*>.*?</style>", "", SRC, flags=re.S)
+    out = re.sub(r"<script[^>]*>.*?</script>", "", out, flags=re.S)
+    return re.sub(r"<!--.*?-->", "", out, flags=re.S)
+
+
 def _blocks(open_tag: str) -> list[str]:
     """Every `open_tag` … matching `</div>` span, sliced by div balance."""
     out, start = [], SRC.find(open_tag)
@@ -188,10 +201,24 @@ def test_no_title_block_inside_any_pagehead() -> None:
             assert banned not in block, f"{banned} is back inside a .pagehead: {block[:120]}"
 
 
-def test_no_h1_anywhere() -> None:
-    """P2 removed the last one, and the now-dead rule went with it."""
-    assert "<h1" not in SRC
+def test_no_visible_h1_and_no_page_without_an_outline() -> None:
+    """P2 removed the last VISIBLE h1 — it repeated the crumb 40px above it — and
+    the now-dead rule went with it. That is still the rule. What P2 did not
+    intend, and what A1 fixes, is a document with no <h1> at all: no outline, no
+    rotor entry, no way past seven bento panels except linear Tab.
+
+    So: an h1 may exist, but only as .sr-only, and it must never come back as
+    something with a font rule of its own.
+    """
     assert "h1{font-family" not in _style_block(), "the h1 rule outlived its last element"
+    for m in re.finditer(r"<h1([^>]*)>", _markup()):
+        assert 'class="sr-only"' in m.group(1), (
+            "a VISIBLE <h1> is back — the page name is already in the crumb and "
+            f"the watermark: <h1{m.group(1)}>"
+        )
+    assert ".sr-only{position:absolute" in _style_block(), (
+        "the sr-only utility went away and took every page outline with it"
+    )
 
 
 def test_pagehead_controls_survive() -> None:
@@ -417,7 +444,10 @@ def test_the_accent_bar_rule_survives() -> None:
 
 def test_no_other_pseudo_claims_the_kpi_before() -> None:
     """Any decorative ::before on .clay/.kpi or a shared ancestor blanks the bars."""
-    css = _style_block()
+    # Comments first. This file explains its own selectors in prose, so a comment
+    # that says ".kpi::before is the accent bar" was being read AS a rule
+    # claiming .kpi::before — the guard failing on its own documentation.
+    css = re.sub(r"/\*.*?\*/", "", _style_block(), flags=re.S)
     for sel in re.findall("([^{}]*)::before[^{}]*{", css):
         sel = sel.strip().splitlines()[-1].strip()
         if sel in (".kpi", "*,*", ".eyebrow", ".pagehead", ".tbl.cardify td"):
@@ -459,8 +489,9 @@ def test_status_hues_stay_out_of_the_face_palette() -> None:
 def _rows() -> list[list[str]]:
     """The face class of every card, grouped by .grid.kpis row."""
     rows = []
-    for row in _blocks('<div class="grid kpis"'):
-        faces = re.findall('class="clay kpi (k-[a-z]+)"', row)
+    for row in _blocks('<div class="grid kpis'):
+        # the hue, whatever modifier classes follow it (e.g. "k-azure quiet")
+        faces = re.findall(r'class="clay kpi (k-[a-z]+)[^"]*"', row)
         if faces:
             rows.append(faces)
     return rows
@@ -728,6 +759,11 @@ HIDE_ALLOWLIST = {
     ".pg-wm":                 "decoration — a 72px word behind a 44px band, the plan's one exception",
     ".crumb-sep":             "a box-drawing glyph, already aria-hidden; it carries nothing",
     ".tbl.cardify td:empty":  "a cell with no value, which the desktop table also renders blank",
+    ".tbl.cardify thead":     "A1 — td::before already prefixes every cell with its column "
+                              "name, so the header row is a duplicate of the labels, not a "
+                              "lost control. It was visually-hidden by clip, which KEPT it "
+                              "in the a11y tree: the columns were announced once as a loose "
+                              "run and then again inside every card.",
 }
 
 
@@ -1008,8 +1044,10 @@ def test_the_dim_chip_does_not_shout_in_a_status_colour() -> None:
 
 # ── the hero info button ──
 
-def _kpi_cards() -> list[str]:
-    return re.findall(r'<div class="clay kpi k-[a-z]+">.*?</span></div>', SRC, re.S)
+# (_kpi_cards is defined once, up with the other block helpers. A second
+#  definition used to live here and silently shadowed it: its regex required the
+#  class attribute to END at the hue, so any modifier class made four separate
+#  guards report a phantom card-count drop instead of the thing they test.)
 
 
 def test_every_hero_card_has_an_info_button_with_real_copy() -> None:
@@ -1218,12 +1256,12 @@ def test_a_chip_on_a_hero_face_does_not_use_the_panel_fill() -> None:
     """The whole point of A0. Without this scope the pill reverts to a fill that
     measured 1.005:1 against the face it sits on."""
     css = _style_block()
-    assert ".kpi .face .chip{background:var(--foxink)" in css, (
-        "the on-face chip lost its plate — every status pill on a hero card goes "
-        "back to matching the gradient behind it"
+    assert ".kpi:not(.quiet) .face .chip{background:var(--foxink)" in css, (
+        "the on-face chip lost its plate — every status pill on a SATURATED hero "
+        "card goes back to matching the gradient behind it"
     )
     for kind in CHIP_KINDS:
-        assert ".kpi .face .chip.%s{color:var(--face-ink-%s)}" % (kind, kind) in css, (
+        assert ".kpi:not(.quiet) .face .chip.%s{color:var(--face-ink-%s)}" % (kind, kind) in css, (
             ".chip.%s has no on-face ink" % kind
         )
 
@@ -1570,6 +1608,274 @@ def test_no_shadow_is_a_zero_offset_halo() -> None:
     css = _css()
     halos = re.findall(r"box-shadow:\s*0 0 [1-9]\d*px\s+(?:var\(|rgba?\(|#)", css)
     assert not halos, f"zero-offset colored halos: {halos}"
+
+
+# ── 10 · A1 · the overview and health pages ──────────────────────────────────
+# Register #65: the saturated face was on all 21 KPIs, so nothing was primary.
+# A1 reserves it for the ONE card per page that answers "is something wrong
+# right now" and lets the rest go quiet — without touching the beam, which is a
+# settled decision (#64) and orbits on all 21 regardless.
+
+
+def _css_without_media() -> str:
+    """The stylesheet with every @media block removed, by brace balance.
+
+    Splitting on the first "@media" is not the same thing: the first width query
+    in this sheet sits ~2000 chars ABOVE the bento rules, so that split threw
+    away most of the base cascade — and a guard written against it failed on
+    correct source, which is the same defect as passing on broken source.
+    """
+    css = _css()
+    out, i = [], 0
+    while True:
+        m = css.find("@media", i)
+        if m == -1:
+            out.append(css[i:])
+            return "".join(out)
+        out.append(css[i:m])
+        j = css.index("{", m)
+        depth = 1
+        j += 1
+        while j < len(css) and depth:
+            if css[j] == "{":
+                depth += 1
+            elif css[j] == "}":
+                depth -= 1
+            j += 1
+        i = j
+
+
+def _page(page_id: str) -> str:
+    """The markup of one <section class="page" id="page-…">."""
+    start = SRC.index('id="page-%s"' % page_id)
+    start = SRC.rindex("<section", 0, start)
+    return SRC[start: SRC.index("</section>", start)]
+
+
+A1_PAGES = ("overview", "health")
+
+
+def test_exactly_one_emphatic_face_per_a1_page() -> None:
+    """The whole point. Two emphatic cards on one page is the old problem at
+    lower volume; zero means the page lost its answer."""
+    for page in A1_PAGES:
+        cards = re.findall(r'<div class="clay kpi ([^"]*)"', _page(page))
+        assert cards, "%s has no KPI cards at all" % page
+        loud = [c for c in cards if "quiet" not in c]
+        assert len(loud) == 1, (
+            "%s has %d emphatic faces (%s) — the face is the mark of the one card "
+            "that answers 'is something wrong right now'" % (page, len(loud), loud)
+        )
+
+
+def test_the_emphatic_card_is_the_one_that_answers_the_question() -> None:
+    """Which card keeps the face is the decision, not an accident of order."""
+    overview = _page("overview")
+    loud = re.search(r'<div class="clay kpi (k-[a-z]+)"(?![^>]*quiet)', overview)
+    assert loud, "the overview lost its emphatic card"
+    card = overview[overview.index(loud.group(0)):][:900]
+    assert "Policy breaches" in card, (
+        "the overview's emphatic face moved off Policy breaches — the only one of "
+        "its five KPIs that is both volatile and consequential"
+    )
+    health = _page("health")
+    hloud = re.search(r'<div class="clay kpi (k-[a-z]+)"(?![^>]*quiet)', health)
+    assert hloud, "health lost its emphatic card"
+    hcard = health[health.index(hloud.group(0)):][:900]
+    assert 'id="hStatus"' in hcard, "health's emphatic face left the Overall card"
+
+
+def test_a_quiet_card_is_quiet_not_dead() -> None:
+    """'Quieter' must not collapse into 'grey'. A quiet card keeps its hue in the
+    surface and keeps the accent bar at full saturation; if either goes, the
+    proposal has become 'turn the colour off', which is a different thing."""
+    css = _css()
+    rule = css[css.index(".kpi.quiet .face{"):]
+    rule = rule[: rule.index("}")]
+    assert "color-mix" in rule and "var(--k" in rule, (
+        "the quiet face stopped deriving its tint from the card's own hue: " + rule
+    )
+    assert ".kpi.quiet::before" not in css, (
+        "something dimmed the accent bar on quiet cards; it is the one element "
+        "that still states the card's hue at full strength"
+    )
+
+
+def test_the_beam_is_untouched_by_the_quiet_variant() -> None:
+    """#64 is decided: the beam orbits on all 21 cards. Hierarchy here had to be
+    built with motion held constant, so a quiet card must not buy its quietness
+    by stopping."""
+    css = _css()
+    for bad in (".kpi.quiet .beam", ".quiet .beam"):
+        assert bad not in css, "%s — the quiet variant is reaching for the beam" % bad
+    for page in A1_PAGES:
+        markup = _page(page)
+        cards = re.findall(r'<div class="clay kpi [^"]*"', markup)
+        beams = markup.count('class="beam"')
+        assert beams == len(cards), "%s: %d cards but %d beams" % (page, len(cards), beams)
+
+
+def test_secondary_ink_on_a_quiet_face_is_tinted_not_grey() -> None:
+    """MEASURED. --muted / --muted2 are greys tuned against the flat panel; on
+    the tinted quiet face they fell to 3.93-4.10:1 (label) and 3.54-3.69:1
+    (foot) in the dark theme. Both are under AA. The replacement is mixed out of
+    --ink and the card's own deep stop and clears 7.9:1 in both themes."""
+    css = _css()
+    for part in ("klabel", "kfoot"):
+        m = re.search(r"\.kpi\.quiet \.face \.%s\{color:([^}]+)\}" % part, css)
+        assert m, "the quiet face stopped styling .%s and inherited --foxink" % part
+        value = m.group(1)
+        assert "--muted" not in value, (
+            ".%s is back on a flat-panel grey over a tinted surface: %s" % (part, value)
+        )
+        assert "color-mix" in value and "--ink" in value, (
+            ".%s must tint from the surface's own hue: %s" % (part, value)
+        )
+
+
+def test_the_verdict_is_not_smaller_than_the_counts_beside_it() -> None:
+    """#hStatus is the answer to the only question this page is asked, and it was
+    rendering at the base .chip's 9.5px inside a slot sized for a 30px number."""
+    css = _css()
+    m = re.search(r"\.kpi \.kval>\.chip\{([^}]*)\}", css)
+    assert m, "the on-face verdict lost its size rule and is a 9.5px pill again"
+    size = re.search(r"font-size:([\d.]+)px", m.group(1))
+    assert size and float(size.group(1)) >= 15, (
+        "the verdict is %s — the raw counts next to it render at 22-30px"
+        % (size.group(1) + "px" if size else "unsized")
+    )
+
+
+def test_the_status_of_the_health_hero_is_announced() -> None:
+    """innerHTML swapping — to ok, or ok to degraded — is silent to a screen
+    reader without a live region, on the console's headline card."""
+    health = _page("health")
+    for hid in ("hStatus", "hWorker"):
+        m = re.search(r'<div class="kval" id="%s"([^>]*)>' % hid, health)
+        assert m, "#%s is no longer a .kval on the health page" % hid
+        assert 'aria-live="polite"' in m.group(1) and 'role="status"' in m.group(1), (
+            "#%s changes silently: attrs were %r" % (hid, m.group(1))
+        )
+
+
+def test_no_dead_links_on_the_a1_pages() -> None:
+    """`<a>` with no href is not focusable, not activatable and not announced.
+    Six of these were the overview's only routes to the incident pages."""
+    for page in A1_PAGES:
+        dead = re.findall(r'<a class="linklike"[^>]*>', _page(page))
+        assert not dead, "%s still has link-shaped divs: %s" % (page, dead)
+    assert '<a class="linklike" onclick="goOps(' not in SRC, (
+        "the JS-emitted 'view all N' alert link is still a dead <a>"
+    )
+
+
+def test_every_column_on_an_a1_page_names_itself() -> None:
+    """Under 760px the header row is removed entirely, so scope= and data-label
+    are the only things tying a value to its column."""
+    for page in A1_PAGES:
+        for th in re.findall(r"<th\b[^>]*>", _page(page)):
+            assert 'scope="col"' in th, "%s: unscoped header %s" % (page, th)
+    assert '<th scope="col">When</th>' in SRC, (
+        "the alert-history table lost its column scopes"
+    )
+
+
+def test_the_mobile_card_table_does_not_announce_its_columns_twice() -> None:
+    """td::before already prefixes every cell with its column name. Clipping the
+    header row hides it visually but KEEPS it in the a11y tree, so the columns
+    were read once as a loose run and then again inside each card."""
+    body = dict(_width_media_blocks()).get("max-width:760px", "")
+    m = re.search(r"\.tbl\.cardify thead\{([^}]*)\}", body)
+    assert m, "the cardify header rule vanished from the 760px breakpoint"
+    assert "display:none" in m.group(1), (
+        "the cardify header row is hidden by clip again, which leaves it audible: "
+        + m.group(1)
+    )
+
+
+def test_direction_is_never_carried_by_colour_alone_on_a_face() -> None:
+    """loadKpiSparks set style.color to --ok / --danger on a .kfoot sitting on a
+    decorative face. An inline style beats the face-ink rule, so the line
+    measured 1.12:1 on .k-orange's deep stop — and painted a RISE in policy
+    breaches green."""
+    js = " ".join(_script_blocks())
+    assert "f.style.color=" not in js, (
+        "a status hue is being written onto a KPI foot from JS again"
+    )
+    assert "(up?'▲':'▼')" in js, (
+        "the delta lost the glyph that carries its direction non-chromatically"
+    )
+
+
+def test_a_spark_inside_a_face_takes_that_faces_ink() -> None:
+    """The sparkline colour was read from :root as --foxink — correct on a
+    saturated face, invisible on a quiet one. The face publishes --spark now."""
+    css = _css()
+    assert "--spark:var(--foxink)" in css, "the saturated face stopped publishing --spark"
+    assert "--spark:var(--k2)" in css, "the quiet face stopped overriding --spark"
+    js = " ".join(_script_blocks())
+    assert "getPropertyValue('--spark')" in js, (
+        "loadKpiSparks is no longer reading the ink off the card it draws into"
+    )
+    assert "getComputedStyle(document.documentElement).getPropertyValue(c[3])" not in js, (
+        "the spark colour is being read from :root again, which cannot know "
+        "whether the card it lands on is quiet"
+    )
+
+
+def test_a_capability_that_is_never_measured_is_not_a_red_status() -> None:
+    """build_health() only ever emits circuit_breaker.state "unavailable", so
+    opsChip's else-branch painted a permanent red pill on the page whose job is
+    "is anything wrong right now". A red chip that is always red gets skipped."""
+    js = " ".join(_script_blocks())
+    assert "opsCheck('circuit breaker',cb.state,cb.detail,true)" in js, (
+        "the circuit-breaker row is a status chip again"
+    )
+    assert "neutral?" in js, "opsCheck lost its neutral (capability) rendering"
+
+
+def test_the_overview_leads_with_the_two_panels_that_answer_the_question() -> None:
+    """Open alerts used to be 7th of seven — bottom-right, below the fold — while
+    the double-width slot went to a browsable org list. Order is read by the eye,
+    the tab sequence and a screen reader alike."""
+    bento = _page("overview")
+    bento = bento[bento.index('<div class="bento">'):]
+    titles = re.findall(r'<h2 class="panel-t">([^<]+)</h2>', bento)
+    assert titles[:2] == ["System health", "Open alerts"], (
+        "the bento no longer leads with the operational panels: %s" % titles[:2]
+    )
+    # the BASE rule, not a breakpoint override — the same declaration is
+    # repeated inside the 1100px query, so a bare substring search over the whole
+    # sheet stayed green when the base rule was deleted.
+    base = _css_without_media()
+    assert re.search(r"\.b-alerts[^{}]*\{[^{}]*grid-column:span 2", base), (
+        "Open alerts lost the double slot its sentence-length rows need"
+    )
+
+
+def test_the_a1_pages_have_an_outline() -> None:
+    """Zero headings meant no rotor entry and no way past seven panels except
+    linear Tab. Every panel title is a real heading under one page-level h1."""
+    for page in A1_PAGES:
+        markup = _page(page)
+        h1 = re.findall(r'<h1 class="sr-only">([^<]+)</h1>', markup)
+        assert len(h1) == 1, "%s has %d page headings, expected 1" % (page, len(h1))
+        assert '<h2 class="panel-t"' in markup, (
+            "%s's panel titles are back to being unlabelled <div>s" % page
+        )
+        assert '<div class="panel-t">' not in markup, (
+            "%s still has a <div> styled as a heading" % page
+        )
+
+
+def test_no_bento_class_names_something_that_does_not_exist() -> None:
+    """b-traffic, b-leads and b-health were in the markup with zero CSS rules
+    anywhere — a naming system that named nothing, which is the texture this
+    phase exists to remove."""
+    css = _css()
+    for cls in re.findall(r'class="clay pad (b-[a-z]+)', _page("overview")):
+        assert "." + cls in css, ".%s is in the markup but has no rule" % cls
+
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

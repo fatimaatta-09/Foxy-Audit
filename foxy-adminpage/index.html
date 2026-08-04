@@ -470,14 +470,29 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none}
 /* ════════ BENTO (overview) ════════ */
 .bento{display:grid;gap:14px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
 .bento>.clay{display:flex;flex-direction:column;min-width:0}
-.b-orgs{grid-column:span 2}
+/* Two panels earn the double slot, and both earn it for a reason: Open alerts
+   because its rows are sentences that a narrow column truncated, Recent
+   organizations because it is a four-column table. The three other .b-* hooks
+   this markup carried — b-traffic, b-leads, b-health — had no rule behind them
+   anywhere in the file: a naming system that named nothing, which is the exact
+   texture being removed here. They are deleted rather than left decorative. */
+.b-alerts,.b-orgs{grid-column:span 2}
 .panel-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
-.panel-t{font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin-top:1px}
-.linklike{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--fox2);cursor:pointer;text-decoration:none;white-space:nowrap;flex-shrink:0}
+/* margin is stated in full because A1 promotes these to real <h2>s on the pages
+   it owns, and a UA heading margin would otherwise open a gap under the title. */
+.panel-t{font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin:1px 0 0}
+/* .linklike was an <a> with no href, no tabindex and no key handling — six of
+   them on the overview, and two of those ("view →" on System health and on Open
+   alerts) are the page's ONLY routes to the incident pages. Not focusable, not
+   activatable, invisible to AT: a dead end, not a degraded experience. It is a
+   <button> now. The look is unchanged; the padding/negative-margin pair buys a
+   24px SC 2.5.8 target without moving the text a pixel in the .panel-h row. */
+.linklike{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.4px;color:var(--fox2);cursor:pointer;text-decoration:none;white-space:nowrap;flex-shrink:0;
+  background:none;border:0;padding:6px 8px;margin:-6px -8px;border-radius:var(--r-xs)}
 .linklike:hover{text-decoration:underline}
 .b-orgs .twrap{flex:1}
-@media(max-width:1100px){.bento{grid-template-columns:repeat(2,minmax(0,1fr))}.b-orgs{grid-column:span 2}}
-@media(max-width:680px){.bento{grid-template-columns:1fr}.b-orgs{grid-column:span 1}}
+@media(max-width:1100px){.bento{grid-template-columns:repeat(2,minmax(0,1fr))}.b-alerts,.b-orgs{grid-column:span 2}}
+@media(max-width:680px){.bento{grid-template-columns:1fr}.b-alerts,.b-orgs{grid-column:span 1}}
 
 /* ════════ TYPE ════════ */
 .eyebrow{
@@ -488,6 +503,12 @@ html[data-theme="dark"] .theme-toggle .ic-moon{display:none}
 .eyebrow::before{content:'';width:16px;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--k,var(--fox)),var(--k2,var(--fox3)));flex-shrink:0}
 .sub{color:var(--muted);font-size:12.5px;line-height:1.55}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* Available to a screen reader, absent from the layout. The page name is on
+   screen twice already (the crumb and the watermark) but neither is a heading,
+   so before A1 this document had no outline at all and no <h1> anywhere — the
+   rotor listed nothing and the only way through a page was linear Tab. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
 /* P2 · the head no longer holds the page's name — the crumb does, and P3 hangs
    the wordmark and the corner bloom here. What is left is a band that centres
@@ -582,6 +603,10 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   flex:1;padding:15px 17px;min-height:104px;border-radius:calc(var(--r-lg) - 1.6px);
   background:linear-gradient(145deg,var(--k,var(--surf2)),var(--k2,var(--surf2)));
   color:var(--foxink);overflow:hidden;
+  /* the ink a sparkline drawn INSIDE this face must use. It was read straight
+     off --foxink in JS, which is right for a saturated face and invisible on a
+     quiet one, so the face publishes it and loadKpiSparks reads it per card. */
+  --spark:var(--foxink);
 }
 /* Dark ink on a decorative face, never white — white on the light stop of these
    gradients measures 2.3-2.7:1. The label is NOT dimmed: the mock ran .l at
@@ -655,6 +680,75 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .k-coral  {--k:#ff9a7a;--k2:#e0613d}
 .k-orange {--k:#ff8b42;--k2:#dd5f18}
 .k-teal   {--k:#4fd6cd;--k2:#20a89e}
+
+/* ════════ A1 · THE QUIET FACE ════════
+   Register #65. The saturated face was on all 21 cards, so nothing was primary
+   and the eye got no path — that, not the palette, is the mechanism behind
+   "looks AI-generated" here. The face is now the mark of the ONE card per page
+   that answers "is something wrong right now": Policy breaches on the overview,
+   Overall on health. Every other card goes quiet.
+
+   ⚠ QUIET IS NOT DEAD, and it is not "the same card with the colour turned
+   off". Held constant on a .quiet card:
+     · the accent bar, at FULL saturation — .kpi::before is untouched, so the
+       card's hue still states itself in 3px of pure --k -> --k2
+     · the beam, untouched. #64 is decided: it orbits on all 21.
+     · the glyph, redrawn in the card's own deep stop instead of near-black
+     · the surface itself is TINTED, never grey — 13% / 7% of the card's own two
+       stops mixed into --surf2, so nine quiet cards are still nine colours
+   What the card gives up is only the FILL, and what it buys is the value:
+   --ink on a near-surface measures 13-16:1 where --foxink on a saturated face
+   measured 4.64:1. The number gets louder as the background gets quieter.
+
+   Hierarchy here had to be built with motion held CONSTANT — the beam runs
+   everywhere by decision, so stillness was not an available lever. What is
+   left is the face, the weight and the placement, and all three are used. */
+.kpi.quiet .face{
+  background:linear-gradient(145deg,
+    color-mix(in srgb,var(--k,var(--surf2)) 13%,var(--surf2)),
+    color-mix(in srgb,var(--k2,var(--surf2)) 7%,var(--surf2)));
+  --spark:var(--k2);
+}
+/* ⚠ MEASURED, and the first attempt failed here. --muted / --muted2 are greys
+   tuned against the FLAT panel; a hue tint lifts this surface out from under
+   them, and the label landed at 3.93-4.10:1 and the foot at 3.54-3.69:1 in the
+   dark theme — both under AA, on text that had been fine one commit earlier.
+   Secondary ink on a coloured surface is tinted from that surface's own hue,
+   never grey, so it is mixed out of --ink and the card's deep stop instead: the
+   ink tracks the theme, the tint tracks the card, and both themes clear 4.5. */
+.kpi.quiet .face .klabel{color:color-mix(in srgb,var(--ink) 76%,var(--k2))}
+.kpi.quiet .face .kval{color:var(--ink)}
+.kpi.quiet .face .kfoot{color:color-mix(in srgb,var(--ink) 64%,var(--k2))}
+.kpi.quiet .gly{color:var(--k2);opacity:.5}
+.kpi.quiet .kinfo{color:var(--muted)}
+.kpi.quiet .kinfo:focus-visible{outline-color:var(--fox)}
+
+/* The lead card. Placement is the third lever, and on health it carries most of
+   the weight: Overall is a roll-up of the three cards beside it — its own
+   tooltip says so — and rendering a total as the peer of its addends made the
+   operator re-derive what they had just been handed. It takes the row above.
+
+   ⚠ The column count is stated EXPLICITLY below and that is load-bearing.
+   .kpis is repeat(auto-fit,minmax(150px,1fr)), which at 1440px resolves to
+   eight tracks — so `grid-column:1/-1` on the first card left the three probes
+   beneath it sitting in tracks 1-3 of 8, squeezed against the left edge with
+   half the row empty. Three stated tracks is what makes row two line up under
+   row one.
+
+   The lead card also lays its face out as a ROW rather than the usual
+   bottom-aligned stack: a full-width card with label/value/foot stacked in the
+   bottom-left corner is 1200px of empty teal, which is emphasis spent on
+   nothing. Across the width it reads as one line — OVERALL · [ok] · database +
+   worker + queue — which is the sentence the operator came for. */
+@media(min-width:760px){
+  .kpis.leadcard{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .kpis.leadcard>.kpi:first-child{grid-column:1/-1}
+  .kpis.leadcard>.kpi:first-child .face{
+    flex-direction:row;align-items:center;flex-wrap:wrap;gap:6px 22px;min-height:88px}
+  .kpis.leadcard>.kpi:first-child .klabel{padding-right:0}
+  .kpis.leadcard>.kpi:first-child .kval{margin-top:0}
+  .kpis.leadcard>.kpi:first-child .kfoot{margin-top:0;margin-left:auto;padding-right:52px}
+}
 .kpi .klabel{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
 .kpi .kval{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:clamp(22px,2.2vw,30px);font-weight:600;margin-top:6px;letter-spacing:-.5px;color:var(--ink);line-height:1.1}
 .kpi .kfoot{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:4px}
@@ -704,13 +798,30 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    eighteen face stops, so ONE plate covers all nine faces in both themes and
    the hue moves to the ink where it still separates safe from warn from bad.
    Scoped to .kpi .face so the pill in a table is untouched — the two contexts
-   genuinely need different fills, which is why one fill could never work. */
-.kpi .face .chip{background:var(--foxink);box-shadow:none}
-.kpi .face .chip.safe{color:var(--face-ink-safe)}
-.kpi .face .chip.bad{color:var(--face-ink-bad)}
-.kpi .face .chip.warn{color:var(--face-ink-warn)}
-.kpi .face .chip.info{color:var(--face-ink-info)}
-.kpi .face .chip.dim{color:var(--face-ink-dim)}
+   genuinely need different fills, which is why one fill could never work.
+
+   A1 narrows the scope again, to :not(.quiet). The plate exists because a
+   solid status fill dissolves on a SATURATED face; a quiet face is a tinted
+   --surf2, which is the flat-panel case the base .chip was measured for and
+   wins on (4.21-11.24:1 there vs the plate's 7.73 floor). Applying the plate
+   to a quiet card would paint a near-black pill on a near-black surface in the
+   dark theme — the same fill-vs-background failure, pointed the other way. */
+.kpi:not(.quiet) .face .chip{background:var(--foxink);box-shadow:none}
+.kpi:not(.quiet) .face .chip.safe{color:var(--face-ink-safe)}
+.kpi:not(.quiet) .face .chip.bad{color:var(--face-ink-bad)}
+.kpi:not(.quiet) .face .chip.warn{color:var(--face-ink-warn)}
+.kpi:not(.quiet) .face .chip.info{color:var(--face-ink-info)}
+.kpi:not(.quiet) .face .chip.dim{color:var(--face-ink-dim)}
+
+/* ── the verdict, at the size of the question it answers ──────────────────
+   #hStatus is the console's headline: it is the answer to the only thing the
+   health page is asked. It was rendering at 9.5px inside a .kval slot sized
+   clamp(22px,2.2vw,30px) — so the two cards beside it, which hold raw COUNTS,
+   were four times louder than the card holding the DIAGNOSIS. The operator
+   read the symptoms before the verdict.
+   Same pill, same measured plate, same status vocabulary; only the size
+   changes, and it changes to match the slot it was always sitting in. */
+.kpi .kval>.chip{font-size:17px;letter-spacing:.4px;padding:5px 13px;border-radius:var(--r-sm)}
 
 /* ── .tag — the same geometry, no status hue ──────────────────────────────
    .chip had five modifiers and no neutral one, so every categorical value
@@ -1310,7 +1421,14 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
   /* every table stacks; every cell names its column. This is no longer opt-in —
      one table opting in and eighteen scrolling sideways is exactly the
      "different pages behave differently" the owner reported. */
-  .tbl.cardify thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
+  /* display:none, not the clip pattern. Clipping hides the header row visually
+     but KEEPS it in the accessibility tree, and td::before below already
+     prefixes every cell with its column name — so a screen reader read the
+     columns once as a loose text run ("Org Plan Access Created", stripped of
+     their row/cell roles by the display:block/flex above) and then again inside
+     every card. The label per cell is the mobile header; the header row is a
+     duplicate of it, so it goes rather than hides. */
+  .tbl.cardify thead{display:none}
   .tbl.cardify tr{display:block;border:1px solid var(--line);border-radius:var(--r-sm);margin-bottom:10px;padding:6px 11px;background:var(--surf2)}
   .tbl.cardify td{display:flex;justify-content:space-between;align-items:center;gap:12px;border:none;padding:5px 0;
     max-width:none!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
@@ -1690,11 +1808,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <!-- ──────────────── OVERVIEW ──────────────── -->
       <div id="annBanner"></div>
     <section class="page active" id="page-overview">
+      <h1 class="sr-only">Overview</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
 
       <div class="clay pad" style="margin-bottom:18px;">
         <div class="panel-h">
-          <div><div class="eyebrow">platform trend</div><div class="panel-t" id="ovTrendTitle">Interactions · 30 days</div></div>
+          <div><div class="eyebrow">platform trend</div><h2 class="panel-t" id="ovTrendTitle">Interactions · 30 days</h2></div>
           <div style="display:flex;gap:14px;align-items:center;">
             <div style="text-align:right;"><div class="kval mono" id="ovTrendTotal" style="font-size:22px;line-height:1;">—</div><div class="sub mono" id="ovTrendDelta" style="font-size:10px;margin-top:2px;"></div></div>
             <div class="fauxselect" id="ovMetric" data-value="interactions" data-onchange="renderOvTrend" style="min-width:148px;">
@@ -1711,64 +1830,82 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div id="ovTrend" style="min-height:220px;"></div>
       </div>
       <div class="grid kpis">
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Organizations" data-tip="Tenant workspaces that have not been offboarded — soft-deleted orgs are excluded. The line below splits the same count into active and suspended." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-orgs"/></svg><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></span></div>
-        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer users" data-tip="Every customer dashboard login on the platform. Unlike the org count this is not filtered by offboarding, so users of offboarded orgs are still in here." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-users"/></svg><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></span></div>
-        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Audited interactions" data-tip="Interactions the SDK committed to the ledger, summed from the daily usage rollup rather than counted row by row." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Organizations" data-tip="Tenant workspaces that have not been offboarded — soft-deleted orgs are excluded. The line below splits the same count into active and suspended." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-orgs"/></svg><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-blue quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer users" data-tip="Every customer dashboard login on the platform. Unlike the org count this is not filtered by offboarding, so users of offboarded orgs are still in here." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-users"/></svg><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></span></div>
+        <div class="clay kpi k-indigo quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Audited interactions" data-tip="Interactions the SDK committed to the ledger, summed from the daily usage rollup rather than counted row by row." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></span></div>
         <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Policy breaches" data-tip="Committed interactions flagged as a breach, all-time and across every org. Same daily rollup as the count above." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></span></div>
-        <div class="clay kpi k-rose"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Platform staff" data-tip="Accounts that can sign in to this console, at any of the three platform roles. Disabled staff are still counted." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-staff"/></svg><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></span></div>
+        <div class="clay kpi k-rose quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Platform staff" data-tip="Accounts that can sign in to this console, at any of the three platform roles. Disabled staff are still counted." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-staff"/></svg><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></span></div>
       </div>
 
+      <!-- Bento order is priority order, and it is read that way three times:
+           by the eye, by the tab sequence and by a screen reader. The two panels
+           that answer "is something wrong right now" used to be 5th and 7th of
+           seven, with Open alerts dead last, bottom-right, below the fold on a
+           laptop — while the double-width slot went to a browsable org list
+           nobody is paged about. They lead now, and the wide slot follows the
+           question rather than the table. -->
       <div class="bento">
-        <div class="clay pad b-traffic">
-          <div class="panel-h"><div><div class="eyebrow">last 7 days</div><div class="panel-t">Traffic by site</div></div><a class="linklike" onclick="navTo('traffic')">view →</a></div>
+        <div class="clay pad k-teal">
+          <div class="panel-h"><div><div class="eyebrow">operations</div><h2 class="panel-t">System health</h2></div><button type="button" class="linklike" onclick="goOps('health')">view →</button></div>
+          <div id="ovHealth" aria-live="polite"><div class="sub mono">loading…</div></div>
+        </div>
+        <div class="clay pad b-alerts k-orange">
+          <div class="panel-h"><div><div class="eyebrow">unacknowledged</div><h2 class="panel-t">Open alerts</h2></div><button type="button" class="linklike" onclick="goOps('alerts')">view →</button></div>
+          <div id="ovAlerts" aria-live="polite"><div class="sub mono">loading…</div></div>
+        </div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">last 7 days</div><h2 class="panel-t">Traffic by site</h2></div><button type="button" class="linklike" onclick="navTo('traffic')">view →</button></div>
           <div class="fun" id="siteFun"></div>
           <div class="sub mono" id="siteErrs" style="margin-top:14px;font-size:10.5px;"></div>
         </div>
-        <div class="clay pad b-leads">
-          <div class="panel-h"><div><div class="eyebrow">marketing funnel</div><div class="panel-t">Leads</div></div></div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">marketing funnel</div><h2 class="panel-t">Leads</h2></div></div>
           <div class="fun" id="leadFun"></div>
         </div>
         <div class="clay pad k-azure">
-          <div class="panel-h"><div><div class="eyebrow">tenants</div><div class="panel-t">Plan mix</div></div></div>
+          <div class="panel-h"><div><div class="eyebrow">tenants</div><h2 class="panel-t">Plan mix</h2></div></div>
           <div id="ovPlanMix" style="min-height:180px;"></div>
         </div>
-        <div class="clay pad">
-          <div class="panel-h"><div><div class="eyebrow">last 30 days</div><div class="panel-t">Top orgs by usage</div></div><a class="linklike" onclick="navTo('orgs')">all orgs →</a></div>
-          <div id="ovTopOrgs" style="min-height:180px;"></div>
-        </div>
-        <div class="clay pad b-health k-teal">
-          <div class="panel-h"><div><div class="eyebrow">operations</div><div class="panel-t">System health</div></div><a class="linklike" onclick="goOps('health')">view →</a></div>
-          <div id="ovHealth"><div class="sub mono">loading…</div></div>
-        </div>
         <div class="clay pad b-orgs k-azure">
-          <div class="panel-h"><div><div class="eyebrow">tenants</div><div class="panel-t">Recent organizations</div></div><a class="linklike" onclick="navTo('orgs')">all orgs →</a></div>
-          <div class="twrap"><table class="tbl cardify"><thead><tr><th>Org</th><th>Plan</th><th>Access</th><th>Created</th></tr></thead><tbody id="ovOrgs"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table></div>
+          <div class="panel-h"><div><div class="eyebrow">tenants</div><h2 class="panel-t">Recent organizations</h2></div><button type="button" class="linklike" onclick="navTo('orgs')">all orgs →</button></div>
+          <div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">Org</th><th scope="col">Plan</th><th scope="col">Access</th><th scope="col">Created</th></tr></thead><tbody id="ovOrgs"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table></div>
         </div>
-        <div class="clay pad b-alerts k-orange">
-          <div class="panel-h"><div><div class="eyebrow">attention</div><div class="panel-t">Open alerts</div></div><a class="linklike" onclick="goOps('alerts')">view →</a></div>
-          <div id="ovAlerts"><div class="sub mono">loading…</div></div>
+        <div class="clay pad">
+          <div class="panel-h"><div><div class="eyebrow">last 30 days</div><h2 class="panel-t">Top orgs by usage</h2></div><button type="button" class="linklike" onclick="navTo('orgs')">all orgs →</button></div>
+          <div id="ovTopOrgs" style="min-height:180px;"></div>
         </div>
       </div>
     </section>
 
-    <!-- ──────────────── ORGS ──────────────── -->
+    <!-- ──────────────── OPS · SYSTEM HEALTH ──────────────── -->
     <section class="page" id="page-health">
+      <h1 class="sr-only">System health</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
-      <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-health"/></svg><div class="klabel">Overall</div><div class="kval" id="hStatus">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-worker"/></svg><div class="klabel">Worker</div><div class="kval" id="hWorker">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-failed"/></svg><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-anchor"/></svg><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
-      <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" class="sub mono">loading…</div></div></div>
+      <!-- ⚠ This row is ONE component repeated verbatim on four ops pages
+           (health, deadletter, anchors, alerts). A1 owns only health, so it takes
+           the semantic fix that is safe in isolation — the active item now says
+           it is the current page — and leaves the rest alone deliberately.
+           Still open, and wants doing to all four in one pass: the active state
+           is .btn.pri, pixel-identical to `requeue` and `re-anchor`, which are
+           real mutations one click away on the sibling pages. "Primary action"
+           and "you are here" must not share a look. The file already ships
+           .segmented/.segbtn for exactly this, and .pagehead above is an empty
+           68px band whose whole job is to carry a page's controls. -->
+      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" aria-current="page" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
+      <div class="grid kpis leadcard"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-health"/></svg><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-worker"/></svg><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-failed"/></svg><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-anchor"/></svg><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
+      <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" aria-live="polite" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" aria-live="polite" class="sub mono">loading…</div></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px;">
         <div class="clay pad k-orange">
-          <div class="panel-h"><div><div class="eyebrow">last 14 days</div><div class="panel-t">Grading throughput</div></div></div>
+          <div class="panel-h"><div><div class="eyebrow">last 14 days</div><h2 class="panel-t">Grading throughput</h2></div></div>
           <div id="hGradingTrend" style="min-height:170px;"></div>
         </div>
         <div class="clay pad k-coral">
-          <div class="panel-h"><div><div class="eyebrow">last 14 days</div><div class="panel-t">Anchor activity</div></div></div>
+          <div class="panel-h"><div><div class="eyebrow">last 14 days</div><h2 class="panel-t">Anchor activity</h2></div></div>
           <div id="hAnchorTrend" style="min-height:170px;"></div>
         </div>
       </div>
       <div class="clay pad" style="margin-top:14px;">
-        <div class="panel-h"><div><div class="eyebrow">audit</div><div class="panel-t">Alert acknowledgement history</div></div></div>
+        <div class="panel-h"><div><div class="eyebrow">audit</div><h2 class="panel-t">Alert acknowledgement history</h2></div></div>
         <div id="hAlertHistory"><div class="sub mono">loading…</div></div>
       </div>
     </section>
@@ -2792,8 +2929,20 @@ function opsChip(status){
   const cls=s==='ok'||s==='confirmed'?'safe':s==='warning'||s==='stale'||s==='pending'?'warn':s==='never'||s==='not_applicable'?'dim':'bad';
   return `<span class="chip ${cls}">${esc(s)}</span>`;
 }
-function opsCheck(label,value,detail){
-  return `<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:8px 0;"><span><b>${esc(label)}</b><span class="sub mono" style="display:block;font-size:10px;margin-top:3px;">${esc(detail||'')}</span></span>${opsChip(value)}</div>`;
+function opsCheck(label,value,detail,neutral){
+  /* `neutral` renders the value as a .tag instead of a status .chip, for a row
+     that reports a CAPABILITY rather than a state. The circuit breaker is the
+     live case: build_health() only ever emits state "unavailable", carrying the
+     detail "worker circuit-breaker state is process-local and not persisted",
+     so opsChip's else-branch painted a permanent red pill on the one page whose
+     job is "is something wrong right now". Nothing was wrong — nothing was
+     measured, and a red chip that is always red is a red chip staff learn to
+     skip. A0 already drew this line for `never`/`not_applicable`: absence must
+     not shout in a status hue.
+     opsChip's own mapping is deliberately NOT touched — "unavailable" from the
+     database probe is a real outage and has to stay red. */
+  const pill=neutral?`<span class="tag">${esc(String(value||'not tracked'))}</span>`:opsChip(value);
+  return `<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:8px 0;"><span><b>${esc(label)}</b><span class="sub mono" style="display:block;font-size:10px;margin-top:3px;">${esc(detail||'')}</span></span>${pill}</div>`;
 }
 async function loadHealth(){
   let r;try{r=await api('/admin/v1/health')}catch(e){toast('health unavailable','error');return}
@@ -2802,7 +2951,7 @@ async function loadHealth(){
   $('hStatus').innerHTML=opsChip(d.status||'unknown');$('hWorker').innerHTML=opsChip(w.status||'unknown');
   $('hWorkerFoot').textContent=w.beat_at?'last '+fmtTime(w.beat_at):'no heartbeat yet';$('hFailed').textContent=num(g.failed||0);
   $('hAnchors').textContent=num((a.failed_latest||0)+(a.stale_latest||0));
-  $('healthChecks').innerHTML=opsCheck('database',d.database&&d.database.status,'readiness query')+opsCheck('worker heartbeat',w.status,w.beat_at?(w.age_seconds+'s old'):'no beat recorded')+opsCheck('anchor freshness',a.status,(a.failed_latest||0)+' failed · '+(a.stale_latest||0)+' stale')+opsCheck('circuit breaker',cb.state,cb.detail);
+  $('healthChecks').innerHTML=opsCheck('database',d.database&&d.database.status,'readiness query')+opsCheck('worker heartbeat',w.status,w.beat_at?(w.age_seconds+'s old'):'no beat recorded')+opsCheck('anchor freshness',a.status,(a.failed_latest||0)+' failed · '+(a.stale_latest||0)+' stale')+opsCheck('circuit breaker',cb.state,cb.detail,true);
   loadHealthTrends();
   const counts=g.counts||{};$('healthQueue').innerHTML='<div style="display:grid;gap:8px;">'+['pending','in_progress','graded','failed'].map(k=>`<div style="display:flex;justify-content:space-between;"><span>${esc(k)}</span><b>${num(counts[k]||0)}</b></div>`).join('')+'</div>';
 }
@@ -2883,7 +3032,7 @@ async function loadAlertHistory(){
   if(!r||!r.ok){ el.innerHTML=fault('Alert history did not load.','',"loadAlertHistory()"); return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="chart-empty" style="min-height:60px;">No alerts have been acknowledged yet.</div>'; return; }
-  el.innerHTML='<div class="twrap"><table class="tbl cardify"><thead><tr><th>When</th><th>Staff</th><th>Alert</th></tr></thead><tbody>'+items.map(x=>
+  el.innerHTML='<div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">When</th><th scope="col">Staff</th><th scope="col">Alert</th></tr></thead><tbody>'+items.map(x=>
     '<tr><td data-label="When" class="mono" style="font-size:11px;white-space:nowrap;">'+fmtTime(x.at)+'</td><td data-label="Staff" class="mono" style="font-size:11px;">'+esc(x.actor||'—')+'</td><td data-label="Alert" class="mono" style="font-size:11px;">'+esc((x.detail&&x.detail.title)||x.target_id||'alert')+'</td></tr>'
   ).join('')+'</tbody></table></div>';
 }
@@ -3325,11 +3474,18 @@ async function loadOverviewExtras(){
   }}catch(e){$('ovHealth').innerHTML='<div class="sub mono">health unavailable</div>';}
   try{const r=await api('/admin/v1/alerts');if(r.ok){const d=await r.json(),rows=d.items||[];
     if(!rows.length){$('ovAlerts').innerHTML='<div class="sub mono" style="padding:12px 0;">No operational conditions need attention.</div>';}
-    else{$('ovAlerts').innerHTML=rows.slice(0,4).map(x=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);">${opsChip(x.level)}<div style="min-width:0;"><b style="font-size:12px;">${esc(x.title)}</b>${x.org_name?'<div class="sub mono" style="font-size:9px;margin-top:2px;">'+esc(x.org_name)+'</div>':''}</div></div>`).join('')+(rows.length>4?`<div class="sub mono" style="padding-top:10px;"><a class="linklike" onclick="goOps('alerts')">view all ${num(rows.length)} →</a></div>`:'');}
+    else{$('ovAlerts').innerHTML=rows.slice(0,4).map(x=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);">${opsChip(x.level)}<div style="min-width:0;"><b style="font-size:12px;">${esc(x.title)}</b>${x.org_name?'<div class="sub mono" style="font-size:9px;margin-top:2px;">'+esc(x.org_name)+'</div>':''}</div></div>`).join('')+(rows.length>4?`<div class="sub mono" style="padding-top:10px;"><button type="button" class="linklike" onclick="goOps('alerts')">view all ${num(rows.length)} →</button></div>`:'');}
   }}catch(e){}
   try{const r=await api('/admin/v1/organizations');if(r.ok){const orgs=await r.json();
+    /* A1 · these rows carried class="rowbtn" and onclick="navTo('orgs')" — six
+       click-only <tr>s, no tabindex, no key handler, invisible to AT, and
+       .rowbtn's inset orange rule advertised them as actionable. All six went
+       to the SAME place as the "all orgs →" button in this panel's own header,
+       so the affordance promised per-row drill-down it never delivered. Adding
+       six keyboard stops to one destination would be worse; the promise is
+       withdrawn instead, and the header button (now a real <button>) carries it. */
     if(!orgs.length){$('ovOrgs').innerHTML='<tr><td colspan="4" class="sub mono">no organizations yet</td></tr>';}
-    else{$('ovOrgs').innerHTML=orgs.slice(0,6).map(o=>{const access=o.deleted?'<span class="chip dim">offboarded</span>':o.suspended?'<span class="chip bad">suspended</span>':'<span class="chip safe">active</span>';return `<tr class="rowbtn" onclick="navTo('orgs')"><td data-label="Org"><b>${esc(o.name)}</b><div class="sub mono" style="font-size:9px;">${(o.id||'').slice(0,8)}…</div></td><td data-label="Plan" class="mono">${esc(o.plan_tier||'—')}</td><td data-label="Access">${access}</td><td data-label="Created" class="mono" style="font-size:10px;">${fmtDay(o.created_at)}</td></tr>`;}).join('');}
+    else{$('ovOrgs').innerHTML=orgs.slice(0,6).map(o=>{const access=o.deleted?'<span class="chip dim">offboarded</span>':o.suspended?'<span class="chip bad">suspended</span>':'<span class="chip safe">active</span>';return `<tr><td data-label="Org"><b>${esc(o.name)}</b><div class="sub mono" style="font-size:9px;">${(o.id||'').slice(0,8)}…</div></td><td data-label="Plan" class="mono">${esc(o.plan_tier||'—')}</td><td data-label="Access">${access}</td><td data-label="Created" class="mono" style="font-size:10px;">${fmtDay(o.created_at)}</td></tr>`;}).join('');}
   }}catch(e){}
 }
 
@@ -3380,17 +3536,28 @@ async function loadTopOrgs(){
 }
 async function loadKpiSparks(){
   /* P4 · inside a decorative face the series takes the card's ink, not a
-     status hue — the same rule the glyph follows. */
-  const cfg=[['interactions','kLogsSpark','kLogsFoot','--foxink'],
-             ['breaches','kBreachesSpark','kBreachesFoot','--foxink']];
+     status hue — the same rule the glyph follows. A1: read that ink off the
+     FACE rather than off :root. It was hard-coded to --foxink, which is right
+     on a saturated face and invisible on a quiet one; .kpi .face now publishes
+     --spark and the quiet variant overrides it to the card's own deep stop. */
+  const cfg=[['interactions','kLogsSpark','kLogsFoot'],
+             ['breaches','kBreachesSpark','kBreachesFoot']];
   for(const c of cfg){
     let r; try{ r=await api('/admin/v1/stats/timeseries?metric='+c[0]+'&days=30'); }catch(e){ r=null; }
     if(!r||!r.ok) continue;
     const d=await r.json();
-    const col=(getComputedStyle(document.documentElement).getPropertyValue(c[3])||'').trim()||'#FF6A1A';
+    const host=$(c[1]), face=host&&host.closest('.face');
+    const col=(face?getComputedStyle(face).getPropertyValue('--spark'):'').trim()||'#FF6A1A';
     chart(c[1],{type:'sparkline',height:30,series:[{values:(d.points||[]).map(p=>p.value),color:col}]});
     const f=$(c[2]);
-    if(f&&d.delta_pct!=null){ const up=d.delta_pct>=0; f.textContent='30d '+(up?'▲':'▼')+Math.abs(d.delta_pct).toFixed(0)+'% · '+num(d.total)+' total'; f.style.color=up?'var(--ok)':'var(--danger)'; }
+    /* The direction is carried by the ▲/▼ and the word, never by colour.
+       f.style.color used to set --ok / --danger here, and an inline style beats
+       `.kpi .face .kfoot{color:var(--foxink)}` — so this 9.5px line rendered at
+       1.12:1 on .k-orange's deep stop and 1.25:1 on .k-indigo's light stop.
+       Measured, all eight theme/face/direction combinations failed AA; the
+       token the rule would have used clears 4.64-8.33:1. It also inverted the
+       alarm: a RISE in policy breaches was painted green. */
+    if(f&&d.delta_pct!=null){ const up=d.delta_pct>=0; f.textContent='30d '+(up?'▲':'▼')+Math.abs(d.delta_pct).toFixed(0)+'% · '+num(d.total)+' total'; }
   }
 }
 
