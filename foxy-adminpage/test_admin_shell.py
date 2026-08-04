@@ -2215,5 +2215,289 @@ def test_the_org_list_is_not_left_on_its_loading_placeholder() -> None:
     )
 
 
+# ── A3 · the signal pages (traffic, security, audit + the ops group) ─────────
+#
+# _a2_page is reused rather than redefined: a second `def` in this file silently
+# shadows the first, which has already happened once here (_kpi_cards, four
+# guards reporting phantom results). One definition, whatever phase named it.
+
+A3_PAGES = ("traffic", "security", "audit", "deadletter", "anchors", "alerts")
+
+# The loader, the id of a body it must fill on failure, and the column count.
+A3_LOADERS = {
+    "loadTraffic": ("trafRows", 7),
+    "loadSecurity": ("secWatch", 3),
+    "loadDeadletter": ("deadRows", 7),
+    "loadAnchors": ("anchorRows", 6),
+    "loadAlerts": ("alertSummary", 0),
+}
+
+
+def test_a3_loaders_fail_visibly_instead_of_toasting_and_returning() -> None:
+    """Nine loaders answered a dead endpoint with `toast(); return`, leaving
+    "loading…" on screen forever — so a failure and a slow load were the same
+    picture on a console whose entire job is telling those apart. A0 built
+    fault()/faultRow() with a filter-preserving retry; A2 moved four loaders
+    onto it. These five are the rest of the inherited set.
+
+    loadAlerts was the worst: two bare returns and no toast at all, so the page
+    that answers "what needs attention" reported a dead API as "nothing needs
+    attention"."""
+    for name in A3_LOADERS:
+        body = _js_func(name)
+        assert "fault(" in body or "faultRow(" in body, (
+            "%s still fails without saying so" % name
+        )
+        assert not re.search(
+            r"catch\s*\([^)]*\)\s*\{\s*toast\([^;]*\);?\s*return\s*\}", body
+        ), "%s still toasts and returns into a permanent loading state" % name
+        assert not re.search(r"catch\s*\([^)]*\)\s*\{\s*return\s*\}", body), (
+            "%s still fails completely silently" % name
+        )
+
+
+def test_a3_loaders_never_await_the_api_without_a_catch() -> None:
+    """loadTraffic had no try/catch at all, so a network error rejected out of
+    the function as an unhandled rejection — four "—" KPIs and a permanent
+    "loading…", without even the toast the others managed."""
+    for name in A3_LOADERS:
+        body = _js_func(name)
+        for m in re.finditer(r"await\s+api\(", body):
+            head = body[max(0, m.start() - 60):m.start()]
+            assert re.search(r"try\s*\{\s*r\s*=\s*$", head), (
+                "%s awaits api() outside a try — an outage becomes an unhandled "
+                "rejection, not a visible failure" % name
+            )
+
+
+def test_a3_loaders_clear_the_pager_they_invalidate() -> None:
+    """refreshData left the PREVIOUS table's rows under the NEW table's name.
+    The pager is the same defect one level down: "1–25 of 240" printed over a
+    fault row is a confident wrong answer, not a failure."""
+    pagers = {
+        "loadTraffic": ["trafPager"],
+        "loadSecurity": ["secWatchPager", "secRecentPager"],
+        "loadDeadletter": ["deadPager"],
+        "loadAnchors": ["anchorPager"],
+        "loadAlerts": ["alertPager"],
+    }
+    for name, ids in pagers.items():
+        body = _js_func(name)
+        assert re.search(r"innerHTML\s*=\s*''", body), (
+            "%s never clears anything on failure" % name
+        )
+        for pid in ids:
+            assert pid in body, (
+                "%s leaves #%s stale over its fault row" % (name, pid)
+            )
+
+
+def test_the_ops_subnav_is_navigation_and_not_a_primary_action() -> None:
+    """Register #68. This row is ONE component on four ops pages and it wore
+    .btn.sm.pri — the exact plate `requeue` and `re-anchor` wear, real mutations
+    one click away. On the alerts page it inverted: the "you are here" pill was
+    .pri while `acknowledge`, the actual mutation, was a plain .btn."""
+    navs = re.findall(
+        r'<nav class="segmented opsnav"[^>]*>.*?</nav>', _nocomment(SRC), re.S
+    )
+    assert len(navs) == 4, "expected the ops sub-nav on 4 pages, found %d" % len(navs)
+    for nav in navs:
+        assert 'aria-label="Operations"' in nav, "the ops sub-nav is an unnamed landmark"
+        buttons = re.findall(r"<button[^>]*>", nav)
+        assert len(buttons) == 4, "expected 4 ops destinations, found %d" % len(buttons)
+        assert nav.count('aria-current="page"') == 1, (
+            "an ops sub-nav marks %d current pages" % nav.count('aria-current="page"')
+        )
+        for b in buttons:
+            assert 'class="segbtn"' in b, "an ops link left the component: %s" % b
+            assert 'type="button"' in b, "an ops link can submit a form: %s" % b
+            assert "btn sm pri" not in b, "an ops link wears the mutation plate again"
+
+
+def test_the_ops_subnav_current_state_is_not_the_mutation_plate() -> None:
+    """The fix that looks sufficient and is not. Moving the row onto .segmented
+    alone would have kept the collision: .segbtn[aria-pressed="true"] paints the
+    same linear-gradient(150deg,--fox-hi,--fox) as .btn.pri. The current item is
+    marked by a rail and a lift instead, so orange still says "you are here"
+    without also saying "this writes"."""
+    pri = _scope(".btn.pri{")
+    cur = _scope('.segmented.opsnav .segbtn[aria-current="page"]{')
+    assert "linear-gradient(150deg,var(--fox-hi),var(--fox))" in pri, (
+        "the primary plate moved — re-measure what the nav must not look like"
+    )
+    assert "linear-gradient(150deg,var(--fox-hi),var(--fox))" not in cur, (
+        "the ops sub-nav is wearing the primary-action fill again"
+    )
+    rail = _scope('.segmented.opsnav .segbtn[aria-current="page"]::after{')
+    assert "var(--fox)" in rail, "the current ops page has no state indicator at all"
+
+
+def test_traffic_reserves_its_face_for_the_card_that_answers_the_question() -> None:
+    """#65, applied to the last KPI row that never adopted it. All four traffic
+    cards were saturated — the pre-A1 state preserved, where nothing is primary
+    and the eye gets no path. Errors is the card that answers "is something
+    wrong right now", so Errors keeps the face and leads the row."""
+    cards = _kpi_cards()
+    traffic = [c for c in cards if any(k in c for k in ("tErr", "tMkt", "tApp", "tAdm"))]
+    assert len(traffic) == 4, "expected 4 traffic KPI cards, found %d" % len(traffic)
+    loud = [c for c in traffic if "quiet" not in c.split(">")[0]]
+    assert len(loud) == 1, "traffic shows %d emphatic cards, not 1" % len(loud)
+    assert 'id="tErr"' in loud[0], "the traffic face is not on Errors"
+    order = _a2_page("traffic").split('<div class="clay kpi ')[1:]
+    assert 'id="tErr"' in order[0], "the diagnosis no longer leads the row"
+
+
+def test_every_a3_page_names_itself() -> None:
+    """Five pages carried an <h1 class="sr-only">; these six carried none, so
+    heading navigation landed nowhere and the page name existed only as a <b>
+    in the crumb."""
+    for p in A3_PAGES:
+        assert '<h1 class="sr-only">' in _a2_page(p), "page-%s has no heading" % p
+
+
+def test_a3_tables_bind_their_columns() -> None:
+    """Under 760px .tbl.cardify removes the header row entirely, so scope +
+    data-label are the only things left tying a value to its column. The empty
+    action header is the other half: "" is a cell a screen reader lands on and
+    cannot announce."""
+    for p in A3_PAGES:
+        for m in re.finditer(r"<th\b([^>]*)>(.*?)</th>", _a2_page(p), re.S):
+            attrs = m.group(1)
+            text = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            assert "scope=" in attrs, "page-%s has an unbound column header" % p
+            assert text, "page-%s has a nameless column header" % p
+
+
+def test_a3_result_regions_announce_when_they_change() -> None:
+    """Typing in #trafPath rewrote the whole table and said nothing; so did
+    requeueing a row. Only the toast spoke, and only for mutations."""
+    markup = _nocomment(SRC)
+    for node in ("trafRows", "auRows", "deadRows", "anchorRows",
+                 "alertRows", "secWatch", "secRecent"):
+        assert re.search(r'id="%s"[^>]*aria-live="polite"' % node, markup), (
+            "#%s changes silently" % node
+        )
+
+
+def test_the_ops_mutations_cannot_be_fired_twice() -> None:
+    """.btn[aria-busy="true"] shipped in A0 with a spinner, cursor:progress AND
+    pointer-events:none, and nothing in the file ever set it. re-anchor writes
+    to a public chain: a double click published twice."""
+    assert "pointer-events:none" in _scope('.btn[aria-busy="true"]{'), (
+        "the busy state no longer blocks the second click"
+    )
+    guard = _js_func("busy")
+    assert "setAttribute('aria-busy','true')" in guard, "busy() never marks the button"
+    assert "finally" in guard and "removeAttribute('aria-busy')" in guard, (
+        "busy() can leave a control permanently inert when the call throws"
+    )
+    for fn in ("requeueDeadletter", "_doReanchor", "ackAlert"):
+        assert re.search(r"busy\(btn\s*,", _js_func(fn)), "%s is not guarded" % fn
+    markup = _nocomment(SRC)
+    assert "requeueDeadletter('${jsq(x.id)}',this)" in markup, "requeue passes no button"
+    assert "ackAlert('${jsq(x.id)}',this)" in markup, "acknowledge passes no button"
+    assert "_doReanchor('${jsq(id)}',this)" in markup, "re-anchor passes no button"
+
+
+def test_a_busy_label_survives_the_plate_it_sits_on() -> None:
+    """A0 shipped .btn[aria-busy] with color:var(--muted), which measures ~5:1
+    on a plain .btn and 1.45:1 / 1.36:1 on .btn.pri — the plate `requeue` and
+    `re-anchor` actually use. Nothing called the state until A3, so nothing had
+    ever measured it against the fill it sits on. Mid-flight is precisely when
+    the label matters, so each coloured intent keeps its own ink."""
+    css = _css()
+    assert "color:var(--muted)" in _scope('.btn[aria-busy="true"]{'), (
+        "the plain busy label changed — re-measure the coloured overrides"
+    )
+    for sel, ink in (('.btn.pri[aria-busy="true"]{', "var(--on-pri)"),
+                     ('.btn.danger[aria-busy="true"]{', "#fff"),
+                     ('.btn.safe[aria-busy="true"]{', "var(--safe-tx)")):
+        assert sel in css, "%s lost its busy ink and dissolves into its plate" % sel
+        assert ink in _scope(sel), "%s no longer carries a legible label" % sel
+
+
+def test_re_anchoring_confirms_before_it_writes_to_a_public_chain() -> None:
+    """The only action here that writes to a system Foxy does not control, and
+    it fired from an 11px pill, 25 to a page — while editing a row in the data
+    browser opened a modal."""
+    body = _js_func("reanchor")
+    assert "openModal(" in body, "re-anchor still writes on a single click"
+    assert "api(" not in body, "re-anchor still writes before the operator confirms"
+    assert "cannot be undone" in body, "the confirm does not say what is permanent"
+    assert "jsq(x.org_name)" in _nocomment(SRC), (
+        "a tenant called O'Brien Health breaks the re-anchor handler"
+    )
+
+
+def test_the_audit_range_cannot_be_impossible() -> None:
+    """since > until is an incoherent query and it answered "no matching
+    actions" — telling the operator their filters found nothing when the truth
+    is the question could not match. Export reused the same params, so the
+    impossible range exported too, as a silent empty CSV in a new tab."""
+    rng = _js_func("auditRange")
+    assert "u.min=s.value" in rng and "s.max=u.value" in rng, (
+        "the two dates no longer bound each other"
+    )
+    assert "auNote" in rng, "an inverted range gives no feedback"
+    assert re.search(r"if\(!bad\)loadAudit\(\)", rng), (
+        "an impossible range is still sent to the API"
+    )
+    exp = _js_func("auditExport")
+    assert "s>u" in exp.replace(" ", ""), "Export CSV still exports the impossible range"
+
+
+def test_a_finger_gets_a_finger_sized_ops_control() -> None:
+    """The rule claimed SC 2.5.5 and delivered 40px to .btn.sm — requeue,
+    re-anchor, acknowledge and every filter clear. The pager was worse: a hard
+    30x30 with no coarse-pointer rule at all, on all six pages."""
+    css = _css()
+    # From .btn.sm, not from the top: the FIRST @media (hover:none) in the file
+    # is .kpi .kinfo's, and a guard anchored there measures the wrong block and
+    # passes for the wrong reason.
+    at = css.index("@media (hover:none){", css.index(".btn.sm{"))
+    block = css[at:css.index("\n}", at)]
+    assert re.search(r"\.btn\.sm\{min-height:44px", block), ".btn.sm is under the target"
+    assert re.search(r"\.pager button\{min-width:44px;height:44px", block), (
+        "the pager is back under the target"
+    )
+    assert "min-height:44px" in _scope(".segmented.opsnav .segbtn{"), (
+        "the ops sub-nav is under the target"
+    )
+
+
+def test_the_scrollable_region_is_reachable_by_keyboard() -> None:
+    """.scrolly is the file's only scrollable region and had no tabindex, so a
+    keyboard user could reach neither the scrollbar nor the rows below the fold
+    (SC 2.1.1)."""
+    m = re.search(r'<div class="twrap scrolly"([^>]*)>', _nocomment(SRC))
+    assert m, "the scrollable region is gone"
+    assert 'tabindex="0"' in m.group(1), "the scroll region cannot be focused"
+    assert "aria-labelledby=" in m.group(1), "the focusable region has no name"
+
+
+def test_traffic_states_the_window_it_actually_searched() -> None:
+    """The filters run client-side over the last 200 requests and nothing said
+    so: an operator greps for /v1/logs, sees 3 hits and reads that as 3 — on a
+    page whose KPI says tens of thousands."""
+    assert re.search(r'id="trafCount"[^>]*role="status"', _nocomment(SRC)), (
+        "the traffic result count no longer announces"
+    )
+    body = _js_func("renderTraffic")
+    assert "of the last" in body, "the searched window is unstated again"
+    assert "trafClear()" in body, "the empty state no longer offers its own recovery"
+
+
+def test_an_alert_level_does_not_default_to_red() -> None:
+    """opsChip's else-branch is "unrecognised, assume the worst" — right for a
+    status probe, wrong for an alert LEVEL. `info` rendered as a red pill, and
+    the alerts table's own model default is level="info"."""
+    body = _js_func("opsChip")
+    assert "s==='info'?'info'" in body, "an info alert still paints red"
+    assert "s==='critical'?'bad'" in body, "critical is back on the unnamed else-branch"
+    assert "s==='never'||s==='not_applicable'?'dim'" in body, (
+        "absence is shouting in a status hue again"
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

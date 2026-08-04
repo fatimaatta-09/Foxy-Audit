@@ -989,7 +989,13 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    density this console is read at. Same trick .kpi .kinfo already uses. */
 @media (hover:none){
   .btn{min-height:44px}
-  .btn.sm{min-height:40px;padding:var(--s-2) var(--s-3)}
+  /* A3: this was 40px, four short of the target the comment directly above it
+     claims. `requeue`, `re-anchor`, `acknowledge` and every filter `clear` are
+     .btn.sm, so the rule capped the console's real actions below SC 2.5.5 while
+     stating it met it. The pager was worse and had no coarse-pointer rule at
+     all: a hard 30x30 on all six ops pages. */
+  .btn.sm{min-height:44px;padding:var(--s-2) var(--s-3)}
+  .pager button{min-width:44px;height:44px}
 }
 /* Explicit fill and ink, and --sink-sm so the control still has a SHAPE. The
    first pass here dropped the shadow with the opacity and the button vanished
@@ -1006,6 +1012,17 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    button was going to do); the trailing dot carries the wait. aria-busy is the
    hook so the state is announced, not only drawn. */
 .btn[aria-busy="true"]{cursor:progress;color:var(--muted);pointer-events:none}
+/* A3 — measured the first time this state got a caller. `color:var(--muted)`
+   was written against a plain .btn, where --muted on --surf2 is about 5:1. On a
+   COLOURED plate it dissolves: the label lands at 1.45:1 dark and 1.36:1 light
+   on .btn.pri, against 8.38:1 and 4.35:1 for the same label at rest. Measured
+   against the fill it sits on, not against the page.
+   The label is the one thing that must survive — mid-flight is exactly when
+   "what is this button doing" matters — so the coloured intents keep their own
+   ink and let the spinner carry the wait. */
+.btn.pri[aria-busy="true"]{color:var(--on-pri)}
+.btn.danger[aria-busy="true"]{color:#fff}
+.btn.safe[aria-busy="true"]{color:var(--safe-tx)}
 .btn[aria-busy="true"]::after{
   content:'';width:9px;height:9px;flex-shrink:0;border-radius:50%;
   border:1.5px solid currentColor;border-top-color:transparent;
@@ -1157,6 +1174,43 @@ input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)
 .segbtn{font-family:var(--disp);font-weight:600;font-size:12px;color:var(--muted);background:none;border:1px solid transparent;border-radius:var(--r-xs);padding:7px 16px;min-height:38px;cursor:pointer;transition:background var(--dur) ease,color var(--dur) ease,box-shadow var(--dur) ease}
 .segbtn:hover{color:var(--ink)}
 .segbtn[aria-pressed="true"]{background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);box-shadow:var(--clay-press)}
+
+/* ════════ A3 · THE OPS SUB-NAV ════════
+   Register #68. This row is ONE component repeated on four ops pages, and it
+   had been wearing .btn.sm.pri — the exact plate `requeue` (loadDeadletter) and
+   `re-anchor` (renderAnchors) wear, real mutations sitting one click away in
+   the table below it. On the alerts page it inverted: the "you are here" pill
+   was .pri while `acknowledge`, the actual mutation, was a plain .btn, so the
+   navigation outranked the thing that writes.
+
+   ⚠ Moving it to .segmented ALONE would not have fixed this. .segbtn's selected
+   state (directly above) paints linear-gradient(150deg,--fox-hi,--fox) — byte
+   for byte the .btn.pri fill. Swapping the component would have relocated the
+   collision, not removed it. So the current item is marked by a RAIL and a lift,
+   never by the action fill:
+     · the 3px --fox rail is the state indicator and carries the contrast
+     · the raised --surf2 fill only has to read as "lifted out of the track"
+   Orange still says "you are here"; it has stopped also saying "this mutates".
+
+   aria-current="page" is the hook rather than aria-pressed: these are links to
+   pages, not toggles, and keying off it means .segbtn's orange rule (above,
+   keyed on aria-pressed) can never apply here. The tenant tab bar keeps
+   aria-pressed and keeps its fill — it IS a toggle, and it is untouched.
+   min-height:44px is the SC 2.5.5 target at every pointer, not only a coarse
+   one: .btn.sm was 27px on a mouse and 40px on a finger. */
+.segmented.opsnav{display:flex;flex-wrap:wrap;gap:4px;width:100%}
+.segmented.opsnav .segbtn{
+  /* A 120px basis rather than auto: at 1440 all four share one row, and at
+     375 they wrap to an even 2x2 instead of 3 + one stranded centred item. */
+  position:relative;flex:1 1 120px;min-height:44px;padding:9px 14px;overflow:hidden;
+}
+.segmented.opsnav .segbtn[aria-current="page"]{
+  background:var(--surf2);color:var(--ink);box-shadow:var(--raise-sm);
+}
+.segmented.opsnav .segbtn[aria-current="page"]::after{
+  content:'';position:absolute;left:0;right:0;bottom:0;height:3px;
+  background:linear-gradient(90deg,var(--fox-hi),var(--fox));
+}
 
 /* ==================== INLINE-SVG CHARTS (chart() helper - no external libs) ==================== */
 .chart-wrap{position:relative;width:100%}
@@ -1900,17 +1954,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-health">
       <h1 class="sr-only">System health</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <!-- ⚠ This row is ONE component repeated verbatim on four ops pages
-           (health, deadletter, anchors, alerts). A1 owns only health, so it takes
-           the semantic fix that is safe in isolation — the active item now says
-           it is the current page — and leaves the rest alone deliberately.
-           Still open, and wants doing to all four in one pass: the active state
-           is .btn.pri, pixel-identical to `requeue` and `re-anchor`, which are
-           real mutations one click away on the sibling pages. "Primary action"
-           and "you are here" must not share a look. The file already ships
-           .segmented/.segbtn for exactly this, and .pagehead above is an empty
-           68px band whose whole job is to carry a page's controls. -->
-      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm pri" aria-current="page" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
+      <!-- This row is ONE component repeated on four ops pages (health,
+           deadletter, anchors, alerts). A1 owned only health and could fix just
+           the semantics here; A3 owns deadletter and anchors and closed it on
+           all four in one pass — see .segmented.opsnav in the stylesheet for why
+           the obvious fix (just move it to .segmented) would NOT have worked. -->
+      <nav class="segmented opsnav" aria-label="Operations" style="margin-bottom:18px;"><button type="button" class="segbtn" aria-current="page" onclick="goOps('health')">Health</button><button type="button" class="segbtn" onclick="goOps('deadletter')">Dead letters</button><button type="button" class="segbtn" onclick="goOps('anchors')">Anchors</button><button type="button" class="segbtn" onclick="goOps('alerts')">Alerts</button></nav>
       <div class="grid kpis leadcard"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-health"/></svg><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-worker"/></svg><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-failed"/></svg><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-anchor"/></svg><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" aria-live="polite" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" aria-live="polite" class="sub mono">loading…</div></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px;">
@@ -1930,22 +1979,25 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-deadletter">
+      <h1 class="sr-only">Dead letters</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm pri" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
-      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Organization</th><th>Seq</th><th>Attempts</th><th>Policy</th><th>Created</th><th>Detail</th><th></th></tr></thead><tbody id="deadRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table><div id="deadPager"></div></div>
+      <nav class="segmented opsnav" aria-label="Operations" style="margin-bottom:18px;"><button type="button" class="segbtn" onclick="goOps('health')">Health</button><button type="button" class="segbtn" aria-current="page" onclick="goOps('deadletter')">Dead letters</button><button type="button" class="segbtn" onclick="goOps('anchors')">Anchors</button><button type="button" class="segbtn" onclick="goOps('alerts')">Alerts</button></nav>
+      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th scope="col">Organization</th><th scope="col">Seq</th><th scope="col">Attempts</th><th scope="col">Policy</th><th scope="col">Created</th><th scope="col">Detail</th><th scope="col">Action</th></tr></thead><tbody id="deadRows" aria-live="polite"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table><div id="deadPager"></div></div>
     </section>
 
     <section class="page" id="page-anchors">
+      <h1 class="sr-only">Anchor monitor</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm pri" onclick="goOps('anchors')">Anchors</button><button class="btn sm" onclick="goOps('alerts')">Alerts</button></div>
+      <nav class="segmented opsnav" aria-label="Operations" style="margin-bottom:18px;"><button type="button" class="segbtn" onclick="goOps('health')">Health</button><button type="button" class="segbtn" onclick="goOps('deadletter')">Dead letters</button><button type="button" class="segbtn" aria-current="page" onclick="goOps('anchors')">Anchors</button><button type="button" class="segbtn" onclick="goOps('alerts')">Alerts</button></nav>
       <div class="split" style="margin-bottom:18px;"><div class="clay pad" id="anchorSummary"><div class="sub mono">loading…</div></div><div class="clay pad" id="anchorWallet"><div class="sub mono">loading…</div></div></div>
-      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Organization</th><th>Head seq</th><th>Last confirmed</th><th>Latest</th><th>Receipt</th><th></th></tr></thead><tbody id="anchorRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="anchorPager"></div></div>
+      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th scope="col">Organization</th><th scope="col">Head seq</th><th scope="col">Last confirmed</th><th scope="col">Latest</th><th scope="col">Receipt</th><th scope="col">Action</th></tr></thead><tbody id="anchorRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="anchorPager"></div></div>
     </section>
 
     <section class="page" id="page-alerts">
+      <h1 class="sr-only">Alerts</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <div class="clay pad" style="margin-bottom:18px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn sm" onclick="goOps('health')">Health</button><button class="btn sm" onclick="goOps('deadletter')">Dead letters</button><button class="btn sm" onclick="goOps('anchors')">Anchors</button><button class="btn sm pri" onclick="goOps('alerts')">Alerts</button></div>
-      <div class="clay pad"><div id="alertSummary" class="sub mono" style="margin-bottom:14px;">loading…</div><div id="alertRows"><div class="sub mono">loading…</div><div id="alertPager"></div></div></div>
+      <nav class="segmented opsnav" aria-label="Operations" style="margin-bottom:18px;"><button type="button" class="segbtn" onclick="goOps('health')">Health</button><button type="button" class="segbtn" onclick="goOps('deadletter')">Dead letters</button><button type="button" class="segbtn" onclick="goOps('anchors')">Anchors</button><button type="button" class="segbtn" aria-current="page" onclick="goOps('alerts')">Alerts</button></nav>
+      <div class="clay pad"><div id="alertSummary" class="sub mono" role="status" aria-live="polite" style="margin-bottom:14px;">loading…</div><div id="alertRows" aria-live="polite"><div class="sub mono">loading…</div><div id="alertPager"></div></div></div>
     </section>
 
     <section class="page" id="page-orgs">
@@ -2014,12 +2066,23 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-traffic">
+      <h1 class="sr-only">Traffic</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <div class="grid kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Marketing traffic" data-tip="Requests to the public sale page in the last 7 days. Client IP and user-agent are HMAC-hashed at capture, so nothing here re-exposes them." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-marketing"/></svg><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></span></div>
-        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer app traffic" data-tip="Requests to the customer dashboard and the /v1 API in the last 7 days." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-app"/></svg><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></span></div>
-        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Admin traffic" data-tip="Requests to this console in the last 7 days — staff sessions only." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-admin"/></svg><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></span></div>
-        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Errors in the last 7 days" data-tip="Responses with a status of 400 or above in the last 7 days, counted across all three sites together." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-errors"/></svg><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr">—</div></span></div>
+      <!-- A3 · the reserved face (#65). This row had all four cards saturated —
+           the pre-A1 state, preserved: nothing was primary and the eye got no
+           path. The card that answers "is something wrong right now" on a
+           traffic page is Errors, so Errors keeps the face and leads the row;
+           the three volume counts go .quiet and keep their hue in the accent
+           bar, the glyph and the tinted surface. Reordering matters as much as
+           the fill: the diagnosis reads before the volume, not after it.
+           The inline minmax(140px) override is gone with it — every other KPI
+           row in the file uses the shared .kpis track, and this one had no
+           reason to be narrower. -->
+      <div class="grid kpis">
+        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Errors in the last 7 days" data-tip="Responses with a status of 400 or above in the last 7 days, counted across all three sites together." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-errors"/></svg><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr" role="status" aria-live="polite">—</div></span></div>
+        <div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Marketing traffic" data-tip="Requests to the public sale page in the last 7 days. Client IP and user-agent are HMAC-hashed at capture, so nothing here re-exposes them." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-marketing"/></svg><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></span></div>
+        <div class="clay kpi k-blue quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer app traffic" data-tip="Requests to the customer dashboard and the /v1 API in the last 7 days." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-app"/></svg><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></span></div>
+        <div class="clay kpi k-indigo quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Admin traffic" data-tip="Requests to this console in the last 7 days — staff sessions only." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-admin"/></svg><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></span></div>
       </div>
       <div class="clay pad">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
@@ -2057,14 +2120,20 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <label class="flabel" style="margin-top:0;" for="trafPath">path contains</label>
             <input class="cin" id="trafPath" placeholder="/v1/logs, /admin/v1/staff…" oninput="renderTrafficFiltered()">
           </div>
-          <button class="btn sm" style="margin-bottom:4px;" onclick="fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTrafficFiltered()">clear</button>
+          <button class="btn sm" id="trafClear" style="margin-bottom:4px;" onclick="trafClear()">clear</button>
         </div>
+        <!-- The filters run over the last 200 requests only, and nothing said so.
+             An operator greps for /v1/logs, sees 3 hits and reads that as 3 —
+             on a page whose KPI says tens of thousands. This line states the
+             window, and doubles as the filter's screen-reader announcement:
+             typing in #trafPath rewrote the whole table silently before. -->
+        <div class="sub mono" id="trafCount" role="status" aria-live="polite" style="margin:-6px 0 14px;"></div>
         <div class="twrap">
           <table class="tbl cardify">
             <thead><tr>
-              <th>When</th><th>Site</th><th>Method</th><th>Path</th><th>Status</th><th>Latency</th><th>Org</th>
+              <th scope="col">When</th><th scope="col">Site</th><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Status</th><th scope="col">Latency</th><th scope="col">Org</th>
             </tr></thead>
-            <tbody id="trafRows"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody>
+            <tbody id="trafRows" aria-live="polite"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody>
           </table><div id="trafPager"></div>
         </div>
       </div>
@@ -2192,27 +2261,41 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── SECURITY ──────────────── -->
     <section class="page" id="page-security">
+      <h1 class="sr-only">Security</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="split">
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">last 7 days</div><div class="panel-t">Failed logins</div></div></div><div id="secTrend" style="min-height:190px;"></div></div>
         <div class="clay pad"><div class="panel-h"><div><div class="eyebrow">by IP</div><div class="panel-t">Top offenders</div></div></div><div id="secOffenders" style="min-height:190px;"></div></div>
       </div>
       <div class="split" style="margin-top:16px;">
-        <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl cardify"><thead><tr><th>Email</th><th style="text-align:right;">Fails · 24h</th><th>Last</th></tr></thead><tbody id="secWatch"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table><div id="secWatchPager"></div></div></div>
-        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap scrolly"><table class="tbl cardify"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table><div id="secRecentPager"></div></div></div>
+        <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">Email</th><th scope="col" style="text-align:right;">Fails · 24h</th><th scope="col">Last</th></tr></thead><tbody id="secWatch" aria-live="polite"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table><div id="secWatchPager"></div></div></div>
+        <!-- .scrolly is the file's only scrollable region and it had no tabindex:
+             a keyboard user could reach neither the scrollbar nor the rows below
+             the fold (SC 2.1.1). Focusable regions need an accessible name, so it
+             takes the label the eyebrow above it was already carrying visually. -->
+        <div class="clay pad"><div class="eyebrow" id="secRecentLab">recent attempts</div><div class="twrap scrolly" tabindex="0" role="group" aria-labelledby="secRecentLab"><table class="tbl cardify"><thead><tr><th scope="col">When</th><th scope="col">Email</th><th scope="col">IP</th><th scope="col">Result</th></tr></thead><tbody id="secRecent" aria-live="polite"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table><div id="secRecentPager"></div></div></div>
       </div>
     </section>
 
     <!-- ──────────────── AUDIT ──────────────── -->
     <section class="page" id="page-audit">
+      <h1 class="sr-only">Audit log</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button></div></div>
       <div class="clay pad" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
         <div style="flex:1;min-width:150px;"><label class="flabel" style="margin-top:0;" for="auAction">action (prefix)</label><input class="cin" id="auAction" placeholder="e.g. org." oninput="auditDebounced()"></div>
         <div style="flex:1;min-width:150px;"><label class="flabel" style="margin-top:0;" for="auActor">actor (email)</label><input class="cin" id="auActor" placeholder="staff@foxy.audit" oninput="auditDebounced()"></div>
-        <div style="flex:1;min-width:130px;"><label class="flabel" style="margin-top:0;" for="auSince">since</label><input class="cin" id="auSince" type="date" onchange="loadAudit()"></div>
-        <div style="flex:1;min-width:130px;"><label class="flabel" style="margin-top:0;" for="auUntil">until</label><input class="cin" id="auUntil" type="date" onchange="loadAudit()"></div>
+        <!-- The two dates were independent inputs that never met. since > until
+             is an incoherent query, and it answered "no matching actions" —
+             which tells the operator their filters found nothing when the truth
+             is the question was impossible. Worse, Export CSV reused the same
+             params, so the impossible range exported too, as an empty file with
+             no error surface at all. auditRange() cross-bounds them. -->
+        <div style="flex:1;min-width:130px;"><label class="flabel" style="margin-top:0;" for="auSince">since</label><input class="cin" id="auSince" type="date" onchange="auditRange()"></div>
+        <div style="flex:1;min-width:130px;"><label class="flabel" style="margin-top:0;" for="auUntil">until</label><input class="cin" id="auUntil" type="date" onchange="auditRange()"></div>
+        <button class="btn sm" id="auClear" style="margin-bottom:4px;" onclick="auditClear()">clear</button>
       </div>
-      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Org</th><th>IP</th></tr></thead><tbody id="auRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
+      <div class="sub mono" id="auNote" role="status" aria-live="polite" style="margin:-6px 0 14px;"></div>
+      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Org</th><th scope="col">IP</th></tr></thead><tbody id="auRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
     </section>
 
     <!-- ──────────────── LEADS ──────────────── -->
@@ -3025,9 +3108,29 @@ function fault(what,why,retry){
 function faultRow(cols,what,retry,why){
   return '<tr><td colspan="'+cols+'">'+fault(what,why||'',retry)+'</td></tr>';
 }
+/* A3 · the loading state the component layer already shipped and nothing ever
+   set. .btn[aria-busy="true"] carries the spinner, cursor:progress AND
+   pointer-events:none, so setting the attribute IS the double-submit guard —
+   the fix was written, it was simply never called. It matters most on
+   re-anchor, which writes to a public chain and spends real gas: two clicks
+   published twice and paid twice, with nothing on screen to say the first was
+   still in flight. The label is restored in `finally` so a throw cannot leave
+   a row permanently inert. */
+async function busy(btn,fn){
+  if(btn&&btn.getAttribute('aria-busy')==='true')return;
+  if(btn)btn.setAttribute('aria-busy','true');
+  try{ return await fn(); }
+  finally{ if(btn)btn.removeAttribute('aria-busy'); }
+}
 function opsChip(status){
   const s=String(status||'unknown').toLowerCase();
-  const cls=s==='ok'||s==='confirmed'?'safe':s==='warning'||s==='stale'||s==='pending'?'warn':s==='never'||s==='not_applicable'?'dim':'bad';
+  /* A3: `critical` and `info` are now named rather than left to the else. The
+     else-branch is "unrecognised, assume the worst", which is right for a
+     status probe and wrong for an alert LEVEL — `info` was rendering as a red
+     pill on the alerts page, and the alerts table's own model default is
+     level="info". `critical` maps where it already fell; naming it just stops
+     the next level added upstream from silently inheriting red. */
+  const cls=s==='ok'||s==='confirmed'?'safe':s==='warning'||s==='stale'||s==='pending'?'warn':s==='never'||s==='not_applicable'?'dim':s==='info'?'info':s==='critical'?'bad':'bad';
   return `<span class="chip ${cls}">${esc(s)}</span>`;
 }
 function opsCheck(label,value,detail,neutral){
@@ -3072,22 +3175,42 @@ async function loadHealth(){
 async function loadDeadletter(page){
   const st=pgState('deadletter',25); if(page)st.page=page;
   const off=(st.page-1)*st.size;
-  let r;try{r=await api('/admin/v1/grading/deadletter?limit='+st.size+'&offset='+off)}catch(e){toast('dead-letter queue unavailable','error');return}
-  if(!r.ok){toast('dead-letter queue failed ('+r.status+')');return}
+  let r;try{r=await api('/admin/v1/grading/deadletter?limit='+st.size+'&offset='+off)}catch(e){r=null}
+  /* Was toast()-and-return: the toast expired in 3.2s and the table sat on
+     "loading…" forever, so a dead endpoint and a slow one looked identical on
+     the page whose job is telling those apart. The pager is cleared with it —
+     leaving it up would print "1–25 of 240" over a fault row, which is the
+     confident-wrong-answer shape, not a failure. */
+  if(!r||!r.ok){
+    $('deadRows').innerHTML=faultRow(7,'The dead-letter queue did not load.','loadDeadletter()',r?('HTTP '+r.status):'no response from the API');
+    $('deadPager').innerHTML='';return;
+  }
   const d=await r.json(),rows=d.items||[];
   window.foxPager('deadPager',{page:st.page,pageSize:st.size,total:d.total||rows.length,
     label:'Dead-letter pages',onPage:loadDeadletter});
-  if(!rows.length){$('deadRows').innerHTML='<tr><td colspan="7" class="sub mono">no failed grading rows</td></tr>';return}
-  $('deadRows').innerHTML=rows.map(x=>`<tr><td data-label="Organization"><b>${esc(x.org_name||'unknown organization')}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td data-label="Seq" class="mono">${num(x.seq)}</td><td data-label="Attempts" class="mono">${num(x.grading_attempts)}</td><td data-label="Policy" class="mono">${esc(x.policy_tag||'—')}</td><td data-label="Created" class="mono" style="font-size:10px;">${fmtTime(x.created_at)}</td><td data-label="Detail" class="sub" style="max-width:230px;">${esc(x.failure_detail||'not recorded')}</td><td>${can('operator')?`<button class="btn sm pri" onclick="requeueDeadletter('${x.id}')">requeue</button>`:'<span class="sub mono">operator required</span>'}</td></tr>`).join('');
+  if(!rows.length){$('deadRows').innerHTML='<tr><td colspan="7" class="sub mono">No failed grading rows. Every event the judge has seen was graded.</td></tr>';return}
+  $('deadRows').innerHTML=rows.map(x=>`<tr><td data-label="Organization"><b>${esc(x.org_name||'unknown organization')}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td data-label="Seq" class="mono">${num(x.seq)}</td><td data-label="Attempts" class="mono">${num(x.grading_attempts)}</td><td data-label="Policy" class="mono">${esc(x.policy_tag||'—')}</td><td data-label="Created" class="mono" style="font-size:10px;">${fmtTime(x.created_at)}</td><td data-label="Detail" class="sub" style="max-width:230px;">${esc(x.failure_detail||'not recorded')}</td><td>${can('operator')?`<button type="button" class="btn sm pri" onclick="requeueDeadletter('${jsq(x.id)}',this)">requeue</button>`:'<span class="sub mono">operator required</span>'}</td></tr>`).join('');
 }
-async function requeueDeadletter(id){
-  const r=await api('/admin/v1/grading/deadletter/'+id+'/requeue',{method:'POST'});
-  if(r.ok){toast('grading row requeued','success');loadDeadletter();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'requeue failed ('+r.status+')')}
+async function requeueDeadletter(id,btn){
+  await busy(btn,async function(){
+    let r;try{r=await api('/admin/v1/grading/deadletter/'+id+'/requeue',{method:'POST'})}catch(e){r=null}
+    if(!r){toast('requeue failed — no response from the API','error');return}
+    if(r.ok){toast('grading row requeued','success');loadDeadletter();loadHealth();loadAlerts()}
+    else{const d=await r.json().catch(()=>({}));toast(d.detail||'requeue failed ('+r.status+')')}
+  });
 }
 let INBOX=[], INBOX_OPEN=null;
 async function loadAnchors(){
-  let r;try{r=await api('/admin/v1/anchors')}catch(e){toast('anchor monitor unavailable','error');return}
-  if(!r.ok){toast('anchors failed ('+r.status+')');return}
+  let r;try{r=await api('/admin/v1/anchors')}catch(e){r=null}
+  /* Three surfaces fail together here, so all three have to say so — the two
+     summary panels sat on "loading…" as well as the table. */
+  if(!r||!r.ok){
+    const why=r?('HTTP '+r.status):'no response from the API';
+    $('anchorRows').innerHTML=faultRow(6,'The anchor monitor did not load.','loadAnchors()',why);
+    $('anchorSummary').innerHTML=fault('Anchor summary unavailable.',why,'loadAnchors()');
+    $('anchorWallet').innerHTML=fault('Wallet state unavailable.',why,'loadAnchors()');
+    $('anchorPager').innerHTML='';return;
+  }
   const d=await r.json(),s=d.summary||{},w=d.wallet||{};
   $('anchorSummary').innerHTML='<div class="eyebrow">anchor summary</div><div style="font-weight:800;font-size:15px;">'+num(s.organizations||0)+' organizations</div><div class="sub mono" style="margin-top:10px;">'+Object.entries(s.by_status||{}).map(([k,v])=>esc(k)+': '+num(v)).join(' · ')+'</div><div class="sub mono" style="margin-top:8px;">provider: '+esc(d.provider||'unknown')+'</div>';
   const walletDetail=w.detail||w.address||(w.balance_wei!=null?w.balance_wei+' wei':'not configured');$('anchorWallet').innerHTML='<div class="eyebrow">wallet</div>'+opsChip(w.state||'unavailable')+'<div class="sub mono" style="margin-top:9px;word-break:break-word;">'+esc(walletDetail)+'</div>';
@@ -3097,15 +3220,45 @@ let ANCHORS_ALL=[];
 function renderAnchors(){
   const rows=window.foxPageSlice(ANCHORS_ALL,pgState('anchors',25),'anchorPager',renderAnchors,'Anchor pages');
   if(!ANCHORS_ALL.length){$('anchorRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
-  $('anchorRows').innerHTML=rows.map(x=>{const a=x.latest,status=a?a.status:'never',receipt=a?(a.tx_hash||a.chain||'receipt'):'—',act=can('operator')&&x.current_head_seq>0?`<button class="btn sm pri" onclick="reanchor('${x.org_id}')">re-anchor</button>`:'<span class="sub mono">'+(can('operator')?'no logs':'operator required')+'</span>';return `<tr><td data-label="Organization"><b>${esc(x.org_name)}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td data-label="Head seq" class="mono">${num(x.current_head_seq)}</td><td data-label="Last confirmed" class="mono" style="font-size:10px;">${fmtTime(x.last_confirmed_at)}</td><td data-label="Latest">${opsChip(status)}${x.stale?'<span class="chip warn" style="margin-left:5px;">stale</span>':''}</td><td data-label="Receipt" class="mono" style="font-size:10px;max-width:190px;overflow:hidden;text-overflow:ellipsis;">${esc(receipt)}</td><td>${act}</td></tr>`}).join('');
+  $('anchorRows').innerHTML=rows.map(x=>{const a=x.latest,status=a?a.status:'never',receipt=a?(a.tx_hash||a.chain||'receipt'):'—',act=can('operator')&&x.current_head_seq>0?`<button type="button" class="btn sm pri" onclick="reanchor('${jsq(x.org_id)}','${jsq(x.org_name)}')">re-anchor</button>`:'<span class="sub mono">'+(can('operator')?'no logs':'operator required')+'</span>';return `<tr><td data-label="Organization"><b>${esc(x.org_name)}</b><div class="sub mono" style="font-size:9px;">${esc(x.org_id)}</div></td><td data-label="Head seq" class="mono">${num(x.current_head_seq)}</td><td data-label="Last confirmed" class="mono" style="font-size:10px;">${fmtTime(x.last_confirmed_at)}</td><td data-label="Latest">${opsChip(status)}${x.stale?'<span class="chip warn" style="margin-left:5px;">stale</span>':''}</td><td data-label="Receipt" class="mono" style="font-size:10px;max-width:190px;overflow:hidden;text-overflow:ellipsis;">${esc(receipt)}</td><td>${act}</td></tr>`}).join('');
 }
-async function reanchor(id){
-  const r=await api('/admin/v1/anchors/'+id+'/anchor',{method:'POST'});
-  if(r.ok){toast('anchor receipt created','success');loadAnchors();loadHealth();loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'re-anchor failed ('+r.status+')')}
+/* The only action in this console that writes to a system Foxy does not
+   control, and it was firing on one click from an 11px pill — 25 of them to a
+   page, all identical — while editing a row in the data browser opened a modal.
+   That ranking was where the components happened to land, not a decision.
+   It now takes the same light confirm keyRevoke uses (name it, say what is
+   permanent, no type-to-confirm — this is not destructive, it is irreversible
+   and external, which is a different thing). */
+function reanchor(id,name){
+  openModal({eyebrow:'ops · writes to a public chain', title:'Re-anchor '+name,
+    bodyHTML:`<div class="sub">This publishes <b>${esc(name)}</b>’s current chain head to the configured anchoring chain. The write is permanent and cannot be undone.</div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doReanchor('${jsq(id)}',this)">Re-anchor</button>`});
+}
+async function _doReanchor(id,btn){
+  await busy(btn,async function(){
+    let r;try{r=await api('/admin/v1/anchors/'+id+'/anchor',{method:'POST'})}catch(e){r=null}
+    closeModal();
+    if(!r){toast('re-anchor failed — no response from the API','error');return}
+    if(r.ok){toast('anchor receipt created','success');loadAnchors();loadHealth();loadAlerts()}
+    else{const d=await r.json().catch(()=>({}));toast(d.detail||'re-anchor failed ('+r.status+')')}
+  });
 }
 async function loadAlerts(){
-  let r;try{r=await api('/admin/v1/alerts')}catch(e){return}
-  if(!r.ok)return;
+  let r;try{r=await api('/admin/v1/alerts')}catch(e){r=null}
+  /* The worst of the five: two bare returns, no toast, nothing. The page whose
+     entire job is "what needs attention" answered a dead endpoint with a silent
+     permanent "loading…", which an operator reads as "nothing needs attention".
+     That is the exact inversion the product's own principle forbids — a
+     confident wrong answer is worse than a visible failure.
+     The dock badge is cleared too: a stale count next to a fault would still be
+     asserting a number nothing measured. */
+  if(!r||!r.ok){
+    const why=r?('HTTP '+r.status):'no response from the API';
+    $('alertSummary').innerHTML=fault('Alerts did not load.',why,'loadAlerts()');
+    $('alertRows').innerHTML='';$('alertPager').innerHTML='';
+    ['alertBadge','topAlertBadge'].forEach(function(id){const b=$(id);if(b)b.style.display='none';});
+    return;
+  }
   const d=await r.json(),rows=d.items||[],open=d.unacknowledged||0;$('alertBadge').textContent=num(open);$('alertBadge').style.display=open?'':'none';
   const _tab=$('topAlertBadge');if(_tab){_tab.textContent=num(open);_tab.style.display=open?'':'none';}
   ALERTS_ALL=rows;
@@ -3116,11 +3269,15 @@ async function loadAlerts(){
 let ALERTS_ALL=[];
 function renderAlerts(){
   const rows=window.foxPageSlice(ALERTS_ALL,pgState('alerts',15),'alertPager',renderAlerts,'Alert pages');
-  $('alertRows').innerHTML=rows.map(x=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;"><div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${opsChip(x.level)}<b>${esc(x.title)}</b>${x.acknowledged?'<span class="chip safe">acknowledged</span>':''}</div><div class="sub" style="margin-top:6px;">${esc(x.detail)}</div>${x.org_name?'<div class="sub mono" style="font-size:10px;margin-top:4px;">'+esc(x.org_name)+'</div>':''}</div>${!x.acknowledged&&can('operator')?`<button class="btn sm" onclick="ackAlert('${x.id}')">acknowledge</button>`:''}</div>`).join('');
+  $('alertRows').innerHTML=rows.map(x=>`<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:14px 0;"><div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${opsChip(x.level)}<b>${esc(x.title)}</b>${x.acknowledged?'<span class="chip safe">acknowledged</span>':''}</div><div class="sub" style="margin-top:6px;">${esc(x.detail)}</div>${x.org_name?'<div class="sub mono" style="font-size:10px;margin-top:4px;">'+esc(x.org_name)+'</div>':''}</div>${!x.acknowledged&&can('operator')?`<button type="button" class="btn sm" onclick="ackAlert('${jsq(x.id)}',this)">acknowledge</button>`:''}</div>`).join('');
 }
-async function ackAlert(id){
-  const r=await api('/admin/v1/alerts/'+id+'/ack',{method:'POST'});
-  if(r.ok){toast('alert acknowledged','success');loadAlerts()}else{const d=await r.json().catch(()=>({}));toast(d.detail||'acknowledge failed ('+r.status+')')}
+async function ackAlert(id,btn){
+  await busy(btn,async function(){
+    let r;try{r=await api('/admin/v1/alerts/'+id+'/ack',{method:'POST'})}catch(e){r=null}
+    if(!r){toast('acknowledge failed — no response from the API','error');return}
+    if(r.ok){toast('alert acknowledged','success');loadAlerts()}
+    else{const d=await r.json().catch(()=>({}));toast(d.detail||'acknowledge failed ('+r.status+')')}
+  });
 }
 
 /* ──────────── health trends + alert history (Phase 1) ──────────── */
@@ -4078,13 +4235,25 @@ async function orgVerify(){
 /* ──────────── traffic ──────────── */
 let TRAFFIC_ROWS=[];
 async function loadTraffic(){
-  const r=await api('/admin/v1/traffic?limit=200');
-  if(!r.ok){toast('traffic failed ('+r.status+')');return}
+  /* This one did not merely fail quietly — it had NO try/catch at all, so a
+     network error rejected out of the function as an unhandled rejection: four
+     "—" KPIs, a permanent "loading…", and not even the toast the others got. */
+  let r;try{r=await api('/admin/v1/traffic?limit=200')}catch(e){r=null}
+  if(!r||!r.ok){
+    TRAFFIC_ROWS=[];
+    ['tErr','tMkt','tApp','tAdm'].forEach(function(id){$(id).textContent='—';});
+    $('trafCount').textContent='';
+    $('trafRows').innerHTML=faultRow(7,'Traffic did not load.','loadTraffic()',r?('HTTP '+r.status):'no response from the API');
+    $('trafPager').innerHTML='';return;
+  }
   const t=await r.json();const bs=t.by_site||{};
   $('tMkt').textContent=num(bs.marketing);$('tApp').textContent=num(bs.app);
   $('tAdm').textContent=num(bs.admin);$('tErr').textContent=num(t.errors);
   TRAFFIC_ROWS=t.recent||[];
   renderTraffic();
+}
+function trafClear(){
+  fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTrafficFiltered();
 }
 /* Filters run client-side against the already-fetched batch (the API has no
    filter params beyond limit) — instant, no re-fetch on every keystroke. */
@@ -4099,7 +4268,20 @@ function renderTraffic(){
     if(path&&!e.path.toLowerCase().includes(path))return false;
     return true;
   });
-  if(!rows.length){window.foxPager('trafPager',{total:0});$('trafRows').innerHTML=`<tr><td colspan="7" class="sub mono">${TRAFFIC_ROWS.length?'no traffic matches these filters':'no traffic captured yet'}</td></tr>`;return}
+  const filtered=rows.length!==TRAFFIC_ROWS.length;
+  $('trafCount').textContent=TRAFFIC_ROWS.length
+    ? (filtered?num(rows.length)+' of the last '+num(TRAFFIC_ROWS.length)+' requests':'the last '+num(TRAFFIC_ROWS.length)+' requests')
+    : '';
+  if(!rows.length){
+    window.foxPager('trafPager',{total:0});
+    /* An empty that names its own recovery — deliberately NOT fault(): nothing
+       broke, the filters just matched nothing, and this file draws that line
+       harder than most. Plain copy plus the one control that fixes it. */
+    $('trafRows').innerHTML=TRAFFIC_ROWS.length
+      ? '<tr><td colspan="7" class="sub mono">No requests match these filters. <button type="button" class="btn sm" style="margin-left:8px;" onclick="trafClear()">Clear filters</button></td></tr>'
+      : '<tr><td colspan="7" class="sub mono">No traffic captured yet.</td></tr>';
+    return;
+  }
   const page=window.foxPageSlice(rows,pgState('traffic',25),'trafPager',renderTraffic,'Traffic pages');
   $('trafRows').innerHTML=page.map(e=>{
     const sc=e.status_code>=500?'bad':e.status_code>=400?'warn':'safe';
@@ -4566,7 +4748,18 @@ async function replayStripe(id){
 }
 async function loadSecurity(){
   let r; try{ r=await api('/admin/v1/security/logins?days=7'); }catch(e){ r=null; }
-  if(!r||!r.ok){ toast('security unavailable','error'); return; }
+  /* Four surfaces on this page, all fed by the one call: two charts and two
+     tables. toast()-and-return left every one of them on "loading…" — and on a
+     login monitor, "I cannot see failed logins" is itself the security signal. */
+  if(!r||!r.ok){
+    const why=r?('HTTP '+r.status):'no response from the API';
+    $('secTrend').innerHTML=fault('The failed-login trend did not load.',why,'loadSecurity()');
+    $('secOffenders').innerHTML=fault('Top offenders did not load.',why,'loadSecurity()');
+    $('secWatch').innerHTML=faultRow(3,'The lockout watchlist did not load.','loadSecurity()',why);
+    $('secRecent').innerHTML=faultRow(4,'Recent attempts did not load.','loadSecurity()',why);
+    ['secWatchPager','secRecentPager'].forEach(function(id){$(id).innerHTML='';});
+    return;
+  }
   const d=await r.json();
   const days=(d.series||[]).map(x=>x.day);
   chart('secTrend',{type:'line',height:190,labels:days,xFormat:v=>String(v).slice(5),
@@ -4591,6 +4784,25 @@ function renderSecRecent(){
 }
 let AU_OFF=0, _auT;
 function auditDebounced(){ clearTimeout(_auT); _auT=setTimeout(()=>loadAudit(),300); }
+/* Cross-bounds the two dates so the impossible range cannot be expressed, and
+   says so if one is already on screen. `min`/`max` on the native control is the
+   error-PREVENTION half; the note is the recovery half for the case where the
+   operator got there before the bound existed. Returns validity so both
+   loadAudit and auditExport can refuse — the export was the real hole: it
+   reused these params and produced a silent empty CSV in a new tab. */
+function auditRange(){
+  const s=$('auSince'),u=$('auUntil');
+  u.min=s.value||'';s.max=u.value||'';
+  const bad=s.value&&u.value&&s.value>u.value;
+  $('auNote').textContent=bad?'“since” is after “until” — no range can match. Adjust either date.':'';
+  if(!bad)loadAudit();
+  return !bad;
+}
+function auditClear(){
+  ['auAction','auActor','auSince','auUntil'].forEach(function(id){$(id).value='';});
+  $('auSince').max='';$('auUntil').min='';$('auNote').textContent='';
+  loadAudit();
+}
 function _auditParams(){
   const p=new URLSearchParams();
   const a=$('auAction').value.trim(); if(a)p.set('action',a);
@@ -4612,6 +4824,8 @@ async function loadAudit(keepOff){
     onPage:function(pg){ AU_OFF=(pg-1)*50; loadAudit(true); }});
 }
 function auditExport(){
+  const s=$('auSince').value,u=$('auUntil').value;
+  if(s&&u&&s>u){ $('auNote').textContent='“since” is after “until” — nothing to export. Adjust either date.'; return; }
   const p=_auditParams(); p.set('format','csv');
   window.open('/admin/v1/audit?'+p.toString(),'_blank');
 }
