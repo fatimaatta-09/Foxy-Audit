@@ -1877,5 +1877,343 @@ def test_no_bento_class_names_something_that_does_not_exist() -> None:
         assert "." + cls in css, ".%s is in the markup but has no rule" % cls
 
 
+# ── 11 · A2 · the orgs list, the org360 drill-down and the data browser ──────
+# The two table-heavy surfaces. Most of what this section guards is behaviour
+# that failed SILENTLY: a breach table that rendered zero rows while announcing
+# a count, loaders that left "loading…" on screen forever, a table that kept the
+# previous table's rows under the new table's name, and an IP allow-list whose
+# failed read looked exactly like "no restrictions".
+
+
+A2_PAGES = ("orgs", "org360", "data")
+
+# every loader that paints one of the A2 surfaces, plus the two A1 loaders this
+# phase inherited. Each must be able to say "I could not tell you".
+A2_LOADERS = ("loadOrgs", "refreshData", "loadHealth", "loadOverview")
+
+
+def _nocomment(text: str) -> str:
+    """Strip HTML comments. This file argues with itself in prose — the A2
+    sections carry comments containing `<a>`, `role="tab"` and `aria-selected`
+    precisely because those are the things being removed. A guard that greps
+    raw source finds the explanation and calls it the defect."""
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+
+def _a2_page(page_id: str) -> str:
+    return _nocomment(_page(page_id))
+
+
+def test_no_map_callback_is_decapitated_by_semicolon_insertion() -> None:
+    """o3LoadBreaches ended a line with a bare `return`, with the row string
+    starting on the next one. ASI closed the statement, every iteration returned
+    undefined, and .join('') produced "" — so the Breaches tab rendered the
+    header "N breaches" over an empty table, with a working pager. A confident,
+    silent, wrong answer, and `node --check` accepts it happily.
+
+    File-wide, because the shape is invisible to every other check here.
+    """
+    for block in _script_blocks():
+        for n, line in enumerate(block.split("\n"), 1):
+            code = re.sub(r"/\*.*?\*/", "", line).rstrip()
+            assert not re.search(r"(^|[^.\w])return$", code), (
+                "line %d ends with a bare `return`; ASI will discard whatever "
+                "is on the next line: %r" % (n, line.strip()[:90])
+            )
+
+
+def test_every_a2_loader_can_say_that_it_failed() -> None:
+    """A toast is a receipt for a thing you just did — it lasts 3.2s and leaves
+    the placeholder behind. On these surfaces a dead endpoint was therefore
+    indistinguishable from a slow one, on the console whose whole job is
+    answering "is something wrong right now"."""
+    for name in A2_LOADERS:
+        body = _js_func(name)
+        assert re.search(r"fault(Row)?\(", body), (
+            "%s() has no fault() path — a failure leaves the surface on its "
+            "loading placeholder with no way back" % name
+        )
+        assert not re.search(r"if\(!r(?:s)?(?:\|\|!r(?:s)?)?\.ok\)\s*\{\s*toast[^}]*return\s*\}", body), (
+            "%s() still toasts-and-returns on failure" % name
+        )
+        assert "try{" in body or "try {" in body, (
+            "%s() awaits without a catch: a network-layer throw (offline, DNS, "
+            "TLS) rejects the whole function and produces no message at all" % name
+        )
+
+
+def test_every_a2_retry_calls_something_that_exists() -> None:
+    """A Try-again button wired to a typo is worse than no button."""
+    js = " ".join(_script_blocks())
+    for name in A2_LOADERS:
+        for retry in re.findall(r"fault(?:Row)?\([^)]*?['\"]([A-Za-z_$][\w$]*)\(",
+                                _js_func(name)):
+            assert re.search(r"(?:async\s+)?function\s+%s\s*\(" % re.escape(retry), js), (
+                "%s()'s retry calls %s(), which is not defined" % (name, retry)
+            )
+
+
+def test_no_dead_link_survives_anywhere() -> None:
+    """`<a>` with no href is not focusable, not activatable, not announced. A1
+    converted six on the overview; the last two were org360's — one of them the
+    ONLY route back out of the drill-down."""
+    dead = re.findall(r"<a\s+class=\"linklike\"[^>]*>", _nocomment(SRC))
+    assert not dead, "link-shaped non-links are back: %s" % dead
+    assert "<button type=\"button\" class=\"linklike\" onclick=\"navTo('orgs')\"" in SRC, (
+        "the org360 back-link is no longer a real button"
+    )
+
+
+def test_every_column_on_an_a2_surface_names_itself() -> None:
+    """Under 760px .tbl.cardify removes the header row outright, so scope= and
+    data-label are all that tie a value to its column. These two surfaces own
+    34 of the file's 90 header cells."""
+    for page in A2_PAGES:
+        for th in re.findall(r"<th\b[^>]*>", _a2_page(page)):
+            assert 'scope="col"' in th, "%s: unscoped header %s" % (page, th)
+    # the JS-emitted tables: org360's four tabs and the data browser's emitter
+    for fn in ("renderO3Users", "renderO3Keys", "o3LoadLedger", "o3LoadBreaches",
+               "refreshData"):
+        for th in re.findall(r"<th\b[^>]*>", _js_func(fn)):
+            assert 'scope="col"' in th, "%s() emits an unscoped header %s" % (fn, th)
+
+
+def test_the_actions_column_has_a_name() -> None:
+    """`<th></th>` is a header cell a screen reader still lands on and cannot
+    announce. The data browser emitted one for its edit/delete column."""
+    body = _js_func("refreshData")
+    assert "<th></th>" not in body, "the actions column is a nameless header again"
+    assert 'class="sr-only">Row actions' in body, (
+        "the actions column lost its accessible name"
+    )
+
+
+def test_the_org_list_can_be_opened_without_a_mouse() -> None:
+    """The console's front door was a <tr> with an onclick: no tabindex, no key
+    handler, invisible to AT. A1 met the same defect on the overview and
+    correctly WITHDREW the affordance, because all six rows led to the one place
+    the panel header already linked. Here every row leads somewhere different,
+    so the promise is real and has to be kept for the keyboard too."""
+    body = _js_func("renderOrgs")
+    row = re.search(r"<tr class=\"rowbtn\"[^>]*>(.*?)</td>", body, re.S)
+    assert row, "the org row stopped rendering"
+    assert re.search(r"<button[^>]*class=\"rowlink\"[^>]*onclick=\"[^\"]*openOrg", row.group(1)), (
+        "the org name is not a real control — the row is mouse-only again"
+    )
+    assert "event.stopPropagation()" in row.group(1), (
+        "the name button does not stop the row's own handler, so opening an org "
+        "fires openOrg twice"
+    )
+    css = _css()
+    assert ".rowlink:focus-visible{" in css, "the row control has no visible focus"
+    assert re.search(r"\.rowlink\{[^}]*color:inherit", css), (
+        ".rowlink must inherit its ink — it replaced a <b>, and this was a "
+        "semantics change, not a visual one"
+    )
+
+
+def test_exactly_one_emphatic_face_on_the_tenant_page() -> None:
+    """A1's rule (#65) reaches the JS-emitted rows too: five saturated faces is
+    the 'nothing is primary' state A1 was built to end."""
+    body = _js_func("renderO3Header")
+    cards = re.findall(r'<div class="clay kpi (k-[a-z]+[^"]*)"', body)
+    assert len(cards) == 5, "org360 no longer renders five KPI cards: %s" % cards
+    loud = [c for c in cards if "quiet" not in c]
+    assert len(loud) == 1, (
+        "org360 has %d emphatic faces (%s) — the face marks the ONE card that "
+        "answers 'is something wrong right now'" % (len(loud), loud)
+    )
+
+
+def test_the_emphatic_tenant_card_is_the_volatile_consequential_one() -> None:
+    """Which card keeps the face is the decision. A1's own test — the only KPI
+    that is both volatile and consequential — picks Breaches over the window:
+    ledger height only ever climbs, all-time breaches barely move, interactions
+    and user counts are neither. It also lands on .k-orange, the hue the
+    platform Overview already gives Policy breaches."""
+    body = _js_func("renderO3Header")
+    m = re.search(r'<div class="clay kpi (k-[a-z]+)"(?![^>]*quiet)', body)
+    assert m, "the tenant page lost its emphatic card"
+    assert m.group(1) == "k-orange", (
+        "the emphatic face moved to %s; breaches are orange on the Overview and "
+        "the two pages have to agree" % m.group(1)
+    )
+    card = body[body.index(m.group(0)):][:1200]
+    assert "Breaches" in card and "all time" not in card, (
+        "the emphatic face is no longer on the windowed Breaches card"
+    )
+
+
+def test_a_spark_inside_a_tenant_face_takes_that_faces_ink() -> None:
+    """o3spBr drew --breach-bg — red — on the .k-orange face: 1.56:1 against the
+    light stop and 1.01:1 against the deep one, i.e. gone across the bottom half
+    of the very card that reports breach velocity. o3spInt hardcoded --foxink,
+    which is right on a saturated face and invisible on a quiet one. The face
+    publishes --spark for exactly this."""
+    # the CALL SITES, not the whole body: the comment above them names the two
+    # tokens it removed, and a body-wide grep finds the explanation and calls it
+    # the defect. This file has shipped that mistake before.
+    body = _js_func("renderO3Header")
+    sparks = re.findall(r"chart\('(o3sp\w+)',\{[^}]*?color:([^}]+?)\}", body)
+    assert len(sparks) == 2, "expected two tenant sparklines, found %s" % sparks
+    for host, colour in sparks:
+        assert colour.strip().startswith("_spark("), (
+            "%s takes a hardcoded colour (%s) instead of its own face's --spark"
+            % (host, colour.strip())
+        )
+    assert "getPropertyValue('--spark')" in _js_func("_spark")
+
+
+def test_the_tenant_tab_bar_is_the_component_it_claims_to_be() -> None:
+    """role="tablist" over six plain buttons was the only role="tab*" string in
+    the file: no role="tab", no aria-selected, no aria-controls, no arrow keys.
+    A screen reader heard "tab list", found generic buttons and was never told
+    which was current — strictly worse than no role at all. Selection was also
+    carried by .pri, the look of Suspend/Offboard directly above it."""
+    markup = _nocomment(SRC)
+    assert 'role="tablist"' not in markup, (
+        "a tablist is back without tabs to own"
+    )
+    bar = re.search(r'<div class="segmented"[^>]*id="o3Tabs">(.*?)</div>',
+                    _a2_page("org360"), re.S)
+    assert bar, "the org360 tab bar is no longer the shared .segmented control"
+    buttons = re.findall(r"<button[^>]*>", bar.group(1))
+    assert len(buttons) == 6, "expected six sections, found %d" % len(buttons)
+    for b in buttons:
+        assert 'class="segbtn"' in b, "a section button left the component: %s" % b
+        assert "aria-pressed=" in b, "a section button announces no state: %s" % b
+    assert "setAttribute('aria-pressed'" in _js_func("o3Tab"), (
+        "o3Tab no longer moves the pressed state — selection is back to a class"
+    )
+    assert 'id="o3Panel" aria-live="polite"' in markup, (
+        "the panel swaps its whole contents silently again"
+    )
+
+
+def test_the_data_browser_has_exactly_one_modal_system() -> None:
+    """A hand-rolled dialog sat 20 lines from the shared one, looking identical
+    and sharing none of its behaviour: no role, no heading, no Esc, no focus
+    move, no trap, no restore. Two modal systems on one surface, and the
+    accessible one was the destructive one."""
+    assert "dataEditModal" not in _nocomment(SRC), "the second modal is back"
+    body = _js_func("openDataEdit")
+    assert "openModal({" in body, "the edit dialog is hand-rolled again"
+    assert "_dataRowLabel(" in body, "the edit dialog does not name its row"
+    assert "_dataRowLabel(" in _js_func("deleteDataRow"), (
+        "the delete confirmation does not name the row it destroys, against a "
+        "table that truncates every cell at 60 characters"
+    )
+
+
+def test_a_failed_table_load_cannot_be_read_as_the_new_table() -> None:
+    """Nothing here cleared the previous rows, so switching from a table that
+    loaded to one that failed left table A's rows under table B's name, with the
+    count still reading "N rows · table_a"."""
+    body = _js_func("refreshData")
+    fail = body[body.index("if(!r||!r.ok)"):]
+    fail = fail[: fail.index("return")]
+    assert "_dataClear()" in fail, (
+        "the failure path no longer clears the previous table's rows"
+    )
+    clear = _js_func("_dataClear")
+    for target in ("dataRows", "dataCount", "dataPager", "dataHead"):
+        assert target in clear, "_dataClear leaves #%s behind" % target
+
+
+def test_a_failed_allowlist_read_cannot_be_saved_as_an_empty_one() -> None:
+    """The GET's failure path fell through to value='' — an empty textarea that
+    reads exactly like "this tenant has no restrictions". Pressing Save then PUT
+    an empty list and erased a live allow-list nobody ever saw."""
+    body = _js_func("orgIp")
+    assert "mIpSave" in body, "the allow-list Save button has no handle to hold"
+    ok = body.index("if(r&&r.ok)")
+    after = body[ok:]
+    assert "disabled=true" in after, (
+        "a failed read no longer disables saving — an empty box can still "
+        "overwrite whatever is live"
+    )
+
+
+def test_a_name_bound_into_a_handler_is_escaped_for_javascript() -> None:
+    """esc() is right for text between tags and wrong inside an inline handler:
+    the attribute parser decodes &#39; back to an apostrophe BEFORE the JS
+    parser sees it, so a tenant called "O'Brien Health" turned Offboard into a
+    SyntaxError and the button simply stopped working. Verified in Chrome."""
+    js = " ".join(_script_blocks())
+    assert re.search(r"const jsq\s*=", js), "the JS-string escaper is gone"
+    for bad in ("orgOffboard('${d.id}','${esc(d.name)}')",
+                "keyRevoke('${O3_ID}','${k.id}','${esc(k.name)}')"):
+        assert bad not in js, "a customer-supplied name is back on esc(): %s" % bad
+    for good in ("${jsq(d.name)}", "${jsq(k.name)}"):
+        assert good in js, "expected %s to reach the handler through jsq()" % good
+
+
+def test_the_usage_heading_and_the_cards_agree_about_the_window() -> None:
+    """The panel eyebrow said "usage · 30 days" while the cards beside it derived
+    their window from usage.length. A tenant whose rollup holds nine days got a
+    heading claiming thirty above two cards saying nine."""
+    assert "usage · 30 days" not in _a2_page("org360"), (
+        "the usage window is hardcoded in the markup again"
+    )
+    assert "o3UsageWindow" in _js_func("renderO3Header"), (
+        "the heading no longer reads the window off the same array as the cards"
+    )
+
+
+def test_the_a2_surfaces_have_an_outline() -> None:
+    """Overview and health each carry an <h1 class="sr-only">; these three had no
+    heading at all, so the rotor returned nothing and linear Tab was the only
+    way through the console's most-used pages."""
+    for page in A2_PAGES:
+        markup = _a2_page(page)
+        assert re.search(r'<h1 class="sr-only">', markup), (
+            "page-%s has no heading of any kind" % page
+        )
+        assert '<div class="panel-t">' not in markup, (
+            "page-%s styles a <div> as a heading" % page
+        )
+
+
+def test_one_range_of_rows_is_stated_once() -> None:
+    """The ledger and breach panels hand-rolled "N rows · 1–50" directly above
+    foxPager's own "1–50 of N" — one fact, two formats, twelve pixels apart.
+    The pager component was introduced to own exactly this."""
+    for fn in ("o3LoadLedger", "o3LoadBreaches"):
+        body = _js_func(fn)
+        assert not re.search(r"\(d\.offset\+1\)\+'–'", body), (
+            "%s() prints its own row range again, next to the pager's" % fn
+        )
+
+
+def test_an_empty_state_says_what_would_put_something_there() -> None:
+    """.chart-empty .hint was styled and then used nowhere in the file — the
+    slot for "what would fill this" existed and every one of the twelve empty
+    states was a single bare sentence. On the tenant page that costs real
+    information: "No usage recorded" cannot distinguish a new tenant from one
+    whose SDK stopped shipping."""
+    css = _css()
+    assert ".chart-empty .hint{" in css
+    for fn in ("renderO3Users", "renderO3Keys", "o3LoadLedger", "o3LoadBreaches",
+               "renderO3Policy", "refreshData"):
+        body = _js_func(fn)
+        for empty in re.findall(r'<div class="chart-empty">(.*?)</div>', body, re.S):
+            assert 'class="hint"' in empty, (
+                "%s() has an empty state with no next step: %r"
+                % (fn, empty[:70])
+            )
+
+
+def test_the_org_list_is_not_left_on_its_loading_placeholder() -> None:
+    """The static markup ships `loading…` inside #orgRows. If loadOrgs cannot
+    replace it, the sentence has to be replaced by something that admits it."""
+    assert 'id="orgRows" aria-live="polite"' in _nocomment(SRC), (
+        "the org table changes silently"
+    )
+    body = _js_func("loadOrgs")
+    assert "faultRow(6," in body, (
+        "the org table's failure path does not fill its own six columns"
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

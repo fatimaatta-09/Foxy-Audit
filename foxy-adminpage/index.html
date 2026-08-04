@@ -862,6 +862,23 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    reading is still tracked; only the affordance is now told the truth. */
 .tbl tbody tr:hover{background:var(--surf2)}
 .tbl tbody tr.rowbtn:hover{box-shadow:inset 3px 0 0 var(--fox)}
+/* A2 · the org list is the console's front door and it was mouse-only: a <tr>
+   with an onclick, no tabindex, no key handler, invisible to AT. A1 met the
+   same defect on the overview and correctly WITHDREW the affordance there,
+   because all six rows led to the one destination the panel header already
+   linked. Here every row leads somewhere different, so the promise is real and
+   the fix is to keep it rather than retract it.
+   The name becomes a real <button>: one tab stop per row, announced with the
+   tenant's own name instead of "row 4 of 25". The <tr> keeps its click so the
+   mouse still gets the whole row. color:inherit and font:inherit are what make
+   this pixel-identical to the <b> it replaces — this is a semantics change,
+   not a visual one. The padding/negative-margin pair buys the 24px SC 2.5.8
+   target without moving the text. */
+.rowlink{font:inherit;font-weight:700;color:inherit;background:none;border:0;
+  text-align:left;cursor:pointer;border-radius:var(--r-xs);
+  padding:3px 6px;margin:-3px -6px}
+.rowlink:hover{color:var(--fox2)}
+.rowlink:focus-visible{outline:2px solid var(--fox);outline-offset:2px}
 .twrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 /* .tbl th carries position:sticky, but a sticky header needs a scrollport and
    .twrap is height:auto — so on 9 of the 10 wraps the header has nothing to
@@ -1258,8 +1275,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 @keyframes sheen{0%,60%{transform:translateX(-100%)}100%{transform:translateX(220%)}}
 .funnum{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;font-weight:700;text-align:right;color:var(--ink)}
 
-/* org detail drawer row */
-.drawer td{background:var(--surf2)}
+/* `.drawer td` sat here, tinting the org list's inline detail row. That row was
+   built only by toggleOrg, which had no call sites and is gone; the rule
+   selected nothing. .dgrid/.dcell below are NOT dead — org360's Overview and
+   Policy tabs both render through _dgrid. */
 .dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;padding:6px 2px 10px}
 .dcell .dl{font-family:var(--mono);font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted2)}
 .dcell .dv{font-family:var(--mono);font-size:13px;font-weight:700;margin-top:3px;color:var(--ink)}
@@ -1930,26 +1949,36 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     </section>
 
     <section class="page" id="page-orgs">
+      <h1 class="sr-only">Organizations</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span>
-        <label class="sub mono" style="font-size:10px;display:flex;gap:6px;align-items:center;cursor:pointer;">
+        <!-- the only control on this page, and it was set at 10px — the
+             smallest text on the screen. It keeps its .sub mono look and
+             loses only the shrink, so it reads at the sheet's 12.5px.
+             `sub mono` rather than a bare `sub`: P2 bans a title-shaped block
+             inside a .pagehead and a guard enforces it by class string. -->
+        <label class="sub mono" style="display:flex;gap:7px;align-items:center;cursor:pointer;">
           <input type="checkbox" id="showDeleted" onchange="loadOrgs()"> show offboarded
         </label>
       </div>
       <div class="clay pad twrap">
         <table class="tbl cardify" id="orgTbl">
           <thead><tr>
-            <th>Org</th><th>Plan</th><th>Subscription</th><th>Access</th><th>Contact</th><th>Created</th>
+            <th scope="col">Org</th><th scope="col">Plan</th><th scope="col">Subscription</th><th scope="col">Access</th><th scope="col">Contact</th><th scope="col">Created</th>
           </tr></thead>
-          <tbody id="orgRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody>
+          <tbody id="orgRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody>
         </table><div id="orgPager"></div>
       </div>
     </section>
 
-    <!-- ──────────────── TRAFFIC ──────────────── -->
     <!-- ──────────────── ORG 360 (drill-down sub-page) ──────────────── -->
     <section class="page" id="page-org360">
+      <h1 class="sr-only">Organization detail</h1>
       <div class="backline">
-        <a class="linklike" onclick="navTo('orgs')">&larr; organizations</a>
+        <!-- the ONLY route back out of the drill-down. As an <a> with no href it
+             was not focusable, not activatable and not announced — a dead end
+             for anyone not using a mouse. Same fix A1 applied to the six on the
+             overview; these last two were on this page. -->
+        <button type="button" class="linklike" onclick="navTo('orgs')">&larr; organizations</button>
         <span class="mono" id="o3Sub"></span>
       </div>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span>
@@ -1960,19 +1989,28 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       </div>
       <div id="o3Chips" style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;"></div>
       <div class="clay pad" style="margin-bottom:16px;">
-        <div class="panel-h"><div><div class="eyebrow">usage · 30 days</div><div class="panel-t">Interactions vs breaches</div></div><span id="o3VerifyState" class="sub mono" style="font-size:10.5px;"></span></div>
+        <div class="panel-h"><div><div class="eyebrow" id="o3UsageWindow">usage</div><h2 class="panel-t">Interactions vs breaches</h2></div><span id="o3VerifyState" class="sub mono" style="font-size:10.5px;"></span></div>
         <div id="o3Usage" style="min-height:200px;"></div>
       </div>
       <div class="grid kpis" id="o3Kpis" style="margin-bottom:18px;"></div>
-      <div class="clay pad" style="margin-bottom:14px;display:flex;gap:6px;flex-wrap:wrap;" role="tablist" id="o3Tabs">
-        <button class="btn sm pri" data-tab="overview" onclick="o3Tab('overview')">Overview</button>
-        <button class="btn sm" data-tab="users" onclick="o3Tab('users')">Users</button>
-        <button class="btn sm" data-tab="keys" onclick="o3Tab('keys')">Keys</button>
-        <button class="btn sm" data-tab="ledger" onclick="o3Tab('ledger')">Ledger</button>
-        <button class="btn sm" data-tab="breaches" onclick="o3Tab('breaches')">Breaches</button>
-        <button class="btn sm" data-tab="policy" onclick="o3Tab('policy')">Policy</button>
+      <!-- This was a .clay pad carrying role="tablist" over six plain .btn.sm —
+           the only role="tab*" string in the file, with no role="tab", no
+           aria-selected, no aria-controls and no arrow keys. A screen reader
+           heard "tab list", found generic buttons and was never told which one
+           was current; selection was carried by the .pri class alone, which is
+           also the look of `Suspend`/`Offboard` sitting directly above. The
+           file already ships .segmented/.segbtn with aria-pressed for exactly
+           this, driven by _segPick — so the honest fix is the component that
+           already exists, not a half-built tablist. -->
+      <div class="segmented" style="margin-bottom:14px;flex-wrap:wrap;" role="group" aria-label="Organization detail sections" id="o3Tabs">
+        <button type="button" class="segbtn" data-tab="overview" aria-pressed="true" onclick="o3Tab('overview')">Overview</button>
+        <button type="button" class="segbtn" data-tab="users" aria-pressed="false" onclick="o3Tab('users')">Users</button>
+        <button type="button" class="segbtn" data-tab="keys" aria-pressed="false" onclick="o3Tab('keys')">Keys</button>
+        <button type="button" class="segbtn" data-tab="ledger" aria-pressed="false" onclick="o3Tab('ledger')">Ledger</button>
+        <button type="button" class="segbtn" data-tab="breaches" aria-pressed="false" onclick="o3Tab('breaches')">Breaches</button>
+        <button type="button" class="segbtn" data-tab="policy" aria-pressed="false" onclick="o3Tab('policy')">Policy</button>
       </div>
-      <div id="o3Panel"><div class="sub mono" style="padding:14px;">loading…</div></div>
+      <div id="o3Panel" aria-live="polite"><div class="sub mono" style="padding:14px;">loading…</div></div>
     </section>
 
     <section class="page" id="page-traffic">
@@ -2066,6 +2104,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── DATA ──────────────── -->
     <section class="page" id="page-data">
+      <h1 class="sr-only">Data browser</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="annbar" style="margin-bottom:14px;">
         <div><b>audit_logs, admin_actions, chain_anchors and stripe_events are permanently read-only.</b>
@@ -2106,17 +2145,14 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="sub mono" id="dataEmpty" style="padding:20px;">choose a table above to get started</div>
     </section>
 
-    <!-- data-edit modal — outside the page flow so it can float over anything -->
-    <div id="dataEditModal" style="display:none;position:fixed;inset:0;z-index:9500;background:var(--gate-overlay);align-items:center;justify-content:center;padding:20px;" onclick="closeDataEdit()">
-      <div class="clay pad" style="width:420px;max-width:100%;max-height:80vh;overflow-y:auto;" onclick="event.stopPropagation()">
-        <div style="font-weight:800;font-size:15px;margin-bottom:14px;">Edit row</div>
-        <div id="dataEditFields"></div>
-        <div style="display:flex;gap:10px;margin-top:16px;">
-          <button class="btn" type="button" style="flex:1;" onclick="closeDataEdit()">cancel</button>
-          <button class="btn pri" type="button" style="flex:1;" onclick="saveDataEdit()">save</button>
-        </div>
-      </div>
-    </div>
+    <!-- A second, hand-rolled modal used to live here: same .clay pad, same
+         .btn/.btn.pri, same backdrop-click — and none of #fxmodal's behaviour.
+         No role="dialog", no aria-modal, no heading, no Esc (the global handler
+         tests #fxmodal by id), no focus move in, no trap, no focus restore. It
+         sat AFTER </section>, so activating "edit" left focus on a button now
+         behind the overlay. Two modal systems on one surface, and the
+         accessible one was the destructive one. openDataEdit now builds on
+         openModal like every other dialog in the console. -->
 
     <!-- ──────────────── INBOX ──────────────── -->
     <section class="page" id="page-inbox">
@@ -2348,6 +2384,13 @@ async function _stepUpSubmit(){
   else { const d=r?await r.json().catch(()=>({})):{}; if(m) m.textContent=(d.detail||'Invalid or expired code'); }
 }
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* A value bound into an inline onclick crosses TWO parsers, and esc() alone
+   only satisfies the second. The HTML attribute parser decodes entities FIRST,
+   so esc("O'Brien Health") -> O&#39;Brien Health -> JS then sees a bare
+   apostrophe that closes the string literal it sits in, and the handler dies
+   with a SyntaxError. Backslash-escape for JS, then esc() for the attribute.
+   Used wherever a tenant- or customer-supplied NAME reaches an onclick. */
+const jsq=s=>esc(String(s??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
 let ME=null;               // {id,email,platform_role}
 const ROLE_RANK={viewer:0,operator:1,superadmin:2};
 const can=min=>ME&&ROLE_RANK[ME.platform_role]>=ROLE_RANK[min];
@@ -2602,26 +2645,62 @@ function renderDataFilters(){
     </div>`).join('');
   DATA_FILTERS.forEach((f,i)=>fauxSelectInit($('filterCol'+i)));
 }
+/* #dataEmpty carries a permanent 20px padding, so emptying it with textContent
+   left 40px of dead space under every populated table. It is a notice slot:
+   it either holds a notice or it is not there. */
+function _dataNotice(html){
+  const el=$('dataEmpty');
+  el.innerHTML=html;
+  el.style.display=html?'':'none';
+}
+function _dataClear(){
+  $('dataRows').innerHTML=''; $('dataCount').textContent='';
+  $('dataPager').innerHTML=''; $('dataHead').innerHTML='';
+  $('dataResultsWrap').style.display='none';
+}
 async function refreshData(){
   if(!DATA_TABLE)return;
   const params=new URLSearchParams();
   params.set('page',DATA_PAGE);params.set('limit',DATA_LIMIT);
   const q=$('dataSearch').value.trim(); if(q)params.set('q',q);
   DATA_FILTERS.forEach(f=>{ if(f.col&&f.val)params.set('col_'+f.col,f.val); });
-  const r=await api('/admin/v1/data/'+DATA_TABLE+'?'+params.toString());
-  if(!r.ok){toast('load failed ('+r.status+')');return}
+  let r; try{ r=await api('/admin/v1/data/'+DATA_TABLE+'?'+params.toString()); }catch(e){ r=null; }
+  /* The stale-table trap: this used to toast and return, and nothing here
+     clears the previous table's rows. Switching from a table that loaded to
+     one that fails left table A's rows on screen under table B's name, with
+     #dataCount still reading "N rows · table_a" — the browser confidently
+     attributing one table's contents to another. On a console for an
+     audit-evidence platform that is worse than showing nothing. */
+  if(!r||!r.ok){
+    _dataClear();
+    _dataNotice(fault(esc(DATA_TABLE)+' did not load.',
+      r?('HTTP '+r.status):'no response from the API','refreshData()'));
+    return;
+  }
   const d=await r.json();
   DATA_META=d; DATA_TOTAL=d.total; DATA_ROW_CACHE={};
   if(!d.rows.length){
-    $('dataResultsWrap').style.display='none';
-    $('dataEmpty').textContent=DATA_TOTAL===0?'no rows in this table yet':'no rows match these filters';
+    _dataClear();
+    _dataNotice(DATA_TOTAL===0
+      ? '<div class="chart-empty">Nothing has been written to '+esc(DATA_TABLE)+' yet.'
+        +'<span class="hint">Rows appear here as soon as the platform writes them.</span></div>'
+      : '<div class="chart-empty">No rows in '+esc(DATA_TABLE)+' match these filters.'
+        +'<span class="hint">Clear the search or drop a filter to widen the query.</span></div>');
     return;
   }
-  $('dataEmpty').textContent='';
+  _dataNotice('');
   $('dataResultsWrap').style.display='block';
   const cols=Object.keys(d.rows[0]);
   const showActions=can('operator')&&(d.editable_fields.length||d.deletable);
-  $('dataHead').innerHTML=cols.map(c=>`<th>${esc(c)}</th>`).join('')+(showActions?'<th></th>':'');
+  /* scope="col" — under 760px .tbl.cardify removes the header row entirely, so
+     scope + data-label are the only things left tying a value to its column.
+     The actions column gets a real name rather than an empty header cell: ""
+     is a cell a screen reader still lands on and cannot announce.
+     (No literal tag spelled out here — a comment that names a selector shows
+     up in every grep that counts them, and this file has already shipped a
+     guard fooled by exactly that.) */
+  $('dataHead').innerHTML=cols.map(c=>`<th scope="col">${esc(c)}</th>`).join('')
+    +(showActions?'<th scope="col"><span class="sr-only">Row actions</span></th>':'');
   $('dataRows').innerHTML=d.rows.map(row=>{
     const pk=String(row.id!==undefined?row.id:row[cols[0]]);
     DATA_ROW_CACHE[pk]=row;
@@ -2630,38 +2709,57 @@ async function refreshData(){
       if(v===null||v===undefined)v='—';
       else if(typeof v==='object')v=JSON.stringify(v);
       v=String(v);
-      const short=v.length>60?v.slice(0,60)+'…':v;
-      return `<td data-label="${esc(c)}" class="mono" style="font-size:10.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-tip="${esc(v)}">${esc(short)}</td>`;
+      const clipped=v.length>60;
+      /* data-tip was set on EVERY cell, so hovering a fully-visible value
+         popped a tooltip repeating it — 20 columns x 25 rows of furniture that
+         taught the reader to ignore the one tooltip that carries information.
+         It now marks only the cells that are actually cut. */
+      return `<td data-label="${esc(c)}" class="mono" style="font-size:10.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"${clipped?` data-tip="${esc(v)}"`:''}>${esc(clipped?v.slice(0,60)+'…':v)}</td>`;
     }).join('');
     let actionsCell='';
     if(showActions){
       const btns=[];
-      if(d.editable_fields.length)btns.push(`<button class="btn sm" type="button" onclick="openDataEdit('${esc(pk)}')">edit</button>`);
-      if(d.deletable)btns.push(`<button class="btn sm danger" type="button" onclick="deleteDataRow('${esc(pk)}')">delete</button>`);
+      /* The button names the row it acts on. "edit" x25 down a column gives a
+         screen reader twenty-five identical controls, and gives anyone the
+         chance to act on the row above the one they meant. */
+      if(d.editable_fields.length)btns.push(`<button class="btn sm" type="button" aria-label="Edit row ${esc(pk)}" onclick="openDataEdit('${jsq(pk)}')">edit</button>`);
+      if(d.deletable)btns.push(`<button class="btn sm danger" type="button" aria-label="Delete row ${esc(pk)}" onclick="deleteDataRow('${jsq(pk)}')">delete</button>`);
       actionsCell=`<td style="white-space:nowrap;">${btns.join(' ')}</td>`;
     }
     return `<tr>${cells}${actionsCell}</tr>`;
   }).join('');
-  $('dataCount').textContent=num(DATA_TOTAL)+' row'+(DATA_TOTAL===1?'':'s')+' · '+esc(DATA_TABLE);
+  $('dataCount').textContent=num(DATA_TOTAL)+' row'+(DATA_TOTAL===1?'':'s')+' · '+DATA_TABLE;
   window.foxPager('dataPager',{page:DATA_PAGE,pageSize:DATA_LIMIT,total:DATA_TOTAL,
     label:'Table rows',onPage:function(pg){ DATA_PAGE=pg; refreshData(); }});
+}
+/* The row's identity, for a dialog head. The table truncates every cell at 60
+   characters, so "Edit row" over a modal was the operator's only confirmation
+   that they had grabbed the row they meant. */
+function _dataRowLabel(pk){
+  const row=DATA_ROW_CACHE[pk]||{};
+  const named=['name','email','org_name','event_type','table_name','key_prefix','status']
+    .find(k=>row[k]!=null&&String(row[k]).trim()!=='');
+  return named?(String(row[named]).slice(0,48)+' · '+pk):pk;
 }
 function openDataEdit(pk){
   const row=DATA_ROW_CACHE[pk];
   if(!row||!DATA_META){toast('row not found — try refreshing','error');return}
   DATA_EDIT_ID=pk;
-  $('dataEditFields').innerHTML=DATA_META.editable_fields.map(f=>{
+  const fields=DATA_META.editable_fields.map(f=>{
     const val=row[f];
     if(typeof val==='boolean'){
-      return `<label class="sub mono" style="display:flex;align-items:center;gap:8px;margin:12px 0;cursor:pointer;">
+      return `<label class="sub" style="display:flex;align-items:center;gap:8px;margin:12px 0;cursor:pointer;">
         <input type="checkbox" id="dedit_${esc(f)}" ${val?'checked':''}> ${esc(f)}
       </label>`;
     }
     return `<label class="flabel" for="dedit_${esc(f)}">${esc(f)}</label><input class="cin" id="dedit_${esc(f)}" value="${esc(val===null||val===undefined?'':String(val))}">`;
   }).join('');
-  $('dataEditModal').style.display='flex';
+  openModal({eyebrow:DATA_TABLE, title:'Edit '+_dataRowLabel(pk),
+    bodyHTML:'<div id="dataEditFields">'+fields+'</div>',
+    footHTML:'<button class="btn" onclick="closeDataEdit()">Cancel</button>'
+      +'<button class="btn pri" onclick="saveDataEdit()">Save changes</button>'});
 }
-function closeDataEdit(){$('dataEditModal').style.display='none';DATA_EDIT_ID=null}
+function closeDataEdit(){closeModal();DATA_EDIT_ID=null}
 async function saveDataEdit(){
   if(!DATA_META)return;
   const fields={};
@@ -2677,8 +2775,8 @@ async function saveDataEdit(){
   else toast(d.detail||('save failed ('+r.status+')'));
 }
 function deleteDataRow(pk){
-  openModal({eyebrow:'danger · '+DATA_TABLE, title:'Delete row',
-    bodyHTML:'<div class="sub">Delete this row? A snapshot is kept in the append-only audit trail, but this cannot be undone from the UI.</div>',
+  openModal({eyebrow:'danger · '+DATA_TABLE, title:'Delete '+_dataRowLabel(pk),
+    bodyHTML:'<div class="sub">A snapshot is kept in the append-only audit trail, but this cannot be undone from the UI.</div>',
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doDeleteRow('${pk}')">Delete row</button>`});
 }
 async function _doDeleteRow(pk){
@@ -2921,8 +3019,11 @@ function fault(what,why,retry){
     +(why?'<span class="why">'+esc(why)+'</span>':'')
     +(retry?'<button class="btn sm" onclick="'+retry+'">Try again</button>':'')+'</div>';
 }
-function faultRow(cols,what,retry){
-  return '<tr><td colspan="'+cols+'">'+fault(what,'',retry)+'</td></tr>';
+/* `why` is appended rather than slotted third so the two callers that predate
+   it (loadStripeEvents, loadAudit — other phases' pages) keep working
+   unchanged. The awkward order is the price of not reaching into them. */
+function faultRow(cols,what,retry,why){
+  return '<tr><td colspan="'+cols+'">'+fault(what,why||'',retry)+'</td></tr>';
 }
 function opsChip(status){
   const s=String(status||'unknown').toLowerCase();
@@ -2944,9 +3045,22 @@ function opsCheck(label,value,detail,neutral){
   const pill=neutral?`<span class="tag">${esc(String(value||'not tracked'))}</span>`:opsChip(value);
   return `<div style="display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:1.5px solid var(--line);padding:8px 0;"><span><b>${esc(label)}</b><span class="sub mono" style="display:block;font-size:10px;margin-top:3px;">${esc(detail||'')}</span></span>${pill}</div>`;
 }
+/* A2 · inherited from A1. This is the console's status page, and its failure
+   path was `toast(); return` — so a dead /health left "—" in four hero cards
+   and "loading…" in both panels, permanently, which is indistinguishable from
+   a slow load. The page whose entire job is answering "is something wrong
+   right now" was unable to say "I cannot tell you". */
 async function loadHealth(){
-  let r;try{r=await api('/admin/v1/health')}catch(e){toast('health unavailable','error');return}
-  if(!r.ok){toast('health failed ('+r.status+')');return}
+  let r;try{r=await api('/admin/v1/health')}catch(e){r=null}
+  if(!r||!r.ok){
+    const why=r?('HTTP '+r.status):'no response from the API';
+    ['hStatus','hWorker'].forEach(id=>{$(id).innerHTML='<span class="chip bad">unknown</span>';});
+    $('hFailed').textContent='—'; $('hAnchors').textContent='—';
+    $('hWorkerFoot').textContent='health check unavailable';
+    $('healthChecks').innerHTML=fault('The health probe did not answer.',why,'loadHealth()');
+    $('healthQueue').innerHTML=fault('The grading queue could not be read.',why,'loadHealth()');
+    return;
+  }
   const d=await r.json(),w=d.worker||{},g=d.grading||{},a=d.anchors||{},cb=d.circuit_breaker||{};
   $('hStatus').innerHTML=opsChip(d.status||'unknown');$('hWorker').innerHTML=opsChip(w.status||'unknown');
   $('hWorkerFoot').textContent=w.beat_at?'last '+fmtTime(w.beat_at):'no heartbeat yet';$('hFailed').textContent=num(g.failed||0);
@@ -3431,9 +3545,24 @@ function funnelRow(label,val,max,color){
     <div class="funbar"><i style="width:${w}%;${color?`background:${color};`:''}"></i></div>
     <div class="funnum">${num(val)}</div></div>`;
 }
+/* A2 · inherited from A1. Same defect as loadHealth: a failed /stats toasted
+   and returned, leaving five KPI cards reading "—" and both funnels blank with
+   nothing to say why or any way to retry. The extras below already degrade
+   independently and correctly; the spine did not. */
 async function loadOverview(){
-  const [rs,rt]=await Promise.all([api('/admin/v1/stats'),api('/admin/v1/traffic?limit=1')]);
-  if(!rs.ok){toast('stats failed ('+rs.status+')','error');return}
+  let rs,rt;
+  try{ [rs,rt]=await Promise.all([api('/admin/v1/stats'),api('/admin/v1/traffic?limit=1')]); }
+  catch(e){ rs=null; rt=null; }
+  if(!rs||!rs.ok){
+    const why=rs?('HTTP '+rs.status):'no response from the API';
+    ['kOrgs','kUsers','kLogs','kBreaches','kStaff'].forEach(id=>{const e=$(id); if(e)e.textContent='—';});
+    $('kOrgsFoot').textContent='platform totals unavailable';
+    $('leadFun').innerHTML=fault('Platform totals did not load.',why,'loadOverview()');
+    $('siteFun').innerHTML='';
+    $('siteErrs').textContent='';
+    loadOverviewExtras();
+    return;
+  }
   const s=await rs.json();
   countUp('kOrgs',s.total_orgs,num);
   $('kOrgsFoot').textContent=num(s.active_orgs)+' active · '+num(s.suspended_orgs)+' suspended';
@@ -3563,10 +3692,24 @@ async function loadKpiSparks(){
 
 let ORG_OPEN=null;
 let ORGS_ALL=[];
+/* A toast is a receipt for something the operator just did, not a report on
+   something they are waiting for: it is gone in 3.2s and it leaves the table
+   reading "loading…" forever, so a dead endpoint is indistinguishable from a
+   slow one on the console whose job is answering "is something wrong right
+   now". The org360 loaders three functions down already do this correctly —
+   try/catch, fault(), a retry that names a real function. This is that same
+   contract, not a new one. The bare `await` went with it: a network-layer
+   throw (offline, DNS, TLS) rejected the whole function and produced no toast
+   at all. */
 async function loadOrgs(){
   const inc=$('showDeleted').checked?'?include_deleted=true':'';
-  const r=await api('/admin/v1/organizations'+inc);
-  if(!r.ok){toast('orgs failed ('+r.status+')');return}
+  let r; try{ r=await api('/admin/v1/organizations'+inc); }catch(e){ r=null; }
+  if(!r||!r.ok){
+    $('orgPager').innerHTML='';
+    $('orgRows').innerHTML=faultRow(6,'Organizations did not load.','loadOrgs()',
+      r?('HTTP '+r.status):'no response from the API');
+    return;
+  }
   ORGS_ALL=await r.json();ORG_OPEN=null;pgReset('orgs');renderOrgs();
 }
 /* /organizations returns the whole list with no offset, so the slice is local.
@@ -3583,7 +3726,7 @@ function renderOrgs(){
       ?`<span class="chip ${o.subscription_status==='active'?'safe':'warn'}">${esc(o.subscription_status)}</span>`
       :'<span class="chip dim">none</span>';
     return `<tr class="rowbtn" onclick="openOrg('${o.id}')">
-      <td data-label="Org"><b>${esc(o.name)}</b><div class="sub" style="font-size:9px;">${sens(o.id,{short:o.id.slice(0,8)+'…'})}</div></td>
+      <td data-label="Org"><button type="button" class="rowlink" onclick="event.stopPropagation();openOrg('${o.id}')">${esc(o.name)}</button><div class="sub" style="font-size:9px;">${sens(o.id,{short:o.id.slice(0,8)+'…'})}</div></td>
       <td data-label="Plan" class="mono">${esc(o.plan_tier||'—')}</td>
       <td data-label="Subscription">${sub}</td><td data-label="Access">${access}</td>
       <td data-label="Contact" class="mono" style="font-size:11px;">${esc(o.contact_email||'—')}</td>
@@ -3591,32 +3734,12 @@ function renderOrgs(){
     </tr>`;
   }).join('');
 }
-async function toggleOrg(id,tr){
-  const old=document.querySelector('tr.drawer');if(old)old.remove();
-  if(ORG_OPEN===id){ORG_OPEN=null;return}
-  ORG_OPEN=id;
-  const r=await api('/admin/v1/organizations/'+id);
-  if(!r.ok){toast('detail failed ('+r.status+')');return}
-  const d=await r.json();
-  const row=document.createElement('tr');row.className='drawer';
-  const planAction=can('superadmin')?`<button class="btn sm" onclick="orgPlan('${d.id}','${esc(d.plan_tier||'premium')}');event.stopPropagation()">Set plan</button>`:'';
-  const actions=!can('operator')?'<span class="sub mono" style="font-size:10px;">operator role required for actions</span>'
-    :d.suspended
-      ?`<button class="btn safe sm" onclick="orgEnable('${d.id}');event.stopPropagation()">Lift suspension</button>
-         <span class="sub mono" style="font-size:10px;margin-left:10px;">reason: ${esc(d.suspended_reason||'—')}</span>`
-      :`<button class="btn danger sm" onclick="orgSuspend('${d.id}');event.stopPropagation()">Suspend org</button>`;
-  row.innerHTML=`<td colspan="6">
-    <div class="dgrid">
-      <div class="dcell"><div class="dl">users</div><div class="dv">${num(d.user_count)}</div></div>
-      <div class="dcell"><div class="dl">api keys</div><div class="dv">${num(d.api_key_count)}</div></div>
-      <div class="dcell"><div class="dl">ledger rows</div><div class="dv">${num(d.total_logs)}</div></div>
-      <div class="dcell"><div class="dl">breaches</div><div class="dv">${num(d.breaches)}</div></div>
-      <div class="dcell"><div class="dl">monthly quota</div><div class="dv">${d.monthly_log_quota==null?'∞':num(d.monthly_log_quota)}</div></div>
-    </div>
-    <div style="padding:2px 2px 8px;display:flex;gap:8px;align-items:center;">${actions}${planAction}</div>
-  </td>`;
-  tr.after(row);
-}
+/* `toggleOrg` lived here: the superseded inline-drawer detail view, 26 lines
+   building a tr.drawer of five .dcells plus suspend / lift / set-plan. It had
+   ZERO call sites — renderOrgs routes to openOrg (the org360 drill-down),
+   which shows the same five numbers and more. Dead since org360 landed, and
+   it carried its own unreachable toast-only failure path. Removed rather than
+   kept as a second, divergent answer to "what does this org look like". */
 async function orgSuspend(id){
   openModal({eyebrow:'org action', title:'Suspend organization',
     bodyHTML:`<div class="sub" style="margin-bottom:12px;">A staff access-hold, independent of Stripe. The reason is recorded in the audit trail.</div><label class="flabel" style="margin-top:0;" for="mReason">reason (optional)</label><textarea id="mReason" class="cin" style="min-height:72px;" placeholder="e.g. fraud review"></textarea>`,
@@ -3675,36 +3798,71 @@ function renderO3Header(d){
     acts += `<button class="btn sm" onclick="orgIp('${d.id}')">IP allow-list</button>`;
   }
   if(can('superadmin')){
-    acts += `<button class="btn sm" onclick="orgPlan('${d.id}','${esc(d.plan_tier||'premium')}')">Set plan</button>`;
-    if(!d.deleted) acts += `<button class="btn danger sm" onclick="orgOffboard('${d.id}','${esc(d.name)}')">Offboard</button>`;
+    acts += `<button class="btn sm" onclick="orgPlan('${d.id}','${jsq(d.plan_tier||'premium')}')">Set plan</button>`;
+    /* jsq, not esc: a tenant called "O'Brien Health" turned this handler into a
+       SyntaxError and the Offboard button simply stopped working — verified in
+       Chrome. esc() is right for the text between the tags, wrong for a value
+       being parsed as JS after the attribute parser has already decoded it. */
+    if(!d.deleted) acts += `<button class="btn danger sm" onclick="orgOffboard('${d.id}','${jsq(d.name)}')">Offboard</button>`;
   }
   $('o3Actions').innerHTML=acts;
 
   const usage=d.usage||[];
   const logs=usage.map(p=>p.logs), breaches=usage.map(p=>p.breaches), days=usage.map(p=>p.day);
   const totLogs=logs.reduce((a,b)=>a+b,0), totBr=breaches.reduce((a,b)=>a+b,0);
+  /* A1's rule (register #65), applied to the tenant page. The saturated face is
+     the mark of the ONE card that answers "is something wrong right now", and
+     A1's own test for which card that is — the only one both VOLATILE and
+     CONSEQUENTIAL — picks `Breaches · Nd` here. Ledger height is volatile but
+     only ever climbs; Breaches · all time is consequential but barely moves;
+     Interactions and Users · keys are neither. It also lands on .k-orange,
+     the same hue the platform Overview gives Policy breaches, so the two pages
+     agree about what a breach looks like.
+     The other four go .quiet: hue in the surface, accent bar at full
+     saturation, glyph in the deep stop, beam untouched (#64). They give up the
+     fill and nothing else. */
+  const win=usage.length?(' · '+usage.length+'d'):'';
   $('o3Kpis').innerHTML=
-    '<div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Interactions over the window" data-tip="Committed interactions for this org over the window, from its daily usage rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Interactions · '+usage.length+'d</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:30px;margin-top:6px;"></div></span></div>'+
-    '<div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches over the window" data-tip="Flagged interactions for this org over the same window and the same rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · '+usage.length+'d</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:30px;margin-top:6px;"></div></span></div>'+
-    '<div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Ledger height" data-tip="How many entries are in the hash chain for this org. The line below is the current chain head." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-ledger"/></svg><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot">'+(d.ledger_head?sens(d.ledger_head,{short:d.ledger_head.slice(0,12)+'…'}):'—')+'</div></span></div>'+
-    '<div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Users and API keys" data-tip="Dashboard logins for this org, then every API key it has ever held. The line below counts only the keys still live." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-apikey"/></svg><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></span></div>'+
-    '<div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches all time" data-tip="Every flagged interaction since signup, against the total committed logs. Unlike the platform Overview these two are counted straight from audit_logs, not the rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></span></div>';
+    '<div class="clay kpi k-blue quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Interactions over the window" data-tip="Committed interactions for this org over the window, from its daily usage rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Interactions'+win+'</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:30px;margin-top:6px;"></div></span></div>'+
+    '<div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches over the window" data-tip="Flagged interactions for this org over the same window and the same rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches'+win+'</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:30px;margin-top:6px;"></div></span></div>'+
+    '<div class="clay kpi k-teal quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Ledger height" data-tip="How many entries are in the hash chain for this org. The line below is the current chain head." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-ledger"/></svg><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot">'+(d.ledger_head?sens(d.ledger_head,{short:d.ledger_head.slice(0,12)+'…'}):'—')+'</div></span></div>'+
+    '<div class="clay kpi k-indigo quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Users and API keys" data-tip="Dashboard logins for this org, then every API key it has ever held. The line below counts only the keys still live." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-apikey"/></svg><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></span></div>'+
+    '<div class="clay kpi k-coral quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches all time" data-tip="Every flagged interaction since signup, against the total committed logs. Unlike the platform Overview these two are counted straight from audit_logs, not the rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></span></div>';
+  /* The eyebrow said "usage · 30 days" while the cards derived their window
+     from usage.length. A tenant whose rollup holds nine days got a panel
+     claiming thirty above two cards saying nine. The heading now reads off the
+     same array the cards do. */
+  $('o3UsageWindow').textContent=usage.length?('usage · '+usage.length+' days'):'usage';
   if(usage.length){
     chart('o3Usage',{type:'area',height:200,labels:days,xFormat:v=>String(v).slice(5),
       colors:[_cssvar('--teal','#1BAF7A'),_cssvar('--danger','#B91C1C')],   /* interactions=teal, breaches=red */
       series:[{name:'interactions',values:logs},{name:'breaches',values:breaches}],
       ariaLabel:'usage over time for '+d.name});
-    chart('o3spInt',{type:'sparkline',height:30,series:[{values:logs,color:_cssvar('--foxink','#1a0900')}]});
-    const bc=(getComputedStyle(document.documentElement).getPropertyValue('--breach-bg')||'').trim()||'#DC2626';
-    chart('o3spBr',{type:'sparkline',height:32,series:[{values:breaches,color:bc}]});
+    /* Both sparks read --spark off their own face, the way loadKpiSparks does.
+       They used to hardcode: o3spInt took --foxink (invisible once its card
+       went quiet) and o3spBr took --breach-bg — red drawn on the orange face,
+       measured at 1.56:1 on the light stop and 1.01:1 on the deep one, i.e.
+       gone across the bottom half of the very card that reports breach
+       velocity. A status hue inside a decorative face is the same mistake the
+       chips made; the face publishes its own ink for exactly this reason. */
+    chart('o3spInt',{type:'sparkline',height:30,series:[{values:logs,color:_spark('o3spInt')}]});
+    chart('o3spBr',{type:'sparkline',height:32,series:[{values:breaches,color:_spark('o3spBr')}]});
   } else {
-    $('o3Usage').innerHTML='<div class="chart-empty">No usage recorded for this tenant yet.</div>';
+    $('o3Usage').innerHTML='<div class="chart-empty">No usage recorded for this tenant yet.'
+      +'<span class="hint">Usage appears here once the tenant\'s SDK ships its first commitment.</span></div>';
   }
-  $('o3VerifyState').innerHTML='<a class="linklike" onclick="orgVerify()">run integrity check →</a>';
+  $('o3VerifyState').innerHTML='<button type="button" class="linklike" onclick="orgVerify()">run integrity check &rarr;</button>';
+}
+/* the ink a series takes inside a KPI face — published by .kpi .face as
+   --spark, overridden by .kpi.quiet to the card's own deep stop. */
+function _spark(hostId){
+  const host=$(hostId), face=host&&host.closest('.face');
+  return (face?getComputedStyle(face).getPropertyValue('--spark'):'').trim()||'#FF6A1A';
 }
 function o3Tab(name){
   O3_TAB=name;
-  document.querySelectorAll('#o3Tabs [data-tab]').forEach(b=>b.classList.toggle('pri',b.dataset.tab===name));
+  document.querySelectorAll('#o3Tabs [data-tab]').forEach(b=>
+    b.setAttribute('aria-pressed',b.dataset.tab===name?'true':'false'));
   $('o3Panel').innerHTML='<div class="sub mono" style="padding:14px;">loading…</div>';
   if(name==='overview') return renderO3Overview();
   if(name==='policy') return renderO3Policy();
@@ -3733,7 +3891,7 @@ function renderO3Overview(){
 }
 function renderO3Policy(){
   const p=O3_DATA.policy;
-  if(!p){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy configured for this tenant yet.</div></div>'; return; }
+  if(!p){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy configured for this tenant yet.<span class="hint">Its SDK is running on the built-in defaults until someone saves one.</span></div></div>'; return; }
   const flag=b=>b?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>';
   const rows=[
     ['PII detection', flag(p.pii_detection)],
@@ -3754,16 +3912,16 @@ async function o3LoadList(kind,render){
   render(await r.json());
 }
 function renderO3Users(rows){
-  if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No dashboard users.</div></div>'; return; }
-  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>SSO</th><th>Status</th><th>Created</th></tr></thead><tbody>'+rows.map(u=>
+  if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No dashboard users.<span class="hint">This tenant uses the SDK only — nobody has been invited to the dashboard.</span></div></div>'; return; }
+  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">MFA</th><th scope="col">SSO</th><th scope="col">Status</th><th scope="col">Created</th></tr></thead><tbody>'+rows.map(u=>
     '<tr><td data-label="Email"><b>'+esc(u.email)+'</b></td><td data-label="Role"><span class="tag">'+esc(u.role)+'</span></td><td data-label="MFA">'+(u.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>')+'</td><td data-label="SSO" class="mono" style="font-size:11px;">'+(u.google_linked?'google':'—')+'</td><td data-label="Status">'+(u.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>')+'</td><td data-label="Created" class="mono" style="font-size:11px;">'+fmtDay(u.created_at)+'</td></tr>'
   ).join('')+'</tbody></table></div>';
 }
 function renderO3Keys(rows){
-  if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No API keys.</div></div>'; return; }
+  if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No API keys.<span class="hint">Nothing can reach the ingest endpoint for this tenant until someone mints one.</span></div></div>'; return; }
   const act=can('operator');
-  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last used</th><th>Created</th><th>Expires</th>'+(act?'<th style="text-align:right;">Action</th>':'')+'</tr></thead><tbody>'+rows.map(k=>
-    `<tr><td data-label="Name"><b>${esc(k.name)}</b></td><td data-label="Prefix" class="mono" style="font-size:11px;">${esc(k.key_prefix)}</td><td data-label="Status">${k.status==='active'?'<span class="chip safe">active</span>':'<span class="chip bad">'+esc(k.status)+'</span>'}</td><td data-label="Last used" class="mono" style="font-size:11px;">${k.last_used_at?fmtTime(k.last_used_at):'never'}</td><td data-label="Created" class="mono" style="font-size:11px;">${fmtDay(k.created_at)}</td><td data-label="Expires" class="mono" style="font-size:11px;">${k.expires_at?fmtDay(k.expires_at):'—'}</td>${act?('<td data-label="Action" style="text-align:right;">'+(k.status==='active'?`<button class="btn danger sm" onclick="keyRevoke('${O3_ID}','${k.id}','${esc(k.name)}')">Revoke</button>`:'')+'</td>'):''}</tr>`
+  $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th scope="col">Name</th><th scope="col">Prefix</th><th scope="col">Status</th><th scope="col">Last used</th><th scope="col">Created</th><th scope="col">Expires</th>'+(act?'<th scope="col" style="text-align:right;">Action</th>':'')+'</tr></thead><tbody>'+rows.map(k=>
+    `<tr><td data-label="Name"><b>${esc(k.name)}</b></td><td data-label="Prefix" class="mono" style="font-size:11px;">${esc(k.key_prefix)}</td><td data-label="Status">${k.status==='active'?'<span class="chip safe">active</span>':'<span class="chip bad">'+esc(k.status)+'</span>'}</td><td data-label="Last used" class="mono" style="font-size:11px;">${k.last_used_at?fmtTime(k.last_used_at):'never'}</td><td data-label="Created" class="mono" style="font-size:11px;">${fmtDay(k.created_at)}</td><td data-label="Expires" class="mono" style="font-size:11px;">${k.expires_at?fmtDay(k.expires_at):'—'}</td>${act?('<td data-label="Action" style="text-align:right;">'+(k.status==='active'?`<button class="btn danger sm" onclick="keyRevoke('${O3_ID}','${k.id}','${jsq(k.name)}')">Revoke</button>`:'')+'</td>'):''}</tr>`
   ).join('')+'</tbody></table></div>';
 }
 
@@ -3868,12 +4026,17 @@ async function o3LoadLedger(page){
   let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/logs?limit=50&offset='+O3_LEDGER_OFF+bo); }catch(e){ r=null; }
   if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad">'+fault('The ledger did not load.',(r?'HTTP '+r.status:'no response from the API'),"o3LoadLedger()")+'</div>'; return; }
   const d=await r.json();
-  const head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;"><label class="sub mono" style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:11px;"><input type="checkbox" '+(O3_LEDGER_BREACH?'checked':'')+' onchange="O3_LEDGER_BREACH=this.checked;O3_LEDGER_OFF=0;o3LoadLedger()"> breaches only</label><span class="sub mono" style="font-size:11px;">'+num(d.total)+' rows'+(d.total?(' · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)):'')+'</span></div>';
+  /* the range string that used to sit here ("N rows · 1–50") is what foxPager
+     already prints twelve pixels below, in a different format. One fact, one
+     place; the filter keeps the row to itself. */
+  const head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;"><label class="sub" style="display:flex;gap:7px;align-items:center;cursor:pointer;"><input type="checkbox" '+(O3_LEDGER_BREACH?'checked':'')+' onchange="O3_LEDGER_BREACH=this.checked;O3_LEDGER_OFF=0;o3LoadLedger()"> breaches only</label></div>';
   const body=d.items.length
-    ? '<div class="twrap"><table class="tbl cardify"><thead><tr><th style="text-align:right;">Seq</th><th>Type</th><th>Policy</th><th>Agent</th><th style="text-align:right;">Tokens</th><th>Grading</th><th>Hash</th><th>Time</th></tr></thead><tbody>'+d.items.map(x=>
+    ? '<div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col" style="text-align:right;">Seq</th><th scope="col">Type</th><th scope="col">Policy</th><th scope="col">Agent</th><th scope="col" style="text-align:right;">Tokens</th><th scope="col">Grading</th><th scope="col">Hash</th><th scope="col">Time</th></tr></thead><tbody>'+d.items.map(x=>
         '<tr><td data-label="Seq" class="mono" style="text-align:right;">'+num(x.seq)+'</td><td data-label="Type" class="mono">'+esc(x.event_type||'—')+'</td><td data-label="Policy"><span class="chip '+(x.breach?'bad':'dim')+'">'+esc(x.policy_tag||'—')+'</span></td><td data-label="Agent" class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td data-label="Tokens" class="mono" style="text-align:right;">'+num(x.token_count)+'</td><td data-label="Grading">'+(x.breach?'<span class="chip bad">breach</span>':'<span class="chip '+(x.grading_status==='graded'?'safe':x.grading_status==='failed'?'bad':'warn')+'">'+esc(x.grading_status||'—')+'</span>')+'</td><td data-label="Hash" class="mono" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;">'+esc((x.chain_hash||'').slice(0,12))+'…</td><td data-label="Time" class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>'
       ).join('')+'</tbody></table></div>'
-    : '<div class="chart-empty">No ledger rows'+(O3_LEDGER_BREACH?' with breaches':'')+'.</div>';
+    : (O3_LEDGER_BREACH
+        ? '<div class="chart-empty">No breaching entries in this tenant\'s ledger.<span class="hint">Untick “breaches only” to see the full chain.</span></div>'
+        : '<div class="chart-empty">This tenant\'s ledger is empty.<span class="hint">Entries appear as soon as its SDK ships a commitment.</span></div>');
   $('o3Panel').innerHTML='<div class="clay pad">'+head+body+'<div id="o3LedgerPager"></div></div>';
   window.foxPager('o3LedgerPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
     total:d.total,label:'Ledger pages',onPage:o3LoadLedger});
@@ -3883,12 +4046,19 @@ async function o3LoadBreaches(page){
   let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/breaches?limit=50&offset='+O3_BREACH_OFF); }catch(e){ r=null; }
   if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad">'+fault('Breaches did not load.',(r?'HTTP '+r.status:'no response from the API'),"o3LoadBreaches()")+'</div>'; return; }
   const d=await r.json();
-  if(!d.total){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy breaches for this tenant.</div></div>'; return; }
-  const rows=d.items.map(x=>{ const v=x.verdict||{}; const reason=v.reason||v.rationale||(Array.isArray(v.labels)?v.labels.join(', '):'')||'—'; return
-    '<tr><td data-label="Seq" class="mono" style="text-align:right;">'+num(x.seq)+'</td><td data-label="Policy"><span class="chip bad">'+esc(x.policy_tag||'—')+'</span></td><td data-label="Agent" class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td data-label="Verdict" class="sub" style="max-width:360px;">'+esc(String(reason).slice(0,180))+'</td><td data-label="Time" class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>';
+  if(!d.total){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy breaches for this tenant.<span class="hint">Every graded interaction has come back clean.</span></div></div>'; return; }
+  /* ⚠ The `return` below MUST keep its value on the same line. It used to end
+     the line, with the row string starting on the next one — ASI closed the
+     statement, every iteration returned undefined, and .join('') produced "".
+     The tab then rendered "N breaches" over an EMPTY table with a working
+     pager: a confident, silent, wrong answer on the one screen an operator
+     opens mid-incident. `node --check` accepts it; only running it finds it. */
+  const rows=d.items.map(x=>{ const v=x.verdict||{}; const reason=v.reason||v.rationale||(Array.isArray(v.labels)?v.labels.join(', '):'')||'—';
+    return '<tr><td data-label="Seq" class="mono" style="text-align:right;">'+num(x.seq)+'</td><td data-label="Policy"><span class="chip bad">'+esc(x.policy_tag||'—')+'</span></td><td data-label="Agent" class="mono" style="font-size:11px;">'+esc(x.agent||'—')+'</td><td data-label="Verdict" class="sub" style="max-width:360px;">'+esc(String(reason).slice(0,180))+'</td><td data-label="Time" class="mono" style="font-size:10px;white-space:nowrap;">'+fmtTime(x.occurred_at||x.created_at)+'</td></tr>';
   }).join('');
-  const head='<div class="sub mono" style="margin-bottom:12px;font-size:11px;">'+num(d.total)+' breaches · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)+'</div>';
-  $('o3Panel').innerHTML='<div class="clay pad">'+head+'<div class="twrap"><table class="tbl cardify"><thead><tr><th style="text-align:right;">Seq</th><th>Policy</th><th>Agent</th><th>Verdict</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+'<div id="o3BreachPager"></div></div>';
+  /* the hand-rolled "N breaches · 1–50" that used to head this panel is the
+     same fact foxPager prints below it as "1–50 of N". The pager owns it. */
+  $('o3Panel').innerHTML='<div class="clay pad"><div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col" style="text-align:right;">Seq</th><th scope="col">Policy</th><th scope="col">Agent</th><th scope="col">Verdict</th><th scope="col">Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+'<div id="o3BreachPager"></div></div>';
   window.foxPager('o3BreachPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
     total:d.total,label:'Breach pages',onPage:o3LoadBreaches});
 }
@@ -4037,8 +4207,28 @@ async function _doTrial(id){
 function orgIp(id){
   openModal({eyebrow:'org action', title:'Dashboard IP allow-list',
     bodyHTML:`<div class="sub" style="margin-bottom:10px;">One IP or CIDR per line. Empty = no restriction. Applies to dashboard sessions only, never the SDK key.</div><textarea id="mIp" class="cin" style="min-height:120px;font-family:var(--mono);" placeholder="203.0.113.0/24">loading…</textarea>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doIp('${id}')">Save allow-list</button>`,
-    onOpen:async()=>{ let r; try{ r=await api('/admin/v1/organizations/'+id+'/ip-allowlist'); }catch(e){ r=null; } const t=$('mIp'); if(t)t.value=(r&&r.ok)?(((await r.json()).entries)||[]).join('\n'):''; }});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" id="mIpSave" onclick="_doIp('${id}')">Save allow-list</button>`,
+    /* ⚠ A failed GET used to fall through to t.value='' — an empty textarea
+       that reads exactly like "this tenant has no restrictions". Pressing Save
+       then PUT an empty list and DELETED a live allow-list the operator never
+       saw. A load failure must not be able to masquerade as a value, so the
+       field says what happened and Save is held until it is re-opened. */
+    onOpen:async()=>{
+      let r; try{ r=await api('/admin/v1/organizations/'+id+'/ip-allowlist'); }catch(e){ r=null; }
+      const t=$('mIp'), save=$('mIpSave');
+      if(!t)return;
+      if(r&&r.ok){ t.value=(((await r.json()).entries)||[]).join('\n'); return; }
+      t.value=''; t.placeholder='';
+      t.setAttribute('aria-invalid','true');
+      t.disabled=true;
+      if(save)save.disabled=true;
+      const msg=document.createElement('div');
+      msg.className='sub'; msg.style.marginTop='8px';
+      msg.textContent='The current allow-list could not be read'
+        +(r?(' (HTTP '+r.status+')'):' (no response from the API)')
+        +'. Saving is disabled — an empty box here would erase whatever is live.';
+      t.after(msg);
+    }});
 }
 async function _doIp(id){
   const raw=($('mIp')?$('mIp').value:'');
