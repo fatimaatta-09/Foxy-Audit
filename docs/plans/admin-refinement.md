@@ -157,10 +157,24 @@ gate — a two-dot diff on a stale branch shows the previous phase as deletions.
 - **Zero hardcoded hex in component rules.** The five literals live only in token
   definitions. A bare `#` grep can never be 0 — the invariant is *no hex in a
   component rule*.
-- **`.kpi::before` is the accent bar.** An element has one `::before`; do not
-  claim it for something else.
+- **`.kpi::before` no longer exists.** It used to be the accent bar, which made
+  the slot contested; **R1 deleted the bar** (owner decision — a 3px gradient
+  rule across a rounded card reads as generated). The slot is free now, but do
+  not spend it: `test_the_accent_bar_is_gone` and
+  `test_no_pseudo_rebuilds_the_bar_on_a_shared_ancestor` guard its emptiness,
+  including a bar rebuilt on `.clay` without ever naming `.kpi`.
+- **A comment that names a selector is read as that selector.** Guards locate
+  rules with `css.index(".k-<name>")` and `_style_block()` keeps comments, so
+  prose above a definition shadows it. R1 tripped this twice in one pass by
+  writing `.k-indigo` into a token comment 580 lines above `.k-indigo` itself.
 - The file boots to a **login gate** on `file://` — a bare open shows nothing.
   Render through the sampler harness (below).
+- **A static capture cannot show a cross-fade.** The two-icons-in-one-slot
+  defect R1 fixed was invisible at rest and at the end of the transition. To
+  see one: copy the sheet, rewrite the ONE pseudo (`.kpi:hover` → a class),
+  stretch `--dur`, add the class after two `rAF`s, and capture at half the
+  duration with `--virtual-time-budget`. That is a real mid-transition frame,
+  slowed — not a reconstruction.
 
 ---
 

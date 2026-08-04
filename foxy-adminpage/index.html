@@ -83,27 +83,31 @@
   --warn-ink:   #ffc83d;
   --breach-ink: #ff4d4d;
 
-  /* status — as a PILL ON A DECORATIVE HERO FACE. A third job, and the one
-     that was missing. A0 measured every chip fill against every face stop in
-     both themes: 166 of the 180 pairs are under the 3.0:1 that 1.4.11 asks of
-     a component boundary, and the worst — a safe pill on the teal face's light
-     stop, 1.005:1 — is live, on #hStatus, the console's headline "is anything
+  /* status — ON A DECORATIVE HERO FACE. A third job, and the one that was
+     missing. A0 measured every chip fill against every face stop in both
+     themes: 166 of the 180 pairs are under the 3.0:1 that 1.4.11 asks of a
+     component boundary, and the worst — a safe pill on the teal face's light
+     stop, 1.005:1 — was live, on #hStatus, the console's headline "is anything
      wrong" card. (No face class is named in this comment on purpose: the guards
      locate a face rule with css.index(".k-<name>"), so prose sitting above the
      definitions would shadow the rule and the test would go on to read a
      comment instead. Two of them did exactly that until this was reworded.)
      No single fill can fix it: clearing 3.0 against the darkest face stop
      needs L<=0.034 and clearing it against dark --surf needs L>=0.131. Those
-     windows do not touch, so the pill inverts instead — a --foxink plate
-     (4.64:1 against the worst of the eighteen stops) with the hue moved to the
-     ink. Declared HERE, not in either theme block, because the nine faces are
-     declared once and never re-themed; the context is theme-invariant, so its
-     colours must be too. Measured on the plate: safe 11.43 · bad 7.73 ·
-     warn 13.45 · info 9.07 · dim 11.62. */
-  --face-ink-safe: #4ee08f;
-  --face-ink-bad:  #ff7b7b;
-  --face-ink-warn: #ffd166;
-  --face-ink-info: #8fb0ff;
+     windows do not touch.
+
+     ⚠ R1 REMOVED THE FILL ALTOGETHER rather than inverting it — see the margin
+     mark at .kpi .face .chip. A fill you do not draw cannot dissolve. The four
+     status inks that rode on A0's plate went with it: they were measured
+     against a near-black plate and sit at 1.03-1.23:1 against the worst face
+     stop, so they could not survive the plate's removal, and no replacement
+     hue clears the darkest deep stop and the lightest light stop at once. The
+     word carries the status now, at --foxink's 4.64:1 floor.
+     --face-ink-dim stays because .kpi .face .tag still plates. Declared HERE,
+     not in either theme block, because the nine faces are declared once and
+     never re-themed; the context is theme-invariant, so its colours must be
+     too. (Still no face class named in this comment — see above.)
+     Measured on the plate: dim 11.62. */
   --face-ink-dim:  #cfc7c0;
 
   /* ── RADIUS · one ladder, five steps, each with a job ──
@@ -580,23 +584,21 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    The card's body is a decorative gradient with dark ink on it, a drawn glyph
    top-right, and a rim light orbiting behind the whole thing.
 
-   ⚠ THE FACE AND THE BEAM ARE ELEMENTS, NOT PSEUDO-ELEMENTS, AND THAT IS LOAD-
-   BEARING. .kpi::before is the accent bar and an element has exactly one
-   ::before. The file used to defend that by scoping every decorative pseudo
-   .clay:not(.kpi); P1 deleted those along with the skins, which removed the
-   guard and left the thing it guarded. Adding a decorative ::before to .clay,
-   .kpi or any shared ancestor would blank 21 accent bars and nothing would
-   error. Count the bars in a render before believing any change here. */
+   ⚠ THE FACE AND THE BEAM ARE ELEMENTS, NOT PSEUDO-ELEMENTS. That used to be
+   load-bearing because .kpi::before was the accent bar and an element has one
+   ::before; R1 removed the bar, so the slot is free — but the elements stay
+   elements. The beam has to sit BEHIND the face and the face has to hold real
+   children, and a pseudo can do neither.
+
+   ⚠ R1 · NO ACCENT BAR. A 3px gradient rule across the top of every rounded
+   card is on the design skill's own list of generated patterns, and the owner
+   read it that way. It is not "the card's hue stating itself" — the whole face
+   is the card's hue. Do not add it back, and do not re-spend .kpi::before on a
+   decoration; the rule that used to guard that selector now guards its
+   emptiness. */
 .kpi{padding:1.6px;position:relative;overflow:hidden;isolation:isolate;
   display:flex;flex-direction:column;
   transition:transform var(--dur) ease,box-shadow var(--dur) ease}
-/* the accent bar, kept and made permanent. It was a hover reveal over a bare
-   card; over a face it is the card's own deep stop drawn as a top rim, above
-   the face rather than under it — the 145deg gradient puts the LIGHT stop at
-   the top-left, so a --k2 rim there is a visible edge and not a same-hue smear. */
-.kpi::before{content:'';position:absolute;left:0;top:0;right:0;height:3px;z-index:3;
-  background:linear-gradient(90deg,var(--k2,var(--fox3)),var(--k,var(--fox)));
-  transform:scaleX(1);transform-origin:left;transition:transform .25s ease}
 .kpi:hover{transform:translateY(-3px);box-shadow:var(--elev-hi)}
 .kpi .face{
   position:relative;z-index:1;display:flex;flex-direction:column;justify-content:flex-end;
@@ -604,8 +606,10 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   background:linear-gradient(145deg,var(--k,var(--surf2)),var(--k2,var(--surf2)));
   color:var(--foxink);overflow:hidden;
   /* the ink a sparkline drawn INSIDE this face must use. It was read straight
-     off --foxink in JS, which is right for a saturated face and invisible on a
-     quiet one, so the face publishes it and loadKpiSparks reads it per card. */
+     off :root in JS, which cannot know what surface the line lands on — that
+     produced --breach-bg red on the orange face at 1.01:1. The face publishes
+     it instead and loadKpiSparks / _spark read it per card, so a future
+     variant only has to override one property here. */
   --spark:var(--foxink);
 }
 /* Dark ink on a decorative face, never white — white on the light stop of these
@@ -613,41 +617,47 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    opacity .82, which drops seven of the nine faces under 4.5:1 (indigo 3.89).
    At full strength the worst face is 4.64:1 and hierarchy comes from size. */
 .kpi .face .klabel,.kpi .face .kval,.kpi .face .kfoot{color:var(--foxink)}
-.kpi .gly{position:absolute;right:13px;top:11px;width:38px;height:38px;z-index:2;
-  color:var(--foxink);opacity:.9;pointer-events:none;
-  transition:opacity var(--dur) var(--ease-out)}
+.kpi .gly{width:38px;height:38px;display:block;
+  color:var(--foxink);pointer-events:none}
 .kpi .face .klabel{padding-right:44px}
 
-/* ── the (i): swaps in over the glyph ──────────────────────────────────────
-   Hover-first was the owner's call, so it buys two things it does not get free:
+/* ── R1 · THE GLYPH *IS* THE (i) ───────────────────────────────────────────
+   ⚠ THE DEFECT THIS RULE EXISTS TO PREVENT: two icons in one 38px box. The
+   glyph faded out on :hover while a separate (i) faded in, both absolutely
+   positioned at right:13px/top:11px. Cross-fading is not swapping — for the
+   whole 180ms both drew at partial alpha, on top of each other, and the card
+   smeared. No static screenshot shows it; you have to force the state.
 
-   KEYBOARD — a real <button>, always in the tab order. opacity:0 (not
-   visibility/display) keeps it focusable at rest, and :focus-visible reveals it
-   exactly as hover does. It sits BEFORE .gly in the DOM so `+ .gly` can push the
-   glyph aside on focus without needing :has().
+   The fix is structural, not a timing tweak: there is now ONE icon. The card's
+   own glyph lives INSIDE the button and is the thing you point at, so no
+   opacity animation can ever put a second mark in that slot. It also stops the
+   glyph being decoration-because-cards-have-icons — it is the control now.
 
-   TOUCH — there is no hover on a phone, so under (hover:none) the (i) is
-   permanently visible, the glyph steps aside for good, and the target grows to
-   the 44px minimum. The tooltip itself is opened by click there; .datatip's
-   focusin path is :focus-visible-gated and a tap does not satisfy it. */
+   KEYBOARD — still a real <button>, still always in the tab order, and now
+   never hidden at rest, so `opacity:0 to stay focusable` is no longer load-
+   bearing. :focus-visible draws the ring.
+   TOUCH — no hover on a phone, so under (hover:none) the target grows to the
+   44px minimum; nothing has to appear or disappear. The tooltip is opened by
+   click there; .datatip's focusin path is :focus-visible-gated and a tap does
+   not satisfy it. */
 .kpi .kinfo{
-  position:absolute;right:13px;top:11px;width:38px;height:38px;z-index:3;
+  position:absolute;right:11px;top:9px;width:42px;height:42px;z-index:3;
   display:flex;align-items:center;justify-content:center;
-  background:none;border:0;padding:0;margin:0;cursor:pointer;
-  color:var(--foxink);opacity:0;pointer-events:none;
+  background:none;border:0;padding:0;margin:0;cursor:help;
+  color:var(--foxink);opacity:.9;
   border-radius:var(--r-sm);-webkit-tap-highlight-color:transparent;
-  transition:opacity var(--dur) var(--ease-out);
+  transition:opacity var(--dur) var(--ease-out),background var(--dur) var(--ease-out);
 }
-.kpi .kinfo svg{width:24px;height:24px;display:block}
-.kpi:hover .kinfo,.kpi .kinfo:focus-visible{opacity:1;pointer-events:auto}
-.kpi:hover .gly,.kpi .kinfo:focus-visible + .gly{opacity:0}
+/* the affordance the (i) used to carry: on hover the mark brightens and takes a
+   plate of its own ink, so it reads as a control rather than an ornament. */
+.kpi:hover .kinfo,.kpi .kinfo:hover,.kpi .kinfo:focus-visible{
+  opacity:1;background:color-mix(in srgb,var(--foxink) 13%,transparent)}
 .kpi .kinfo:focus-visible{outline:2px solid var(--foxink);outline-offset:-2px}
 @media (hover:none){
-  .kpi .kinfo{opacity:1;pointer-events:auto;width:44px;height:44px;right:10px;top:8px}
-  .kpi .gly{opacity:0}
+  .kpi .kinfo{width:44px;height:44px;right:10px;top:8px;opacity:1}
 }
 @media (prefers-reduced-motion:reduce){
-  .kpi .kinfo,.kpi .gly{transition:none}
+  .kpi .kinfo{transition:none}
 }
 /* the travelling rim light: a conic gradient orbits BEHIND the face, which
    covers all but the 1.6px padding, so the only thing visible is a light
@@ -665,9 +675,9 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 @media(prefers-reduced-motion:reduce){.kpi .beam{display:none}}
 /* the nine faces. Four are the Dashboard's exact values, five are minted on the
    same recipe. Red, amber and green stay out entirely, which is the only reason
-   a breach pill still reads instantly on top of any of them. Each class sets
-   --k / --k2 rather than the gradient, so the accent bar, the spark inside the
-   card and any panel that opts in all read the same two numbers.
+   a breach status still reads instantly on top of any of them. Each class sets
+   --k / --k2 rather than the gradient, so the spark inside the card and any
+   panel that opts in read the same two numbers.
    --foxink measured at the DEEP stop, where the 9.5px label sits:
    azure 5.56 · blue 4.84 · indigo 4.64 · violet 4.86 · magenta 4.90 ·
    rose 4.86 · coral 5.49 · orange 5.29 · teal 6.61. */
@@ -681,74 +691,27 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .k-orange {--k:#ff8b42;--k2:#dd5f18}
 .k-teal   {--k:#4fd6cd;--k2:#20a89e}
 
-/* ════════ A1 · THE QUIET FACE ════════
-   Register #65. The saturated face was on all 21 cards, so nothing was primary
-   and the eye got no path — that, not the palette, is the mechanism behind
-   "looks AI-generated" here. The face is now the mark of the ONE card per page
-   that answers "is something wrong right now": Policy breaches on the overview,
-   Overall on health. Every other card goes quiet.
+/* ════════ R1 · EVERY FACE IS SATURATED, AND THERE IS NO LEAD CARD ════════
+   A1 reserved the saturated face for one card per page and gave every other
+   card `.quiet` — a 13%/7% tint of its own hue over --surf2. A3 and A4 carried
+   that to traffic, revenue and campaigns. The owner has now seen all of it live
+   and reverted it: every KPI card wears the full gradient again, on every page.
+   REVERTED ON PURPOSE — this is not drift, and re-deriving A1's argument from
+   the code will get you back to the version that was rejected.
 
-   ⚠ QUIET IS NOT DEAD, and it is not "the same card with the colour turned
-   off". Held constant on a .quiet card:
-     · the accent bar, at FULL saturation — .kpi::before is untouched, so the
-       card's hue still states itself in 3px of pure --k -> --k2
-     · the beam, untouched. #64 is decided: it orbits on all 21.
-     · the glyph, redrawn in the card's own deep stop instead of near-black
-     · the surface itself is TINTED, never grey — 13% / 7% of the card's own two
-       stops mixed into --surf2, so nine quiet cards are still nine colours
-   What the card gives up is only the FILL, and what it buys is the value:
-   --ink on a near-surface measures 13-16:1 where --foxink on a saturated face
-   measured 4.64:1. The number gets louder as the background gets quieter.
-
-   Hierarchy here had to be built with motion held CONSTANT — the beam runs
-   everywhere by decision, so stillness was not an available lever. What is
-   left is the face, the weight and the placement, and all three are used. */
-.kpi.quiet .face{
-  background:linear-gradient(145deg,
-    color-mix(in srgb,var(--k,var(--surf2)) 13%,var(--surf2)),
-    color-mix(in srgb,var(--k2,var(--surf2)) 7%,var(--surf2)));
-  --spark:var(--k2);
-}
-/* ⚠ MEASURED, and the first attempt failed here. --muted / --muted2 are greys
-   tuned against the FLAT panel; a hue tint lifts this surface out from under
-   them, and the label landed at 3.93-4.10:1 and the foot at 3.54-3.69:1 in the
-   dark theme — both under AA, on text that had been fine one commit earlier.
-   Secondary ink on a coloured surface is tinted from that surface's own hue,
-   never grey, so it is mixed out of --ink and the card's deep stop instead: the
-   ink tracks the theme, the tint tracks the card, and both themes clear 4.5. */
-.kpi.quiet .face .klabel{color:color-mix(in srgb,var(--ink) 76%,var(--k2))}
-.kpi.quiet .face .kval{color:var(--ink)}
-.kpi.quiet .face .kfoot{color:color-mix(in srgb,var(--ink) 64%,var(--k2))}
-.kpi.quiet .gly{color:var(--k2);opacity:.5}
-.kpi.quiet .kinfo{color:var(--muted)}
-.kpi.quiet .kinfo:focus-visible{outline-color:var(--fox)}
-
-/* The lead card. Placement is the third lever, and on health it carries most of
-   the weight: Overall is a roll-up of the three cards beside it — its own
-   tooltip says so — and rendering a total as the peer of its addends made the
-   operator re-derive what they had just been handed. It takes the row above.
-
-   ⚠ The column count is stated EXPLICITLY below and that is load-bearing.
-   .kpis is repeat(auto-fit,minmax(150px,1fr)), which at 1440px resolves to
-   eight tracks — so `grid-column:1/-1` on the first card left the three probes
-   beneath it sitting in tracks 1-3 of 8, squeezed against the left edge with
-   half the row empty. Three stated tracks is what makes row two line up under
-   row one.
-
-   The lead card also lays its face out as a ROW rather than the usual
-   bottom-aligned stack: a full-width card with label/value/foot stacked in the
-   bottom-left corner is 1200px of empty teal, which is emphasis spent on
-   nothing. Across the width it reads as one line — OVERALL · [ok] · database +
-   worker + queue — which is the sentence the operator came for. */
-@media(min-width:760px){
-  .kpis.leadcard{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .kpis.leadcard>.kpi:first-child{grid-column:1/-1}
-  .kpis.leadcard>.kpi:first-child .face{
-    flex-direction:row;align-items:center;flex-wrap:wrap;gap:6px 22px;min-height:88px}
-  .kpis.leadcard>.kpi:first-child .klabel{padding-right:0}
-  .kpis.leadcard>.kpi:first-child .kval{margin-top:0}
-  .kpis.leadcard>.kpi:first-child .kfoot{margin-top:0;margin-left:auto;padding-right:52px}
-}
+   Two things went with it:
+     · `.kpi.quiet` and its five ink overrides. The class is gone from the
+       stylesheet, so any `class="kpi … quiet"` that survives a merge is inert
+       rather than half-styled. `--spark` still exists and still publishes
+       --foxink off the face; only the quiet override it had is gone.
+     · `.kpis.leadcard`, which spanned the health Overall card across the whole
+       row and re-laid its face as a flex ROW. Health is four equal cards now.
+       ⚠ Removing `grid-column:1/-1` is what makes that work: .kpis is
+       repeat(auto-fit,minmax(150px,1fr)), and auto-fit only collapses tracks
+       that are EMPTY. A card spanning 1/-1 filled all eight, so nothing
+       collapsed and the three probes beneath it sat in tracks 1-3 of 8 against
+       the left edge. With no spanner, four cards collapse to four equal
+       tracks by themselves and need no stated column count. */
 .kpi .klabel{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
 .kpi .kval{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:clamp(22px,2.2vw,30px);font-weight:600;margin-top:6px;letter-spacing:-.5px;color:var(--ink);line-height:1.1}
 .kpi .kfoot{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:4px}
@@ -787,31 +750,46 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    grey, i.e. louder than every real status. Measured, rejected, left. */
 .chip.dim{background:var(--line2);color:var(--ink2)}
 
-/* ── the same pill on a DECORATIVE HERO FACE ──────────────────────────────
+/* ── R1 · THE MARGIN MARK: the same status on a DECORATIVE HERO FACE ──────
    Live on the health page: #hStatus sits in a .kval inside .kpi.k-teal .face
    and #hWorker inside .kpi.k-azure, and both are filled by opsChip() on every
-   load. The healthy case — .chip.safe on .k-teal's light stop — measured
-   1.005:1, the single worst pair in the whole matrix, on the one card whose
-   entire job is answering "is anything wrong right now".
-   The pill inverts rather than re-tinting: --foxink is already this file's
-   "dark ink on a decorative face" and clears 4.64:1 against the worst of the
-   eighteen face stops, so ONE plate covers all nine faces in both themes and
-   the hue moves to the ink where it still separates safe from warn from bad.
-   Scoped to .kpi .face so the pill in a table is untouched — the two contexts
-   genuinely need different fills, which is why one fill could never work.
+   load. A pill was never the right object here. A solid status fill dissolved
+   into the gradient (safe on .k-teal's light stop measured 1.005:1), and A0's
+   answer — invert the pill to a near-black --foxink plate — fixed the contrast
+   by putting a second, darker card-shaped thing on top of a card. The owner
+   read the result as a badge stuck to the face.
 
-   A1 narrows the scope again, to :not(.quiet). The plate exists because a
-   solid status fill dissolves on a SATURATED face; a quiet face is a tinted
-   --surf2, which is the flat-panel case the base .chip was measured for and
-   wins on (4.21-11.24:1 there vs the plate's 7.73 floor). Applying the plate
-   to a quiet card would paint a near-black pill on a near-black surface in the
-   dark theme — the same fill-vs-background failure, pointed the other way. */
-.kpi:not(.quiet) .face .chip{background:var(--foxink);box-shadow:none}
-.kpi:not(.quiet) .face .chip.safe{color:var(--face-ink-safe)}
-.kpi:not(.quiet) .face .chip.bad{color:var(--face-ink-bad)}
-.kpi:not(.quiet) .face .chip.warn{color:var(--face-ink-warn)}
-.kpi:not(.quiet) .face .chip.info{color:var(--face-ink-info)}
-.kpi:not(.quiet) .face .chip.dim{color:var(--face-ink-dim)}
+   So the container goes and the mark stays: a 4px rule of --foxink down the
+   left, the word beside it in --foxink, mono, 800, wide-tracked. Nothing to
+   dissolve, because nothing is filled.
+
+   ⚠ WHY THIS IS SAFE WITHOUT A PLATE — measured, not assumed. --foxink is
+   this file's "dark ink on a decorative face" and clears 4.64:1 against the
+   WORST of the eighteen face stops (.k-indigo's --k2 #7570d4); the best is
+   10.93:1 on .k-teal's light stop. That is AA for the word and past 1.4.11's
+   3.0:1 for the rule, on every face, in both themes — the face palette is
+   declared once and never re-themed. The plate was only ever solving the FILL.
+
+   ⚠ AND WHY THE MARK CARRIES NO STATUS HUE. It was the obvious next move and
+   it does not survive measurement: --face-ink-safe/bad/warn/info were tuned
+   against a near-black plate and measure 1.03-1.23:1 against the worst face
+   stop, and no hue bright enough for .k-indigo's deep stop stays visible on
+   .k-teal's light one. The word carries the status instead — the same argument
+   .chip.dim already makes above, and 1.4.1 is satisfied by the word, not the
+   fill. The four inks died with the plate; --face-ink-dim survives for .tag.
+
+   Scoped to .kpi .face, so the pill in a table is untouched: those are two
+   genuinely different contexts, which is why one treatment never worked.
+
+   The 2px radius is the ladder's documented exemption for a 3-4px bar — the
+   same one .eyebrow::before takes, on the same object. --r-xs would curve a
+   4px rule into a wedge. */
+.kpi .face .chip{
+  background:none;box-shadow:none;border-radius:2px;
+  border:0;border-left:4px solid var(--foxink);
+  padding:0 0 0 9px;color:var(--foxink);
+  font-size:11px;font-weight:800;letter-spacing:.14em;
+}
 
 /* ── the mask/reveal control on a DECORATIVE HERO FACE ─────────────────────
    Third context for the same component, and the same failure the chip above
@@ -853,9 +831,13 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    clamp(22px,2.2vw,30px) — so the two cards beside it, which hold raw COUNTS,
    were four times louder than the card holding the DIAGNOSIS. The operator
    read the symptoms before the verdict.
-   Same pill, same measured plate, same status vocabulary; only the size
-   changes, and it changes to match the slot it was always sitting in. */
-.kpi .kval>.chip{font-size:17px;letter-spacing:.4px;padding:5px 13px;border-radius:var(--r-sm)}
+   Same mark, same ink, same status vocabulary; only the size changes, and it
+   changes to match the slot it was always sitting in. The rule beside it grows
+   with the word — 4px against 11px of label, 5px against 17px of verdict.
+   ⚠ This sits AFTER .kpi .face .chip at equal specificity, so it must only ADD
+   to the margin mark. The padding and border-radius it used to carry were the
+   pill's, and re-declaring either here silently rebuilds the plate. */
+.kpi .kval>.chip{font-size:17px;padding-left:11px;border-left-width:5px}
 
 /* ── .tag — the same geometry, no status hue ──────────────────────────────
    .chip had five modifiers and no neutral one, so every categorical value
@@ -1717,14 +1699,6 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <path d="M14.2 17.4H9.6a2.2 2.2 0 01-2.2-2.2V9.8"/>
   </g>
 </symbol>
-<symbol id="g-info" viewBox="0 0 24 24">
-  <circle opacity=".2" fill="currentColor" cx="12" cy="12" r="9.4"/>
-  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="9.4"/>
-    <path d="M12 10.9v5.6"/>
-    <path d="M12 7.6h.01"/>
-  </g>
-</symbol>
 <symbol id="g-apikey" viewBox="0 0 24 24">
   <circle opacity=".2" fill="currentColor" cx="8.2" cy="8.2" r="5"/>
   <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1937,11 +1911,11 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div id="ovTrend" style="min-height:220px;"></div>
       </div>
       <div class="grid kpis">
-        <div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Organizations" data-tip="Tenant workspaces that have not been offboarded — soft-deleted orgs are excluded. The line below splits the same count into active and suspended." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-orgs"/></svg><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></span></div>
-        <div class="clay kpi k-blue quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer users" data-tip="Every customer dashboard login on the platform. Unlike the org count this is not filtered by offboarding, so users of offboarded orgs are still in here." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-users"/></svg><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></span></div>
-        <div class="clay kpi k-indigo quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Audited interactions" data-tip="Interactions the SDK committed to the ledger, summed from the daily usage rollup rather than counted row by row." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></span></div>
-        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Policy breaches" data-tip="Committed interactions flagged as a breach, all-time and across every org. Same daily rollup as the count above." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></span></div>
-        <div class="clay kpi k-rose quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Platform staff" data-tip="Accounts that can sign in to this console, at any of the three platform roles. Disabled staff are still counted." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-staff"/></svg><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Organizations" data-tip="Tenant workspaces that have not been offboarded — soft-deleted orgs are excluded. The line below splits the same count into active and suspended." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-orgs"/></svg></button><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer users" data-tip="Every customer dashboard login on the platform. Unlike the org count this is not filtered by offboarding, so users of offboarded orgs are still in here." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-users"/></svg></button><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></span></div>
+        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Audited interactions" data-tip="Interactions the SDK committed to the ledger, summed from the daily usage rollup rather than counted row by row." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-audited"/></svg></button><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Policy breaches" data-tip="Committed interactions flagged as a breach, all-time and across every org. Same daily rollup as the count above." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-risk"/></svg></button><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-rose"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Platform staff" data-tip="Accounts that can sign in to this console, at any of the three platform roles. Disabled staff are still counted." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-staff"/></svg></button><div class="klabel">Platform staff</div><div class="kval" id="kStaff">—</div><div class="kfoot">viewer · operator · superadmin</div></span></div>
       </div>
 
       <!-- Bento order is priority order, and it is read that way three times:
@@ -1994,7 +1968,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            all four in one pass — see .segmented.opsnav in the stylesheet for why
            the obvious fix (just move it to .segmented) would NOT have worked. -->
       <nav class="segmented opsnav" aria-label="Operations" style="margin-bottom:18px;"><button type="button" class="segbtn" aria-current="page" onclick="goOps('health')">Health</button><button type="button" class="segbtn" onclick="goOps('deadletter')">Dead letters</button><button type="button" class="segbtn" onclick="goOps('anchors')">Anchors</button><button type="button" class="segbtn" onclick="goOps('alerts')">Alerts</button></nav>
-      <div class="grid kpis leadcard"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-health"/></svg><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-worker"/></svg><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-failed"/></svg><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-anchor"/></svg><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
+      <div class="grid kpis"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-health"/></svg></button><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-worker"/></svg></button><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-failed"/></svg></button><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-anchor"/></svg></button><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" aria-live="polite" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" aria-live="polite" class="sub mono">loading…</div></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px;">
         <div class="clay pad k-orange">
@@ -2102,21 +2076,19 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-traffic">
       <h1 class="sr-only">Traffic</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <!-- A3 · the reserved face (#65). This row had all four cards saturated —
-           the pre-A1 state, preserved: nothing was primary and the eye got no
-           path. The card that answers "is something wrong right now" on a
-           traffic page is Errors, so Errors keeps the face and leads the row;
-           the three volume counts go .quiet and keep their hue in the accent
-           bar, the glyph and the tinted surface. Reordering matters as much as
-           the fill: the diagnosis reads before the volume, not after it.
-           The inline minmax(140px) override is gone with it — every other KPI
-           row in the file uses the shared .kpis track, and this one had no
-           reason to be narrower. -->
+      <!-- A3 reordered this row so the diagnosis reads before the volume:
+           Errors leads, then the three counts. That is the half of A3 that
+           survives — R1 reverted the reserved face (every card is saturated
+           again, on every page) but ORDER is not fill, and the eye still gets
+           its path from position. Do not sort these back into volume order.
+           The inline minmax(140px) override is gone too — every other KPI row
+           in the file uses the shared .kpis track, and this one had no reason
+           to be narrower. -->
       <div class="grid kpis">
-        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Errors in the last 7 days" data-tip="Responses with a status of 400 or above in the last 7 days, counted across all three sites together." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-errors"/></svg><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr" role="status" aria-live="polite">—</div></span></div>
-        <div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Marketing traffic" data-tip="Requests to the public sale page in the last 7 days. Client IP and user-agent are HMAC-hashed at capture, so nothing here re-exposes them." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-marketing"/></svg><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></span></div>
-        <div class="clay kpi k-blue quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer app traffic" data-tip="Requests to the customer dashboard and the /v1 API in the last 7 days." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-app"/></svg><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></span></div>
-        <div class="clay kpi k-indigo quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Admin traffic" data-tip="Requests to this console in the last 7 days — staff sessions only." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-admin"/></svg><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></span></div>
+        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Errors in the last 7 days" data-tip="Responses with a status of 400 or above in the last 7 days, counted across all three sites together." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-errors"/></svg></button><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr" role="status" aria-live="polite">—</div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Marketing traffic" data-tip="Requests to the public sale page in the last 7 days. Client IP and user-agent are HMAC-hashed at capture, so nothing here re-exposes them." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-marketing"/></svg></button><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></span></div>
+        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer app traffic" data-tip="Requests to the customer dashboard and the /v1 API in the last 7 days." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-app"/></svg></button><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></span></div>
+        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Admin traffic" data-tip="Requests to this console in the last 7 days — staff sessions only." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-admin"/></svg></button><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></span></div>
       </div>
       <div class="clay pad">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
@@ -2281,9 +2253,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            supporting counts go .quiet — hue in the surface, accent bar at full
            saturation, glyph in the card's deep stop, beam untouched. -->
       <div class="grid kpis">
-        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Invoices Stripe marked paid whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-revenue"/></svg><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
-        <div class="clay kpi k-magenta quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose Stripe subscription status is active right now, offboarded orgs excluded." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-subscription"/></svg><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
-        <div class="clay kpi k-azure quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Trialing orgs" data-tip="Orgs whose trial window has not closed yet. This is independent of subscription status, so an org can be counted here and under active." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-trial"/></svg><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
+        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Invoices Stripe marked paid whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-revenue"/></svg></button><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
+        <div class="clay kpi k-magenta"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose Stripe subscription status is active right now, offboarded orgs excluded." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-subscription"/></svg></button><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Trialing orgs" data-tip="Orgs whose trial window has not closed yet. This is independent of subscription status, so an org can be counted here and under active." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-trial"/></svg></button><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
       </div>
       <div class="split">
         <div class="clay pad k-violet"><div class="panel-h"><div><div class="eyebrow">monthly</div><div class="panel-t">Revenue trend</div></div></div><div id="rvMonthly" style="min-height:200px;"></div></div>
@@ -3924,9 +3896,10 @@ async function loadTopOrgs(){
 async function loadKpiSparks(){
   /* P4 · inside a decorative face the series takes the card's ink, not a
      status hue — the same rule the glyph follows. A1: read that ink off the
-     FACE rather than off :root. It was hard-coded to --foxink, which is right
-     on a saturated face and invisible on a quiet one; .kpi .face now publishes
-     --spark and the quiet variant overrides it to the card's own deep stop. */
+     FACE rather than off :root, which cannot know what the line lands on.
+     .kpi .face publishes --spark; this reads it per card. Keep it that way
+     even though every face is saturated again — the indirection is what
+     stopped a hue being hard-coded in JS in the first place. */
   const cfg=[['interactions','kLogsSpark','kLogsFoot'],
              ['breaches','kBreachesSpark','kBreachesFoot']];
   for(const c of cfg){
@@ -4068,24 +4041,18 @@ function renderO3Header(d){
   const usage=d.usage||[];
   const logs=usage.map(p=>p.logs), breaches=usage.map(p=>p.breaches), days=usage.map(p=>p.day);
   const totLogs=logs.reduce((a,b)=>a+b,0), totBr=breaches.reduce((a,b)=>a+b,0);
-  /* A1's rule (register #65), applied to the tenant page. The saturated face is
-     the mark of the ONE card that answers "is something wrong right now", and
-     A1's own test for which card that is — the only one both VOLATILE and
-     CONSEQUENTIAL — picks `Breaches · Nd` here. Ledger height is volatile but
-     only ever climbs; Breaches · all time is consequential but barely moves;
-     Interactions and Users · keys are neither. It also lands on .k-orange,
-     the same hue the platform Overview gives Policy breaches, so the two pages
-     agree about what a breach looks like.
-     The other four go .quiet: hue in the surface, accent bar at full
-     saturation, glyph in the deep stop, beam untouched (#64). They give up the
-     fill and nothing else. */
+  /* All five faces are saturated — R1 reverted A1's reserved face everywhere,
+     including here. What survives from A1 is the HUE assignment: `Breaches · Nd`
+     lands on .k-orange, the same hue the platform Overview gives Policy
+     breaches, so the two pages agree about what a breach looks like. Keep that
+     pairing; the rest of the row is free. */
   const win=usage.length?(' · '+usage.length+'d'):'';
   $('o3Kpis').innerHTML=
-    '<div class="clay kpi k-blue quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Interactions over the window" data-tip="Committed interactions for this org over the window, from its daily usage rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-audited"/></svg><div class="klabel">Interactions'+win+'</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:30px;margin-top:6px;"></div></span></div>'+
-    '<div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches over the window" data-tip="Flagged interactions for this org over the same window and the same rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches'+win+'</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:30px;margin-top:6px;"></div></span></div>'+
-    '<div class="clay kpi k-teal quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Ledger height" data-tip="How many entries are in the hash chain for this org. The line below is the current chain head." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-ledger"/></svg><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot">'+(d.ledger_head?sens(d.ledger_head,{short:d.ledger_head.slice(0,12)+'…'}):'—')+'</div></span></div>'+
-    '<div class="clay kpi k-indigo quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Users and API keys" data-tip="Dashboard logins for this org, then every API key it has ever held. The line below counts only the keys still live." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-apikey"/></svg><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></span></div>'+
-    '<div class="clay kpi k-coral quiet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches all time" data-tip="Every flagged interaction since signup, against the total committed logs. Unlike the platform Overview these two are counted straight from audit_logs, not the rollup." onclick="kinfoTip(this)"><svg aria-hidden="true" focusable="false"><use href="#g-info"/></svg></button><svg class="gly" aria-hidden="true"><use href="#g-risk"/></svg><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></span></div>';
+    '<div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Interactions over the window" data-tip="Committed interactions for this org over the window, from its daily usage rollup." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-audited"/></svg></button><div class="klabel">Interactions'+win+'</div><div class="kval">'+num(totLogs)+'</div><div id="o3spInt" style="height:30px;margin-top:6px;"></div></span></div>'+
+    '<div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches over the window" data-tip="Flagged interactions for this org over the same window and the same rollup." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-risk"/></svg></button><div class="klabel">Breaches'+win+'</div><div class="kval">'+num(totBr)+'</div><div id="o3spBr" style="height:30px;margin-top:6px;"></div></span></div>'+
+    '<div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Ledger height" data-tip="How many entries are in the hash chain for this org. The line below is the current chain head." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-ledger"/></svg></button><div class="klabel">Ledger height</div><div class="kval">'+num(d.ledger_height)+'</div><div class="kfoot">'+(d.ledger_head?sens(d.ledger_head,{short:d.ledger_head.slice(0,12)+'…'}):'—')+'</div></span></div>'+
+    '<div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Users and API keys" data-tip="Dashboard logins for this org, then every API key it has ever held. The line below counts only the keys still live." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-apikey"/></svg></button><div class="klabel">Users · keys</div><div class="kval">'+num(d.user_count)+' · '+num(d.api_key_count)+'</div><div class="kfoot">'+num(d.active_key_count)+' active keys</div></span></div>'+
+    '<div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Breaches all time" data-tip="Every flagged interaction since signup, against the total committed logs. Unlike the platform Overview these two are counted straight from audit_logs, not the rollup." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-risk"/></svg></button><div class="klabel">Breaches · all time</div><div class="kval">'+num(d.breaches)+'</div><div class="kfoot">of '+num(d.total_logs)+' logs</div></span></div>';
   /* The eyebrow said "usage · 30 days" while the cards derived their window
      from usage.length. A tenant whose rollup holds nine days got a panel
      claiming thirty above two cards saying nine. The heading now reads off the
@@ -4097,12 +4064,12 @@ function renderO3Header(d){
       series:[{name:'interactions',values:logs},{name:'breaches',values:breaches}],
       ariaLabel:'usage over time for '+d.name});
     /* Both sparks read --spark off their own face, the way loadKpiSparks does.
-       They used to hardcode: o3spInt took --foxink (invisible once its card
-       went quiet) and o3spBr took --breach-bg — red drawn on the orange face,
-       measured at 1.56:1 on the light stop and 1.01:1 on the deep one, i.e.
-       gone across the bottom half of the very card that reports breach
-       velocity. A status hue inside a decorative face is the same mistake the
-       chips made; the face publishes its own ink for exactly this reason. */
+       They used to hardcode: o3spInt took --foxink straight off :root, and
+       o3spBr took --breach-bg — red drawn on the orange face, measured at
+       1.56:1 on the light stop and 1.01:1 on the deep one, i.e. gone across
+       the bottom half of the very card that reports breach velocity. A status
+       hue inside a decorative face is the same mistake the chips made; the
+       face publishes its own ink for exactly this reason. */
     chart('o3spInt',{type:'sparkline',height:30,series:[{values:logs,color:_spark('o3spInt')}]});
     chart('o3spBr',{type:'sparkline',height:32,series:[{values:breaches,color:_spark('o3spBr')}]});
   } else {
@@ -4112,7 +4079,7 @@ function renderO3Header(d){
   $('o3VerifyState').innerHTML='<button type="button" class="linklike" onclick="orgVerify()">run integrity check &rarr;</button>';
 }
 /* the ink a series takes inside a KPI face — published by .kpi .face as
-   --spark, overridden by .kpi.quiet to the card's own deep stop. */
+   --spark, read off the face the line is actually drawn into. */
 function _spark(hostId){
   const host=$(hostId), face=host&&host.closest('.face');
   return (face?getComputedStyle(face).getPropertyValue('--spark'):'').trim()||'#FF6A1A';

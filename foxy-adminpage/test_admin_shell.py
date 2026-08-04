@@ -411,13 +411,11 @@ def test_wordmarks_are_painted_at_sign_in() -> None:
 
 
 # ── 7. hero cards (P4) ───────────────────────────────────────────────────────
-# The trap this group exists for: .kpi::before IS the accent bar, and an element
-# has exactly one ::before. The file used to defend that by scoping every
-# decorative pseudo .clay:not(.kpi); P1 deleted those with the skins, removing
-# the guard and leaving the thing it guarded. A decorative ::before added to
-# .clay, .kpi or any shared ancestor blanks all 21 bars and nothing errors.
-# Rendered count at the time of writing (headless, computed ::before height over
-# the four static rows): kpis=16 bars=16 faces=16 glyphs=16 blank=[].
+# This group used to guard .kpi::before, the 3px accent bar. R1 deleted the bar:
+# a gradient rule across the top of every rounded card is on the design skill's
+# own list of generated patterns, and the owner read it that way. The guards
+# below now defend its ABSENCE, which is the harder thing to keep — an accent
+# bar is what a stylesheet grows back on its own.
 
 def _kpi_cards() -> list[str]:
     return _blocks('<div class="clay kpi ')
@@ -436,39 +434,44 @@ def test_every_kpi_has_a_face_a_beam_and_a_glyph() -> None:
         assert c.count('class="gly"') == 1, c[:140]
 
 
-def test_the_accent_bar_rule_survives() -> None:
-    """It is the one ::before on .kpi, it paints, and it is not scaled away."""
-    css = _style_block()
-    assert ".kpi::before{" in css
-    rule = css[css.index(".kpi::before{") :]
-    rule = rule[: rule.index("}")]
-    assert "content:''" in rule, "the accent bar has no content — it paints nothing"
-    assert "height:3px" in rule
-    assert "scaleX(1)" in rule, "the bar is scaled to zero and never revealed"
-
-
-def test_no_other_pseudo_claims_the_kpi_before() -> None:
-    """Any decorative ::before on .clay/.kpi or a shared ancestor blanks the bars."""
-    # Comments first. This file explains its own selectors in prose, so a comment
-    # that says ".kpi::before is the accent bar" was being read AS a rule
-    # claiming .kpi::before — the guard failing on its own documentation.
+def test_the_accent_bar_is_gone() -> None:
+    """R1. The bar was a 3px --k2 -> --k gradient pinned across the top of all 21
+    cards. Nothing about it encoded anything the face was not already saying —
+    the whole card IS the card's hue — so it was decoration applied uniformly,
+    which is the exact shape of the thing this pass was asked to remove."""
+    # Comments stripped: the stylesheet explains the removal in prose and names
+    # the selector while doing it, and a raw grep reads that documentation as
+    # the defect. This file has failed on its own comments twice.
     css = re.sub(r"/\*.*?\*/", "", _style_block(), flags=re.S)
-    for sel in re.findall("([^{}]*)::before[^{}]*{", css):
-        sel = sel.strip().splitlines()[-1].strip()
-        if sel in (".kpi", "*,*", ".eyebrow", ".pagehead", ".tbl.cardify td"):
+    assert ".kpi::before" not in css, "the accent bar is back on the KPI card"
+    assert not re.search(r"\.kpi[^{}]*::(before|after)\s*{", css), (
+        "a decorative pseudo has taken the slot the accent bar vacated"
+    )
+
+
+def test_no_pseudo_rebuilds_the_bar_on_a_shared_ancestor() -> None:
+    """.clay is .kpi's other class. A 3px gradient strip added there paints the
+    same bar on every KPI without ever naming .kpi, which is how this would come
+    back — as a card-level flourish rather than a KPI decision."""
+    css = re.sub(r"/\*.*?\*/", "", _style_block(), flags=re.S)
+    for m in re.finditer(r"([^{}]*)::before[^{}]*\{([^}]*)\}", css):
+        sel = m.group(1).strip().splitlines()[-1].strip()
+        if ".clay" not in sel and ".kpi" not in sel:
             continue
-        assert ".clay" not in sel and ".kpi" not in sel, (
-            f"{sel}::before competes with the KPI accent bar"
+        body = m.group(2)
+        assert not ("gradient" in body and re.search(r"height:\s*[1-6]px", body)), (
+            f"{sel}::before is the accent bar under another name: {body}"
         )
-    assert css.count(".kpi::before{") == 1
 
 
 def test_face_and_beam_are_elements_not_pseudos() -> None:
-    """The reason the bars survive at all."""
+    """Not for the bar's sake any more — the beam has to sit BEHIND the face and
+    the face has to hold real children, and a pseudo can do neither."""
     css = _style_block()
     assert ".kpi .face{" in css
     assert ".kpi .beam{" in css
-    for banned in (".kpi::after{", ".kpi .face::before{", ".kpi .face::after{"):
+    for banned in (".kpi::before{", ".kpi::after{",
+                   ".kpi .face::before{", ".kpi .face::after{"):
         assert banned not in css, f"{banned} is a pseudo where an element was required"
 
 
@@ -523,10 +526,16 @@ def test_the_glyph_sprite_is_complete_and_currentcolor_only() -> None:
     sprite = SRC[SRC.index('<svg width="0" height="0"') :]
     sprite = sprite[: sprite.index("</svg>") + 6]
     ids = set(re.findall('id="(g-[a-z]+)"', sprite))
-    # 18 card glyphs + g-info, which round-2 P3 added for the hero (i) button.
-    assert len(ids) == 19, f"expected 19 glyphs, found {len(ids)}: {sorted(ids)}"
+    # 18 card glyphs. g-info went with R1: the card's own glyph IS the (i) now,
+    # so there is no second icon to draw and no symbol left to draw it from.
+    assert len(ids) == 18, f"expected 18 glyphs, found {len(ids)}: {sorted(ids)}"
+    assert "g-info" not in SRC, (
+        "the (i) icon is back — which means something is drawing two icons in "
+        "the one 38px slot again"
+    )
     used = set(re.findall('href="#(g-[a-z]+)"', SRC))
     assert used <= ids, f"a card points at a glyph that does not exist: {sorted(used - ids)}"
+    assert ids <= used, f"a symbol is drawn by nothing: {sorted(ids - used)}"
     # currentColor is the point: the glyph inherits the card's ink, so it can
     # never wash out against the face it sits on and it re-themes for free.
     for bad in ("#", "rgb(", "hsl("):
@@ -1068,37 +1077,79 @@ def test_every_hero_card_has_an_info_button_with_real_copy() -> None:
 
 
 def test_the_info_button_is_a_real_button_left_in_the_tab_order() -> None:
-    """opacity:0 keeps it focusable. display:none or visibility:hidden would take
-    it out of the tab order and make it pointer-only, which is not reachable."""
+    """It is never hidden now, so nothing has to keep it focusable — but
+    display:none or visibility:hidden would still take it out of the tab order
+    and make it pointer-only, which is not reachable."""
     rule = _css_rule(".kpi .kinfo")
-    assert "opacity:0" in rule, "the (i) is not hidden by opacity"
     assert "display:none" not in rule and "visibility:hidden" not in rule, \
         "the (i) is hidden in a way that removes it from the tab order"
     assert 'tabindex="-1"' not in SRC[SRC.index('class="kinfo"'):][:400]
+    assert not re.search(r"opacity:\s*0[;}]", rule), (
+        "the control is hidden at rest again — the glyph IS the control, so "
+        "hiding it hides the card's own mark"
+    )
 
 
-def test_focus_visible_reveals_the_info_button_exactly_as_hover_does() -> None:
-    css = _style_block()
-    reveal = css[css.index(".kpi:hover .kinfo"):]
-    reveal = reveal[: reveal.index("}") + 1]
-    assert ".kinfo:focus-visible" in reveal, "keyboard focus does not reveal the (i)"
-    assert "opacity:1" in reveal
-    # ...and the glyph steps aside for both, or the two overlap.
-    swap = css[css.index(".kpi:hover .gly"):]
-    swap = swap[: swap.index("}") + 1]
-    assert ".kinfo:focus-visible + .gly" in swap, "the glyph does not move on keyboard focus"
+def test_two_icons_never_share_the_one_slot() -> None:
+    """THE R1 DEFECT, and the only one here you cannot see in a static capture.
+
+    `.kpi:hover .gly{opacity:0}` faded the glyph out while `.kpi:hover .kinfo
+    {opacity:1}` faded an (i) in, both absolutely positioned at the same
+    right/top. For the whole transition both drew at partial alpha on top of
+    each other. The fix is structural: ONE icon, the card's own, inside the
+    button. So the guard is structural too — the glyph must be a CHILD of the
+    control, and nothing may animate it out from under itself."""
+    css = _css()
+    for card in _kpi_cards():
+        m = re.search(r'<button[^>]*class="kinfo".*?</button>', card, re.S)
+        assert m, "a card lost its (i) control"
+        assert 'class="gly"' in m.group(0), (
+            "the glyph is a sibling of the control again, not its child — that "
+            "is the overlap, restored: " + card[:120]
+        )
+        assert card.count('class="gly"') == 1, "a card draws two glyphs"
+    # ...and no rule may fade the one remaining mark away under any state.
+    for bad in re.findall(r"[^{}]*\.gly[^{}]*\{[^}]*\}", css):
+        assert not re.search(r"opacity:\s*0[;}]", bad), (
+            "a rule still fades the glyph out: " + bad.strip()
+        )
+    assert ".gly{opacity:0}" not in css.replace(" ", "")
+
+
+def test_the_control_says_it_is_a_control() -> None:
+    """The glyph used to be decoration and the (i) carried the affordance. Now
+    the glyph is the target, so it has to earn the pointer on its own."""
+    rule = _css_rule(".kpi .kinfo")
+    assert "cursor:help" in rule or "cursor:pointer" in rule, (
+        "the (i) target gives no cursor affordance"
+    )
+    css = _css()
+    hov = css[css.index(".kpi:hover .kinfo"):]
+    hov = hov[: hov.index("}") + 1]
+    assert ".kinfo:focus-visible" in hov, "keyboard focus does not light the control"
+    assert "background:" in hov, (
+        "hover changes nothing visible on the control — the card lifting is not "
+        "an affordance for the thing inside it"
+    )
+    # Anchored on the STANDALONE rule. `.kpi .kinfo:focus-visible` also appears
+    # as the third selector of the hover group two lines above, and _scope()
+    # takes the first match — which measures the wrong block and would pass on
+    # a card that has no ring at all.
+    ring = re.search(r"^\.kpi \.kinfo:focus-visible\{([^}]*)\}", css, re.M)
+    assert ring and "outline:2px solid" in ring.group(1), "the control has no focus ring"
 
 
 def test_the_info_button_has_a_touch_path() -> None:
-    """There is no hover on a phone: the (i) must be permanently visible there,
-    and it must be openable by tap — .datatip's focusin path is :focus-visible
-    gated, which a tap does not satisfy."""
+    """There is no hover on a phone. Nothing has to appear now — the glyph is
+    always there — but the target must reach 44px, and it must be openable by
+    tap: .datatip's focusin path is :focus-visible gated, which a tap does not
+    satisfy."""
     css = _style_block()
     i = css.index("@media (hover:none)")
     block = css[i: css.index("\n}", i)]
-    assert ".kpi .kinfo" in block and "opacity:1" in block, block
-    assert ".kpi .gly" in block and "opacity:0" in block, "the glyph does not step aside on touch"
+    assert ".kpi .kinfo" in block, block
     assert "44px" in block, "the touch target is under the 44px minimum"
+    assert "opacity:0" not in block, "something hides the card's mark on touch"
     assert "onclick=\"kinfoTip(this)\"" in SRC, "the (i) cannot be opened by tap"
 
 
@@ -1257,43 +1308,68 @@ CHIP_KINDS = {"safe": "--safe-bg", "bad": "--breach-bg", "warn": "--warn-bg",
 
 # ── 1 · the measured defect ──────────────────────────────────────────────────
 
-def test_a_chip_on_a_hero_face_does_not_use_the_panel_fill() -> None:
-    """The whole point of A0. Without this scope the pill reverts to a fill that
-    measured 1.005:1 against the face it sits on."""
-    css = _style_block()
-    assert ".kpi:not(.quiet) .face .chip{background:var(--foxink)" in css, (
-        "the on-face chip lost its plate — every status pill on a SATURATED hero "
-        "card goes back to matching the gradient behind it"
+def test_a_status_on_a_hero_face_is_a_margin_mark_not_a_pill() -> None:
+    """A0's problem was real: a solid status fill measured 1.005:1 against the
+    face behind it. A0's answer was to invert the fill to a near-black --foxink
+    plate, which fixed the number by putting a second card-shaped object on top
+    of a card. R1 removes the object instead of re-colouring it — a fill you do
+    not draw cannot dissolve into anything."""
+    rule = _scope(".kpi .face .chip{")
+    assert "background:none" in rule, (
+        "the on-face status has a fill again — that is the pill, and a pill on a "
+        "gradient is the 1.005:1 defect whatever colour it is"
     )
-    for kind in CHIP_KINDS:
-        assert ".kpi:not(.quiet) .face .chip.%s{color:var(--face-ink-%s)}" % (kind, kind) in css, (
-            ".chip.%s has no on-face ink" % kind
+    assert "box-shadow:none" in rule, "the pill's boundary shadow came back"
+    assert re.search(r"border-left:4px solid var\(--foxink\)", rule), (
+        "the margin mark lost its rule: " + rule
+    )
+    assert "color:var(--foxink)" in rule, "the word is not in the face ink"
+    assert re.search(r"font-weight:8\d\d", rule) and "letter-spacing:.14em" in rule, (
+        "the word lost the weight and tracking that let it stand without a "
+        "container: " + rule
+    )
+    # ...and nothing may put the plate back under a narrower selector.
+    css = _css()
+    assert "background:var(--foxink)" not in _scope(".kpi .kval>.chip{"), \
+        "the verdict re-plated itself"
+
+
+def test_the_margin_mark_clears_text_contrast_against_every_face_stop() -> None:
+    """The word is TEXT now, not ink on a plate, so it owes 4.5:1 rather than
+    1.4.11's 3.0:1 — against all eighteen stops, in both themes, because the
+    face palette is declared once and never re-themed. This is the measurement
+    the whole change rests on; A0 added the plate to solve it and the word
+    never needed one. Worst pair at the time of writing: 4.64:1."""
+    ink = _token("--foxink")
+    worst, stop = min((_ratio(ink, s), s) for s in _face_stops())
+    assert worst >= 4.5, (
+        f"the margin mark {ink} is only {worst:.2f}:1 against {stop} — the word "
+        f"is under AA on a face and now has no plate to sit on"
+    )
+
+
+def test_the_face_ink_that_is_left_is_the_one_still_used() -> None:
+    """--face-ink-safe/bad/warn/info existed to carry status hue on A0's plate.
+    Measured against the faces themselves they are 1.03-1.23:1, so they could
+    not follow the mark out of the plate, and they went with it. --face-ink-dim
+    stays only because .kpi .face .tag still plates."""
+    css = _css()
+    for kind in ("safe", "bad", "warn", "info"):
+        assert "--face-ink-" + kind not in css, (
+            f"--face-ink-{kind} is back; if the mark is taking a status hue, "
+            f"measure it against the FACE, not against a plate that is gone"
         )
+    assert "var(--face-ink-dim)" in css, ".kpi .face .tag lost its ink"
 
 
-def test_the_on_face_plate_clears_the_component_bar_against_every_face_stop() -> None:
-    """3.0:1 is WCAG 1.4.11 for a component boundary. Measured, not asserted."""
-    plate = _token("--foxink")
-    worst, stop = min((_ratio(plate, s), s) for s in _face_stops())
-    assert worst >= 3.0, f"the on-face plate {plate} is only {worst:.2f}:1 against {stop}"
-
-
-def test_every_on_face_ink_is_legible_on_the_plate() -> None:
-    plate = _token("--foxink")
-    for kind in CHIP_KINDS:
-        ink = _token("--face-ink-" + kind)
-        r = _ratio(ink, plate)
-        assert r >= 4.5, f"--face-ink-{kind} {ink} is {r:.2f}:1 on {plate}"
-
-
-def test_the_on_face_inks_are_theme_invariant() -> None:
+def test_the_on_face_ink_is_theme_invariant() -> None:
     """The nine faces are declared once and never re-themed, so anything measured
     against them must be too. A light-block override would reopen the defect in
     one theme only."""
     light = _scope('html[data-theme="light"]{')
-    for kind in CHIP_KINDS:
-        assert "--face-ink-" + kind not in light, (
-            f"--face-ink-{kind} is re-themed; the face it lands on is not"
+    for tok in ("--face-ink-dim", "--foxink"):
+        assert tok not in light, (
+            f"{tok} is re-themed; the face it lands on is not"
         )
 
 
@@ -1587,8 +1663,7 @@ def test_no_token_is_declared_and_then_never_used() -> None:
     --s-1/-2/-6/-7/-8, --r-xl and --ease-spring were all at zero call sites while
     their literal values were retyped below."""
     for token in ["--s-%d" % n for n in range(1, 8)] + list(RADIUS_TOKENS) + \
-                 ["--ease-spring", "--dur-slow", "--skel-hi"] + \
-                 ["--face-ink-%s" % k for k in CHIP_KINDS]:
+                 ["--ease-spring", "--dur-slow", "--skel-hi", "--face-ink-dim"]:
         uses = len(re.findall(r"var\(" + re.escape(token) + r"[,)]", SRC))
         assert uses >= 1, f"{token} is declared and never used"
 
@@ -1615,11 +1690,13 @@ def test_no_shadow_is_a_zero_offset_halo() -> None:
     assert not halos, f"zero-offset colored halos: {halos}"
 
 
-# ── 10 · A1 · the overview and health pages ──────────────────────────────────
-# Register #65: the saturated face was on all 21 KPIs, so nothing was primary.
-# A1 reserves it for the ONE card per page that answers "is something wrong
-# right now" and lets the rest go quiet — without touching the beam, which is a
-# settled decision (#64) and orbits on all 21 regardless.
+# ── 10 · R1 · the overview and health pages ──────────────────────────────────
+# A1 reserved the saturated face for one card per page and gave the rest
+# `.quiet`; A3 and A4 carried that to traffic, revenue and campaigns. The owner
+# reviewed all of it live and reverted it: every card is saturated again, on
+# every page. These guards used to assert the reserved face. They assert the
+# reversal now — including that `.quiet` is gone from the stylesheet, because a
+# half-live variant class is worse than either decision.
 
 
 def _css_without_media() -> str:
@@ -1660,59 +1737,97 @@ def _page(page_id: str) -> str:
 A1_PAGES = ("overview", "health")
 
 
-def test_exactly_one_emphatic_face_per_a1_page() -> None:
-    """The whole point. Two emphatic cards on one page is the old problem at
-    lower volume; zero means the page lost its answer."""
-    for page in A1_PAGES:
-        cards = re.findall(r'<div class="clay kpi ([^"]*)"', _page(page))
-        assert cards, "%s has no KPI cards at all" % page
-        loud = [c for c in cards if "quiet" not in c]
-        assert len(loud) == 1, (
-            "%s has %d emphatic faces (%s) — the face is the mark of the one card "
-            "that answers 'is something wrong right now'" % (page, len(loud), loud)
-        )
+def test_every_kpi_card_is_fully_coloured() -> None:
+    """Owner decision, taken after seeing A1 live. Not "most" and not "the
+    important ones" — every card on every page, including the two rows A3 and A4
+    converted afterwards and the five the tenant drill-down emits from JS."""
+    cards = re.findall(r'<div class="clay kpi ([^"]*)"', SRC)
+    assert len(cards) == 21, "expected 21 KPI cards, found %d" % len(cards)
+    dim = [c for c in cards if "quiet" in c]
+    assert not dim, (
+        "%d cards are still carrying the reserved-face modifier: %s" % (len(dim), dim)
+    )
 
 
-def test_the_emphatic_card_is_the_one_that_answers_the_question() -> None:
-    """Which card keeps the face is the decision, not an accident of order."""
-    overview = _page("overview")
-    loud = re.search(r'<div class="clay kpi (k-[a-z]+)"(?![^>]*quiet)', overview)
-    assert loud, "the overview lost its emphatic card"
-    card = overview[overview.index(loud.group(0)):][:900]
-    assert "Policy breaches" in card, (
-        "the overview's emphatic face moved off Policy breaches — the only one of "
-        "its five KPIs that is both volatile and consequential"
+def test_the_quiet_variant_is_gone_from_the_stylesheet() -> None:
+    """The class, not just its call sites. Left in the sheet it would re-style
+    any card that picked the modifier back up in a merge — and this file has one
+    branch per phase all editing the same 486 KB, so that is not hypothetical."""
+    css = _css()
+    assert ".quiet" not in css, (
+        "the quiet variant still has rules: " +
+        ", ".join(sorted(set(re.findall(r"[^{}\n]*\.quiet[^{}]*", css))))[:300]
+    )
+
+
+def test_the_face_still_carries_the_ink_it_publishes() -> None:
+    """The saturated face is the only face now, so everything A1 measured for it
+    has to still hold: dark ink, undimmed label, and one published --spark."""
+    css = _css()
+    rule = _scope(".kpi .face{")
+    assert "linear-gradient(145deg,var(--k" in rule, (
+        "the face stopped painting the card's own two stops: " + rule
+    )
+    assert "--spark:var(--foxink)" in css, "the face stopped publishing --spark"
+    assert css.count("--spark:") == 1, (
+        "there is more than one --spark declaration; there is only one face now"
+    )
+
+
+def test_the_health_hero_does_not_span_the_row() -> None:
+    """A1 gave Overall `grid-column:1/-1` and re-laid its face as a flex ROW, so
+    the page opened with a full-width band holding a chip at one end and text at
+    the other. Owner decision: four equal cards.
+
+    ⚠ And .leadcard went with it rather than being emptied. .kpis is
+    repeat(auto-fit,minmax(150px,1fr)) and auto-fit only collapses tracks that
+    are EMPTY — a card spanning 1/-1 filled all eight, so nothing collapsed and
+    the three probes sat in tracks 1-3 of 8 against the left edge. With no
+    spanner the four cards collapse to four equal tracks unaided, which is why
+    there is no replacement column count to assert."""
+    css = _css()
+    assert "leadcard" not in css, "the lead-card rules are still in the sheet"
+    assert "leadcard" not in _markup(), "a KPI row still asks for the lead card"
+    assert "grid-column:1/-1" not in css, (
+        "something spans a KPI row again; auto-fit will stop collapsing and the "
+        "cards beneath will bunch to the left"
     )
     health = _page("health")
-    hloud = re.search(r'<div class="clay kpi (k-[a-z]+)"(?![^>]*quiet)', health)
-    assert hloud, "health lost its emphatic card"
-    hcard = health[health.index(hloud.group(0)):][:900]
-    assert 'id="hStatus"' in hcard, "health's emphatic face left the Overall card"
-
-
-def test_a_quiet_card_is_quiet_not_dead() -> None:
-    """'Quieter' must not collapse into 'grey'. A quiet card keeps its hue in the
-    surface and keeps the accent bar at full saturation; if either goes, the
-    proposal has become 'turn the colour off', which is a different thing."""
-    css = _css()
-    rule = css[css.index(".kpi.quiet .face{"):]
-    rule = rule[: rule.index("}")]
-    assert "color-mix" in rule and "var(--k" in rule, (
-        "the quiet face stopped deriving its tint from the card's own hue: " + rule
+    row = re.search(r'<div class="grid kpis([^"]*)">', health)
+    assert row and not row.group(1).strip(), (
+        "the health KPI row carries a layout modifier again: %r"
+        % (row.group(1) if row else None)
     )
-    assert ".kpi.quiet::before" not in css, (
-        "something dimmed the accent bar on quiet cards; it is the one element "
-        "that still states the card's hue at full strength"
+    assert len(re.findall(r'<div class="clay kpi ', health)) == 4, (
+        "health is no longer four cards, so 'four equal cards in one row' is "
+        "not what auto-fit will produce"
+    )
+    # the face is a bottom-aligned STACK on every card, with no row exception.
+    assert "flex-direction:column" in _scope(".kpi .face{")
+    assert "flex-direction:row" not in css.split(".kpi .face{")[1][:1200], (
+        "a KPI face lays itself out as a row again"
     )
 
 
-def test_the_beam_is_untouched_by_the_quiet_variant() -> None:
-    """#64 is decided: the beam orbits on all 21 cards. Hierarchy here had to be
-    built with motion held constant, so a quiet card must not buy its quietness
-    by stopping."""
+def test_the_beam_is_untouched_by_the_reversal() -> None:
+    """#64 is decided: the beam orbits on all 21 cards. It was held constant
+    while A1 built hierarchy out of fill, and it stays constant now that R1 has
+    taken the fill back — the two decisions are independent, and the beam is not
+    a lever either of them gets to pull.
+
+    The old form of this guard named the two selectors A1 might have written and
+    passed once A1 was reverted, because it was asserting the absence of a class
+    that no longer exists. It looks for anything that stops a beam now."""
     css = _css()
-    for bad in (".kpi.quiet .beam", ".quiet .beam"):
-        assert bad not in css, "%s — the quiet variant is reaching for the beam" % bad
+    for m in re.finditer(r"([^{}]*\.beam[^{}]*)\{([^}]*)\}", css):
+        sel, body = m.group(1).strip().splitlines()[-1].strip(), m.group(2)
+        if not re.search(r"display:\s*none|animation:\s*none|opacity:\s*0[;}]", body):
+            continue
+        # the one legitimate suppressor, and it is a whole-sheet accessibility
+        # rule rather than a per-card one.
+        assert sel == ".kpi .beam" and "prefers-reduced-motion" in css[:m.start()][-200:], (
+            "%s stops the beam on a subset of cards: %s" % (sel, body)
+        )
     for page in A1_PAGES:
         markup = _page(page)
         cards = re.findall(r'<div class="clay kpi [^"]*"', markup)
@@ -1720,22 +1835,23 @@ def test_the_beam_is_untouched_by_the_quiet_variant() -> None:
         assert beams == len(cards), "%s: %d cards but %d beams" % (page, len(cards), beams)
 
 
-def test_secondary_ink_on_a_quiet_face_is_tinted_not_grey() -> None:
-    """MEASURED. --muted / --muted2 are greys tuned against the flat panel; on
-    the tinted quiet face they fell to 3.93-4.10:1 (label) and 3.54-3.69:1
-    (foot) in the dark theme. Both are under AA. The replacement is mixed out of
-    --ink and the card's own deep stop and clears 7.9:1 in both themes."""
+def test_every_line_on_a_face_takes_the_face_ink() -> None:
+    """The quiet variant is what used to re-ink these three for a near-surface.
+    With one face left there is one answer, and it must cover all three lines —
+    .klabel and .kfoot default to --muted / --muted2, which are greys tuned
+    against the flat panel and measure 1.1-1.3:1 on a saturated face."""
     css = _css()
-    for part in ("klabel", "kfoot"):
-        m = re.search(r"\.kpi\.quiet \.face \.%s\{color:([^}]+)\}" % part, css)
-        assert m, "the quiet face stopped styling .%s and inherited --foxink" % part
-        value = m.group(1)
-        assert "--muted" not in value, (
-            ".%s is back on a flat-panel grey over a tinted surface: %s" % (part, value)
-        )
-        assert "color-mix" in value and "--ink" in value, (
-            ".%s must tint from the surface's own hue: %s" % (part, value)
-        )
+    m = re.search(r"([^{}]*)\{color:var\(--foxink\)\}", css)
+    rule = re.search(
+        r"\.kpi \.face \.klabel,\.kpi \.face \.kval,\.kpi \.face \.kfoot"
+        r"\{color:var\(--foxink\)\}", css)
+    assert rule, (
+        "the three lines on a face no longer take --foxink together; a face line "
+        "left on --muted is a grey on a gradient (found instead: %s)"
+        % (m.group(1).strip()[:80] if m else "nothing")
+    )
+    i = css.index(".kpi .face .klabel{")
+    assert "opacity" not in css[i: css.index("}", i)], "the label is dimmed again"
 
 
 def test_the_verdict_is_not_smaller_than_the_counts_beside_it() -> None:
@@ -1813,11 +1929,13 @@ def test_direction_is_never_carried_by_colour_alone_on_a_face() -> None:
 
 
 def test_a_spark_inside_a_face_takes_that_faces_ink() -> None:
-    """The sparkline colour was read from :root as --foxink — correct on a
-    saturated face, invisible on a quiet one. The face publishes --spark now."""
+    """The sparkline colour was read straight off :root, which cannot know what
+    surface the line lands on — that is how --breach-bg red got drawn on the
+    orange face at 1.01:1. The face publishes --spark and the JS reads it from
+    the face it is drawing into. Keep the indirection even though there is one
+    face again: it is what stopped a hue being hard-coded in JS."""
     css = _css()
-    assert "--spark:var(--foxink)" in css, "the saturated face stopped publishing --spark"
-    assert "--spark:var(--k2)" in css, "the quiet face stopped overriding --spark"
+    assert "--spark:var(--foxink)" in css, "the face stopped publishing --spark"
     js = " ".join(_script_blocks())
     assert "getPropertyValue('--spark')" in js, (
         "loadKpiSparks is no longer reading the ink off the card it draws into"
@@ -2017,35 +2135,35 @@ def test_the_org_list_can_be_opened_without_a_mouse() -> None:
     )
 
 
-def test_exactly_one_emphatic_face_on_the_tenant_page() -> None:
-    """A1's rule (#65) reaches the JS-emitted rows too: five saturated faces is
-    the 'nothing is primary' state A1 was built to end."""
+def test_the_js_emitted_tenant_cards_are_fully_coloured_too() -> None:
+    """The reversal has to reach the rows that are built as strings, or the
+    tenant drill-down is the one page still wearing the rejected variant."""
     body = _js_func("renderO3Header")
     cards = re.findall(r'<div class="clay kpi (k-[a-z]+[^"]*)"', body)
     assert len(cards) == 5, "org360 no longer renders five KPI cards: %s" % cards
-    loud = [c for c in cards if "quiet" not in c]
-    assert len(loud) == 1, (
-        "org360 has %d emphatic faces (%s) — the face marks the ONE card that "
-        "answers 'is something wrong right now'" % (len(loud), loud)
-    )
+    dim = [c for c in cards if "quiet" in c]
+    assert not dim, "org360 still emits reserved-face modifiers: %s" % dim
 
 
-def test_the_emphatic_tenant_card_is_the_volatile_consequential_one() -> None:
-    """Which card keeps the face is the decision. A1's own test — the only KPI
-    that is both volatile and consequential — picks Breaches over the window:
-    ledger height only ever climbs, all-time breaches barely move, interactions
-    and user counts are neither. It also lands on .k-orange, the hue the
-    platform Overview already gives Policy breaches."""
+def test_breaches_wear_the_same_hue_on_both_pages() -> None:
+    """What survives A1 here is the HUE assignment, not the reserved face. The
+    windowed Breaches card lands on .k-orange, which is what the platform
+    Overview gives Policy breaches, so the two pages agree about what a breach
+    looks like. That pairing is the decision; the rest of the row is free."""
     body = _js_func("renderO3Header")
-    m = re.search(r'<div class="clay kpi (k-[a-z]+)"(?![^>]*quiet)', body)
-    assert m, "the tenant page lost its emphatic card"
-    assert m.group(1) == "k-orange", (
-        "the emphatic face moved to %s; breaches are orange on the Overview and "
-        "the two pages have to agree" % m.group(1)
+    card = re.search(r'<div class="clay kpi (k-[a-z]+)"[^>]*>(?:(?!</div>).)*?'
+                     r'Breaches\'\+win', body, re.S)
+    assert card, "the windowed Breaches card is gone from the tenant header"
+    assert card.group(1) == "k-orange", (
+        "windowed Breaches moved to %s; breaches are orange on the Overview and "
+        "the two pages have to agree" % card.group(1)
     )
-    card = body[body.index(m.group(0)):][:1200]
-    assert "Breaches" in card and "all time" not in card, (
-        "the emphatic face is no longer on the windowed Breaches card"
+    overview = _page("overview")
+    m = re.search(r'<div class="clay kpi (k-[a-z]+)"(?:(?!</div>).)*?Policy breaches',
+                  overview, re.S)
+    assert m and m.group(1) == "k-orange", (
+        "the Overview's Policy breaches card is %s, not k-orange"
+        % (m.group(1) if m else "missing")
     )
 
 
@@ -2337,17 +2455,18 @@ def test_the_ops_subnav_current_state_is_not_the_mutation_plate() -> None:
     assert "var(--fox)" in rail, "the current ops page has no state indicator at all"
 
 
-def test_traffic_reserves_its_face_for_the_card_that_answers_the_question() -> None:
-    """#65, applied to the last KPI row that never adopted it. All four traffic
-    cards were saturated — the pre-A1 state preserved, where nothing is primary
-    and the eye gets no path. Errors is the card that answers "is something
-    wrong right now", so Errors keeps the face and leads the row."""
+def test_the_traffic_diagnosis_still_leads_the_row() -> None:
+    """A3 did two things to this row: reserved the face for Errors, and put
+    Errors FIRST. R1 reverted the first — every card is saturated again — and
+    kept the second. Order is not fill: the card that answers "is something
+    wrong right now" reads before the three volume counts, and the eye still
+    gets its path from position. Do not sort these back into volume order."""
     cards = _kpi_cards()
     traffic = [c for c in cards if any(k in c for k in ("tErr", "tMkt", "tApp", "tAdm"))]
     assert len(traffic) == 4, "expected 4 traffic KPI cards, found %d" % len(traffic)
-    loud = [c for c in traffic if "quiet" not in c.split(">")[0]]
-    assert len(loud) == 1, "traffic shows %d emphatic cards, not 1" % len(loud)
-    assert 'id="tErr"' in loud[0], "the traffic face is not on Errors"
+    assert not [c for c in traffic if "quiet" in c.split(">")[0]], (
+        "a traffic card is still carrying the reserved-face modifier"
+    )
     order = _a2_page("traffic").split('<div class="clay kpi ')[1:]
     assert 'id="tErr"' in order[0], "the diagnosis no longer leads the row"
 
