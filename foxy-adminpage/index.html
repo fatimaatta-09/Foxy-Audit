@@ -83,10 +83,42 @@
   --warn-ink:   #ffc83d;
   --breach-ink: #ff4d4d;
 
-  --r-xl: clamp(20px,3vw,34px);
-  --r-lg: clamp(16px,2.4vw,26px);
-  --r-md: 16px;
-  --r-sm: 11px;
+  /* status — as a PILL ON A DECORATIVE HERO FACE. A third job, and the one
+     that was missing. A0 measured every chip fill against every face stop in
+     both themes: 166 of the 180 pairs are under the 3.0:1 that 1.4.11 asks of
+     a component boundary, and the worst — a safe pill on the teal face's light
+     stop, 1.005:1 — is live, on #hStatus, the console's headline "is anything
+     wrong" card. (No face class is named in this comment on purpose: the guards
+     locate a face rule with css.index(".k-<name>"), so prose sitting above the
+     definitions would shadow the rule and the test would go on to read a
+     comment instead. Two of them did exactly that until this was reworded.)
+     No single fill can fix it: clearing 3.0 against the darkest face stop
+     needs L<=0.034 and clearing it against dark --surf needs L>=0.131. Those
+     windows do not touch, so the pill inverts instead — a --foxink plate
+     (4.64:1 against the worst of the eighteen stops) with the hue moved to the
+     ink. Declared HERE, not in either theme block, because the nine faces are
+     declared once and never re-themed; the context is theme-invariant, so its
+     colours must be too. Measured on the plate: safe 11.43 · bad 7.73 ·
+     warn 13.45 · info 9.07 · dim 11.62. */
+  --face-ink-safe: #4ee08f;
+  --face-ink-bad:  #ff7b7b;
+  --face-ink-warn: #ffd166;
+  --face-ink-info: #8fb0ff;
+  --face-ink-dim:  #cfc7c0;
+
+  /* ── RADIUS · one ladder, five steps, each with a job ──
+     It was four tokens used 8 times against 12 distinct hardcoded radii
+     (2/5/6/7/8/9/10/11/12/13/14px), with 11px — exactly --r-sm — retyped as a
+     literal three times. The values below are the steps that were already
+     being reached for, named. --r-lg and --r-xl keep their clamps: they were
+     checked and they never converge (minimum separation 4.00px at any
+     viewport), so the fluid pair is not the problem the flat ones were. */
+  --r-xs: 6px;                        /* inline marks: chip, tag, swatch, kbd, chart tooltip */
+  --r-sm: 10px;                       /* things you click: button, input, select, pager, segment */
+  --r-md: 14px;                       /* surfaces nested inside a card: popover, banner, list row, dock key */
+  --r-lg: clamp(16px,2.4vw,26px);     /* the card itself — .clay */
+  --r-xl: clamp(20px,3vw,34px);       /* surfaces that take over the screen — modal, gate, palette */
+  --r-pill: 999px;                    /* fully round — toggle trough */
 
   /* ══════ SOFT-UI ELEVATION ══════
      Two lights, one the inverse of the other: a cool highlight up-left and a
@@ -117,9 +149,27 @@
   --body: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
 
-  /* ── 8-pt spacing scale ── */
-  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
-  --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px;
+  /* ── SPACING · the same eight values, now with jobs and call sites ──
+     A0 measured this: 5 of the 145 padding/margin/gap declarations below used
+     one of these tokens — 3.4% — while 25 distinct raw px values did the work.
+     --s-1, --s-2, --s-6, --s-7 and --s-8 had ZERO uses. A scale that nothing
+     references is a claim about a system, not a system, and that gap is the
+     most legible reason this file reads as generated. The values are unchanged
+     (renumbering them would silently move the three call sites that did exist);
+     what changed is that the shared components below now speak them, and the
+     off-scale strays they used to reach for (6/9/10/11/14px) are snapped. Page
+     rules still hold raw values — A1-A6 convert their own. */
+  --s-1: 4px;   /* inside a control: icon-to-label, chip padding */
+  --s-2: 8px;   /* between siblings in one group: button row, cell padding */
+  --s-3: 12px;  /* group to its own label, and a control's horizontal padding */
+  --s-4: 16px;  /* between groups inside a panel — the default grid gap */
+  --s-5: 24px;  /* between panels, and the page's top */
+  --s-6: 32px;  /* a state with nothing in it, which needs room to read as calm */
+  --s-7: 48px;  /* the page's bottom */
+  /* there was a --s-8 (64px). It had no call site before A0 and, honestly, none
+     after: at this density nothing in the shared layer wants 64px. A step that
+     exists so the scale looks complete is the exact thing that made this block
+     read as a system it was not. Add it back the day something needs it. */
 
   /* ══════ TOKEN CONTRACT — the console's own names, kept alive ══════ */
   /* surfaces: the glass tiers collapse onto the one opaque ramp */
@@ -139,6 +189,10 @@
   --elev-btn:   var(--raise-sm);
   --focus:      0 0 0 3px color-mix(in srgb, var(--fox) 42%, transparent);
   --gate-overlay: rgba(8,5,3,.66);
+  /* the skeleton's travelling highlight. It was a hardcoded white at 14%, which
+     is 1.55:1 on the dark --surf2 and 1.016:1 on the light one — a loading
+     state that did not load on paper. Themed, so both read at the same weight. */
+  --skel-hi:    rgba(255,255,255,.14);
   /* brand roles the console names differently */
   --accent:      var(--fox);
   --accent-ink:  var(--fox2);
@@ -147,7 +201,10 @@
   --fox-hi:      var(--fox2);
   --on-pri:      var(--foxink);
   /* --destructive is a FILL that carries white text (badges, danger buttons),
-     which --breach-bg at #ff4d4d is not — 2.70:1. It keeps its own value. */
+     which --breach-bg at #ff4d4d is not — 3.27:1, short of the 4.5 a word needs.
+     It keeps its own value. (This read 2.70:1; re-measured in A0. The
+     conclusion is unchanged — #ff4d4d cannot carry white either way. The
+     comments in this file get treated as authoritative, so the number matters.) */
   --destructive: #DC2626;
   --danger-hi:   #d93636;   /* the light stop of .btn.danger, which carries white: 4.63:1 */
   --safe-hi:     #6ee9a4;
@@ -198,8 +255,26 @@ html[data-theme="light"]{
   /* --fox stays the brand fill; --fox2 is the one that carries text, so it is
      the one that has to clear the bar on paper. */
   --fox:#f05700; --fox2:#b14000; --fox3:#b14000; --foxdeep:#7c2d12;
+  /* --fox-hi is a FILL — the light stop of the primary gradient — and it was
+     aliased onto --fox2, which this block had already re-derived into an INK
+     (#b14000, a near-black-brown chosen to carry text ON paper). The alias then
+     put --on-pri #1a0900 on #b14000: 3.33:1, below AA, across .btn.pri,
+     .fauxselect-opt.sel, .segbtn[aria-pressed] and the checkbox tick — the
+     console's primary action, in the shipped light theme. Same class of bug as
+     --warn-series: one name doing two jobs. Given its own value here.
+     The band is narrow — dark ink needs L>=0.195, and the fill still has to
+     clear 3.0:1 against paper, which caps it at L<=0.255 — so the light
+     gradient is shallower than the dark one by arithmetic, not by taste.
+     Measured: --on-pri on #db6413 5.40:1, on --fox #f05700 5.60:1; the fill
+     itself 3.16:1 and 3.04:1 against --surf. */
+  --fox-hi:#db6413;
   --safe-bg:#12843c; --safe-tx:#FFFFFF; --breach-bg:#DC2626; --breach-tx:#FFFFFF;
-  --warn-bg:#F59E0B; --warn-tx:#3A2A00; --info-bg:#1d68c9; --info-tx:#FFFFFF;
+  /* #F59E0B was a fill nobody measured AS a fill: 1.74:1 against --bg and
+     2.02:1 against --surf3, so on paper the warn pill had no edge at all and
+     .chip's dark boundary shadow is invisible under amber. Deepened until the
+     pill separates (4.08:1 worst) and flipped to white ink (5.02:1), which is
+     what every other light status fill here already does. */
+  --warn-bg:#B45309; --warn-tx:#FFFFFF; --info-bg:#1d68c9; --info-tx:#FFFFFF;
   --safe-ink:#107435; --warn-ink:#8c5a06; --breach-ink:#c42020;
   /* the light source flips: a near-white highlight and a warm grey shadow */
   --lt: rgba(255,255,255,.95);
@@ -207,12 +282,15 @@ html[data-theme="light"]{
   --bloom: radial-gradient(60% 80% at 100% 0%, rgba(255,122,46,.10), transparent 70%);
   --focus:     0 0 0 3px color-mix(in srgb, var(--fox) 30%, transparent);
   --gate-overlay: rgba(60,28,8,.42);
+  /* a warm dark sweep instead of white-on-white: 1.54:1, matching the dark
+     theme's 1.55:1 so the skeleton reads at one weight in both. */
+  --skel-hi:   rgba(92,80,72,.28);
   --accent-soft: rgba(240,87,0,.14);
   --fox-glow:    rgba(240,87,0,.30);
   --danger-hi:#d93636; --safe-hi:#15803d;   /* both carry white text: 4.63:1 / 5.02:1 */
   /* chip / annbar ink — darkened past --*-ink so the word still clears 4.5:1
      after the tint composites over --bg as well as over --surf:
-     safe 5.22/4.83 · bad 5.39/5.00 · warn 5.64/5.24 · info 6.34/5.86. */
+     safe 5.22/4.83 · bad 5.55/5.15 · warn 5.64/5.24 · info 6.34/5.86. */
   --ok:#0f6a2e; --danger:#ad1c1c; --warnc:#7d5005; --infoc:#1c46a8;
   --ok-soft:rgba(18,132,60,.10); --danger-soft:rgba(220,38,38,.08);
   --warn-soft:rgba(245,158,11,.12); --info-soft:rgba(28,70,168,.10);
@@ -242,7 +320,7 @@ body{
 }
 
 /* focus — vivid orange ring on every keyboard-focused control */
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs)}
 .btn:focus-visible,.cin:focus-visible,.dock-item:focus-visible,.fauxselect-trigger:focus-visible,
 .inbox-row:focus-visible,.voxswitch:focus-within{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -251,7 +329,7 @@ body{
 /* thin, theme-aware scrollbars */
 *{scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
 *::-webkit-scrollbar{width:10px;height:10px}
-*::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb{background:var(--line2);border-radius:var(--r-xs);border:2px solid transparent;background-clip:content-box}
 *::-webkit-scrollbar-thumb:hover{background:var(--muted2)}
 
 /* reusable glass mixin via utility on .clay etc. */
@@ -270,7 +348,7 @@ body{
   position:fixed;top:0;left:0;bottom:0;z-index:300;
 }
 .dock-mark{
-  width:46px;height:46px;border-radius:14px;
+  width:46px;height:46px;border-radius:var(--r-md);
   background:linear-gradient(155deg,var(--fox),var(--foxdeep));
   box-shadow:var(--raise-sm);
   display:flex;align-items:center;justify-content:center;overflow:hidden;
@@ -280,11 +358,11 @@ body{
 .dock-ops{
   font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:1.4px;
   background:var(--accent-soft);color:var(--accent-ink);
-  border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);border-radius:6px;
+  border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);border-radius:var(--r-xs);
   padding:2px 7px;margin-bottom:14px;
 }
 .dock-item{
-  width:66px;height:56px;border-radius:14px;
+  width:66px;height:56px;border-radius:var(--r-md);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
   color:var(--muted);cursor:pointer;position:relative;
   border:1px solid transparent;background:none;font-family:var(--disp);
@@ -309,29 +387,29 @@ body{
 .dock-item.active span{color:var(--fox2)}
 .dock-badge{
   position:absolute;top:4px;right:11px;min-width:16px;height:16px;padding:0 4px;
-  border-radius:8px;background:var(--destructive);color:#fff;font-family:var(--mono);
+  border-radius:var(--r-xs);background:var(--destructive);color:#fff;font-family:var(--mono);
   font-size:9px;font-weight:700;line-height:16px;text-align:center;
   box-shadow:0 0 0 2px rgba(255,255,255,.7), 0 0 0 2px var(--surf);
 }
 html[data-theme="dark"] .dock-badge{box-shadow:0 0 0 2px rgba(0,0,0,.4)}
-.dock-badge::after{content:'';position:absolute;inset:-3px;border-radius:11px;border:2px solid var(--destructive);opacity:.6;animation:pulse 2s ease-out infinite}
+.dock-badge::after{content:'';position:absolute;inset:-3px;border-radius:calc(var(--r-xs) + 3px);border:2px solid var(--destructive);opacity:.6;animation:pulse 2s ease-out infinite}
 @keyframes pulse{0%{transform:scale(1);opacity:.6}70%{transform:scale(1.7);opacity:0}100%{opacity:0}}
 .dock-mark{position:relative}
 .dock-mark .dock-badge{top:-4px;right:-4px}
 .dock-foot{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px}
 .dock-user{
-  width:44px;height:44px;border-radius:13px;background:var(--surf3);
+  width:44px;height:44px;border-radius:var(--r-md);background:var(--surf3);
   border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
   font-weight:700;font-size:14px;color:var(--fox2);
 }
 .dock-out{
-  background:none;border:1px solid var(--line);border-radius:10px;color:var(--muted);
+  background:none;border:1px solid var(--line);border-radius:var(--r-sm);color:var(--muted);
   font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.6px;
   padding:6px 9px;cursor:pointer;transition:color var(--dur),border-color var(--dur),background var(--dur);
 }
 .dock-out:hover{color:var(--destructive);border-color:var(--destructive);background:var(--danger-soft)}
 
-.main{flex:1;margin-left:86px;padding:18px clamp(16px,2.6vw,38px) 56px;min-width:0}
+.main{flex:1;margin-left:86px;padding:var(--s-5) clamp(var(--s-4),2.6vw,38px) var(--s-7);min-width:0}
 
 /* ════════ TOP COMMAND BAR ════════ */
 .topbar{
@@ -368,7 +446,7 @@ html[data-theme="light"] .crumb-dot{color:var(--fox2)}
 @media(max-width:520px){.crumb-sep{display:none}.crumb{gap:6px;letter-spacing:.08em}}
 .topbar-actions{display:flex;align-items:center;gap:8px}
 .topbtn{
-  position:relative;width:38px;height:38px;flex-shrink:0;border-radius:11px;
+  position:relative;width:38px;height:38px;flex-shrink:0;border-radius:var(--r-sm);
   display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
   background:var(--surf2);border:1px solid var(--line);color:var(--ink);
   transition:background var(--dur),border-color var(--dur),transform var(--dur),color var(--dur);
@@ -376,15 +454,15 @@ html[data-theme="light"] .crumb-dot{color:var(--fox2)}
 .topbtn:hover{background:var(--surf3);border-color:var(--line2);transform:translateY(-1px);color:var(--fox2)}
 .topbtn svg{width:18px;height:18px}
 .topbadge{
-  position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;
+  position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:var(--r-xs);
   background:var(--destructive);color:#fff;font-family:var(--mono);font-size:9px;font-weight:700;
   line-height:16px;text-align:center;box-shadow:0 0 0 2px var(--surf);
 }
 .theme-toggle .ic-sun{display:none}
 html[data-theme="dark"] .theme-toggle .ic-sun{display:block}
 html[data-theme="dark"] .theme-toggle .ic-moon{display:none}
-.topuser{display:flex;align-items:center;gap:9px;padding:4px 12px 4px 4px;border-radius:12px;background:var(--surf2);border:1px solid var(--line)}
-.topuser-av{width:30px;height:30px;flex-shrink:0;border-radius:9px;background:var(--fox);color:var(--foxink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;box-shadow:var(--raise-sm)}
+.topuser{display:flex;align-items:center;gap:9px;padding:4px 12px 4px 4px;border-radius:var(--r-md);background:var(--surf2);border:1px solid var(--line)}
+.topuser-av{width:30px;height:30px;flex-shrink:0;border-radius:var(--r-sm);background:var(--fox);color:var(--foxink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;box-shadow:var(--raise-sm)}
 .topuser-meta{display:flex;flex-direction:column;line-height:1.2;min-width:0;max-width:200px}
 .topuser-name{font-size:11.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topuser-role{font-family:var(--mono);font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
@@ -532,7 +610,7 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   display:flex;align-items:center;justify-content:center;
   background:none;border:0;padding:0;margin:0;cursor:pointer;
   color:var(--foxink);opacity:0;pointer-events:none;
-  border-radius:11px;-webkit-tap-highlight-color:transparent;
+  border-radius:var(--r-sm);-webkit-tap-highlight-color:transparent;
   transition:opacity var(--dur) var(--ease-out);
 }
 .kpi .kinfo svg{width:24px;height:24px;display:block}
@@ -590,14 +668,14 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 
    The fill introduces one problem the tint did not have: the PILL EDGE. A solid
    #3ddc84 on .k-teal's light stop is 1.01:1 — the word is perfectly legible but
-   the pill dissolves into the card and reads as loose text. The lift is what
-   separates it, not a border (1.4.11 asks for a visible boundary, not
-   specifically a stroke). Every face is bright in both themes, so one dark
-   shadow works everywhere it is needed and is invisible where it is not. */
+   the pill dissolves into the card and reads as loose text. That was diagnosed
+   correctly here and then answered with a 1px shadow, which is not an answer:
+   the shadow is a fixed black tuned for dark surfaces, and the FILL still
+   matched the face. A0 finished it — see .kpi .face .chip below. */
 .chip{
-  display:inline-flex;align-items:center;gap:5px;
+  display:inline-flex;align-items:center;gap:var(--s-1);
   font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.5px;
-  border:0;border-radius:6px;padding:3px 8px;
+  border:0;border-radius:var(--r-xs);padding:var(--s-1) var(--s-2);
   text-transform:uppercase;white-space:nowrap;line-height:1.5;
   box-shadow:0 1px 2px rgba(0,0,0,.28);
 }
@@ -608,8 +686,49 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 /* Absence, not a status: `never` and `not_applicable` must not shout in a status
    hue. --line2 is the quietest fill that is still a step off every surface it
    lands on (1.54:1 dark / 1.47:1 light vs the panel) and carries --ink2 at
-   6.79:1 / 5.32:1. */
+   6.79:1 / 5.32:1.
+   Those two figures are under the 3.0:1 of 1.4.11 and stay that way ON PURPOSE:
+   a dim chip's fill carries no meaning to lose — the word does, at 6.79/5.32 —
+   and the nearest fill that would clear 3.0 against near-white paper is a dark
+   grey, i.e. louder than every real status. Measured, rejected, left. */
 .chip.dim{background:var(--line2);color:var(--ink2)}
+
+/* ── the same pill on a DECORATIVE HERO FACE ──────────────────────────────
+   Live on the health page: #hStatus sits in a .kval inside .kpi.k-teal .face
+   and #hWorker inside .kpi.k-azure, and both are filled by opsChip() on every
+   load. The healthy case — .chip.safe on .k-teal's light stop — measured
+   1.005:1, the single worst pair in the whole matrix, on the one card whose
+   entire job is answering "is anything wrong right now".
+   The pill inverts rather than re-tinting: --foxink is already this file's
+   "dark ink on a decorative face" and clears 4.64:1 against the worst of the
+   eighteen face stops, so ONE plate covers all nine faces in both themes and
+   the hue moves to the ink where it still separates safe from warn from bad.
+   Scoped to .kpi .face so the pill in a table is untouched — the two contexts
+   genuinely need different fills, which is why one fill could never work. */
+.kpi .face .chip{background:var(--foxink);box-shadow:none}
+.kpi .face .chip.safe{color:var(--face-ink-safe)}
+.kpi .face .chip.bad{color:var(--face-ink-bad)}
+.kpi .face .chip.warn{color:var(--face-ink-warn)}
+.kpi .face .chip.info{color:var(--face-ink-info)}
+.kpi .face .chip.dim{color:var(--face-ink-dim)}
+
+/* ── .tag — the same geometry, no status hue ──────────────────────────────
+   .chip had five modifiers and no neutral one, so every categorical value
+   borrowed a status colour: every superadmin row wore an amber pill for being
+   a superadmin, directly beside a column using amber for a real HTTP warning,
+   and a confidence THRESHOLD wore an info pill. Amber that means "senior staff"
+   in one column and "look at this" in the next teaches staff to ignore amber.
+   Plan tier, role, site, enforcement mode, quota and "you" are labels, not
+   states; they take this. --neutral / --neutral-soft already existed for it. */
+.tag{
+  display:inline-flex;align-items:center;gap:var(--s-1);
+  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.5px;
+  border:0;border-radius:var(--r-xs);padding:var(--s-1) var(--s-2);
+  text-transform:uppercase;white-space:nowrap;line-height:1.5;
+  background:var(--neutral-soft);color:var(--neutral);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--neutral) 26%,transparent);
+}
+.kpi .face .tag{background:var(--foxink);color:var(--face-ink-dim);box-shadow:none}
 
 /* ════════ TABLES ════════ */
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
@@ -620,12 +739,26 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   position:sticky;top:0;z-index:1;
   background:var(--head-bg);
 }
-.tbl td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--ink2)}
+.tbl td{padding:var(--s-2) var(--s-3);border-bottom:1px solid var(--line);vertical-align:middle;color:var(--ink2)}
 .tbl tr:last-child td{border-bottom:none}
 .tbl tbody tr{cursor:default;transition:background var(--dur) ease,box-shadow var(--dur) ease}
 .tbl tbody tr.rowbtn{cursor:pointer}
-.tbl tbody tr:hover{background:var(--surf2);box-shadow:inset 3px 0 0 var(--fox)}
+/* Two hovers, because there are two kinds of row. The orange inset rule is this
+   file's "this is actionable" mark — it is the same 3px inset .inbox-row.pri
+   uses — and it was firing on EVERY row of all 18 tables while only .rowbtn
+   rows actually open anything. A promise kept by a third of the tables trains
+   staff to stop trusting it. Inert rows still light up, so the row you are
+   reading is still tracked; only the affordance is now told the truth. */
+.tbl tbody tr:hover{background:var(--surf2)}
+.tbl tbody tr.rowbtn:hover{box-shadow:inset 3px 0 0 var(--fox)}
 .twrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* .tbl th carries position:sticky, but a sticky header needs a scrollport and
+   .twrap is height:auto — so on 9 of the 10 wraps the header has nothing to
+   stick inside and the rule is inert. This opts a table into a real one; the
+   inline max-height that the sign-in-attempts table already carried is what
+   this replaces. Left opt-in: forcing a viewport cap on 18 tables is a layout
+   decision per page, not a shared-layer one. A1-A6 own that call. */
+.twrap.scrolly{max-height:min(64vh,560px);overflow:auto}
 
 /* ════════ P5 · PAGINATION ════════
    Ported from the Dashboard (foxy-audit-premium.html:996-1012). One component
@@ -638,7 +771,7 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .pager-count{font-family:var(--mono);font-size:10px;color:var(--muted);
   letter-spacing:.04em;white-space:nowrap}
 .pager-nav{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-.pager button{min-width:30px;height:30px;padding:0 8px;border:0;border-radius:9px;
+.pager button{min-width:30px;height:30px;padding:0 8px;border:0;border-radius:var(--r-sm);
   background:var(--bg);box-shadow:var(--raise-sm);color:var(--ink2);cursor:pointer;
   font-family:var(--mono);font-size:10.5px;font-weight:700;
   transition:color .14s,box-shadow .14s}
@@ -664,17 +797,45 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .tbl tbody tr:nth-child(5){animation-delay:.12s}
 .tbl tbody tr:nth-child(6){animation-delay:.15s}
 
-/* ════════ CONTROLS ════════ */
+/* ════════ CONTROLS ════════
+   Four intents — the quiet default, .pri, .ghost, .danger — plus .safe, and one
+   physical story for all of them. Three things were wrong here and all three
+   were invisible in a screenshot:
+
+   1 · THE REST STATE CONTRADICTED THE TOKEN CONTRACT. .btn sat at --clay-press
+       (= --sink-sm) at rest AND at --clay-press on :active, so pressed and
+       unpressed were the same shadow and only a 1px nudge told them apart. The
+       contract at the top of this file says it plainly: "--raise is the default
+       for anything you would pick up; :active swaps raise -> sink". .dock-item
+       and .pager button already obeyed it. The button did not.
+   2 · DISABLED LOST THE CASCADE. `.btn:disabled` and `.btn:hover` are both
+       (0,2,0) and :hover came later in source, while `.btn.pri:hover` at (0,3,0)
+       beat it outright — and :hover still matches on a disabled button. So a
+       disabled Suspend / Replay / Re-anchor lifted off the page and brightened
+       its glow under the cursor, and only opacity said it was dead. Every
+       interactive rule below is now :not(:disabled)-guarded, the way
+       `.pager button:hover:not(:disabled)` always was.
+   3 · DISABLED WAS opacity ALONE. Group opacity fades fill and ink together
+       over the page, so all 16 variants landed under 4.5:1 — light .btn.safe at
+       1.42:1, and light .btn's fill at 1.02:1 against its own panel, i.e. the
+       button vanished. WCAG exempts inactive controls; a staff member who
+       cannot read which action is unavailable is not exempt. Explicit fill and
+       ink instead: 5.02:1 dark, 5.53:1 light.
+
+   There was also a dead duplicate of :hover and :active a few hundred lines
+   down, in the E3 block, silently shadowing the pair that used to live here.
+   One definition now, here, where the component is. */
 .btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  display:inline-flex;align-items:center;justify-content:center;gap:var(--s-1);
   font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.1px;
-  border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 14px;cursor:pointer;
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:var(--s-2) var(--s-3);cursor:pointer;
   background:var(--surf2);color:var(--ink);
-  box-shadow:var(--clay-press);
+  box-shadow:var(--raise-sm);
   transition:background var(--dur) ease,border-color var(--dur) ease,transform var(--dur) ease,box-shadow var(--dur) ease,filter var(--dur) ease;
 }
-.btn:hover{background:var(--surf);border-color:var(--line2);transform:translateY(-1px);box-shadow:var(--elev-btn)}
-.btn:active{transform:translateY(0);box-shadow:none}
+.btn:hover:not(:disabled){background:var(--surf);border-color:var(--line2);transform:translateY(var(--hover-y));box-shadow:var(--elev-btn)}
+.btn:active:not(:disabled){transform:translateY(var(--press-y)) scale(var(--press-scale));box-shadow:var(--sink-sm)}
 .btn .ico{width:14px;height:14px;flex-shrink:0}
 .btn.pri{
   background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);border-color:transparent;
@@ -682,14 +843,47 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 }
 /* Colored buttons set their gradient on :hover too, so the generic `.btn:hover` grey
    background can never win the cascade and turn them grey. */
-.btn.pri:hover{background:linear-gradient(150deg,var(--fox-hi),var(--fox));filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 12px 26px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4)}
+.btn.pri:hover:not(:disabled){background:linear-gradient(150deg,var(--fox-hi),var(--fox));filter:brightness(1.06);transform:translateY(var(--hover-y));box-shadow:0 12px 26px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4)}
 .btn.danger{background:linear-gradient(150deg,var(--danger-hi),var(--destructive));color:#fff;border-color:transparent;box-shadow:0 8px 20px rgba(220,38,38,.4), inset 0 1px 0 rgba(255,255,255,.25)}
-.btn.danger:hover{background:linear-gradient(150deg,var(--danger-hi),var(--destructive));filter:brightness(1.06);transform:translateY(-1px)}
+.btn.danger:hover:not(:disabled){background:linear-gradient(150deg,var(--danger-hi),var(--destructive));filter:brightness(1.06);transform:translateY(var(--hover-y))}
 .btn.safe{background:linear-gradient(150deg,var(--safe-hi),var(--ok));color:var(--safe-tx);border-color:transparent;box-shadow:0 8px 20px rgba(22,163,74,.35), inset 0 1px 0 rgba(255,255,255,.25)}
-.btn.safe:hover{background:linear-gradient(150deg,var(--safe-hi),var(--ok));filter:brightness(1.06);transform:translateY(-1px)}
-.btn.sm{padding:6px 10px;font-size:11px;border-radius:8px}
+.btn.safe:hover:not(:disabled){background:linear-gradient(150deg,var(--safe-hi),var(--ok));filter:brightness(1.06);transform:translateY(var(--hover-y))}
+/* .ghost — the fourth intent, and the one the file kept improvising. A tertiary
+   action inside a panel that already has a .pri: no plate, no depth at rest, so
+   it does not compete, but a real hit area and a real hover, which a bare
+   .linklike span never had. */
+.btn.ghost{background:none;border-color:transparent;box-shadow:none;color:var(--ink2)}
+.btn.ghost:hover:not(:disabled){background:var(--surf2);border-color:var(--line);color:var(--ink);box-shadow:none;transform:translateY(var(--hover-y))}
+.btn.ghost:active:not(:disabled){box-shadow:var(--sink-sm)}
+.btn.sm{padding:var(--s-1) var(--s-2);font-size:11px;border-radius:var(--r-xs)}
 .btn.sm .ico{width:13px;height:13px}
-.btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none;filter:none}
+/* A pointer that is a finger gets the 44px SC 2.5.5 target; a mouse keeps the
+   density this console is read at. Same trick .kpi .kinfo already uses. */
+@media (hover:none){
+  .btn{min-height:44px}
+  .btn.sm{min-height:40px;padding:var(--s-2) var(--s-3)}
+}
+/* Explicit fill and ink, and --sink-sm so the control still has a SHAPE. The
+   first pass here dropped the shadow with the opacity and the button vanished
+   into the panel — same defect, other direction, because in a soft-UI skin form
+   comes from the light and not from a fill step. Sunk-and-inert is also the
+   right reading: this is a slot where an action would be. Ink 5.02:1 dark,
+   5.53:1 light. */
+.btn:disabled,.btn:disabled:hover,.btn:disabled:active{
+  background:var(--bg);color:var(--muted);border-color:var(--line);
+  cursor:not-allowed;transform:none;box-shadow:var(--sink-sm);filter:none;
+}
+/* loading — the state operate-mode components are usually shipped without. The
+   label stays put and readable (a spinner replacing the word loses what the
+   button was going to do); the trailing dot carries the wait. aria-busy is the
+   hook so the state is announced, not only drawn. */
+.btn[aria-busy="true"]{cursor:progress;color:var(--muted);pointer-events:none}
+.btn[aria-busy="true"]::after{
+  content:'';width:9px;height:9px;flex-shrink:0;border-radius:50%;
+  border:1.5px solid currentColor;border-top-color:transparent;
+  animation:btnspin .7s linear infinite;
+}
+@keyframes btnspin{to{transform:rotate(360deg)}}
 
 .cin{
   width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r-sm);
@@ -698,9 +892,15 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 }
 .cin::placeholder{color:var(--muted2)}
 .cin:focus{border-color:var(--fox);box-shadow:var(--focus)}
+/* .flabel is a real <label for> now, not a styled <div>. There were 47 of them
+   and zero `for` attributes in 4,125 lines, so every field in the console —
+   including the staff password on the sign-in gate — announced as "edit, blank"
+   and no label text was clickable. display:block is what a <label> needs to
+   keep the block layout the <div> gave it for free. */
 .flabel{
+  display:block;
   font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:1.2px;
-  text-transform:uppercase;color:var(--muted);margin:12px 0 6px;
+  text-transform:uppercase;color:var(--muted);margin:var(--s-3) 0 var(--s-1);
 }
 
 /* ════════ PASSWORD FIELDS — reveal toggle + strength readout ════════════════
@@ -715,7 +915,7 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   position:absolute;right:2px;top:calc(50% - 2px);transform:translateY(-50%);
   width:42px;height:42px;display:flex;align-items:center;justify-content:center;
   background:none;border:0;padding:0;margin:0;cursor:pointer;color:var(--muted);
-  border-radius:10px;-webkit-tap-highlight-color:transparent;
+  border-radius:var(--r-sm);-webkit-tap-highlight-color:transparent;
 }
 .pw-eye:hover{color:var(--ink)}
 .pw-eye svg{width:20px;height:20px;display:block}
@@ -755,7 +955,7 @@ input[type="checkbox"],input[type="radio"]{
   border:1.5px solid var(--line2);background:var(--bg2);color:var(--fox);
   cursor:pointer;transition:background var(--dur) ease,border-color var(--dur) ease;
 }
-input[type="checkbox"]{border-radius:5px}
+input[type="checkbox"]{border-radius:var(--r-xs)}
 input[type="radio"]{border-radius:50%}
 input[type="checkbox"]:hover,input[type="radio"]:hover{border-color:var(--fox)}
 input[type="checkbox"]:checked,input[type="radio"]:checked{
@@ -773,7 +973,7 @@ input[type="checkbox"]:disabled,input[type="radio"]:disabled{opacity:.45;cursor:
 /* native date / time inputs — the field uses .cin; theme the OS picker trigger to match */
 input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"]{cursor:text}
 input::-webkit-calendar-picker-indicator{
-  cursor:pointer;border-radius:5px;padding:2px;opacity:.7;
+  cursor:pointer;border-radius:var(--r-xs);padding:2px;opacity:.7;
   transition:background var(--dur) ease,opacity var(--dur) ease;
 }
 input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)}
@@ -799,7 +999,7 @@ input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)
 .fauxselect.open .fauxselect-list{display:block}
 .fauxselect-opt{
   padding:8px 12px;font-family:var(--mono);font-size:12px;color:var(--ink);cursor:pointer;
-  border-radius:6px;transition:background var(--dur) ease;
+  border-radius:var(--r-xs);transition:background var(--dur) ease;
 }
 .fauxselect-opt:hover{background:var(--surf2)}
 .fauxselect-opt.sel{background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);font-weight:700}
@@ -808,33 +1008,58 @@ input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)
 .voxswitch{display:flex;align-items:center;gap:12px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:600}
 .voxswitch input{position:absolute;opacity:0;width:0;height:0}
 .voxswitch-track{
-  position:relative;width:46px;height:26px;flex-shrink:0;border-radius:999px;
+  position:relative;width:46px;height:26px;flex-shrink:0;border-radius:var(--r-pill);
   background:var(--surf3);border:1px solid var(--line2);
   transition:background var(--dur) ease,border-color var(--dur) ease;
 }
+/* --ease-spring was defined at the top of the file and referenced nowhere. A
+   knob that overshoots slightly is the one place in an ops console where a
+   spring is the honest curve — the switch is the only control that physically
+   travels — so the token gets its call site rather than being deleted. */
 .voxswitch-knob{
   position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
-  background:#fff;box-shadow:0 1px 3px rgba(60,28,8,.4);transition:transform var(--dur) ease;
+  background:#fff;box-shadow:0 1px 3px rgba(60,28,8,.4);
+  transition:transform var(--dur) var(--ease-spring);
 }
 .voxswitch input:checked + .voxswitch-track{background:linear-gradient(150deg,var(--fox-hi),var(--fox));border-color:transparent;box-shadow:0 4px 12px var(--fox-glow)}
 .voxswitch input:checked + .voxswitch-track .voxswitch-knob{transform:translateX(20px)}
 
 /* ==================== SEGMENTED CONTROL (table density) ==================== */
 .segmented{display:inline-flex;gap:4px;padding:4px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r-sm)}
-.segbtn{font-family:var(--disp);font-weight:600;font-size:12px;color:var(--muted);background:none;border:1px solid transparent;border-radius:7px;padding:7px 16px;min-height:38px;cursor:pointer;transition:background var(--dur) ease,color var(--dur) ease,box-shadow var(--dur) ease}
+.segbtn{font-family:var(--disp);font-weight:600;font-size:12px;color:var(--muted);background:none;border:1px solid transparent;border-radius:var(--r-xs);padding:7px 16px;min-height:38px;cursor:pointer;transition:background var(--dur) ease,color var(--dur) ease,box-shadow var(--dur) ease}
 .segbtn:hover{color:var(--ink)}
 .segbtn[aria-pressed="true"]{background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);box-shadow:var(--clay-press)}
 
 /* ==================== INLINE-SVG CHARTS (chart() helper - no external libs) ==================== */
 .chart-wrap{position:relative;width:100%}
 .chart-wrap svg{display:block;width:100%;height:auto;overflow:visible}
-.chart-tt{position:absolute;left:0;top:0;pointer-events:none;z-index:20;opacity:0;transform:translate(-50%,-125%);transition:opacity .12s ease;background:var(--surf-solid);color:var(--ink);border:1px solid var(--line2);border-radius:8px;box-shadow:var(--clay-sm);padding:6px 9px;font-family:var(--mono);font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chart-tt{position:absolute;left:0;top:0;pointer-events:none;z-index:20;opacity:0;transform:translate(-50%,-125%);transition:opacity .12s ease;background:var(--surf-solid);color:var(--ink);border:1px solid var(--line2);border-radius:var(--r-xs);box-shadow:var(--clay-sm);padding:6px 9px;font-family:var(--mono);font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .chart-tt.on{opacity:1}
 .chart-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .chart-legend .lg{display:inline-flex;align-items:center;gap:6px}
 .chart-legend .sw{width:12px;height:4px;border-radius:2px;flex-shrink:0}
 .chart-legend .sw.dot{width:9px;height:9px;border-radius:50%}
-.chart-empty{display:flex;align-items:center;justify-content:center;min-height:120px;height:100%;color:var(--muted);font-family:var(--mono);font-size:11.5px}
+/* ── EMPTY vs FAULT ────────────────────────────────────────────────────────
+   .chart-empty was rendering both, in the same grey, three lines apart:
+     'No ledger rows.'          — the good news staff came to confirm
+     'Failed to load ledger.'   — an incident
+   On a console whose job is telling those two apart, that is the worst possible
+   collapse, and with `Retry` appearing zero times in the file the only recovery
+   was a full reload that dropped every filter. Two components now. Emptiness
+   stays quiet and says what would put something here; a fault takes the danger
+   tint that already exists, says what failed, and carries the button that fixes
+   it. The mono face goes with it — a sentence to a human is not machine output,
+   which .notif-empty and .cmdk-empty already knew. */
+.chart-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s-1);
+  min-height:120px;height:100%;padding:var(--s-6) var(--s-4);text-align:center;
+  color:var(--muted);font-size:12.5px;line-height:1.5}
+.chart-empty .hint{color:var(--muted2);font-size:11.5px}
+.chart-fault{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s-2);
+  min-height:120px;height:100%;padding:var(--s-6) var(--s-4);text-align:center;
+  background:var(--danger-soft);border-radius:var(--r-md);
+  color:var(--danger);font-size:12.5px;line-height:1.5}
+.chart-fault .what{font-weight:600}
+.chart-fault .why{color:var(--muted);font-family:var(--mono);font-size:10.5px}
 .chart-dpt{cursor:pointer;transition:opacity var(--dur) ease}
 .chart-dpt:hover{opacity:.82}
 .chart-dpt:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -848,14 +1073,18 @@ input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)
 .chart-draw path.carea{opacity:0;animation:fadeIn .6s .4s ease forwards}
 .chart-draw rect.chart-dpt{transform-box:fill-box;transform-origin:bottom;animation:barGrow .55s var(--ease-out) both}
 .chart-draw path.chart-dpt{transform-box:fill-box;transform-origin:center;animation:arcPop .5s ease both}
-/* E2 · skeleton loaders (literal shimmer highlight — it must read on the opaque soft-UI surface) */
-.skel{position:relative;overflow:hidden;border-radius:8px;background:var(--surf2)}
-.skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);animation:shimmer 1.3s infinite}
+/* E2 · skeleton loaders. The highlight is --skel-hi, not a literal white: at 14%
+   white it was 1.016:1 on the light --surf2, so the light theme's loading state
+   did not visibly load. --skel-kpi matches .kpi .face's own min-height, because
+   a 64px placeholder for a 104px card is a 40px jump at the moment data lands. */
+.skel{position:relative;overflow:hidden;border-radius:var(--r-xs);background:var(--surf2)}
+.skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,var(--skel-hi),transparent);animation:shimmer 1.3s infinite}
 @keyframes shimmer{100%{transform:translateX(100%)}}
-.skel-kpi{height:64px}.skel-line{height:12px;margin:7px 0}.skel-chart{height:180px}
-/* E3 · tactile hover/press — token-driven, so depth follows --raise / --sink */
-.btn:hover{background:var(--surf);border-color:var(--line2);transform:translateY(var(--hover-y));box-shadow:var(--elev-btn)}
-.btn:active{transform:translateY(var(--press-y)) scale(var(--press-scale));box-shadow:var(--clay-press)}
+.skel-kpi{height:104px}.skel-line{height:12px;margin:var(--s-2) 0}.skel-chart{height:180px}
+/* E3 · tactile hover/press — token-driven, so depth follows --raise / --sink.
+   .btn's own :hover/:active used to be duplicated here, shadowing the pair in
+   the CONTROLS block; edits made there did nothing. They live with the
+   component now, guarded by :not(:disabled). */
 .dock-item:hover:not(.active){transform:translateY(var(--hover-y))}
 .topbtn:hover{transform:translateY(var(--hover-y))}
 /* E4 · page inner-content stagger (go() sets --i per child) */
@@ -868,9 +1097,14 @@ input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)
 /* ════════ MODAL (reusable — replaces prompt()/confirm()) ════════ */
 .modal-overlay{position:fixed;inset:0;z-index:9600;display:none;align-items:center;justify-content:center;padding:20px;background:var(--gate-overlay);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .modal-overlay.on{display:flex}
-.modal-card{width:460px;max-width:100%;max-height:86vh;overflow-y:auto;animation:modalIn .18s ease}
+/* --r-xl's job, and the reason it is not deleted: the three surfaces that take
+   over the screen — modal, sign-in gate, command palette — sit one step rounder
+   than the cards behind them, so the ladder's top step encodes "this is above
+   everything" instead of being declared and never referenced. */
+.modal-card,.gatecard{border-radius:var(--r-xl)}
+.modal-card{width:460px;max-width:100%;max-height:86vh;overflow-y:auto;animation:modalIn var(--dur) ease}
 @keyframes modalIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
-.modal-x{background:var(--surf2);border:1px solid var(--line);border-radius:9px;width:32px;height:32px;min-width:32px;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+.modal-x{background:var(--surf2);border:1px solid var(--line);border-radius:var(--r-sm);width:32px;height:32px;min-width:32px;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
 .modal-x:hover{color:var(--fox2);border-color:var(--line2)}
 @media(prefers-reduced-motion:reduce){.modal-card{animation:none}}
 /* ════════ ANNOUNCEMENT BANNER + DENSITY (Phase 3) ════════ */
@@ -886,7 +1120,7 @@ html[data-density="compact"] .kpi .face{padding:11px 13px;min-height:86px}
 html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
 /* ════════ INBOX LIST ROWS ════════ */
-.inbox-row{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:10px 11px;cursor:pointer;color:var(--ink);font-family:var(--disp);border-radius:8px;transition:background var(--dur) ease}
+.inbox-row{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:10px 11px;cursor:pointer;color:var(--ink);font-family:var(--disp);border-radius:var(--r-sm);transition:background var(--dur) ease}
 .inbox-row:hover{background:var(--surf2)}
 .inbox-row.on{background:linear-gradient(150deg,var(--fox),var(--fox3));color:var(--foxink)}
 .inbox-row.on .sub,.inbox-row.on .mono{color:var(--foxink) !important;opacity:.85}
@@ -904,8 +1138,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .fun{display:flex;flex-direction:column;gap:9px;margin-top:6px}
 .funrow{display:grid;grid-template-columns:84px 1fr 40px;align-items:center;gap:10px}
 .funlab{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
-.funbar{height:16px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);overflow:hidden;position:relative}
-.funbar i{display:block;height:100%;background:linear-gradient(90deg,var(--fox),var(--fox3));min-width:3px;border-radius:8px;position:relative;overflow:hidden;box-shadow:0 0 12px var(--fox-glow);animation:grow .7s cubic-bezier(.22,1,.36,1) both}
+.funbar{height:16px;border:1px solid var(--line);border-radius:var(--r-xs);background:var(--surf2);overflow:hidden;position:relative}
+/* the glow carries an offset and a blur like every other shadow in the file; at
+   0 0 12px it was a halo, which is decoration wearing depth's clothes. */
+.funbar i{display:block;height:100%;background:linear-gradient(90deg,var(--fox),var(--fox3));min-width:3px;border-radius:var(--r-xs);position:relative;overflow:hidden;box-shadow:0 2px 10px var(--fox-glow);animation:grow var(--dur-slow) var(--ease-out) both}
 .funbar i::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);transform:translateX(-100%);animation:sheen 2.6s ease-in-out infinite}
 @keyframes grow{from{transform:scaleX(0);transform-origin:left}to{transform:scaleX(1)}}
 @keyframes sheen{0%,60%{transform:translateX(-100%)}100%{transform:translateX(220%)}}
@@ -923,7 +1159,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
   display:flex;align-items:center;gap:10px;
   background:linear-gradient(150deg,rgba(40,26,14,.92),rgba(28,18,10,.92));
   border:1px solid rgba(255,255,255,.12);border-left:3px solid var(--tc,var(--fox));
-  border-radius:12px;box-shadow:var(--clay);
+  border-radius:var(--r-md);box-shadow:var(--clay);
   padding:12px 20px;font-family:var(--mono);font-size:12px;font-weight:600;color:#FFF3E9;
   transform:translate(-50%,80px);opacity:0;
   transition:transform .28s var(--ease-out),opacity .28s;max-width:min(560px,90vw);
@@ -945,7 +1181,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 }
 .gatecard{width:360px;max-width:100%}
 .gate-mark{
-  width:40px;height:40px;border-radius:12px;
+  width:40px;height:40px;border-radius:var(--r-md);
   background:linear-gradient(150deg,var(--fox),var(--foxdeep));
   border:1px solid rgba(255,255,255,.35);box-shadow:0 8px 20px var(--fox-glow), inset 0 1px 0 rgba(255,255,255,.4);
   display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;
@@ -959,7 +1195,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 /* delayed hover/focus tooltip — one shared node (.datatip), auto-flip, reduced-motion aware */
 .datatip{
   position:fixed;z-index:10000;top:0;left:0;pointer-events:none;   /* above modals (9600) / gate (9999) */
-  max-width:260px;padding:6px 9px;border-radius:8px;
+  max-width:260px;padding:6px 9px;border-radius:var(--r-xs);
   background:var(--surf-over);color:var(--ink);border:1px solid var(--line2);
   box-shadow:var(--raise);
   font-family:var(--body);font-size:11.5px;font-weight:500;line-height:1.35;
@@ -973,7 +1209,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .sens-val{font-family:var(--mono);font-size:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sens.masked .sens-val{letter-spacing:1.5px;color:var(--muted2)}
 .sens-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;min-width:26px;padding:0;
-  border:none;background:none;color:var(--muted);cursor:pointer;border-radius:6px;flex-shrink:0;
+  border:none;background:none;color:var(--muted);cursor:pointer;border-radius:var(--r-xs);flex-shrink:0;
   transition:background var(--dur) ease,color var(--dur) ease}
 .sens-btn:hover{background:var(--surf2);color:var(--ink)}
 .sens-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -986,13 +1222,18 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .cmdk-back.on{display:flex}
 .cmdk{width:min(560px,100%);max-height:76vh;display:flex;flex-direction:column;
   background:var(--surf-over);
-  border:1px solid var(--line2);border-radius:14px;box-shadow:0 28px 70px rgba(0,0,0,.28);overflow:hidden}
+  border:1px solid var(--line2);border-radius:var(--r-xl);box-shadow:0 28px 70px rgba(0,0,0,.28);overflow:hidden}
+/* outline:none needs a replacement, the way .cin's does at :focus. Without one
+   this was the file's only control that suppressed the ring and gave nothing
+   back — same specificity as the global :focus-visible, later in source, so it
+   won on keyboard focus too. */
 .cmdk-in{width:100%;border:none;outline:none;background:none;
-  padding:16px 17px;font-family:var(--body);font-size:15px;color:var(--ink);border-bottom:1px solid var(--line)}
+  padding:var(--s-4);font-family:var(--body);font-size:15px;color:var(--ink);border-bottom:1px solid var(--line)}
+.cmdk-in:focus-visible{box-shadow:var(--focus)}
 .cmdk-in::placeholder{color:var(--muted2)}
 .cmdk-list{flex:1;overflow:auto;padding:6px}
 .cmdk-cat{font-family:var(--mono);font-size:9px;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);padding:9px 11px 4px}
-.cmdk-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;cursor:pointer;
+.cmdk-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:var(--r-sm);cursor:pointer;
   color:var(--ink);font-size:13.5px;min-height:38px}
 .cmdk-item .k{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted)}
 .cmdk-item.sel{background:color-mix(in srgb,var(--fox) 13%,var(--surf));color:var(--fox2)}
@@ -1004,20 +1245,20 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .sc-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 2px;border-bottom:1px solid var(--line)}
 .sc-row:last-child{border-bottom:none}
 .sc-kbd{font-family:var(--mono);font-size:11px;color:var(--ink2);background:var(--surf2);
-  border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
+  border:1px solid var(--line2);border-radius:var(--r-xs);padding:3px 8px;white-space:nowrap}
 
 /* notifications bell + dropdown (Phase D) */
 .topnotif{position:relative}
 .notif-panel{display:none;position:absolute;top:calc(100% + 8px);right:0;width:min(360px,92vw);
   max-height:min(70vh,480px);flex-direction:column;z-index:9500;overflow:hidden;
   background:linear-gradient(var(--surf-over),var(--surf-over)),var(--bg);
-  border:1px solid var(--line2);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.34)}
+  border:1px solid var(--line2);border-radius:var(--r-md);box-shadow:0 24px 60px rgba(0,0,0,.34)}
 .notif-panel.on{display:flex}
 .notif-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;
   border-bottom:1px solid var(--line);font-family:var(--disp);font-weight:600;font-size:13px;color:var(--ink)}
 .notif-head a{font-size:11px;color:var(--fox2);cursor:pointer;text-decoration:none}
 .notif-list{overflow-y:auto;padding:6px}
-.notif-item{display:flex;gap:10px;padding:10px 11px;border-radius:9px;cursor:pointer;align-items:flex-start}
+.notif-item{display:flex;gap:10px;padding:10px 11px;border-radius:var(--r-sm);cursor:pointer;align-items:flex-start}
 .notif-item:hover{background:var(--surf2)}
 .notif-item.unread{background:color-mix(in srgb,var(--fox) 9%,transparent)}
 .notif-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px;background:var(--muted2)}
@@ -1054,23 +1295,23 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     padding:0 8px;gap:2px;border-right:none;border-top:1px solid var(--line);box-shadow:none;
     overflow-x:auto;justify-content:flex-start;
   }
-  .dock-mark{width:34px;height:34px;border-radius:10px;margin-bottom:0;flex-shrink:0}
+  .dock-mark{width:34px;height:34px;border-radius:var(--r-sm);margin-bottom:0;flex-shrink:0}
   .dock-mark img{width:22px;height:22px}
   .dock-ops{margin-bottom:0;flex-shrink:0;align-self:center}
-  .dock-item{width:60px;height:52px;flex-shrink:0;border-radius:12px}
+  .dock-item{width:60px;height:52px;flex-shrink:0;border-radius:var(--r-md)}
   /* the bar scrolls, so signing out would otherwise sit behind thirteen nav
      items. Pinned to the trailing edge instead: same place it occupies on the
      desktop rail — the end — but always reachable. */
   .dock-foot{margin-top:0;flex-direction:row;align-items:center;gap:8px;flex-shrink:0;
     position:sticky;right:0;padding:0 2px 0 10px;background:var(--surf);
     box-shadow:-10px 0 12px -6px var(--surf)}
-  .dock-user{width:34px;height:34px;border-radius:10px;font-size:12px}
+  .dock-user{width:34px;height:34px;border-radius:var(--r-sm);font-size:12px}
 
   /* every table stacks; every cell names its column. This is no longer opt-in —
      one table opting in and eighteen scrolling sideways is exactly the
      "different pages behave differently" the owner reported. */
   .tbl.cardify thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
-  .tbl.cardify tr{display:block;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;padding:6px 11px;background:var(--surf2)}
+  .tbl.cardify tr{display:block;border:1px solid var(--line);border-radius:var(--r-sm);margin-bottom:10px;padding:6px 11px;background:var(--surf2)}
   .tbl.cardify td{display:flex;justify-content:space-between;align-items:center;gap:12px;border:none;padding:5px 0;
     max-width:none!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
   .tbl.cardify td::before{content:attr(data-label);font-family:var(--mono);font-size:9px;letter-spacing:.5px;
@@ -1280,9 +1521,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div class="eyebrow" style="margin:0;">Ops console · staff only</div>
       </div>
     </div>
-    <div class="flabel" style="margin-top:14px;">staff email</div>
+    <label class="flabel" style="margin-top:14px;" for="gEmail">staff email</label>
     <input class="cin" id="gEmail" autocomplete="username" placeholder="you@foxy.audit">
-    <div class="flabel">password</div>
+    <label class="flabel" for="gPass">password</label>
     <input class="cin" id="gPass" type="password" autocomplete="current-password" placeholder="••••••••••">
     <div id="gErr" class="gerr"></div>
     <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Sign in</button>
@@ -1296,7 +1537,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div class="eyebrow" style="margin:0;">enter the 6-digit code</div>
       </div>
     </div>
-    <div class="flabel" style="margin-top:14px;">verification code</div>
+    <label class="flabel" style="margin-top:14px;" for="gCode">verification code</label>
     <input class="cin" id="gCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:5px;text-align:center;font-weight:700;">
     <div id="gMfaErr" class="gerr"></div>
     <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Verify &amp; sign in</button>
@@ -1310,7 +1551,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div class="eyebrow" style="margin:0;">we'll email you a link</div>
       </div>
     </div>
-    <div class="flabel" style="margin-top:14px;">staff email</div>
+    <label class="flabel" style="margin-top:14px;" for="gForgotEmail">staff email</label>
     <input class="cin" id="gForgotEmail" type="email" autocomplete="username" placeholder="you@foxy.audit">
     <div id="gForgotMsg" class="eyebrow" style="min-height:14px;margin-top:8px;"></div>
     <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Send reset link</button>
@@ -1324,7 +1565,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div class="eyebrow" style="margin:0;">at least 8 characters</div>
       </div>
     </div>
-    <div class="flabel" style="margin-top:14px;">new password</div>
+    <label class="flabel" style="margin-top:14px;" for="gResetPass">new password</label>
     <input class="cin" id="gResetPass" type="password" autocomplete="new-password" placeholder="••••••••••">
     <div id="gResetErr" class="gerr"></div>
     <button class="btn pri" type="submit" style="margin-top:4px;width:100%;">Set new password</button>
@@ -1608,9 +1849,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="clay pad">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
           <div style="flex:1;min-width:160px;">
-            <div class="flabel" style="margin-top:0;">site</div>
+            <div class="flabel" id="trafSiteLab" style="margin-top:0;">site</div>
             <div class="fauxselect" id="trafSite" data-value="" data-onchange="renderTrafficFiltered">
-              <button type="button" class="cin fauxselect-trigger">
+              <button type="button" class="cin fauxselect-trigger" aria-labelledby="trafSiteLab">
                 <span class="fauxselect-label">all sites</span>
                 <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
               </button>
@@ -1623,9 +1864,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             </div>
           </div>
           <div style="flex:1;min-width:160px;">
-            <div class="flabel" style="margin-top:0;">status</div>
+            <div class="flabel" id="trafStatusLab" style="margin-top:0;">status</div>
             <div class="fauxselect" id="trafStatus" data-value="" data-onchange="renderTrafficFiltered">
-              <button type="button" class="cin fauxselect-trigger">
+              <button type="button" class="cin fauxselect-trigger" aria-labelledby="trafStatusLab">
                 <span class="fauxselect-label">all statuses</span>
                 <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
               </button>
@@ -1638,7 +1879,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             </div>
           </div>
           <div style="flex:2;min-width:200px;">
-            <div class="flabel" style="margin-top:0;">path contains</div>
+            <label class="flabel" style="margin-top:0;" for="trafPath">path contains</label>
             <input class="cin" id="trafPath" placeholder="/v1/logs, /admin/v1/staff…" oninput="renderTrafficFiltered()">
           </div>
           <button class="btn sm" style="margin-bottom:4px;" onclick="fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTrafficFiltered()">clear</button>
@@ -1666,11 +1907,11 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </div>
         <div class="clay pad">
           <div class="eyebrow">new staff account</div>
-          <div class="flabel" style="margin-top:6px;">email</div>
+          <label class="flabel" style="margin-top:6px;" for="nsEmail">email</label>
           <input class="cin" id="nsEmail" placeholder="teammate@foxy.audit">
-          <div class="flabel">platform role</div>
+          <div class="flabel" id="nsRoleLab">platform role</div>
           <div class="fauxselect" id="nsRole" data-value="viewer">
-            <button type="button" class="cin fauxselect-trigger">
+            <button type="button" class="cin fauxselect-trigger" aria-labelledby="nsRoleLab">
               <span class="fauxselect-label">viewer — read-only</span>
               <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
@@ -1697,9 +1938,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="clay pad" style="margin-bottom:18px;position:relative;z-index:30;">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
           <div style="flex:1;min-width:200px;">
-            <div class="flabel" style="margin-top:0;">table</div>
+            <div class="flabel" id="dataTableLab" style="margin-top:0;">table</div>
             <div class="fauxselect" id="dataTable" data-value="" data-onchange="onDataTableChange">
-              <button type="button" class="cin fauxselect-trigger">
+              <button type="button" class="cin fauxselect-trigger" aria-labelledby="dataTableLab">
                 <span class="fauxselect-label">choose a table…</span>
                 <svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
               </button>
@@ -1707,7 +1948,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             </div>
           </div>
           <div style="flex:2;min-width:220px;">
-            <div class="flabel" style="margin-top:0;">search</div>
+            <label class="flabel" style="margin-top:0;" for="dataSearch">search</label>
             <input class="cin" id="dataSearch" placeholder="free-text search…" oninput="dataRefreshDebounced()">
           </div>
           <button class="btn sm" type="button" onclick="addDataFilter()">+ filter</button>
@@ -1785,7 +2026,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       </div>
       <div class="split" style="margin-top:16px;">
         <div class="clay pad"><div class="eyebrow">lockout watchlist · ≥5 fails / 24h</div><div class="twrap"><table class="tbl cardify"><thead><tr><th>Email</th><th style="text-align:right;">Fails · 24h</th><th>Last</th></tr></thead><tbody id="secWatch"><tr><td colspan="3" class="sub mono">loading…</td></tr></tbody></table><div id="secWatchPager"></div></div></div>
-        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap" style="max-height:360px;overflow:auto;"><table class="tbl cardify"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table><div id="secRecentPager"></div></div></div>
+        <div class="clay pad"><div class="eyebrow">recent attempts</div><div class="twrap scrolly"><table class="tbl cardify"><thead><tr><th>When</th><th>Email</th><th>IP</th><th>Result</th></tr></thead><tbody id="secRecent"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody></table><div id="secRecentPager"></div></div></div>
       </div>
     </section>
 
@@ -1793,10 +2034,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
     <section class="page" id="page-audit">
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span><div style="display:flex;gap:8px;"><button class="btn" onclick="auditExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>Export CSV</button></div></div>
       <div class="clay pad" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-        <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">action (prefix)</div><input class="cin" id="auAction" placeholder="e.g. org." oninput="auditDebounced()"></div>
-        <div style="flex:1;min-width:150px;"><div class="flabel" style="margin-top:0;">actor (email)</div><input class="cin" id="auActor" placeholder="staff@foxy.audit" oninput="auditDebounced()"></div>
-        <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">since</div><input class="cin" id="auSince" type="date" onchange="loadAudit()"></div>
-        <div style="flex:1;min-width:130px;"><div class="flabel" style="margin-top:0;">until</div><input class="cin" id="auUntil" type="date" onchange="loadAudit()"></div>
+        <div style="flex:1;min-width:150px;"><label class="flabel" style="margin-top:0;" for="auAction">action (prefix)</label><input class="cin" id="auAction" placeholder="e.g. org." oninput="auditDebounced()"></div>
+        <div style="flex:1;min-width:150px;"><label class="flabel" style="margin-top:0;" for="auActor">actor (email)</label><input class="cin" id="auActor" placeholder="staff@foxy.audit" oninput="auditDebounced()"></div>
+        <div style="flex:1;min-width:130px;"><label class="flabel" style="margin-top:0;" for="auSince">since</label><input class="cin" id="auSince" type="date" onchange="loadAudit()"></div>
+        <div style="flex:1;min-width:130px;"><label class="flabel" style="margin-top:0;" for="auUntil">until</label><input class="cin" id="auUntil" type="date" onchange="loadAudit()"></div>
       </div>
       <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Org</th><th>IP</th></tr></thead><tbody id="auRows"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
     </section>
@@ -1817,12 +2058,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div class="eyebrow">superadmin</div>
         <div style="font-weight:800;font-size:15px;margin-bottom:12px;">Issue a new redemption code</div>
         <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
-          <label><div class="flabel" style="margin-top:0;">offer id</div><input class="cin" id="campaignOfferId" placeholder="judges-july"></label>
-          <label><div class="flabel" style="margin-top:0;">label</div><input class="cin" id="campaignLabel" placeholder="July judge access"></label>
-          <label><div class="flabel" style="margin-top:0;">redemption code</div><input class="cin" id="campaignCode" autocomplete="off" placeholder="16+ characters"></label>
-          <label><div class="flabel" style="margin-top:0;">credits</div><input class="cin" id="campaignCredits" type="number" min="1" value="250"></label>
-          <label><div class="flabel" style="margin-top:0;">access days</div><input class="cin" id="campaignDays" type="number" min="1" value="31"></label>
-          <label><div class="flabel" style="margin-top:0;">max redemptions</div><input class="cin" id="campaignMax" type="number" min="1" value="25"></label>
+          <label><label class="flabel" style="margin-top:0;" for="campaignOfferId">offer id</label><input class="cin" id="campaignOfferId" placeholder="judges-july"></label>
+          <label><label class="flabel" style="margin-top:0;" for="campaignLabel">label</label><input class="cin" id="campaignLabel" placeholder="July judge access"></label>
+          <label><label class="flabel" style="margin-top:0;" for="campaignCode">redemption code</label><input class="cin" id="campaignCode" autocomplete="off" placeholder="16+ characters"></label>
+          <label><label class="flabel" style="margin-top:0;" for="campaignCredits">credits</label><input class="cin" id="campaignCredits" type="number" min="1" value="250"></label>
+          <label><label class="flabel" style="margin-top:0;" for="campaignDays">access days</label><input class="cin" id="campaignDays" type="number" min="1" value="31"></label>
+          <label><label class="flabel" style="margin-top:0;" for="campaignMax">max redemptions</label><input class="cin" id="campaignMax" type="number" min="1" value="25"></label>
         </div>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;">
           <button class="btn pri" onclick="createCampaign()">Create campaign</button>
@@ -1853,8 +2094,8 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </div>
         <div class="clay pad">
           <div class="panel-h"><div><div class="eyebrow">your account</div><div class="panel-t">Account &amp; security</div></div></div>
-          <div class="flabel" style="margin-top:0;">email</div><input class="cin" id="setEmail" readonly style="opacity:.7;">
-          <div class="flabel">platform role</div><input class="cin" id="setRole" readonly style="opacity:.7;">
+          <label class="flabel" style="margin-top:0;" for="setEmail">email</label><input class="cin" id="setEmail" readonly style="opacity:.7;">
+          <label class="flabel" for="setRole">platform role</label><input class="cin" id="setRole" readonly style="opacity:.7;">
           <div class="flabel">display name</div>
           <div style="display:flex;gap:8px;align-items:center;">
             <input class="cin" id="setName" placeholder="Add your name" maxlength="120" style="flex:1;" data-tip="Shown as your avatar initial and in the topbar">
@@ -1889,8 +2130,8 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </div>
         <div class="clay pad" id="setBroadcastCard" style="display:none;">
           <div class="panel-h"><div><div class="eyebrow">superadmin · announcements</div><div class="panel-t">Broadcast</div></div></div>
-          <div class="flabel" style="margin-top:0;">title</div><input class="cin" id="bcTitle" placeholder="Scheduled maintenance">
-          <div class="flabel">message</div><textarea class="cin" id="bcBody" style="min-height:70px;resize:vertical;" placeholder="What's happening and when…"></textarea>
+          <label class="flabel" style="margin-top:0;" for="bcTitle">title</label><input class="cin" id="bcTitle" placeholder="Scheduled maintenance">
+          <label class="flabel" for="bcBody">message</label><textarea class="cin" id="bcBody" style="min-height:70px;resize:vertical;" placeholder="What's happening and when…"></textarea>
           <div class="flabel">level</div>
           <div class="segmented" id="bcLevel" role="group" aria-label="Level">
             <button type="button" class="segbtn" data-level="info" aria-pressed="true" onclick="_segPick(this)">info</button>
@@ -1908,7 +2149,12 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
   </main>
 </div>
 
-<div id="toast"><span id="toastIcon"></span><span id="toastMsg"></span></div>
+<!-- the only confirmation and error channel for every destructive action here —
+     suspend an org, disable a staff account, replay a Stripe event, re-anchor —
+     and it announced none of them. The password meter had a live region; the
+     thing that says whether the suspend worked did not. aria-hidden on the icon
+     so the ring is not read as a word. -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"><span id="toastIcon" aria-hidden="true"></span><span id="toastMsg"></span></div>
 <div id="fxmodal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
   <div class="modal-card clay pad" role="dialog" aria-modal="true" aria-labelledby="fxmodalTitle">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;">
@@ -1981,8 +2227,79 @@ function fauxSet(id,value){
   if(!opt)return;
   root.dataset.value=value;
   root.querySelector('.fauxselect-label').textContent=opt.textContent;
-  root.querySelectorAll('.fauxselect-opt').forEach(o=>o.classList.remove('sel'));
-  opt.classList.add('sel');
+  root.querySelectorAll('.fauxselect-opt').forEach(o=>{o.classList.remove('sel');o.setAttribute('aria-selected','false')});
+  opt.classList.add('sel');opt.setAttribute('aria-selected','true');
+}
+/* The swap from <select> bought a themeable popup and paid for it with the
+   entire control: the only listeners were two clicks, so a keyboard user could
+   Tab to the trigger, press Enter, watch the list open — and then reach no
+   option at all, because .fauxselect-opt are <div>s with no role, no tabindex
+   and no key handling. Tabbing away hit the document click handler and shut it.
+   That is a dead end on 8 shared surfaces, not a degraded experience.
+   Everything below is what the native element was giving away for free:
+   combobox/listbox/option roles, aria-expanded, aria-selected, roving focus,
+   Arrow/Home/End/Enter/Escape, and type-ahead. */
+function _fauxOpts(root){return [].slice.call(root.querySelectorAll('.fauxselect-opt'))}
+function _fauxOpen(root,open){
+  root.classList.toggle('open',open);
+  const t=root.querySelector('.fauxselect-trigger');
+  if(t)t.setAttribute('aria-expanded',open?'true':'false');
+  if(open){
+    const opts=_fauxOpts(root);
+    const cur=opts.find(o=>o.classList.contains('sel'))||opts[0];
+    if(cur)_fauxFocus(root,cur);
+  }
+}
+function _fauxFocus(root,opt){
+  _fauxOpts(root).forEach(o=>o.tabIndex=-1);
+  opt.tabIndex=0;opt.focus({preventScroll:true});
+  const t=root.querySelector('.fauxselect-trigger');
+  if(t&&opt.id)t.setAttribute('aria-activedescendant',opt.id);
+  if(opt.scrollIntoView)opt.scrollIntoView({block:'nearest'});
+}
+function _fauxCommit(root,opt){
+  fauxSet(root.id,opt.dataset.value);
+  _fauxOpen(root,false);
+  const t=root.querySelector('.fauxselect-trigger'); if(t)t.focus();
+  const cb=root.dataset.onchange;
+  if(cb&&typeof window[cb]==='function')window[cb](root);
+}
+function _fauxKeys(root,e){
+  const opts=_fauxOpts(root); if(!opts.length)return;
+  const open=root.classList.contains('open');
+  const active=document.activeElement;
+  let i=opts.indexOf(active); if(i<0)i=opts.findIndex(o=>o.classList.contains('sel'));
+  const k=e.key;
+  if(k==='Escape'&&open){e.preventDefault();_fauxOpen(root,false);root.querySelector('.fauxselect-trigger').focus();return}
+  if(!open){
+    if(k==='ArrowDown'||k==='ArrowUp'||k==='Enter'||k===' '){e.preventDefault();_fauxOpen(root,true)}
+    return;
+  }
+  if(k==='ArrowDown'){e.preventDefault();_fauxFocus(root,opts[Math.min(opts.length-1,i+1)]||opts[0])}
+  else if(k==='ArrowUp'){e.preventDefault();_fauxFocus(root,opts[Math.max(0,i-1)]||opts[0])}
+  else if(k==='Home'){e.preventDefault();_fauxFocus(root,opts[0])}
+  else if(k==='End'){e.preventDefault();_fauxFocus(root,opts[opts.length-1])}
+  else if(k==='Enter'||k===' '){e.preventDefault();if(opts[i])_fauxCommit(root,opts[i])}
+  else if(k==='Tab'){_fauxOpen(root,false)}
+  else if(k.length===1&&/\S/.test(k)){
+    // type-ahead, the last thing the native control did that nothing replaced
+    const q=k.toLowerCase();
+    const from=(i+1)%opts.length;
+    const hit=opts.slice(from).concat(opts.slice(0,from)).find(o=>o.textContent.trim().toLowerCase().startsWith(q));
+    if(hit){e.preventDefault();_fauxFocus(root,hit)}
+  }
+}
+function _fauxRoles(root){
+  const t=root.querySelector('.fauxselect-trigger'),l=root.querySelector('.fauxselect-list');
+  if(t){t.setAttribute('role','combobox');t.setAttribute('aria-expanded','false');t.setAttribute('aria-haspopup','listbox');
+        if(l){if(!l.id)l.id=(root.id||'faux')+'List';t.setAttribute('aria-controls',l.id);}}
+  if(l)l.setAttribute('role','listbox');
+  _fauxOpts(root).forEach((o,n)=>{
+    o.setAttribute('role','option');
+    o.setAttribute('aria-selected',o.classList.contains('sel')?'true':'false');
+    o.tabIndex=-1;
+    if(!o.id)o.id=(root.id||'faux')+'Opt'+n;
+  });
 }
 function fauxSelectInit(root){
   // Idempotency guard: elements present in the static HTML (trafSite,
@@ -1995,11 +2312,12 @@ function fauxSelectInit(root){
   // innerHTML=) have no dataset yet, so they still get initialized once.
   if(root.dataset.fauxInited)return;
   root.dataset.fauxInited='1';
+  _fauxRoles(root);
   root.querySelector('.fauxselect-trigger').addEventListener('click',e=>{
     e.stopPropagation();
     const wasOpen=root.classList.contains('open');
-    document.querySelectorAll('.fauxselect.open').forEach(f=>f.classList.remove('open'));
-    if(!wasOpen)root.classList.add('open');
+    document.querySelectorAll('.fauxselect.open').forEach(f=>_fauxOpen(f,false));
+    if(!wasOpen)_fauxOpen(root,true);
   });
   // Option clicks are handled by DELEGATION on the (persistent) list container,
   // not by a listener on each option. #dataTable's options are populated
@@ -2011,14 +2329,16 @@ function fauxSelectInit(root){
     const opt=e.target.closest('.fauxselect-opt');
     if(!opt||!root.contains(opt))return;
     e.stopPropagation();
-    fauxSet(root.id,opt.dataset.value);
-    root.classList.remove('open');
-    const cb=root.dataset.onchange;
-    if(cb&&typeof window[cb]==='function')window[cb](root);
+    _fauxCommit(root,opt);
   });
+  // Keys are bound on the ROOT, for the same reason clicks are delegated to the
+  // list: options are rebuilt via innerHTML and a per-option listener would be
+  // lost. Roles are re-stamped on open so lazily-populated lists get them too.
+  root.addEventListener('keydown',e=>_fauxKeys(root,e));
+  root.addEventListener('focusin',()=>_fauxRoles(root));
 }
 document.querySelectorAll('.fauxselect').forEach(fauxSelectInit);
-document.addEventListener('click',()=>document.querySelectorAll('.fauxselect.open').forEach(f=>f.classList.remove('open')));
+document.addEventListener('click',()=>document.querySelectorAll('.fauxselect.open').forEach(f=>_fauxOpen(f,false)));
 
 /* ──────────── table column reference (powers the Data tab's table picker
    and filter dropdowns) ────────────
@@ -2200,7 +2520,7 @@ function openDataEdit(pk){
         <input type="checkbox" id="dedit_${esc(f)}" ${val?'checked':''}> ${esc(f)}
       </label>`;
     }
-    return `<div class="flabel">${esc(f)}</div><input class="cin" id="dedit_${esc(f)}" value="${esc(val===null||val===undefined?'':String(val))}">`;
+    return `<label class="flabel" for="dedit_${esc(f)}">${esc(f)}</label><input class="cin" id="dedit_${esc(f)}" value="${esc(val===null||val===undefined?'':String(val))}">`;
   }).join('');
   $('dataEditModal').style.display='flex';
 }
@@ -2453,6 +2773,20 @@ function toggleTheme(){const next=document.documentElement.dataset.theme==='dark
 
 /* ──────────── support inbox ──────────── */
 function goOps(page){go(page,$('navOps'))}
+/* A fault is not an empty, and this console of all consoles has to say which.
+   "No policy breaches for this tenant" is the good news staff came to confirm;
+   "the breach endpoint returned 500" is an incident. Both used to render as the
+   same grey centred sentence, and with no Retry anywhere the only recovery was
+   a reload that dropped every filter. `retry` is a JS expression string, the
+   same inline-onclick idiom the rest of this file uses. */
+function fault(what,why,retry){
+  return '<div class="chart-fault"><span class="what">'+esc(what)+'</span>'
+    +(why?'<span class="why">'+esc(why)+'</span>':'')
+    +(retry?'<button class="btn sm" onclick="'+retry+'">Try again</button>':'')+'</div>';
+}
+function faultRow(cols,what,retry){
+  return '<tr><td colspan="'+cols+'">'+fault(what,'',retry)+'</td></tr>';
+}
 function opsChip(status){
   const s=String(status||'unknown').toLowerCase();
   const cls=s==='ok'||s==='confirmed'?'safe':s==='warning'||s==='stale'||s==='pending'?'warn':s==='never'||s==='not_applicable'?'dim':'bad';
@@ -2546,7 +2880,7 @@ async function loadHealthTrends(){
 async function loadAlertHistory(){
   const el=$('hAlertHistory'); if(!el)return;
   let r; try{ r=await api('/admin/v1/health/alert-history'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">unavailable</div>'; return; }
+  if(!r||!r.ok){ el.innerHTML=fault('Alert history did not load.','',"loadAlertHistory()"); return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="chart-empty" style="min-height:60px;">No alerts have been acknowledged yet.</div>'; return; }
   el.innerHTML='<div class="twrap"><table class="tbl cardify"><thead><tr><th>When</th><th>Staff</th><th>Alert</th></tr></thead><tbody>'+items.map(x=>
@@ -2592,7 +2926,7 @@ function inboxKey(e){
 async function loadInbox(){
   $('inboxList').innerHTML='<div>'+Array(4).fill('<div class="inbox-row" style="pointer-events:none;opacity:.6;"><div style="height:12px;width:58%;background:var(--surf2);border-radius:4px;"></div><div style="height:10px;width:86%;background:var(--surf2);border-radius:4px;margin-top:8px;"></div></div>').join('')+'</div>';
   let r;try{r=await api('/admin/v1/inbox')}catch(e){r=null}
-  if(!r||!r.ok){$('inboxList').innerHTML='<div class="sub" style="padding:16px;">Failed to load.</div>';return;}
+  if(!r||!r.ok){$('inboxList').innerHTML=fault('The support inbox did not load.','',"loadInbox()");return;}
   const d=await r.json(); INBOX=d.items||[]; updateInboxBadge(d.unread);
   renderInboxFilters(); renderInboxList();
   if(INBOX_OPEN){const it=INBOX.find(x=>x.id===INBOX_OPEN); it?renderInboxDetail(it):($('inboxDetail').innerHTML='<div class="sub" style="text-align:center;padding:60px 0;">Select a message to read &amp; reply.</div>');}
@@ -2672,7 +3006,7 @@ function toggleNotif(e){ if(e){e.stopPropagation();}
 async function loadNotif(){
   const list=$('notifList'); if(!list)return;
   let r; try{ r=await api('/admin/v1/notifications?limit=30'); }catch(e){ r=null; }
-  if(!r||!r.ok){ list.innerHTML='<div class="notif-empty">Notifications unavailable.</div>'; return; }
+  if(!r||!r.ok){ list.innerHTML=fault('Notifications did not load.','',"loadNotif()"); return; }
   const d=await r.json(); updateNotifBadge(d.unread);
   if(!d.items||!d.items.length){ list.innerHTML='<div class="notif-empty">You’re all caught up.</div>'; return; }
   list.innerHTML=d.items.map(n=>'<div class="notif-item '+(n.read?'':'unread')+' lv-'+esc(n.level||'info')+'" onclick="notifRead(\''+esc(n.id)+'\',this)">'
@@ -3015,7 +3349,7 @@ async function renderOvTrend(){
   $('ovTrendTitle').textContent=metric.charAt(0).toUpperCase()+metric.slice(1)+' · 30 days';
   const el=$('ovTrend'); if(reduced()){el.innerHTML='<div class="chart-empty">loading…</div>';}else{skeleton(el,'chart',1);}
   let r; try{ r=await api('/admin/v1/stats/timeseries?metric='+metric+'&days=30'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="chart-empty">trend unavailable</div>'; return; }
+  if(!r||!r.ok){ el.innerHTML=fault('The 30-day trend did not load.','',"loadOverview()"); return; }
   const d=await r.json();
   const isRev=d.unit==='cents';
   const vals=(d.points||[]).map(p=>isRev?p.value/100:p.value);
@@ -3029,7 +3363,7 @@ async function renderOvTrend(){
 async function loadPlanMix(){
   const el=$('ovPlanMix'); if(!el)return;
   let r; try{ r=await api('/admin/v1/stats/plan-mix'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="chart-empty">unavailable</div>'; return; }
+  if(!r||!r.ok){ el.innerHTML=fault('The plan mix did not load.','',"loadPlanMix()"); return; }
   const d=await r.json();
   chart(el,{type:'donut',height:180,centerLabel:'orgs',
     series:(d.items||[]).map(x=>({name:x.plan,value:x.count})), empty:'No tenants yet'});
@@ -3037,7 +3371,7 @@ async function loadPlanMix(){
 async function loadTopOrgs(){
   const el=$('ovTopOrgs'); if(!el)return;
   let r; try{ r=await api('/admin/v1/stats/top-orgs?days=30&limit=6'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="chart-empty">unavailable</div>'; return; }
+  if(!r||!r.ok){ el.innerHTML=fault('Top organizations did not load.','',"loadTopOrgs()"); return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="chart-empty">No usage in the last 30 days</div>'; return; }
   chart(el,{type:'bar',height:180,labels:items.map(x=>x.name),
@@ -3118,7 +3452,7 @@ async function toggleOrg(id,tr){
 }
 async function orgSuspend(id){
   openModal({eyebrow:'org action', title:'Suspend organization',
-    bodyHTML:`<div class="sub" style="margin-bottom:12px;">A staff access-hold, independent of Stripe. The reason is recorded in the audit trail.</div><div class="flabel" style="margin-top:0;">reason (optional)</div><textarea id="mReason" class="cin" style="min-height:72px;" placeholder="e.g. fraud review"></textarea>`,
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">A staff access-hold, independent of Stripe. The reason is recorded in the audit trail.</div><label class="flabel" style="margin-top:0;" for="mReason">reason (optional)</label><textarea id="mReason" class="cin" style="min-height:72px;" placeholder="e.g. fraud review"></textarea>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doSuspend('${id}')">Suspend</button>`});
 }
 
@@ -3129,7 +3463,7 @@ async function orgEnable(id){
 async function orgPlan(id,current){
   const opts=['free','pro','max','premium'].map(p=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" data-plan="${p}" aria-pressed="${p===current?'true':'false'}" onclick="_segPick(this)">${p}</button>`).join('');
   openModal({eyebrow:'org action', title:'Set plan',
-    bodyHTML:`<div class="flabel" style="margin-top:0;">plan tier</div><div class="segmented" id="mPlan" role="group" aria-label="plan" style="flex-wrap:wrap;">${opts}</div><div class="flabel">monthly credits override</div><input class="cin" id="mQuota" inputmode="numeric" placeholder="blank = plan default"><div class="sub" style="font-size:10.5px;margin-top:4px;">Leave blank to use the plan's default quota (0 is a real limit, not unlimited).</div>`,
+    bodyHTML:`<div class="flabel" style="margin-top:0;">plan tier</div><div class="segmented" id="mPlan" role="group" aria-label="plan" style="flex-wrap:wrap;">${opts}</div><label class="flabel" for="mQuota">monthly credits override</label><input class="cin" id="mQuota" inputmode="numeric" placeholder="blank = plan default"><div class="sub" style="font-size:10.5px;margin-top:4px;">Leave blank to use the plan's default quota (0 is a real limit, not unlimited).</div>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doPlan('${id}')">Apply plan</button>`});
 }
 
@@ -3148,7 +3482,7 @@ async function openOrg(id){
   $('o3Usage').innerHTML=''; $('o3Kpis').innerHTML=''; $('o3VerifyState').textContent='';
   $('o3Panel').innerHTML='<div class="sub mono" style="padding:14px;">loading…</div>';
   let r; try{ r=await api('/admin/v1/organizations/'+id+'/overview'); }catch(e){ r=null; }
-  if(!r||!r.ok){ setTopbarContext('org360'); $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load ('+(r?r.status:'network')+').</div></div>'; return; }
+  if(!r||!r.ok){ setTopbarContext('org360'); $('o3Panel').innerHTML='<div class="clay pad">'+fault('This organization did not load.',(r?'HTTP '+r.status:'no response from the API'),"openOrg(O3_ID)")+'</div>'; return; }
   O3_DATA=await r.json();
   renderO3Header(O3_DATA);
   o3Tab('overview');
@@ -3161,8 +3495,8 @@ function renderO3Header(d){
   $('o3Sub').textContent=d.id;
   const access=d.deleted?'<span class="chip dim">offboarded</span>':d.suspended?'<span class="chip bad">suspended</span>':'<span class="chip safe">active</span>';
   const sub=d.subscription_status?('<span class="chip '+(d.subscription_status==='active'?'safe':'warn')+'">'+esc(d.subscription_status)+'</span>'):'';
-  const plan='<span class="chip info">'+esc(d.plan_tier||'no plan')+'</span>';
-  const quota='<span class="chip dim">quota '+(d.monthly_log_quota==null?'∞':num(d.monthly_log_quota))+'</span>';
+  const plan='<span class="tag">'+esc(d.plan_tier||'no plan')+'</span>';
+  const quota='<span class="tag">quota '+(d.monthly_log_quota==null?'∞':num(d.monthly_log_quota))+'</span>';
   const trial=d.trial_ends_at?('<span class="chip warn">trial ends '+fmtDay(d.trial_ends_at)+'</span>'):'';
   $('o3Chips').innerHTML=plan+sub+access+quota+trial;
   let acts='';
@@ -3239,9 +3573,9 @@ function renderO3Policy(){
     ['Prompt-injection', flag(p.prompt_injection)],
     ['Regulated-data mode', flag(p.regulated_data_mode)],
     ['Max token threshold', '<b class="mono">'+num(p.max_token_threshold)+'</b>'],
-    ['Enforcement', '<span class="chip info">'+esc(p.enforcement_mode)+'</span>'],
-    ['Confidence', '<span class="chip info">'+esc(p.confidence_threshold)+'</span>'],
-    ['Notify on breach', '<span class="chip info">'+esc(p.notify_on_breach)+'</span>'],
+    ['Enforcement', '<span class="tag">'+esc(p.enforcement_mode)+'</span>'],
+    ['Confidence', '<span class="tag">'+esc(p.confidence_threshold)+'</span>'],
+    ['Notify on breach', '<span class="tag">'+esc(p.notify_on_breach)+'</span>'],
     ['Notify email', esc(p.notify_email||'— (uses contact)')],
     ['Notify webhook', esc(p.notify_webhook_url||'—')],
   ];
@@ -3249,13 +3583,13 @@ function renderO3Policy(){
 }
 async function o3LoadList(kind,render){
   let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/'+kind); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load.</div></div>'; return; }
+  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad">'+fault('That tab did not load.',(r?'HTTP '+r.status:'no response from the API'),"openOrg(O3_ID)")+'</div>'; return; }
   render(await r.json());
 }
 function renderO3Users(rows){
   if(!rows.length){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No dashboard users.</div></div>'; return; }
   $('o3Panel').innerHTML='<div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>SSO</th><th>Status</th><th>Created</th></tr></thead><tbody>'+rows.map(u=>
-    '<tr><td data-label="Email"><b>'+esc(u.email)+'</b></td><td data-label="Role"><span class="chip '+(u.role==='admin'?'info':'dim')+'">'+esc(u.role)+'</span></td><td data-label="MFA">'+(u.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>')+'</td><td data-label="SSO" class="mono" style="font-size:11px;">'+(u.google_linked?'google':'—')+'</td><td data-label="Status">'+(u.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>')+'</td><td data-label="Created" class="mono" style="font-size:11px;">'+fmtDay(u.created_at)+'</td></tr>'
+    '<tr><td data-label="Email"><b>'+esc(u.email)+'</b></td><td data-label="Role"><span class="tag">'+esc(u.role)+'</span></td><td data-label="MFA">'+(u.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>')+'</td><td data-label="SSO" class="mono" style="font-size:11px;">'+(u.google_linked?'google':'—')+'</td><td data-label="Status">'+(u.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>')+'</td><td data-label="Created" class="mono" style="font-size:11px;">'+fmtDay(u.created_at)+'</td></tr>'
   ).join('')+'</tbody></table></div>';
 }
 function renderO3Keys(rows){
@@ -3365,7 +3699,7 @@ async function o3LoadLedger(page){
   if(page)O3_LEDGER_OFF=Math.max(0,(page-1)*50);
   const bo=O3_LEDGER_BREACH?'&breaches_only=true':'';
   let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/logs?limit=50&offset='+O3_LEDGER_OFF+bo); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load ledger.</div></div>'; return; }
+  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad">'+fault('The ledger did not load.',(r?'HTTP '+r.status:'no response from the API'),"o3LoadLedger()")+'</div>'; return; }
   const d=await r.json();
   const head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;"><label class="sub mono" style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:11px;"><input type="checkbox" '+(O3_LEDGER_BREACH?'checked':'')+' onchange="O3_LEDGER_BREACH=this.checked;O3_LEDGER_OFF=0;o3LoadLedger()"> breaches only</label><span class="sub mono" style="font-size:11px;">'+num(d.total)+' rows'+(d.total?(' · '+(d.offset+1)+'–'+Math.min(d.offset+d.limit,d.total)):'')+'</span></div>';
   const body=d.items.length
@@ -3380,7 +3714,7 @@ async function o3LoadLedger(page){
 async function o3LoadBreaches(page){
   if(page)O3_BREACH_OFF=Math.max(0,(page-1)*50);
   let r; try{ r=await api('/admin/v1/organizations/'+O3_ID+'/breaches?limit=50&offset='+O3_BREACH_OFF); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">Failed to load.</div></div>'; return; }
+  if(!r||!r.ok){ $('o3Panel').innerHTML='<div class="clay pad">'+fault('Breaches did not load.',(r?'HTTP '+r.status:'no response from the API'),"o3LoadBreaches()")+'</div>'; return; }
   const d=await r.json();
   if(!d.total){ $('o3Panel').innerHTML='<div class="clay pad"><div class="chart-empty">No policy breaches for this tenant.</div></div>'; return; }
   const rows=d.items.map(x=>{ const v=x.verdict||{}; const reason=v.reason||v.rationale||(Array.isArray(v.labels)?v.labels.join(', '):'')||'—'; return
@@ -3432,10 +3766,10 @@ function renderTraffic(){
   const page=window.foxPageSlice(rows,pgState('traffic',25),'trafPager',renderTraffic,'Traffic pages');
   $('trafRows').innerHTML=page.map(e=>{
     const sc=e.status_code>=500?'bad':e.status_code>=400?'warn':'safe';
-    const site=e.site==='marketing'?'info':e.site==='admin'?'warn':'dim';
+    
     return `<tr>
       <td data-label="When" class="mono" style="font-size:10.5px;white-space:nowrap;">${fmtTime(e.created_at)}</td>
-      <td data-label="Site"><span class="chip ${site}">${esc(e.site)}</span></td>
+      <td data-label="Site"><span class="tag">${esc(e.site)}</span></td>
       <td data-label="Method" class="mono">${esc(e.method)}</td>
       <td data-label="Path" class="mono" style="font-size:11px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.path)}</td>
       <td data-label="Status"><span class="chip ${sc}">${e.status_code}</span></td>
@@ -3458,8 +3792,8 @@ function renderStaff(){
   $('staffRows').innerHTML=rows.map(s=>{
     const self=ME&&s.id===ME.id;
     return `<tr class="rowbtn" onclick="staffManage('${s.id}')">
-      <td data-label="Email" class="mono" style="font-size:11.5px;">${esc(s.email)}${self?' <span class="chip dim">you</span>':''}</td>
-      <td data-label="Role"><span class="chip ${s.platform_role==='superadmin'?'warn':s.platform_role==='operator'?'info':'dim'}">${esc(s.platform_role)}</span></td>
+      <td data-label="Email" class="mono" style="font-size:11.5px;">${esc(s.email)}${self?' <span class="tag">you</span>':''}</td>
+      <td data-label="Role"><span class="tag">${esc(s.platform_role)}</span></td>
       <td data-label="MFA">${s.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>'}</td>
       <td data-label="Last login" class="mono" style="font-size:10.5px;white-space:nowrap;">${s.last_login?fmtTime(s.last_login):'never'}</td>
       <td data-label="Status">${s.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>'}</td>
@@ -3523,7 +3857,7 @@ async function _doPlan(id){
 function orgTrial(id){
   const quick=[7,14,30,90].map(n=>`<button type="button" class="btn sm" onclick="$('mDays').value=${n}">+${n}</button>`).join('');
   openModal({eyebrow:'org action', title:'Extend trial / comp',
-    bodyHTML:`<div class="sub" style="margin-bottom:12px;">Add days to this tenant's trial window (a negative number shortens it).</div><div class="flabel" style="margin-top:0;">days</div><input class="cin" id="mDays" inputmode="numeric" value="14"><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">${quick}</div>`,
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">Add days to this tenant's trial window (a negative number shortens it).</div><label class="flabel" style="margin-top:0;" for="mDays">days</label><input class="cin" id="mDays" inputmode="numeric" value="14"><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">${quick}</div>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doTrial('${id}')">Apply</button>`});
 }
 async function _doTrial(id){
@@ -3577,7 +3911,7 @@ function staffManage(id){
   const body=`<div class="flabel" style="margin-top:0;">platform role</div>
     <div class="segmented" role="group" aria-label="role" style="flex-wrap:wrap;">${roleBtns}</div>
     <div class="flabel">account</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${acct}<button class="btn sm" onclick="staffMfaReset('${id}')">Reset MFA</button></div>
-    <div class="flabel">recent activity</div><div id="mActivity" class="twrap" style="max-height:210px;overflow:auto;"><div class="sub mono">loading…</div></div>`;
+    <div class="flabel">recent activity</div><div id="mActivity" class="twrap scrolly" style="max-height:210px;"><div class="sub mono">loading…</div></div>`;
   openModal({eyebrow:s.platform_role+(s.disabled?' · disabled':'')+(s.mfa_enabled?' · mfa on':''), title:'Manage '+s.email,
     bodyHTML:body, footHTML:`<button class="btn" onclick="closeModal()">Close</button>`, onOpen:()=>loadStaffActivity(id)});
 }
@@ -3692,13 +4026,13 @@ function pwModal(){
       // The manager needs a username in the same form to know WHICH credential to
       // update. Off-screen rather than display:none, which managers skip.
       +`<input id="pwUser" autocomplete="username" readonly tabindex="-1" aria-hidden="true" value="${esc(ME?ME.email:'')}" style="position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;">`
-      +`<div class="flabel" style="margin-top:0;">current password</div>`
+      +`<label class="flabel" style="margin-top:0;" for="pwCur">current password</label>`
       +`<div class="pw-wrap"><input class="cin" id="pwCur" type="password" autocomplete="current-password" required>${eye('pwCur')}</div>`
-      +`<div class="flabel">new password <span style="text-transform:none;letter-spacing:0;font-weight:400;">(at least 8 characters)</span></div>`
+      +`<label class="flabel" for="pwNew">new password <span style="text-transform:none;letter-spacing:0;font-weight:400;">(at least 8 characters)</span></label>`
       +`<div class="pw-wrap"><input class="cin" id="pwNew" type="password" autocomplete="new-password" minlength="8" required oninput="_pwMeter()">${eye('pwNew')}</div>`
       +`<div class="pwm" id="pwMeter"><div class="pwm-track" aria-hidden="true"><i class="pwm-seg"></i><i class="pwm-seg"></i><i class="pwm-seg"></i><i class="pwm-seg"></i></div><span class="pwm-lab" id="pwMeterLab" role="status" aria-live="polite"></span></div>`
       +`<div class="pwm-hint" id="pwHint"></div>`
-      +`<div class="flabel">confirm new password</div>`
+      +`<label class="flabel" for="pwNew2">confirm new password</label>`
       +`<div class="pw-wrap"><input class="cin" id="pwNew2" type="password" autocomplete="new-password" minlength="8" required>${eye('pwNew2')}</div>`
       +`<div id="pwErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;min-height:14px;" role="status" aria-live="polite"></div>`
       +`</form>`,
@@ -3743,7 +4077,7 @@ async function mfaEnableFlow(){
   const r=await api('/admin/v1/auth/mfa/enable',{method:'POST'});
   if(!r.ok){ toast('could not start MFA enrolment','error'); return; }
   openModal({eyebrow:'your account', title:'Enable MFA',
-    bodyHTML:`<div class="sub" style="margin-bottom:12px;">We emailed a 6-digit code to <b>${esc(ME?ME.email:'')}</b>. Enter it to turn on MFA.</div><div class="flabel" style="margin-top:0;">code</div><input class="cin" id="mfaCode" inputmode="numeric" placeholder="123456"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">We emailed a 6-digit code to <b>${esc(ME?ME.email:'')}</b>. Enter it to turn on MFA.</div><label class="flabel" style="margin-top:0;" for="mfaCode">code</label><input class="cin" id="mfaCode" inputmode="numeric" placeholder="123456"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doMfaConfirm()">Confirm</button>`});
 }
 async function _doMfaConfirm(){
@@ -3754,7 +4088,7 @@ async function _doMfaConfirm(){
 }
 function mfaDisable(){
   openModal({eyebrow:'your account', title:'Disable MFA',
-    bodyHTML:`<div class="sub" style="margin-bottom:12px;">Confirm your password to turn off MFA.</div><div class="flabel" style="margin-top:0;">password</div><input class="cin" id="mfaPw" type="password" autocomplete="current-password"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
+    bodyHTML:`<div class="sub" style="margin-bottom:12px;">Confirm your password to turn off MFA.</div><label class="flabel" style="margin-top:0;" for="mfaPw">password</label><input class="cin" id="mfaPw" type="password" autocomplete="current-password"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doMfaDisable()">Disable MFA</button>`});
 }
 async function _doMfaDisable(){
@@ -3805,7 +4139,7 @@ async function sendBroadcast(){
 async function loadAnnouncements(){
   const el=$('setAnnouncements'); if(!el)return;
   let r; try{ r=await api('/admin/v1/announcements'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">unavailable</div>'; return; }
+  if(!r||!r.ok){ el.innerHTML=fault('Announcements did not load.','',"loadAnnouncements()"); return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No active announcements.</div>'; return; }
   el.innerHTML=items.map(a=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);"><span class="chip ${a.level==='critical'?'bad':a.level==='warning'?'warn':'info'}">${esc(a.level)}</span><div style="min-width:0;flex:1;"><b style="font-size:12px;">${esc(a.title)}</b><div class="sub" style="font-size:11px;">${esc((a.body||'').slice(0,120))}</div></div><button class="btn sm danger" onclick="deactivateAnn('${a.id}')">Deactivate</button></div>`).join('');
@@ -3856,7 +4190,7 @@ async function loadStripeEvents(page){
   const pg=pgState('stripe',25); if(page)pg.page=page;
   const off=(pg.page-1)*pg.size;
   let r; try{ r=await api('/admin/v1/billing/stripe-events?limit='+pg.size+'&offset='+off+(st?('&status='+st):'')); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('seRows').innerHTML='<tr><td colspan="6" class="sub mono">unavailable</td></tr>'; window.foxPager('sePager',{total:0}); return; }
+  if(!r||!r.ok){ $('seRows').innerHTML=faultRow(6,'Stripe events did not load.',"loadStripeEvents()"); window.foxPager('sePager',{total:0}); return; }
   const _d=await r.json(), items=_d.items||[];
   window.foxPager('sePager',{page:pg.page,pageSize:pg.size,total:_d.total||items.length,
     label:'Stripe event pages',onPage:loadStripeEvents});
@@ -3912,7 +4246,7 @@ async function loadAudit(keepOff){
   if(!keepOff)AU_OFF=0;
   const p=_auditParams(); p.set('limit','50'); p.set('offset',String(AU_OFF));
   let r; try{ r=await api('/admin/v1/audit?'+p.toString()); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">unavailable</td></tr>'; return; }
+  if(!r||!r.ok){ $('auRows').innerHTML=faultRow(6,'The audit trail did not load.',"loadAudit()"); return; }
   const d=await r.json();
   if(!d.items.length){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">no matching actions</td></tr>'; $('auPager').innerHTML=''; return; }
   $('auRows').innerHTML=d.items.map(a=>`<tr><td data-label="When" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td data-label="Actor" class="mono" style="font-size:11px;">${esc(a.actor||'—')}</td><td data-label="Action" class="mono" style="font-size:11px;">${esc(a.action)}</td><td data-label="Target" class="mono" style="font-size:10px;">${esc(a.target_type||'—')}${a.target_id?(' '+esc(a.target_id.slice(0,8))+'…'):''}</td><td data-label="Org" class="mono" style="font-size:10px;">${esc(a.org_name||'—')}</td><td data-label="IP" class="mono" style="font-size:10px;">${esc(a.ip||'—')}</td></tr>`).join('');
@@ -3929,7 +4263,7 @@ function leadsDebounced(){ clearTimeout(_ldT); _ldT=setTimeout(()=>loadLeads(),2
 async function loadLeads(){
   const q=$('ldSearch')?$('ldSearch').value.trim():'';
   let r; try{ r=await api('/admin/v1/leads'+(q?('?q='+encodeURIComponent(q)):'')); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('ldKanban').innerHTML='<div class="sub mono">unavailable</div>'; return; }
+  if(!r||!r.ok){ $('ldKanban').innerHTML=fault('Leads did not load.','',"loadLeads()"); return; }
   const d=await r.json();
   const c=d.counts||{new:0,trial:0,converted:0,churned:0};
   const mx=Math.max(c.new,c.trial,c.converted,c.churned,1);

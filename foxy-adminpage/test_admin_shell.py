@@ -1130,6 +1130,446 @@ def test_the_copy_button_is_wired() -> None:
     handler = SRC[SRC.index("var b=e.target.closest?e.target.closest('[data-copy]')"):]
     assert "_copyText(" in handler[:400], "the copy button does nothing"
 
+# ═══════════════════════════════════════════════════════════════════════════
+# A0 — the shared component layer (docs/plans/admin-refinement.md)
+#
+# These measure. The one guard this file has shipped that asserted a constant
+# against itself is the reason every ratio below is recomputed from the token
+# values in the file rather than compared to a number written beside them.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _srgb(c: float) -> float:
+    c /= 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _lum(hex_: str) -> float:
+    h = hex_.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.2126 * _srgb(r) + 0.7152 * _srgb(g) + 0.0722 * _srgb(b)
+
+
+def _ratio(a: str, b: str) -> float:
+    la, lb = _lum(a), _lum(b)
+    if la < lb:
+        la, lb = lb, la
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _css() -> str:
+    """The style block with comments stripped.
+
+    This matters more than it looks. The comments in this file quote token names
+    and selectors verbatim -- "Contrast against --surf: ink 15.79:1", ".btn:hover
+    was declared twice" -- so any guard that greps the raw block reads prose as
+    if it were code. Several of the guards below were written that way first and
+    passed for the wrong reason until they were pointed at this.
+    """
+    return re.sub(r"/\*.*?\*/", "", _style_block(), flags=re.S)
+
+
+def _scope(name: str) -> str:
+    css = _css()
+    at = css.index(name)
+    return css[at:css.index("}", at)]
+
+
+def _token(name: str, theme: str = "dark") -> str:
+    """The literal hex a token resolves to in one theme, following var() aliases."""
+    root, light = _scope(":root{"), _scope('html[data-theme="light"]{')
+    scopes = [light, root] if theme == "light" else [root]
+    seen, cur = set(), name
+    while True:
+        assert cur not in seen, f"var() cycle at {cur}"
+        seen.add(cur)
+        val = None
+        for scope in scopes:
+            m = re.search(re.escape(cur) + r"\s*:\s*([^;}]+)", scope)
+            if m:
+                val = m.group(1).strip()
+                break
+        assert val is not None, f"{cur} is not declared in the {theme} scope"
+        m = re.fullmatch(r"var\((--[a-z0-9-]+)\)", val)
+        if not m:
+            assert val.startswith("#"), f"{name} -> {val}: not a hex in {theme}"
+            return val
+        cur = m.group(1)
+
+
+def _face_stops() -> list[str]:
+    css = _css()
+    out = []
+    for k in FACE_CLASSES:
+        i = css.index("." + k)
+        out += re.findall(r"--k2?:\s*(#[0-9a-fA-F]{3,6})", css[i:css.index("}", i)])
+    assert len(out) == 18, f"expected 9 faces x 2 stops, got {len(out)}"
+    return out
+
+
+CHIP_KINDS = {"safe": "--safe-bg", "bad": "--breach-bg", "warn": "--warn-bg",
+              "info": "--info-bg", "dim": "--line2"}
+
+
+# ── 1 · the measured defect ──────────────────────────────────────────────────
+
+def test_a_chip_on_a_hero_face_does_not_use_the_panel_fill() -> None:
+    """The whole point of A0. Without this scope the pill reverts to a fill that
+    measured 1.005:1 against the face it sits on."""
+    css = _style_block()
+    assert ".kpi .face .chip{background:var(--foxink)" in css, (
+        "the on-face chip lost its plate — every status pill on a hero card goes "
+        "back to matching the gradient behind it"
+    )
+    for kind in CHIP_KINDS:
+        assert ".kpi .face .chip.%s{color:var(--face-ink-%s)}" % (kind, kind) in css, (
+            ".chip.%s has no on-face ink" % kind
+        )
+
+
+def test_the_on_face_plate_clears_the_component_bar_against_every_face_stop() -> None:
+    """3.0:1 is WCAG 1.4.11 for a component boundary. Measured, not asserted."""
+    plate = _token("--foxink")
+    worst, stop = min((_ratio(plate, s), s) for s in _face_stops())
+    assert worst >= 3.0, f"the on-face plate {plate} is only {worst:.2f}:1 against {stop}"
+
+
+def test_every_on_face_ink_is_legible_on_the_plate() -> None:
+    plate = _token("--foxink")
+    for kind in CHIP_KINDS:
+        ink = _token("--face-ink-" + kind)
+        r = _ratio(ink, plate)
+        assert r >= 4.5, f"--face-ink-{kind} {ink} is {r:.2f}:1 on {plate}"
+
+
+def test_the_on_face_inks_are_theme_invariant() -> None:
+    """The nine faces are declared once and never re-themed, so anything measured
+    against them must be too. A light-block override would reopen the defect in
+    one theme only."""
+    light = _scope('html[data-theme="light"]{')
+    for kind in CHIP_KINDS:
+        assert "--face-ink-" + kind not in light, (
+            f"--face-ink-{kind} is re-themed; the face it lands on is not"
+        )
+
+
+def test_the_health_hero_is_still_the_case_this_was_built_for() -> None:
+    """#hStatus and #hWorker are .kval nodes inside a .kpi .face and opsChip()
+    writes a .chip into both. The scoped rule above is the only thing protecting
+    them, so if either leaves a face, say so."""
+    assert "$('hStatus').innerHTML=opsChip(" in SRC
+    assert "$('hWorker').innerHTML=opsChip(" in SRC
+    for hid in ("hStatus", "hWorker"):
+        card = next(c for c in _kpi_cards() if 'id="%s"' % hid in c)
+        assert 'class="face"' in card, f"#{hid} left the hero face"
+
+
+# ── 2 · chips on flat panels, the other context ──────────────────────────────
+
+def test_every_meaning_bearing_chip_fill_separates_from_every_panel() -> None:
+    """.dim is exempt and says so at its rule: its fill carries no meaning to
+    lose (the word clears 6.79/5.32), and any fill that would reach 3.0 against
+    near-white paper would be louder than a real status."""
+    for theme in ("dark", "light"):
+        for kind, tok in CHIP_KINDS.items():
+            if kind == "dim":
+                continue
+            fill = _token(tok, theme)
+            for p in ("--bg", "--surf", "--surf2", "--surf3"):
+                r = _ratio(fill, _token(p, theme))
+                assert r >= 3.0, (
+                    f"{theme} .chip.{kind} ({fill}) is {r:.2f}:1 on {p} — no visible pill"
+                )
+
+
+def test_every_chip_ink_is_legible_on_its_own_fill() -> None:
+    inks = {"safe": "--safe-tx", "bad": "--breach-tx", "warn": "--warn-tx",
+            "info": "--info-tx", "dim": "--ink2"}
+    for theme in ("dark", "light"):
+        for kind, tok in CHIP_KINDS.items():
+            r = _ratio(_token(inks[kind], theme), _token(tok, theme))
+            assert r >= 4.5, f"{theme} .chip.{kind} ink is {r:.2f}:1 on its fill"
+
+
+def test_a_category_is_not_dressed_as_a_status() -> None:
+    """A role, a plan tier, a site and a threshold are labels. Wearing amber for
+    'superadmin' beside a column where amber means a real HTTP warning is what
+    teaches staff to stop reading amber."""
+    css = _css()
+    assert ".tag{" in css and "background:var(--neutral-soft)" in css
+    for banned in ('chip info">\'+esc(p.enforcement_mode)',
+                   'chip info">\'+esc(p.confidence_threshold)',
+                   'chip info">\'+esc(d.plan_tier',
+                   'chip dim">you</span>',
+                   "s.platform_role==='superadmin'?'warn'"):
+        assert banned not in SRC, f"a category is wearing a status hue: {banned}"
+
+
+# ── 3 · the button family ────────────────────────────────────────────────────
+
+def test_the_button_obeys_the_files_own_elevation_contract() -> None:
+    """'--raise is the default for anything you would pick up; :active swaps
+    raise -> sink', says the token block. .btn sat at --clay-press (= --sink-sm)
+    at rest AND on :active, so pressed and unpressed were the same shadow."""
+    assert "box-shadow:var(--raise-sm)" in _scope(".btn{"), ".btn no longer rests raised"
+    assert "var(--sink-sm)" in _scope(".btn:active:not(:disabled){"), ".btn:active no longer sinks"
+
+
+def test_no_interactive_button_rule_can_beat_disabled() -> None:
+    """:hover still matches on a disabled button, and .btn.pri:hover outranks
+    .btn:disabled on specificity — so a disabled Suspend / Replay / Re-anchor
+    lifted off the page and brightened its glow under the cursor."""
+    css = _css()
+    for m in re.finditer(r"\.btn(?:\.[a-z]+)?:(?:hover|active)[^{,]*\{", css):
+        assert ":not(:disabled)" in m.group(0), f"{m.group(0).strip()} is not disabled-guarded"
+
+
+def test_the_button_declares_hover_and_active_exactly_once() -> None:
+    """They were declared twice — in CONTROLS and again in the E3 block, which
+    silently shadowed the first pair. An edit there did nothing."""
+    css = _css()
+    assert len(re.findall(r"(?<![.\w)])\.btn:hover", css)) == 1
+    assert len(re.findall(r"(?<![.\w)])\.btn:active", css)) == 1
+
+
+def test_disabled_is_a_real_treatment_not_an_opacity() -> None:
+    """Group opacity fades fill and ink together over the page: all 16 variants
+    landed under 4.5:1, worst light .btn.safe at 1.42:1, and the light .btn's own
+    fill hit 1.02:1 against its panel — the button disappeared."""
+    rule = _scope(".btn:disabled,")
+    assert "opacity:" not in rule, "disabled is back to fading the whole button"
+    assert "color:var(--muted)" in rule and "background:var(--bg)" in rule
+    assert "box-shadow:var(--sink-sm)" in rule, "a disabled button with no shadow has no shape"
+    for theme in ("dark", "light"):
+        r = _ratio(_token("--muted", theme), _token("--bg", theme))
+        assert r >= 4.5, f"{theme} disabled label is only {r:.2f}:1"
+
+
+def test_the_button_family_is_complete() -> None:
+    """operate.md: default, hover, focus, active, disabled, loading. Do not ship
+    with half of them."""
+    css = _css()
+    for variant in (".btn.pri{", ".btn.ghost{", ".btn.danger{", ".btn.safe{"):
+        assert variant in css, f"{variant} is missing from the family"
+    assert '.btn[aria-busy="true"]' in css, "the button has no loading state"
+    assert ".btn.ghost:hover:not(:disabled)" in css
+    assert ".btn.ghost:active:not(:disabled)" in css
+
+
+def test_a_finger_gets_a_finger_sized_button() -> None:
+    css = _css()
+    at = css.index("@media (hover:none){", css.index(".btn.sm{"))
+    assert "min-height:44px" in css[at:at + 200], "no SC 2.5.5 target on a coarse pointer"
+
+
+# ── 4 · the light theme's primary action ─────────────────────────────────────
+
+def test_the_primary_action_carries_its_ink_in_both_themes() -> None:
+    """--fox-hi is a FILL and was aliased onto --fox2, which the light block had
+    already re-derived into an INK. That put --on-pri #1a0900 on #b14000 at
+    3.33:1 — below AA, on .btn.pri, .fauxselect-opt.sel, .segbtn[aria-pressed]
+    and the checkbox tick, in the shipped light theme."""
+    for theme in ("dark", "light"):
+        ink = _token("--on-pri", theme)
+        for stop in ("--fox-hi", "--fox"):
+            r = _ratio(ink, _token(stop, theme))
+            assert r >= 4.5, f"{theme} --on-pri on {stop} is {r:.2f}:1"
+
+
+def test_the_primary_fill_separates_from_the_page() -> None:
+    for theme in ("dark", "light"):
+        for stop in ("--fox-hi", "--fox"):
+            r = _ratio(_token(stop, theme), _token("--surf", theme))
+            assert r >= 3.0, f"{theme} {stop} is {r:.2f}:1 against --surf"
+
+
+def test_fox_hi_is_not_an_alias_of_the_ink_in_light() -> None:
+    assert _token("--fox-hi", "light") != _token("--fox2", "light"), (
+        "--fox-hi is back to borrowing the ink token's value"
+    )
+
+
+# ── 5 · forms ────────────────────────────────────────────────────────────────
+
+def test_every_field_label_is_a_real_label() -> None:
+    """There were 47 .flabel and zero `for` attributes: every input in the
+    console, including the sign-in password, announced as 'edit, blank'."""
+    orphans = re.findall(
+        r'<div class="flabel"[^>]*>[^<]*</div>\s*<(?:input|textarea)[^>]*\bclass="[^"]*\bcin\b', SRC)
+    assert not orphans, f"{len(orphans)} field labels are still unassociated <div>s"
+    assert len(re.findall(r'<label class="flabel"[^>]*\bfor="', SRC)) >= 30
+
+
+def test_every_label_for_points_at_something() -> None:
+    """A wrong `for` is worse than no `for`."""
+    for target in re.findall(r'<label class="flabel"[^>]*\bfor="([^"]+)"', SRC):
+        assert 'id="%s"' % target in SRC, f'<label for="{target}"> points at nothing'
+
+
+def test_the_label_style_survives_becoming_an_element() -> None:
+    assert "display:block" in _scope(".flabel{"), "<label> is inline; the block layout is gone"
+
+
+def test_the_custom_dropdown_is_operable_without_a_mouse() -> None:
+    """The swap from <select> lost arrow keys, Home/End, type-ahead, Escape and
+    every AT role. A keyboard user could open the list and reach no option."""
+    assert "root.addEventListener('keydown'" in SRC, ".fauxselect has no key handling"
+    keys = SRC[SRC.index("function _fauxKeys("):]
+    keys = keys[:keys.index("\nfunction ")]
+    for k in ("ArrowDown", "ArrowUp", "Home", "End", "Escape", "Enter"):
+        assert k in keys, f".fauxselect does not handle {k}"
+    roles = SRC[SRC.index("function _fauxRoles("):]
+    roles = roles[:roles.index("\nfunction ")]
+    for attr in ("'role','combobox'", "'role','listbox'", "'role','option'",
+                 "'aria-expanded'", "'aria-selected'"):
+        assert attr in roles, f".fauxselect is missing {attr}"
+
+
+def test_the_dropdowns_that_cannot_take_a_for_are_named_another_way() -> None:
+    for rid in ("trafSite", "trafStatus", "nsRole", "dataTable"):
+        assert 'aria-labelledby="%sLab"' % rid in SRC, f"#{rid} trigger is unnamed"
+        assert 'id="%sLab"' % rid in SRC
+
+
+def test_the_command_palette_input_replaces_the_ring_it_suppresses() -> None:
+    assert ".cmdk-in:focus-visible{box-shadow:var(--focus)}" in _css()
+
+
+# ── 6 · states ───────────────────────────────────────────────────────────────
+
+def test_a_fault_is_not_an_empty() -> None:
+    """'No ledger rows.' and 'Failed to load ledger.' rendered as the same grey
+    centred sentence, and `Retry` appeared zero times in 4,125 lines."""
+    css = _css()
+    assert ".chart-fault{" in css
+    assert "background:var(--danger-soft)" in _scope(".chart-fault{")
+    assert "function fault(" in SRC and "function faultRow(" in SRC
+    assert "Try again" in SRC, "a fault state with no recovery is just a nicer empty"
+    for stale in ('chart-empty">Failed to load', 'chart-empty">unavailable',
+                  'chart-empty">trend unavailable'):
+        assert stale not in SRC, f"a fault is still rendering as an empty: {stale}"
+
+
+def test_every_retry_calls_a_function_that_exists() -> None:
+    calls = set(re.findall(r'fault\([^;]*?,\s*"(\w+)\(', SRC))
+    assert calls, "no fault() call site offers a retry"
+    for call in calls:
+        assert "function %s(" % call in SRC, f"Try again calls {call}(), which is not defined"
+
+
+def test_the_loading_state_loads_in_both_themes() -> None:
+    """The shimmer was a hardcoded white at 14%: 1.55:1 on the dark surface and
+    1.016:1 on the light one."""
+    css = _css()
+    after = css[css.index(".skel::after"):]
+    assert "var(--skel-hi)" in after[:300]
+    assert "rgba(255,255,255,.14)" not in after[:300]
+    assert "--skel-hi" in _scope('html[data-theme="light"]{'), "--skel-hi is not re-themed"
+
+
+def test_the_skeleton_matches_what_it_stands_in_for() -> None:
+    minh = re.search(r"min-height:(\d+)px", _scope(".kpi .face{")).group(1)
+    assert ".skel-kpi{height:%spx}" % minh in _css(), (
+        "the KPI skeleton and the KPI card are different heights — a jump on load"
+    )
+
+
+def test_the_toast_announces_itself() -> None:
+    """The only confirmation and error channel for suspend, disable, replay and
+    re-anchor. The password meter had a live region; this did not."""
+    i = SRC.index('<div id="toast"')
+    tag = SRC[i:SRC.index(">", i)]
+    assert 'role="status"' in tag and 'aria-live="polite"' in tag
+
+
+# ── 7 · tables ───────────────────────────────────────────────────────────────
+
+def test_only_a_clickable_row_claims_to_be_clickable() -> None:
+    css = _css()
+    assert ".tbl tbody tr:hover{background:var(--surf2)}" in css
+    assert ".tbl tbody tr.rowbtn:hover{box-shadow:inset 3px 0 0 var(--fox)}" in css, (
+        "the drill-down affordance is back on rows that do not drill down"
+    )
+
+
+def test_a_sticky_header_has_something_to_stick_inside() -> None:
+    """position:sticky needs a scrollport, and .twrap is height:auto — so on 9 of
+    the 10 wraps the rule was inert. .scrolly is the opt-in that makes it real."""
+    assert "overflow:auto" in _scope(".twrap.scrolly{")
+    assert 'class="twrap" style="max-height' not in SRC, (
+        "a table is hand-rolling a scrollport instead of using .scrolly"
+    )
+
+
+# ── 8 · the scales ───────────────────────────────────────────────────────────
+
+RADIUS_TOKENS = ("--r-xs", "--r-sm", "--r-md", "--r-lg", "--r-xl", "--r-pill")
+
+
+def _root_value(token: str) -> str:
+    return re.search(re.escape(token) + r"\s*:\s*([^;}]+)", _scope(":root{")).group(1)
+
+
+def test_the_radius_ladder_has_no_off_scale_strays() -> None:
+    """It was 12 distinct hardcoded radii against a 4-token scale, with 11px —
+    exactly --r-sm — retyped as a literal three times. 50% is a circle and 2px is
+    a hairline on a 3-4px bar; neither is a surface, so neither is on the ladder."""
+    css = _css()
+    strays = [v.strip() for v in re.findall(r"border-radius:\s*([^;}]+)", css)
+              if not any(t in v for t in RADIUS_TOKENS) and v.strip() not in ("50%", "2px")]
+    assert not strays, f"off-ladder radii: {sorted(set(strays))}"
+
+
+def test_the_radius_ladder_ascends() -> None:
+    px = {t: int(re.search(r"(\d+)px", _root_value(t)).group(1))
+          for t in ("--r-xs", "--r-sm", "--r-md")}
+    assert px["--r-xs"] < px["--r-sm"] < px["--r-md"], px
+
+
+def test_the_two_fluid_radii_never_converge() -> None:
+    """The overlap was reported as a defect; it is not one. Both clamps ride the
+    same vw, so --r-xl leads --r-lg by 4-8px at every real viewport. Checked
+    rather than assumed, because the next reader will wonder too."""
+    lg = [float(x) for x in re.findall(r"[\d.]+", _root_value("--r-lg"))]
+    xl = [float(x) for x in re.findall(r"[\d.]+", _root_value("--r-xl"))]
+    for vw in (320, 480, 768, 1024, 1440, 1920):
+        a = max(lg[0], min(lg[2], lg[1] / 100 * vw))
+        b = max(xl[0], min(xl[2], xl[1] / 100 * vw))
+        assert b - a >= 3.0, f"at {vw}px --r-lg {a} and --r-xl {b} are indistinguishable"
+
+
+def test_no_token_is_declared_and_then_never_used() -> None:
+    """A scale nothing references is a claim about a system, not a system —
+    --s-1/-2/-6/-7/-8, --r-xl and --ease-spring were all at zero call sites while
+    their literal values were retyped below."""
+    for token in ["--s-%d" % n for n in range(1, 8)] + list(RADIUS_TOKENS) + \
+                 ["--ease-spring", "--dur-slow", "--skel-hi"] + \
+                 ["--face-ink-%s" % k for k in CHIP_KINDS]:
+        uses = len(re.findall(r"var\(" + re.escape(token) + r"[,)]", SRC))
+        assert uses >= 1, f"{token} is declared and never used"
+
+
+def test_the_shared_components_speak_the_spacing_scale() -> None:
+    """Page rules still hold raw px — A1-A6 convert their own. The components
+    that everything downstream inherits do not."""
+    css = _css()
+    for sel in (".chip{", ".tag{", ".btn{", ".tbl td{", ".flabel{"):
+        rule = css[css.index(sel):css.index("}", css.index(sel))]
+        spacing = re.findall(r"(?:padding|margin|gap)\s*:\s*([^;}]+)", rule)
+        assert spacing, f"{sel} declares no spacing at all"
+        for v in spacing:
+            assert "--s-" in v, f"{sel} still hardcodes spacing: {v}"
+
+
+# ── 9 · depth ────────────────────────────────────────────────────────────────
+
+def test_no_shadow_is_a_zero_offset_halo() -> None:
+    """A shadow carries an offset and a blur; `0 0 12px` of a brand colour is
+    decoration wearing depth's clothes."""
+    css = _css()
+    halos = re.findall(r"box-shadow:\s*0 0 [1-9]\d*px\s+(?:var\(|rgba?\(|#)", css)
+    assert not halos, f"zero-offset colored halos: {halos}"
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))
