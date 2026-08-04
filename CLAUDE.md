@@ -21,7 +21,12 @@ The MAIN chat can run a **background poller** that watches `origin` for executor
 - **OFF** otherwise (default). The user says "turn the poller on/off"; honor it. Never leave it running unattended past the work session.
 
 ### 3. Mandatory skills / tools
-- **UI/UX work → ALWAYS invoke the `ui-ux-pro-max` skill first.** Any design, build, or review of UI (customer dashboard, admin console, sale page, transactional emails, slide decks, badges) *must* start by loading `ui-ux-pro-max`. No UI without it.
+- **UI/UX work → load ALL THREE frontend skills, `ui-ux-pro-max` first.** Any design, build, or review of UI (customer dashboard, admin console, sale page, transactional emails, slide decks, badges) *must* start by loading them. No UI without them. They are **not interchangeable**:
+  - **`ui-ux-pro-max`** — the **fact base**: 84 styles, 192 palettes, 74 font pairings, 98 UX guidelines, icons, motion presets, 25 chart types across 22 stacks. Query it; never invent a palette or a pairing.
+  - **`impeccable`** — the **craft**: design and redesign, critique and audit, polish, visual hierarchy, information architecture, accessibility, responsive behaviour, motion and micro-interactions, UX copy, error and empty states, live browser iteration, ambitious visual effects. This is where the work happens.
+  - **`frontend-design`** — the **direction**: aesthetic intent, and not shipping something that reads as a templated default.
+
+  `ui-ux-pro-max` goes first because a critique built on an invented palette is a critique of the wrong thing. And **measure a fill against its background, not only its ink** — this surface has shipped a chip whose text cleared 4.5:1 while the pill itself sat at 1.01:1 against the card behind it and dissolved.
 - **`claude-mem` → always on.** Recall relevant memory at the start of a task and save decisions, facts, and gotchas as you go.
 - **`code-review` skill → run before merging** any non-trivial change (the committer's gate).
 - **`ponytail` → use for simplification, but ONLY when it does not change behavior/output.** Apply its "laziest correct / minimal" lens where it's provably output-neutral (dead flexibility, reinvented stdlib, needless deps). If simplifying could alter a result, a verdict, a hash, or the wire contract — **skip it.**
