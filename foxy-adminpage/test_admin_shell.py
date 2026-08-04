@@ -1754,11 +1754,27 @@ def test_the_quiet_variant_is_gone_from_the_stylesheet() -> None:
     any card that picked the modifier back up in a merge — and this file has one
     branch per phase all editing the same 486 KB, so that is not hypothetical."""
     css = _css()
-    assert ".quiet" not in css, (
+    # The invariant is that the VARIANT is gone: its rule block, and any card
+    # wearing it. NOT every textual mention. A4 scopes four `.sens` rules with
+    # `.kpi:not(.quiet)`, and stripping that qualifier would drop their
+    # specificity from (0,2,0) to (0,1,0) — a real cascade change made to satisfy
+    # a string search. No card carries the class, so the qualifier is inert; it
+    # is left alone and named here instead.
+    assert ".kpi.quiet" not in css, (
         "the quiet variant still has rules: " +
-        ", ".join(sorted(set(re.findall(r"[^{}\n]*\.quiet[^{}]*", css))))[:300]
+        ", ".join(sorted(set(re.findall(r"[^{}\n]*\.kpi\.quiet[^{}]*", css))))[:300]
     )
-
+    # ...and no card wears it. Inert today because the rule is gone, but a
+    # stray modifier plus a re-added rule is exactly how the variant returns.
+    # MARKUP, not the prose about it: the comment a few hundred lines up
+    # quotes `class="kpi … quiet"` while explaining why the rule was
+    # deleted, and a naive grep over SRC matches its own footnote.
+    # Strip BOTH comment syntaxes: the footnote that quotes this exact
+    # string lives in a CSS comment inside <style>, not an HTML comment,
+    # so stripping only <!-- --> leaves the guard matching its own prose.
+    markup = re.sub(r"<!--.*?-->|/\*.*?\*/", "", SRC, flags=re.S)
+    assert not re.search(r'class="[^"]*\bkpi\b[^"]*\bquiet\b', markup), (
+        "a KPI card still carries the quiet modifier in markup")
 
 def test_the_face_still_carries_the_ink_it_publishes() -> None:
     """The saturated face is the only face now, so everything A1 measured for it
@@ -2656,16 +2672,18 @@ def test_a4_pages_name_themselves() -> None:
 
 
 def test_revenue_reserves_its_face_for_the_card_that_answers_the_question() -> None:
-    """#65, on the last KPI row that never adopted it. All three revenue cards
-    were saturated — the pre-A1 state, where the page named "revenue" gave a
-    subscription count and a trial count the same weight as the revenue."""
+    """REWRITTEN at MAIN's R1 gate, not deleted.
+
+    A4 wrote this to assert #65's reserved face on revenue. The owner then
+    reviewed the reserved face in context across the whole surface and reverted
+    it (R1): every KPI card is fully coloured again. A4 could not update this
+    guard because R1 branched before A4 merged. The assertion flips; the
+    coverage stays."""
     cards = [c for c in _kpi_cards() if any(k in c for k in ("rvRev30", "rvActive", "rvTrial"))]
     assert len(cards) == 3, "expected 3 revenue KPI cards, found %d" % len(cards)
     loud = [c for c in cards if "quiet" not in c.split(">")[0]]
-    assert len(loud) == 1, "revenue shows %d emphatic cards, not 1" % len(loud)
-    assert 'id="rvRev30"' in loud[0], (
-        "the revenue face is not on Revenue · 30 days — the one card the page is named after"
-    )
+    assert len(loud) == 3, "revenue shows %d fully-coloured cards, not 3" % len(loud)
+    assert any('id="rvRev30"' in c for c in cards), "the Revenue card is missing"
 
 
 def test_the_mask_control_is_legible_on_the_face_it_lands_on() -> None:
