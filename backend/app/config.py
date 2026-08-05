@@ -51,6 +51,23 @@ class Settings(BaseSettings):
     stripe_price_max: str = ""
     stripe_price_companion: str = ""
     stripe_price_guardian: str = ""    # one-time (lifetime) — Checkout mode=payment
+    # ── Paddle (M2). Empty by default, so every Paddle path answers 503 exactly
+    #    as the Stripe paths do today: a half-configured deployment must not
+    #    offer a purchase it cannot finish. `paddle_api_key` is the single switch
+    #    that turns the Paddle branch on. ──
+    paddle_api_key: str = ""           # sandbox keys are prefixed `sdbx_`
+    paddle_webhook_secret: str = ""    # notification destination secret, `pdl_ntfset_…`
+    paddle_env: str = "sandbox"        # sandbox | live — selects the API host
+    paddle_price_pro: str = ""         # pri_…
+    paddle_price_max: str = ""         # pri_…
+    # How far a Paddle-Signature timestamp may be from our clock. Paddle's own
+    # SDKs default to 5 seconds; that is far too tight for a self-hosted VM whose
+    # clock nobody is watching — a few seconds of drift would silently reject
+    # every webhook and stop billing dead, with a valid signature. 300s matches
+    # Stripe's long-standing default. The replay window is defence in depth, not
+    # the idempotency control: `payment_events.provider_event_id` is UNIQUE, so a
+    # replay inside the window is already a no-op.
+    paddle_signature_tolerance_seconds: int = 300
     # Google reCAPTCHA v2 — server-side verification of the demo form. Empty = skip
     # (the frontend widget still gates UX; set RECAPTCHA_SECRET_KEY in the server env
     # for real bot protection — the site key is public and lives in book-a-demo.html).

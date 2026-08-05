@@ -30,6 +30,15 @@ class Organization(Base):
         String(255), nullable=True, unique=True, default=None)
     stripe_subscription_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, default=None)
+    # ── Paddle (migration 0062, M2). Deliberately SEPARATE columns rather than a
+    #    rename or a shared pair: which processor owns an org is a fact about
+    #    that org, and one column holding "whichever processor" cannot answer it.
+    #    Stripe has never run here — no key, no payment — so nothing is
+    #    dual-written today and the two sets cannot disagree. ──
+    paddle_customer_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True, default=None)   # ctm_…
+    paddle_subscription_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None)                # sub_…
     subscription_status: Mapped[str | None] = mapped_column(
         String(32), nullable=True, default=None)             # active | past_due | cancelled | incomplete
     # When the subscription FIRST went past_due (migration 0060). The dashboard
@@ -782,6 +791,45 @@ class StripeEvent(Base):
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default="received")          # received|processed|ignored|failed
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
+class PaymentEvent(Base):
+    """Durable, idempotent log of every verified webhook from a NON-Stripe
+    processor. Same shape and same guarantees as ``stripe_events``, deliberately
+    a separate table: a table named for one processor holding another's events is
+    a lie that costs an hour of confusion later, and the migration is cheap.
+
+    ``provider_event_id`` is Paddle's ``event_id`` (``evt_…``) and NOT its
+    ``notification_id`` (``ntf_…``). The distinction is the whole idempotency
+    story: Paddle guarantees at-least-once delivery and retries on exponential
+    backoff, and ``notification_id`` is unique **per delivery attempt** while
+    ``event_id`` is unique **per event**. Keying on the wrong one would store a
+    fresh row for every retry and re-run every side effect.
+
+    Platform-only, NO RLS — the same posture as ``stripe_events`` and for the
+    same structural reason: ``org_id`` is nullable (an event can arrive before we
+    can resolve an org, or for none at all), and a NULL can never match an RLS
+    policy predicate, so RLS would hide exactly the rows staff need to debug a
+    failed payment.
+    """
+    __tablename__ = "payment_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)      # "paddle"
+    provider_event_id: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False)              # evt_… idempotency key
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="received")             # received|processed|ignored|failed
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())

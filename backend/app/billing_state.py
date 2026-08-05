@@ -168,12 +168,19 @@ def grandfathered(org) -> bool:
       asked for. The cutoff is UNSET by default, which exempts everyone: a date
       baked into config is wrong the moment it passes.
 
-    * **Has a Stripe subscription.** A paying customer demonstrably has a card at
-      Stripe; `card_on_file` only tracks the newer $0-authorisation flow and so
-      under-reports reality for anyone who subscribed before it existed. Locking
-      a paying customer out over a flag that post-dates their payment would be
-      absurd, and it stays true for anyone who subscribes through Checkout rather
-      than the setup session.
+    * **Has a subscription with ANY processor.** A paying customer demonstrably
+      has a card at that processor; `card_on_file` only tracks the newer
+      $0-authorisation flow and so under-reports reality for anyone who
+      subscribed before it existed. Locking a paying customer out over a flag
+      that post-dates their payment would be absurd, and it stays true for
+      anyone who subscribes through Checkout rather than the setup session.
+
+      **Both processors count (M2 · register #95.)** This read only
+      `stripe_subscription_id`, so the moment Paddle took a payment, the newest
+      paying customers in the system would have been the only ones NOT exempt —
+      precisely inverted. Dormant today (`require_card_on_file` is off and
+      `card_gate_grandfather_before` is unset, so `grandfathered` already returns
+      True for everyone) and wrong the instant either is turned on.
 
     The date rule alone satisfies "flipping the flag locks nobody out today". The
     subscription rule is what keeps that true tomorrow.
@@ -183,7 +190,8 @@ def grandfathered(org) -> bool:
     answers for a failed payment, and it answers with a message about the payment
     rather than about a card.
     """
-    if getattr(org, "stripe_subscription_id", None):
+    if (getattr(org, "stripe_subscription_id", None)
+            or getattr(org, "paddle_subscription_id", None)):
         return True
     raw = (get_settings().card_gate_grandfather_before or "").strip()
     if not raw:

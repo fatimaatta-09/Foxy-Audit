@@ -33,13 +33,13 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
-from .. import account_audit, billing_state, password_reset
+from .. import account_audit, billing_state, paddle, password_reset
 from ..auth import hash_key, require_role, require_step_up_user, resolve_org
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..models import (
     ApiKey, EvaluationCampaign, EvaluationRedemption, Invoice, MarketingLead, Organization,
-    StripeEvent, User,
+    PaymentEvent, StripeEvent, User,
 )
 from .logs import limiter
 
@@ -307,6 +307,14 @@ def checkout_session(payload: CheckoutRequest, request: Request):
     """Create a Stripe Checkout Session for a paid plan and return its URL; the
     webhook provisions the org once payment completes. (Phase 6 · 6A)"""
     s = get_settings()
+    # M2 — the same one-line processor branch as `upgrade_session`, placed before
+    # the Stripe config check so the Stripe path below keeps its exact original
+    # ordering (503 before the email check). The Paddle helper repeats that
+    # ordering itself rather than reusing a hoisted check, because hoisting one
+    # would have turned an unconfigured deployment's 503 into a 422 for a
+    # malformed address — a behaviour change on a path this phase must not touch.
+    if paddle.configured():
+        return _paddle_checkout_session(payload.email, payload.plan)
     if not s.stripe_secret_key:
         raise HTTPException(status_code=503, detail="billing not configured")
     email_addr = payload.email.strip().lower()
@@ -368,6 +376,16 @@ def upgrade_session(request: Request, payload: UpgradeRequest,
     has to be — a lock whose only remedy is behind the lock is a brick.
     """
     s = get_settings()
+    # M2 — the processor branch, and it is deliberately ONE `if` on this route
+    # rather than a new endpoint. The dashboard, the desktop and the admin
+    # console all already call `/v1/billing/upgrade-session`; branching here
+    # means all three buy through Paddle with zero client changes.
+    #
+    # `paddle.configured()` is the switch: no `PADDLE_API_KEY`, no Paddle. The
+    # Stripe branch below is untouched and still runs when it is the only one
+    # configured, which today is neither of them — both are unset, both 503.
+    if paddle.configured():
+        return _paddle_upgrade_session(db, admin, payload)
     if not s.stripe_secret_key:
         raise HTTPException(status_code=503, detail="billing not configured")
     org = db.get(Organization, admin.org_id)
@@ -402,6 +420,70 @@ def upgrade_session(request: Request, payload: UpgradeRequest,
     except Exception as exc:                # noqa: BLE001
         log.warning("upgrade session failed for org %s: %s", org.id, exc)
         raise HTTPException(status_code=502, detail="could not start checkout")
+
+
+def _paddle_checkout_session(email: str, plan: str) -> dict:
+    """The Paddle half of the ANONYMOUS sale-page checkout (M2 addendum).
+
+    The difference from `_paddle_upgrade_session` is one field and it is the
+    whole design: **no org id goes into custom_data, because no org exists yet.**
+    That absence is the signal the webhook branches on — org id present means
+    upgrade THAT workspace, org id absent means provision a new one. It is the
+    same branch `_handle_checkout` already makes for Stripe, and keeping the two
+    processors on one rule is what stops a second empty workspace being created
+    for somebody who already had one (register #36).
+
+    Same status codes as the Stripe branch above, in the same order: 503 first,
+    then 422 for a malformed address, then 422 for an unsellable plan.
+    """
+    if not paddle.configured():                # unreachable via the route's own
+        raise HTTPException(status_code=503,   # branch; kept so the helper is
+                            detail="billing not configured")   # safe on its own
+    email_addr = (email or "").strip().lower()
+    if "@" not in email_addr or "." not in email_addr.split("@")[-1]:
+        raise HTTPException(status_code=422, detail="a valid email is required")
+    requested_plan = get_settings().canonical_plan((plan or "").strip().lower())
+    if not paddle.price_for(requested_plan):
+        raise HTTPException(status_code=422, detail="unknown or unconfigured plan")
+    try:
+        url = paddle.create_checkout(None, requested_plan, email=email_addr)
+    except Exception as exc:                   # noqa: BLE001
+        log.warning("paddle checkout session failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="could not start checkout")
+    # The Stripe branch returns `checkout_url` ALONE here (no `plan` key) — the
+    # sale page reads only that. Matching it exactly, because this is a public
+    # response shape and M2 adds a processor, not a response.
+    return {"checkout_url": url}
+
+
+def _paddle_upgrade_session(db: Session, admin: User, payload: UpgradeRequest) -> dict:
+    """The Paddle half of `upgrade_session` (M2).
+
+    Same response shape as the Stripe branch — `{checkout_url, plan}` — because
+    three shipped clients already read exactly those two keys and this phase is
+    not allowed to make any of them change.
+
+    Same status codes, for the same reasons: 503 unconfigured, 404 no workspace,
+    422 unknown or unpriced plan, 502 when the processor call fails.
+    """
+    org = db.get(Organization, admin.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="workspace not found")
+    requested_plan = get_settings().canonical_plan(payload.plan.strip().lower())
+    if not paddle.price_for(requested_plan):
+        # Covers both "no such tier" and "this deployment has no price for it".
+        # One answer, so a probe cannot tell which tiers exist from the status.
+        raise HTTPException(status_code=422, detail="unknown or unconfigured plan")
+    try:
+        url = paddle.create_checkout(str(org.id), requested_plan,
+                                     email=org.contact_email or None)
+    except Exception as exc:                 # noqa: BLE001
+        # TYPE, never str(exc): the API key travels in a header on this request
+        # and a urllib error renders the request it failed on.
+        log.warning("paddle upgrade session failed for org %s: %s",
+                    org.id, type(exc).__name__)
+        raise HTTPException(status_code=502, detail="could not start checkout")
+    return {"checkout_url": url, "plan": requested_plan}
 
 
 def _ts(value) -> datetime | None:
@@ -498,6 +580,322 @@ async def stripe_webhook(
             )
             db.commit()
             log.warning("stripe event %s (%s) failed: %s", event_id, event_type, exc)
+            raise HTTPException(status_code=500, detail="event processing failed")
+    finally:
+        db.close()
+
+
+# ─────────────────────── Paddle webhook (M2) ────────────────────────────────
+# A SEPARATE ROUTE, not a rename. `/v1/webhooks/stripe` is a wire contract with
+# an endpoint configured at the processor; touching it would break a live
+# integration to save a path. Paddle gets its own path, its own table and its own
+# handlers, and the two share only the durability SHAPE — which is
+# processor-independent and is the reason replay is safe.
+
+#: The events M2 acts on. Everything else is logged and ignored: a processor
+#: sends far more than any application handles, and the durable log records all
+#: of it either way.
+_PADDLE_PURCHASE_EVENTS = ("transaction.completed", "subscription.created")
+_PADDLE_STATE_EVENTS = (
+    "subscription.activated", "subscription.updated",
+    "subscription.canceled", "subscription.past_due", "subscription.paused",
+    "subscription.resumed", "subscription.trialing",
+)
+
+
+def _paddle_org(db: Session, data: dict) -> Organization | None:
+    """Resolve the workspace an event belongs to, most reliable route first.
+
+    `custom_data.foxy_org_id` is the contract this integration is built on — the
+    same one `foxy_org_id` has in Stripe's Checkout metadata, and the fix for
+    register #36: without it the webhook cannot tell an upgrade from a new
+    customer and provisions a second, empty workspace for someone who already
+    had one. Paddle copies custom_data from the transaction onto the subscription
+    it creates, so it survives onto every later event.
+
+    The id lookups are the fallback for an event that legitimately has no custom
+    data — anything created inside Paddle's own dashboard rather than by us.
+    """
+    org_id = paddle.org_id_from(data)
+    if org_id:
+        try:
+            org = db.get(Organization, uuid.UUID(str(org_id)))
+        except (TypeError, ValueError):
+            log.warning("paddle event carried an unparseable foxy_org_id")
+            org = None
+        if org is not None:
+            return org
+        log.warning("paddle event carried an unknown foxy_org_id")
+
+    sub_id = str(data.get("id") or data.get("subscription_id") or "").strip()
+    if sub_id.startswith("sub_"):
+        org = db.execute(select(Organization).where(
+            Organization.paddle_subscription_id == sub_id)).scalars().first()
+        if org is not None:
+            return org
+    customer_id = str(data.get("customer_id") or "").strip()
+    if customer_id:
+        return db.execute(select(Organization).where(
+            Organization.paddle_customer_id == customer_id)).scalars().first()
+    return None
+
+
+def _paddle_provision(db: Session, data: dict, plan_tier: str) -> tuple[dict, str | None]:
+    """An ANONYMOUS sale-page purchase completed: create the workspace.
+
+    No commit — the caller commits once, together with the event row, and the
+    invite email is sent only AFTER that commit.
+
+    This is `_handle_checkout`'s provisioning body, applied to a Paddle payload.
+    The two rules it carries are not negotiable and are the reason it is reused
+    rather than rewritten:
+
+    * **`api_key_hash` is bound to an unrecoverable random value.** It is a
+      required legacy column, and minting a real key here would create a bearer
+      secret that has to travel by email. The buyer creates their first named key
+      from the dashboard, where plaintext is shown once over an authenticated
+      session.
+    * **No bearer key is ever emailed.** The invite is a set-password link only.
+    """
+    customer_email = (data.get("customer_email")
+                      or ((data.get("customer") or {}).get("email") if
+                          isinstance(data.get("customer"), dict) else None)
+                      or "unknown").strip().lower()
+    customer_id = str(data.get("customer_id") or "").strip()
+    subscription_id = str(data.get("subscription_id") or data.get("id") or "").strip()
+
+    if customer_id:
+        existing = db.execute(select(Organization).where(
+            Organization.paddle_customer_id == customer_id)).scalar_one_or_none()
+        if existing is not None:
+            # Already provisioned by an earlier event for this customer. Not an
+            # error and not a second workspace — the same answer the Stripe path
+            # gives, so a renewal or a re-delivery is inert.
+            return ({"status": "already_provisioned", "org_id": str(existing.id)},
+                    str(existing.id))
+
+    inactive_legacy_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+    org = Organization(
+        name=customer_email, api_key_hash=inactive_legacy_hash,
+        paddle_customer_id=customer_id or None,
+        paddle_subscription_id=subscription_id if subscription_id.startswith("sub_") else None,
+        plan_tier=plan_tier, subscription_status="active",
+        contact_email=customer_email,
+        monthly_log_quota=get_settings().quota_for(plan_tier),
+    )
+    db.add(org)
+    db.flush()   # assign org.id without committing
+
+    db.add(User(
+        org_id=org.id, email=customer_email,
+        password_hash=bcrypt.hashpw(secrets.token_urlsafe(32).encode(), bcrypt.gensalt()).decode(),
+        role="admin",
+    ))
+
+    # Funnel close: tag an active lead for this email as converted.
+    lead = db.execute(
+        select(MarketingLead).where(
+            func.lower(MarketingLead.email) == customer_email,
+            MarketingLead.status != "churned",
+        )
+    ).scalars().first()
+    if lead is not None:
+        lead.status = "converted"
+        lead.converted_org_id = org.id
+
+    log.info("Paddle: provisioned org %s on %s", org.id, plan_tier)
+    return {"status": "provisioned", "org_id": str(org.id),
+            "plan_tier": plan_tier}, str(org.id)
+
+
+def _paddle_apply_purchase(db: Session, data: dict) -> tuple[dict, str | None]:
+    """A purchase completed: put the right workspace on the plan it paid for.
+
+    No commit — the caller commits once, together with the event row.
+
+    TWO DOORS, AND THE BRANCH IS THE ABSENCE OF A FIELD. An AUTHENTICATED upgrade
+    carries `custom_data.foxy_org_id` and upgrades THAT workspace; an ANONYMOUS
+    sale-page purchase carries none, because no workspace existed when the
+    checkout was created, and provisions one. That is exactly the branch
+    `_handle_checkout` makes for Stripe, and keeping one rule for both processors
+    is what stops a paying customer landing in a second empty workspace.
+
+    The tier comes from the PRICE ID, not from `custom_data.foxy_plan`. The price
+    is what Paddle actually charged for; custom data is something we put on the
+    checkout and is the field a determined buyer would try to edit. Resolving
+    from the price means an org cannot be granted a tier it did not pay for.
+    """
+    plan_tier = paddle.plan_from(data)
+    claimed_org = paddle.org_id_from(data)
+    if not claimed_org:
+        # The anonymous door. Price it before creating anything: provisioning a
+        # workspace on a tier we cannot identify would be inventing a plan.
+        if plan_tier is None:
+            log.warning("paddle anonymous purchase matched no configured price")
+            return {"status": "ignored", "reason": "no matching price"}, None
+        return _paddle_provision(db, data, plan_tier)
+
+    org = _paddle_org(db, data)
+    if org is None:
+        return {"status": "org_not_found"}, None
+    if plan_tier is None:
+        # A real purchase we cannot price. Do NOT guess a tier — record it as a
+        # failure a human can see rather than granting an arbitrary plan.
+        log.warning("paddle purchase for org %s matched no configured price", org.id)
+        return {"status": "ignored", "reason": "no matching price"}, str(org.id)
+
+    customer_id = str(data.get("customer_id") or "").strip()
+    subscription_id = str(data.get("subscription_id") or data.get("id") or "").strip()
+    if customer_id:
+        org.paddle_customer_id = customer_id
+    if subscription_id.startswith("sub_"):
+        org.paddle_subscription_id = subscription_id
+    org.plan_tier = plan_tier
+    org.monthly_log_quota = get_settings().quota_for(plan_tier)
+    org.subscription_status = "active"
+    org.past_due_since = None            # nothing is owed the moment this lands
+    # The clear is the point — see billing_state.end_evaluation. Without it an
+    # expired evaluator pays and stays locked, which is register #36 and the
+    # exact defect M0 fixed on the staff path.
+    billing_state.end_evaluation(org)
+    log.info("Paddle: upgraded org %s to %s", org.id, plan_tier)
+    return {"status": "upgraded", "org_id": str(org.id), "plan_tier": plan_tier}, str(org.id)
+
+
+def _paddle_apply_subscription(db: Session, data: dict) -> tuple[dict, str | None]:
+    """A subscription's state changed: map it onto the stored vocabulary.
+
+    `past_due_since` is stamped only on the transition INTO past_due, exactly as
+    the Stripe path does and for the same reason: Paddle emits
+    `subscription.updated` repeatedly while Retain works a dunning schedule, and
+    re-stamping on each one would restart the grace window forever so the lock
+    would never fire.
+    """
+    org = _paddle_org(db, data)
+    if org is None:
+        return {"status": "org_not_found"}, None
+    mapped = paddle.map_status(data.get("status"))
+    if mapped is None:
+        # An unrecognised status. Leave the stored value alone — guessing what a
+        # vendor's new status means about access is how a paying customer gets
+        # locked out by somebody else's release note.
+        return {"status": "ignored", "reason": "unmapped subscription status"}, str(org.id)
+
+    sub_id = str(data.get("id") or "").strip()
+    if sub_id.startswith("sub_") and not org.paddle_subscription_id:
+        org.paddle_subscription_id = sub_id
+    customer_id = str(data.get("customer_id") or "").strip()
+    if customer_id and not org.paddle_customer_id:
+        org.paddle_customer_id = customer_id
+
+    was = (org.subscription_status or "").strip().lower()
+    org.subscription_status = mapped
+    if mapped in billing_state.PAST_DUE:
+        if was not in billing_state.PAST_DUE:
+            org.past_due_since = datetime.now(timezone.utc)
+    elif org.past_due_since is not None:
+        org.past_due_since = None        # paid, cancelled, or otherwise moved on
+    log.info("Paddle: org %s subscription status → %s", org.id, mapped)
+    return {"status": "updated", "subscription_status": mapped}, str(org.id)
+
+
+@router.post("/v1/webhooks/paddle", status_code=HTTP_200_OK)
+async def paddle_webhook(
+    request: Request,
+    paddle_signature: str = Header(default="", alias="paddle-signature"),
+):
+    """Durable, idempotent Paddle webhook handling (M2).
+
+    The shape is `stripe_webhook`'s, kept deliberately identical because it is
+    processor-independent and it is what makes replay safe: the event is written
+    to `payment_events` FIRST (UNIQUE `provider_event_id` → ON CONFLICT DO
+    NOTHING, so a retry is a no-op), then dispatched, then the row is stamped
+    processed|ignored|failed IN THE SAME TRANSACTION as the org mutation. A
+    committed change with no logged event, or an event logged as processed whose
+    mutation rolled back, cannot happen.
+
+    ⚠ THE IDEMPOTENCY KEY IS `event_id`, NOT `notification_id`. Paddle sends
+    both. `notification_id` is unique per DELIVERY ATTEMPT and `event_id` is
+    unique per EVENT; Paddle guarantees at-least-once delivery and retries on
+    exponential backoff whenever this endpoint does not answer 200 within five
+    seconds. Keying on `notification_id` would make every retry a fresh row and
+    re-run every side effect it guards.
+
+    Signature verification happens over the RAW BYTES, before anything is parsed
+    or stored — an unverified body is not evidence of anything and must never
+    reach the database.
+    """
+    if not paddle.webhook_configured():
+        raise HTTPException(status_code=503, detail="Paddle not configured")
+
+    body = await request.body()
+    try:
+        paddle.verify_signature(body, paddle_signature)
+    except paddle.SignatureError:
+        # Deliberately one message for malformed, stale and wrong. Telling a
+        # caller WHICH check failed helps nobody but an attacker probing it.
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    try:
+        envelope = paddle.parse_event(body)
+        event_id = str(envelope.get("event_id") or "")
+        event_type = str(envelope.get("event_type") or "")
+        data_obj = envelope.get("data") or {}
+        if not event_id or not event_type:
+            raise ValueError("envelope is missing event_id or event_type")
+    except Exception as exc:                 # noqa: BLE001
+        log.warning("paddle webhook parse error: %s", type(exc).__name__)
+        raise HTTPException(status_code=400, detail="Webhook parse error")
+
+    db: Session = SessionLocal()
+    try:
+        # (1) Idempotent durable log. No returned id → we have seen this event.
+        row_id = db.execute(
+            pg_insert(PaymentEvent)
+            .values(provider="paddle", provider_event_id=event_id, type=event_type,
+                    payload=envelope, status="received")
+            .on_conflict_do_nothing(index_elements=["provider_event_id"])
+            .returning(PaymentEvent.id)
+        ).scalar_one_or_none()
+        if row_id is None:
+            db.rollback()
+            return {"status": "duplicate", "type": event_type}
+
+        # (2) Dispatch + stamp the event row in the SAME transaction as the mutation.
+        try:
+            if event_type in _PADDLE_PURCHASE_EVENTS:
+                result, org_id = _paddle_apply_purchase(db, data_obj)
+            elif event_type in _PADDLE_STATE_EVENTS:
+                result, org_id = _paddle_apply_subscription(db, data_obj)
+            else:
+                result, org_id = {"status": "ignored", "type": event_type}, None
+
+            final = "ignored" if result.get("status") == "ignored" else "processed"
+            db.execute(
+                update(PaymentEvent).where(PaymentEvent.id == row_id)
+                .values(status=final, org_id=org_id, processed_at=func.now())
+            )
+            db.commit()
+            # Post-commit side-effect, NEVER before the row is durable: a fresh
+            # anonymous purchase emails the new admin a set-password link. The
+            # ordering is `stripe_webhook`'s and the reason is the same — a mail
+            # failure must not be able to roll back the provisioning and let a
+            # retry create a second workspace. `_deliver_credentials` is
+            # best-effort and swallows its own errors for that reason. API keys
+            # are deliberately never emailed; the buyer mints one from the
+            # dashboard after setting a password.
+            if result.get("status") == "provisioned":
+                _deliver_credentials(db, org_id)
+            return result
+        except Exception as exc:  # noqa: BLE001 — persist the failure, never drop the record
+            db.rollback()
+            db.execute(
+                update(PaymentEvent).where(PaymentEvent.id == row_id)
+                .values(status="failed", error=type(exc).__name__[:500])
+            )
+            db.commit()
+            log.warning("paddle event %s (%s) failed: %s",
+                        event_id, event_type, type(exc).__name__)
             raise HTTPException(status_code=500, detail="event processing failed")
     finally:
         db.close()
