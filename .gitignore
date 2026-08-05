@@ -35,3 +35,12 @@ logo/build/
 # They ship inlined as base64 data URIs inside foxy-adminpage/index.html — the
 # same way the dashboard carries its four — so the sources stay out of git.
 foxy-adminpage/icons/
+
+# The checkout page's deployment config. It lives OUT of git on the VM, at
+# /home/devops/foxy-checkout-config/config.js, because the deploy runs
+# `git reset --hard` and would destroy a tracked copy on every push. Ignored
+# here so a file dropped into the served directory for local testing cannot be
+# committed by a `git add -A`. The value inside is Paddle's PUBLIC client-side
+# token, so a commit would not be an incident — but gitleaks would not flag it
+# either, and a deployment config in the repo is wrong whatever it holds.
+foxy-checkout/config.js

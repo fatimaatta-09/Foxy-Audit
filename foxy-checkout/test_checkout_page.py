@@ -116,13 +116,22 @@ def test_no_api_key_is_referenced_in_anything_the_browser_receives() -> None:
     Assembled from fragments and scanned over code-with-comments-stripped, so
     the files may keep explaining the rule without tripping it."""
     needle = "PADDLE" + "_API_KEY"
-    for name, src in (("index.html", HTML),
-                      ("checkout.js", _strip_js_comments(JS)),
-                      ("config.example.js", _strip_js_comments(CONFIG_EXAMPLE))):
+    files = (("index.html", HTML),
+             ("checkout.js", _strip_js_comments(JS)),
+             ("config.example.js", _strip_js_comments(CONFIG_EXAMPLE)))
+    for name, src in files:
         assert needle not in src, f"{name} references the secret API key"
-    # Paddle's server-side key prefixes must never appear either.
-    for prefix in ("sdbx_", "apikey_"):
-        assert prefix not in _strip_js_comments(JS), f"checkout.js embeds a {prefix} key"
+        # EVERY file, not just checkout.js. Checking only the script left the
+        # config — the one file a human edits and pastes credentials into — with
+        # no guard at all, which a mutation pasting `apiKey: 'sdbx_…'` walked
+        # straight through.
+        for prefix in ("sdbx_", "apikey_", "pdl_apikey_"):
+            assert prefix not in src, f"{name} embeds a {prefix}… server-side key"
+        # And the field name itself: the config declares exactly one key, and a
+        # second one appearing is the shape this is guarding against.
+        assert not re.search(r"\bapi_?[Kk]ey\b", src), (
+            f"{name} declares an apiKey field; only clientToken belongs here"
+        )
 
 
 def test_the_shipped_config_defaults_to_empty() -> None:
@@ -330,7 +339,15 @@ def test_the_csp_is_scoped_to_the_checkout_site_only() -> None:
 
 
 def _nginx_server_block(server_name: str) -> str:
-    """One `server { … }` block, sliced by brace balance from its server_name."""
+    """One `server { … }` block, sliced by brace balance, COMMENTS STRIPPED.
+
+    Stripping is not tidiness. These blocks document their own rules, so a
+    structural check run over the raw text can be satisfied by the sentence
+    describing the rule instead of the rule: the `location /` comment contains
+    `=404`, `/index.html` and `try_files`, which between them defeated both
+    halves of the fallback guard until a mutation exposed it. Every caller here
+    wants the directives, so they all get the directives.
+    """
     at = NGINX.index(f"server_name {server_name};")
     start = NGINX.rindex("server {", 0, at)
     depth, i = 0, start
@@ -340,9 +357,22 @@ def _nginx_server_block(server_name: str) -> str:
         elif NGINX[i] == "}":
             depth -= 1
             if depth == 0:
-                return NGINX[start:i + 1]
+                return _nginx_code(NGINX[start:i + 1])
         i += 1
     raise AssertionError(f"the {server_name} server block never closes")
+
+
+def _nginx_code(block: str) -> str:
+    """A vhost block with its `#` comments removed.
+
+    Load-bearing. These blocks explain their own rules in prose, so a structural
+    check run over the raw text is satisfied by the comment describing the rule
+    rather than by the rule: the `location /` comment contains `=404`,
+    `/index.html` AND `try_files`, which between them defeated both halves of the
+    fallback guard. Caught by re-breaking; the mutation that swapped `=404` for
+    `/index.html` came back green.
+    """
+    return "\n".join(re.sub(r"#.*$", "", line) for line in block.splitlines())
 
 
 def _nginx_csp() -> str:
@@ -403,9 +433,92 @@ def test_the_checkout_vhost_does_not_rewrite_a_missing_file_to_the_page() -> Non
     absent until the owner mounts one, and the page depends on that being a clean
     404 — a fallback would hand the browser HTML to parse as JavaScript. Caddy's
     file_server 404s here too, so this is what keeps the two edges alike."""
+    code = _nginx_server_block("checkout.foxyaudit.tech")
+    directives = re.findall(r"try_files\s+([^;]+);", code)
+    assert directives, "the checkout vhost has no try_files at all"
+    for d in directives:
+        assert d.strip().endswith("=404"), (
+            f"try_files ends {d.strip()!r} — a missing asset can serve the page"
+        )
+
+
+def test_the_live_edge_serves_config_js_from_outside_the_repo() -> None:
+    """The whole out-of-git design was only true on the edge that never starts.
+
+    The compose bind-mount is on the `caddy` service, and caddy is
+    `profiles: ["edge"]`. nginx serves `root …/foxy-checkout` with `try_files`,
+    so without this location `/config.js` resolves INSIDE the repo working tree —
+    where the file can never be, because the deploy resets it and it is
+    gitignored. The page would read as permanently unconfigured in production
+    while every document said otherwise.
+    """
     block = _nginx_server_block("checkout.foxyaudit.tech")
-    assert "=404" in block
-    assert "/index.html;" not in block.split("try_files")[1].split(";")[0] + ";"
+    m = re.search(r"location\s*=\s*/config\.js\s*\{([^}]*)\}", block, re.S)
+    assert m, "the live edge has no rule for /config.js"
+    body = m.group(1)
+    alias = re.search(r"alias\s+(\S+?);", body)
+    assert alias, "/config.js is not aliased anywhere"
+    assert alias.group(1) == "/home/devops/foxy-checkout-config/config.js", (
+        f"/config.js is aliased to {alias.group(1)!r}, which is not the "
+        f"out-of-git path the docs and the compose mount both name"
+    )
+    # Must resolve OUTSIDE the served root, or it is the repo copy again.
+    root = re.search(r"root\s+(\S+?);", block).group(1)
+    assert not alias.group(1).startswith(root), (
+        "the alias points back inside the repo working tree the deploy resets"
+    )
+
+
+def test_a_missing_config_js_is_a_404_and_never_the_page() -> None:
+    """The page depends on the absence being a clean 404: `<script src>` on an
+    HTML body makes the browser parse markup as JavaScript. Two ways that breaks
+    — a try_files fallback, or an error_page redirect — so neither may appear."""
+    block = _nginx_server_block("checkout.foxyaudit.tech")
+    m = re.search(r"location\s*=\s*/config\.js\s*\{([^}]*)\}", block, re.S)
+    body = m.group(1)
+    assert "try_files" not in body, "/config.js has a fallback and can serve HTML"
+    assert "index" not in body, "/config.js can fall through to an index file"
+    assert "error_page" not in block, (
+        "an error_page would turn the missing-config 404 into an HTML body"
+    )
+    # And it must not declare its own add_header: nginx drops every inherited
+    # header in a location that sets one, which would ship this response bare.
+    assert "add_header" not in body, (
+        "/config.js sets its own header and therefore loses the server-level CSP"
+    )
+
+
+def test_both_edges_read_the_same_host_path() -> None:
+    """`=404` parity was the standard set for these two edges; the config path is
+    the same question. One host file, so putting it there configures whichever
+    edge happens to be running."""
+    block = _nginx_server_block("checkout.foxyaudit.tech")
+    nginx_path = re.search(r"alias\s+(\S+?);", block).group(1)
+    m = re.search(r"-\s*(/home/devops/\S+?):/srv/checkout/config\.js:ro", COMPOSE)
+    assert m, "the caddy edge no longer mounts an out-of-git config"
+    assert m.group(1) == nginx_path, (
+        f"the two edges read different files: nginx {nginx_path!r} vs "
+        f"compose {m.group(1)!r}"
+    )
+
+
+def test_config_js_is_gitignored() -> None:
+    """Not a secret — Paddle's client-side token is public by design — but a
+    deployment config in the repo is wrong regardless, and gitleaks would not
+    flag it, so nothing else would catch a `git add -A`.
+
+    Asked of git rather than of the .gitignore text. A substring check passed
+    happily when the pattern was mutated to `config.jsx`, because the old string
+    is still inside the new one; and a text match cannot see a later negation
+    that re-includes the path anyway. `git check-ignore` answers the question
+    that actually matters.
+    """
+    proc = subprocess.run(["git", "check-ignore", "-q", "foxy-checkout/config.js"],
+                          cwd=REPO, capture_output=True)
+    assert proc.returncode == 0, (
+        "git does not ignore foxy-checkout/config.js, so a real deployment "
+        "config dropped into the served directory can be committed"
+    )
 
 
 def test_certbot_is_told_about_the_new_hostname() -> None:

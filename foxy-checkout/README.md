@@ -42,13 +42,25 @@ An empty or unrecognised token makes the page say plainly that checkout is
 unavailable. It never guesses an environment and never opens a checkout it
 cannot complete.
 
-### Why the config lives outside the repository
+### Why the config lives outside the repository, and how each edge finds it
 
-The deploy runs `git reset --hard origin/main`, so a tracked `config.js` would
-be overwritten on every push. It is bind-mounted over the page's `config.js`
-from an out-of-git path — the same reason the installer binaries live at
-`/home/devops/foxy-downloads`. On a fresh VM the file is simply absent, the
-`<script src="config.js">` 404s, and the page shows its unconfigured state.
+The deploy runs `git reset --hard origin/main`, so a `config.js` inside the repo
+working tree would be destroyed on every push. It lives out of git instead — the
+same reason the installer binaries live at `/home/devops/foxy-downloads` — and
+each edge reaches it its own way:
+
+| Edge | Status | How it serves `/config.js` |
+|---|---|---|
+| **host nginx** (`deploy/nginx-foxyaudit.conf`) | **THIS IS THE LIVE ONE** | `location = /config.js` with `alias /home/devops/foxy-checkout-config/config.js` |
+| Caddy (`deploy/Caddyfile`) | dedicated-box path, `profiles: ["edge"]`, **not started** | the compose file bind-mounts the same host file over `/srv/checkout/config.js` |
+
+Both resolve to **the same host path**, so putting the file there configures
+whichever edge is running. On a fresh VM it is simply absent: `/config.js` 404s,
+`window.FOXY_CHECKOUT` stays undefined, and the page shows its unconfigured
+state rather than a blank screen.
+
+`foxy-checkout/config.js` is gitignored, so a copy dropped into the served
+directory for local testing cannot be committed by accident.
 
 > **Never put `PADDLE_API_KEY` in this file.** It is served to every visitor and
 > would be readable in view-source. The transaction is created server-side; this

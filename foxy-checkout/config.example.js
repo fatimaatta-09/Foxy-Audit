@@ -1,11 +1,21 @@
 /* Foxy Audit — checkout.foxyaudit.tech deployment configuration (M3a)
  *
  * COPY THIS FILE TO THE VM AS  /home/devops/foxy-checkout-config/config.js
- * and fill in the token. Do NOT commit the filled-in version: the deploy runs
- * `git reset --hard origin/main`, so a tracked config.js would be overwritten
- * on every deploy. The compose file bind-mounts the out-of-git directory over
- * this page's config.js for exactly that reason — the same pattern the installer
- * binaries already use at /home/devops/foxy-downloads.
+ *
+ *   sudo mkdir -p /home/devops/foxy-checkout-config
+ *   sudo cp foxy-checkout/config.example.js \
+ *           /home/devops/foxy-checkout-config/config.js
+ *   sudo nano /home/devops/foxy-checkout-config/config.js   # paste the token
+ *
+ * and fill in the token. Do NOT put it in the repo: the deploy runs
+ * `git reset --hard origin/main`, so a tracked config.js would be destroyed on
+ * every push. That one host path is what BOTH edges read — the live host nginx
+ * serves it through `location = /config.js { alias … }`, and the (unstarted)
+ * Caddy path gets it bind-mounted by docker-compose. Same file either way, the
+ * same pattern the installer binaries already use at /home/devops/foxy-downloads.
+ *
+ * No reload is needed after editing it: nginx reads the file per request.
+ * `foxy-checkout/config.js` is gitignored so a local copy cannot be committed.
  *
  * ────────────────────────────────────────────────────────────────────────────
  * ONE VALUE, AND IT DECIDES THE ENVIRONMENT TOO
