@@ -4354,7 +4354,7 @@ async function orgEnable(id){
 async function orgPlan(id,current){
   const opts=['free','pro','max','premium'].map(p=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" data-plan="${p}" aria-pressed="${p===current?'true':'false'}" onclick="_segPick(this)">${p}</button>`).join('');
   openModal({eyebrow:'org action', title:'Set plan',
-    bodyHTML:`<div class="flabel" style="margin-top:0;">plan tier</div><div class="segmented" id="mPlan" role="group" aria-label="plan" style="flex-wrap:wrap;">${opts}</div><label class="flabel" for="mQuota">monthly credits override</label><input class="cin" id="mQuota" inputmode="numeric" placeholder="blank = plan default"><div class="sub" style="font-size:10.5px;margin-top:4px;">Leave blank to use the plan's default quota (0 is a real limit, not unlimited).</div>`,
+    bodyHTML:`<div class="flabel" style="margin-top:0;">plan tier</div><div class="segmented" id="mPlan" role="group" aria-label="plan" style="flex-wrap:wrap;">${opts}</div><label class="flabel" for="mQuota">monthly credits override</label><input class="cin" id="mQuota" inputmode="numeric" placeholder="blank = plan default"><div class="sub" style="font-size:10.5px;margin-top:4px;">Leave blank to use the plan's default quota (0 is a real limit, not unlimited).</div><label class="flabel" for="mPayRef">payment reference</label><input class="cin" id="mPayRef" maxlength="128" placeholder="blank = none recorded"><div class="sub" style="font-size:10.5px;margin-top:4px;">For a tenant who paid outside the payment processor — an invoice number or a payment-request id. Recorded on this action's audit entry.</div>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doPlan('${id}')">Apply plan</button>`});
 }
 
@@ -4865,6 +4865,11 @@ async function _doPlan(id){
   if(!plan){toast('choose a plan','warn');return}
   const q=($('mQuota')?$('mQuota').value:'').trim(); const body={plan};
   if(q){ const n=Number(q); if(!Number.isInteger(n)||n<0){toast('enter a non-negative whole-number quota','warn');return} body.monthly_log_quota=n; }
+  // Omitted entirely when nothing was typed. Sending "" would record an empty
+  // reference on the audit row, which reads as a reference we looked for and
+  // did not find — a different claim from never having one.
+  const ref=($('mPayRef')?$('mPayRef').value:'').trim();
+  if(ref){ body.payment_reference=ref; }
   const r=await api('/admin/v1/organizations/'+id+'/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json().catch(()=>({})); closeModal();
   if(r.ok){toast('plan updated','success');_orgActionDone()}else toast(d.detail||('plan update failed ('+r.status+')'));

@@ -13,13 +13,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
 from ..anchor import head_of, latest_anchor
-from .. import notify
+from .. import billing_state, notify
 from ..auth import require_platform_role, require_step_up_dep, set_org_scope_for_staff
 from ..config import get_settings
 from ..platform_config import effective_quota
@@ -61,6 +61,13 @@ class SuspendRequest(BaseModel):
 class PlanRequest(BaseModel):
     plan: str
     monthly_log_quota: int | None = None
+    #: What the customer actually paid against, when they paid outside the
+    #: payment processor — an invoice number, a payment-request id. Free text on
+    #: purpose: it names somebody else's record, and we cannot validate the
+    #: shape of every one of them. It is recorded on the AdminAction and nowhere
+    #: else; deliberately NOT written to `invoices`, whose `stripe_invoice_id` is
+    #: UNIQUE NOT NULL and means a Stripe invoice.
+    payment_reference: str | None = Field(default=None, max_length=128)
 
 
 def _list_item(o: Organization) -> OrgListItem:
@@ -185,7 +192,20 @@ def set_organization_plan(
     staff: StaffUser = Depends(require_platform_role("superadmin")),
     db: Session = Depends(get_db),
 ):
-    """Apply a paid or custom contract after sales closes it."""
+    """Apply a paid or custom contract after sales closes it.
+
+    This is the path a customer who paid OUTSIDE the payment processor arrives
+    on — an invoice settled by bank transfer or a payment request — so it has to
+    do everything the processor's own webhook does, or the money changes nothing.
+
+    Until M0 it did not. It set the tier, the quota, the trial and the
+    subscription status, and left the four evaluation fields alone; and
+    ``billing_state.dashboard_lock`` tries ``evaluation_lock`` FIRST. So an org
+    whose evaluation window had expired — the single most likely first paying
+    customer — was set to ``pro`` by staff and stayed exactly as locked, with
+    capture still refused. ``end_evaluation`` is the fix, and it is the same
+    helper the Stripe upgrade path calls.
+    """
     org = _load_active_org(db, org_id)
     plan = get_settings().canonical_plan(body.plan)
     if plan not in {"free", "pro", "max", "premium"}:
@@ -204,11 +224,18 @@ def set_organization_plan(
     )
     org.subscription_status = "active"
     org.past_due_since = None            # no stale clock left behind a staff reactivation
+    billing_state.end_evaluation(org)    # or the paid customer stays locked — see above
+    detail = {"plan": plan, "monthly_log_quota": org.monthly_log_quota}
+    reference = (body.payment_reference or "").strip()
+    if reference:
+        # Absent when nothing was typed, rather than present and empty. The audit
+        # trail is the only record this payment has; a key holding "" would read
+        # as "we looked and there was no reference", which is a different claim.
+        detail["payment_reference"] = reference
     record_admin_action(
         db, staff, "org.plan.set", target_org_id=org.id,
         target_type="organization", target_id=str(org.id),
-        detail={"plan": plan, "monthly_log_quota": org.monthly_log_quota},
-        ip=client_ip(request),
+        detail=detail, ip=client_ip(request),
     )
     db.commit()
     return {"status": "updated", "org_id": str(org.id), "plan_tier": plan,

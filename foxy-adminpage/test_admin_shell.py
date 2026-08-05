@@ -3693,5 +3693,56 @@ def test_both_new_searches_are_labelled() -> None:
         assert re.search(r'<input[^>]*id="%s"' % node, mk), f"{node} is gone"
 
 
+# ── M0 · the payment reference on staff plan activation ─────────────────────
+# The modal is built by a JS template literal, not static markup, so these read
+# the function source rather than _page("orgs"). Line comments are stripped
+# first: this file explains its own guards in prose, and a guard that greps a
+# body greps the sentence describing it (bitten twice already).
+
+
+def _js_code(name: str) -> str:
+    """`_js_func`, minus `//` line comments — the executable part only."""
+    return re.sub(r"(?m)^\s*//.*$", "", _js_func(name))
+
+
+def test_the_plan_modal_offers_a_labelled_payment_reference() -> None:
+    """Staff take money outside the payment processor now, so the plan modal has
+    to be able to record what was paid against. Labelled, because a placeholder
+    disappears the moment somebody types into it."""
+    body = _js_code("orgPlan")
+    assert re.search(r'<input[^>]*id="mPayRef"', body), "the reference input is gone"
+    assert 'for="mPayRef"' in body, "mPayRef is unlabelled"
+    assert 'maxlength="128"' in body, (
+        "the input does not state the limit the API enforces, so an overlong "
+        "reference is only discovered as a 422 after Apply"
+    )
+
+
+def test_the_plan_modal_posts_the_reference_it_collects() -> None:
+    """A6's lesson, applied: a control that exists and is never read is exactly
+    as useless as no control. Assert the CALL SITE — that `_doPlan` reads
+    `mPayRef` and puts it in the body it actually POSTs."""
+    body = _js_code("_doPlan")
+    assert "mPayRef" in body, "_doPlan never reads the input"
+    assert "body.payment_reference" in body, "the value never reaches the request"
+    post = body[body.index("'/admin/v1/organizations/"):]
+    assert "JSON.stringify(body)" in post, (
+        "_doPlan posts something other than the object it built"
+    )
+
+
+def test_a_blank_reference_is_not_sent_as_an_empty_string() -> None:
+    """No placeholder, no invented reference: nothing typed means the key is
+    absent, so the audit row does not claim a payment nobody cited."""
+    body = _js_code("_doPlan")
+    m = re.search(r"body\.payment_reference\s*=", body)
+    assert m, "the assignment is gone"
+    before = body[:m.start()]
+    assert ".trim()" in before, "the value is not trimmed before it is judged"
+    assert re.search(r"if\s*\(\s*\w+\s*\)\s*\{[^}]*$", before), (
+        "the assignment is unconditional, so an untouched field posts \"\""
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

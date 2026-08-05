@@ -255,6 +255,45 @@ def evaluation_lock(org, now: datetime | None = None) -> Condition | None:
     return Condition(EVALUATION_EXPIRED, _EVALUATION_EXPIRED_MESSAGE)
 
 
+def end_evaluation(org) -> None:
+    """Clear the four LIVE evaluation fields. The one way out of the regime.
+
+    Extracted from ``billing._upgrade_existing_org`` in M0 because a second
+    caller needed it: ``admin_orgs.set_organization_plan``, the path staff use
+    when a customer pays outside the payment processor. The reasoning below is
+    that function's, moved here with the code rather than re-derived.
+
+    THE CLEAR IS THE POINT (E1 · #36)
+    ---------------------------------
+    Wiping these four fields is what actually ends the evaluation regime. Leave
+    them and this module keeps entering the evaluation branch forever: the
+    window is still in the past, ``evaluation_lock`` still fires, the dashboard
+    stays locked and capture stays refused — the customer paid and nothing
+    changed. Before E1, no code path in the product ever unset
+    ``evaluation_offer_id``; before M0, no STAFF path did, so a customer who
+    paid by invoice and was activated by hand stayed exactly as locked.
+
+    The ``EvaluationRedemption`` row is NOT deleted, here or by either caller.
+    ``models.py`` puts a UNIQUE on ``org_id`` alone: one redemption per org,
+    ever. That row is the record that this workspace already had its offer, and
+    deleting it would silently re-arm a second redemption. Clearing the org's
+    LIVE fields is what ends the regime; the history stays.
+
+    Safe on an org that never had an offer — every field is already at the value
+    this writes. And safe on a LIVE offer, not only an expired one: these four
+    fields can only ever ADD a refusal in ``capture_block``/``dashboard_lock``
+    (``evaluation_expired``, ``evaluation_credits_exhausted``) and never lift
+    one, so clearing them cannot move an org from allowed to blocked. What it
+    does NOT do is set the tier that replaces the offer; both callers do that
+    themselves, and ``evaluation_lock``'s docstring is the long version of why
+    the tier and these fields may only ever move together.
+    """
+    org.evaluation_offer_id = None
+    org.evaluation_credit_limit = None
+    org.evaluation_credits_used = 0
+    org.evaluation_ends_at = None
+
+
 def dashboard_lock(org, now: datetime | None = None) -> Condition | None:
     """Everything that locks the dashboard, most actionable condition first.
 

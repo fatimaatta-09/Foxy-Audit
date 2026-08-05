@@ -513,17 +513,11 @@ def _upgrade_existing_org(db: Session, org_id: str, customer_id: str,
     THE CLEAR IS THE POINT (E1 · #36)
     ---------------------------------
     Wiping the four evaluation fields is what actually ends the evaluation
-    regime. Leave them and ``billing_state`` keeps entering the evaluation branch
-    forever: the window is still in the past, ``evaluation_lock`` still fires,
-    the dashboard stays locked and capture stays refused — the customer paid and
-    nothing changed. Before this, no code path in the product ever unset
-    ``evaluation_offer_id``.
-
-    The ``EvaluationRedemption`` row is NOT deleted. ``models.py`` puts a UNIQUE
-    on ``org_id`` alone: one redemption per org, ever. That row is the record
-    that this workspace already had its offer, and deleting it would silently
-    re-arm a second redemption. Clearing the org's LIVE fields is what ends the
-    regime; the history stays.
+    regime, and M0 moved that to ``billing_state.end_evaluation`` — read its
+    docstring for why, and for why the ``EvaluationRedemption`` row stays. It
+    lives there because staff activation
+    (``admin_orgs.set_organization_plan``) has to do exactly the same thing, and
+    two copies of "what ends an evaluation" is the shape D1 was written to stop.
     """
     try:
         oid = uuid.UUID(str(org_id))
@@ -545,11 +539,7 @@ def _upgrade_existing_org(db: Session, org_id: str, customer_id: str,
         org.stripe_subscription_id = subscription_id
     org.subscription_status = "active"
     org.past_due_since = None            # nothing is owed the moment this lands
-
-    org.evaluation_offer_id = None
-    org.evaluation_credit_limit = None
-    org.evaluation_credits_used = 0
-    org.evaluation_ends_at = None
+    billing_state.end_evaluation(org)
 
     log.info("Upgraded org %s to %s for customer %s", org.id, plan_tier, customer_id)
     return {"status": "upgraded", "org_id": str(org.id), "plan_tier": plan_tier}, str(org.id)
