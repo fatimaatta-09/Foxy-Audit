@@ -2297,12 +2297,19 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── STAFF ──────────────── -->
     <section class="page" id="page-staff">
+      <h1 class="sr-only">Staff accounts</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="split">
         <div class="clay pad twrap">
           <table class="tbl cardify">
-            <thead><tr><th>Email</th><th>Role</th><th>MFA</th><th>Last login</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
-            <tbody id="staffRows"><tr><td colspan="4" class="sub mono">loading…</td></tr></tbody>
+            <!-- Every column binds itself. Under 760px this table drops its header
+                 row entirely, so the binding and the per-cell label are the only
+                 things left tying a value to the column it came from. The six here
+                 were the last unbound ones in the file. The loading row spanned
+                 four of six columns, so it sat under Last login with two empty
+                 cells beside it. -->
+            <thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">MFA</th><th scope="col">Last login</th><th scope="col">Status</th><th scope="col" style="text-align:right;">Actions</th></tr></thead>
+            <tbody id="staffRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody>
           </table><div id="staffPager"></div>
         </div>
         <div class="clay pad">
@@ -2322,7 +2329,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             </div>
           </div>
           <button class="btn pri" style="margin-top:14px;width:100%;" onclick="createStaff()">Create account</button>
-          <div id="nsOut" class="sub mono" style="margin-top:12px;font-size:10.5px;word-break:break-all;"></div>
+          <div id="nsOut" role="status" aria-live="assertive" style="margin-top:12px;"></div>
         </div>
       </div>
     </section>
@@ -2534,6 +2541,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── SETTINGS ──────────────── -->
     <section class="page" id="page-settings">
+      <h1 class="sr-only">Settings</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <!-- P2 · one column. Six cards side by side across a 2559px viewport left
            every one of them half empty; a settings form is a reading column, not
@@ -2578,7 +2586,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
           <div class="panel-h"><div><div class="eyebrow">security · this account</div><div class="panel-t">Devices &amp; sessions</div></div></div>
           <div class="sub" style="font-size:11px;margin-bottom:12px;" id="setLastLogin"></div>
           <div id="setSessions"><div class="sub mono">loading…</div></div>
-          <button class="btn danger sm" style="margin-top:14px;" data-tip="Revoke every session, including this one" onclick="logoutEverywhere()">Log out everywhere</button>
+          <button class="btn danger sm" style="margin-top:14px;" onclick="confirmLogoutEverywhere()">Log out everywhere</button>
         </div>
         <div class="clay pad" id="setConfigCard" style="display:none;">
           <div class="panel-h"><div><div class="eyebrow">superadmin · platform-wide</div><div class="panel-t">Platform configuration</div></div><button class="btn sm pri" onclick="saveConfig()">Save changes</button></div>
@@ -3750,15 +3758,20 @@ async function pollNotif(){ try{ const r=await api('/admin/v1/notifications/unre
 async function loadSessions(){
   const el=$('setSessions'); if(!el)return;
   let r; try{ r=await api('/admin/v1/auth/sessions'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">sessions unavailable</div>'; return; }
+  if(!r||!r.ok){ el.innerHTML=fault('Your sessions did not load.',r?('HTTP '+r.status):'no response from the API',"loadSessions()"); return; }
   const d=await r.json();
   const ll=$('setLastLogin'); if(ll) ll.textContent=d.last_login_at?('Last sign-in · '+fmtTime(d.last_login_at)):'';
   if(!d.items||!d.items.length){ el.innerHTML='<div class="sub mono">no active sessions</div>'; return; }
-  el.innerHTML='<div class="twrap"><table class="tbl cardify"><thead><tr><th>Device</th><th>IP</th><th>Last seen</th><th></th></tr></thead><tbody>'
-    +d.items.map(s=>'<tr><td data-label="Device" style="font-size:12px;">'+_uaLabel(s.user_agent)+(s.current?' <span class="chip safe">this device</span>':'')+'</td>'
+  /* The last empty header cell in the file. A missing binding is one defect; an
+     UNNAMED column is worse — a screen reader lands on a cell that exists and can
+     announce nothing for it — and under 760px this table drops its header row, so
+     the binding and the per-cell label are all that is left. Named the way the
+     data browser already names its own action column. */
+  el.innerHTML='<div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">Device</th><th scope="col">IP</th><th scope="col">Last seen</th><th scope="col" style="text-align:right;">Actions</th></tr></thead><tbody>'
+    +d.items.map(s=>'<tr><td data-label="Device" style="font-size:12px;">'+_uaLabel(s.user_agent)+(s.current?' <span class="tag">this device</span>':'')+'</td>'
       +'<td data-label="IP" style="font-size:10.5px;">'+(s.ip?sens(s.ip,{short:s.ip}):'—')+'</td>'
       +'<td data-label="Last seen" class="mono" style="font-size:10px;white-space:nowrap;">'+(s.last_seen_at?fmtTime(s.last_seen_at):'—')+'</td>'
-      +'<td style="text-align:right;">'+(s.current?'':'<button class="btn sm" onclick="revokeSession(\''+esc(s.id)+'\')">Revoke</button>')+'</td></tr>').join('')
+      +'<td data-label="Actions" style="text-align:right;">'+(s.current?'':'<button class="btn sm" onclick="revokeSession(\''+esc(s.id)+'\')">Revoke</button>')+'</td></tr>').join('')
     +'</tbody></table></div>';
 }
 function _uaLabel(ua){ if(!ua)return 'Unknown device'; var u=ua.toLowerCase();
@@ -3769,12 +3782,21 @@ function _uaLabel(ua){ if(!ua)return 'Unknown device'; var u=ua.toLowerCase();
 async function revokeSession(id){
   let r; try{ r=await api('/admin/v1/auth/sessions/'+id+'/revoke',{method:'POST'}); }catch(e){ r=null; }
   if(r&&r.ok){ toast('session revoked','success'); loadSessions(); }
-  else if(r){ toast('could not revoke ('+r.status+')'); }
+  else toast(r?('Could not revoke that session (HTTP '+r.status+').'):'No response from the API — the session is still active.','error');
+}
+/* The warning lived in a data-tip with a 450ms hover delay, which a touch user
+   never sees at all, on a control that signs you out of the device you are
+   holding. */
+function confirmLogoutEverywhere(){
+  openModal({eyebrow:'danger · your account', title:'Log out everywhere',
+    bodyHTML:'<div class="sub">Every session on every device ends, <b>including this one</b> — you will be signed back out to the gate here.</div>',
+    footHTML:'<button class="btn" onclick="closeModal()">Cancel</button>'
+      +'<button class="btn danger" onclick="closeModal();logoutEverywhere()">Log out everywhere</button>'});
 }
 async function logoutEverywhere(){
   let r; try{ r=await api('/admin/v1/auth/logout-all',{method:'POST'}); }catch(e){ r=null; }
   if(r&&r.ok){ location.reload(); }   // this device's session is revoked too → back to the gate
-  else if(r){ toast('could not log out everywhere ('+r.status+')'); }
+  else toast(r?('Could not log out everywhere (HTTP '+r.status+').'):'No response from the API — every session is still active.','error');
 }
 document.addEventListener('click',function(e){ const w=$('topNotifWrap'); if(w && !w.contains(e.target)){ const p=$('notifPanel');
   if(p&&p.classList.contains('on')){ p.classList.remove('on'); const b=w.querySelector('button'); if(b)b.setAttribute('aria-expanded','false'); } } });
@@ -3896,7 +3918,7 @@ function loadSettings(){
   const mfaOn=!!(ME&&ME.mfa_enabled);
   $('setMfaBtns').innerHTML=mfaOn
     ? '<button class="btn sm" onclick="mfaDisable()">Disable MFA</button> <span class="chip safe">MFA on</span>'
-    : '<button class="btn sm pri" onclick="mfaEnableFlow()">Enable MFA</button> <span class="chip dim">MFA off</span>';
+    : '<button class="btn sm pri" onclick="mfaEnableFlow()">Enable MFA</button> <span class="chip warn">MFA off</span>';
   const isSuper=can('superadmin');
   $('setConfigCard').style.display=isSuper?'':'none';
   $('setBroadcastCard').style.display=isSuper?'':'none';
@@ -4643,10 +4665,48 @@ function renderTraffic(){
 
 /* ──────────── staff ──────────── */
 let STAFF_CACHE=[];
+/* It printed "requires superadmin" for ANY non-ok status. A 500, a 502, a 504
+   and a 404 all rendered the same sentence, with the real code sitting in the
+   same template string being ignored. A viewer reads it and correctly concludes
+   they lack permission; a superadmin reads it during a backend outage and
+   concludes THEIR OWN ACCOUNT HAS BEEN DEMOTED — and this page has no other
+   signal to correct them with. 403 is the only status that sentence is true for.
+
+   It also had no try/catch, so a dropped connection rejected unhandled and left
+   the previous roster on screen as though it were current — the last loader in
+   the console still able to fail silently. And it hand-rolled a dead-end string
+   where the shared fault row already offers the same message plus a retry. */
 async function loadStaff(){
-  const r=await api('/admin/v1/staff');
-  if(!r.ok){$('staffRows').innerHTML=`<tr><td colspan="6" class="sub mono">requires superadmin (${r.status})</td></tr>`;window.foxPager('staffPager',{total:0});return}
+  let r; try{ r=await api('/admin/v1/staff'); }catch(e){ r=null; }
+  if(!r||!r.ok){
+    const perm=r&&(r.status===403||r.status===401);
+    $('staffRows').innerHTML=perm
+      ? faultRow(6,'Staff accounts are superadmin-only.','',"your role cannot list them (HTTP "+r.status+")")
+      : faultRow(6,'The staff list did not load.',"loadStaff()",r?('HTTP '+r.status):'no response from the API');
+    window.foxPager('staffPager',{total:0});
+    return;
+  }
   STAFF_CACHE=await r.json();pgReset('staff');renderStaff();
+}
+/* fmtTime renders month, day and clock time and NO YEAR — correct for a session
+   last seen this week, wrong for the one column on this page whose entire job is
+   surfacing dormant accounts. A sign-in from March 2024 rendered
+   character-identical in form to one from three weeks ago, so the quarterly
+   hygiene pass read a stale account as current and moved on. fmtDay, one line
+   below fmtTime, has carried the year all along.
+
+   Past the threshold the row takes the exception tier, because a dormant account
+   holding platform access is exactly the row this page exists to surface; `never`
+   takes the absence tier, which is the case its own rule names. */
+const STALE_DAYS=90;
+function _lastSeen(iso){
+  if(!iso) return '<span class="chip dim">never</span>';
+  const days=Math.floor((Date.now()-new Date(iso).getTime())/86400000);
+  if(!isFinite(days)) return '<span class="chip dim">never</span>';
+  const when=esc(fmtDay(iso));
+  return days>=STALE_DAYS
+    ? '<span class="chip warn">dormant · '+days+'d</span> <span class="sub mono" style="font-size:10px;">'+when+'</span>'
+    : when;
 }
 function renderStaff(){
   const rows=window.foxPageSlice(STAFF_CACHE,pgState('staff',25),'staffPager',renderStaff,'Staff pages');
@@ -4656,8 +4716,8 @@ function renderStaff(){
     return `<tr class="rowbtn" onclick="staffManage('${s.id}')">
       <td data-label="Email" class="mono" style="font-size:11.5px;">${esc(s.email)}${self?' <span class="tag">you</span>':''}</td>
       <td data-label="Role"><span class="tag">${esc(s.platform_role)}</span></td>
-      <td data-label="MFA">${s.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip dim">off</span>'}</td>
-      <td data-label="Last login" class="mono" style="font-size:10.5px;white-space:nowrap;">${s.last_login?fmtTime(s.last_login):'never'}</td>
+      <td data-label="MFA">${s.mfa_enabled?'<span class="chip safe">on</span>':'<span class="chip warn">off</span>'}</td>
+      <td data-label="Last login" class="mono" style="font-size:10.5px;white-space:nowrap;">${_lastSeen(s.last_login)}</td>
       <td data-label="Status">${s.disabled?'<span class="chip bad">disabled</span>':'<span class="chip safe">active</span>'}</td>
       <td data-label="Actions" style="text-align:right;"><button class="btn sm" onclick="event.stopPropagation();staffManage('${s.id}')">Manage</button></td>
     </tr>`;
@@ -4667,16 +4727,20 @@ function renderStaff(){
 async function createStaff(){
   const email=$('nsEmail').value.trim(),role=fauxVal('nsRole');
   if(!email){toast('email required','warn');return}
-  const r=await api('/admin/v1/staff',{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({email,platform_role:role})});
+  let r; try{ r=await api('/admin/v1/staff',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({email,platform_role:role})}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing changed.','error'); return; }
   const d=await r.json().catch(()=>({}));
-  if(!r.ok){toast(d.detail||('create failed ('+r.status+')'));return}
+  if(!r.ok){toast(d.detail||('Could not create the account (HTTP '+r.status+').'),'error');return}
+  /* The most sensitive string either page produces, shown once, was 10.5px
+     muted body text with no way to copy it and no live region — so a screen
+     reader user heard nothing and the credential was unrecoverable, and everyone
+     else hand-selected a break-all string. _secretRow already solves all three
+     and was written for the campaign secret two panels away. */
   $('nsOut').innerHTML=d.invited
-    ? `created <b>${esc(d.email)}</b> (${esc(d.platform_role)})<br>
-       <span style="color:var(--fox2);">invite email with a set-password link sent.</span>`
-    : `created <b>${esc(d.email)}</b> (${esc(d.platform_role)})<br>
-       one-time temp password:<br><b style="color:var(--fox2);">${esc(d.temp_password)}</b><br>
-       <span style="color:var(--muted2);">share securely — it is never shown again.</span>`;
+    ? `<div class="sub">Created <b>${esc(d.email)}</b> (${esc(d.platform_role)}). An invite email with a set-password link is on its way.</div>`
+    : `<div class="sub" style="margin-bottom:10px;">Created <b>${esc(d.email)}</b> (${esc(d.platform_role)}). This password is shown once — store it before you leave the page.</div>`
+      +_secretRow('one-time password',d.temp_password);
   $('nsEmail').value='';loadStaff();
 }
 async function disableStaff(id){ staffManage(id); }
@@ -4784,15 +4848,19 @@ async function _doRevoke(orgId,keyId){
 
 /* staff management */
 function staffManage(id){
-  const s=(STAFF_CACHE||[]).find(x=>x.id===id); if(!s)return;
+  const s=(STAFF_CACHE||[]).find(x=>x.id===id);
+  /* `if(!s)return` — clicking Manage on a row whose cache entry had gone did
+     nothing at all, with no message. The row is on screen, so the cache is stale
+     rather than the account absent; say so and re-fetch. */
+  if(!s){ toast('That account is no longer in the loaded list — refreshing.','warn'); loadStaff(); return; }
   const self=ME&&s.id===ME.id;
-  const roleBtns=['viewer','operator','superadmin'].map(rr=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" aria-pressed="${s.platform_role===rr?'true':'false'}" ${self?'disabled title="you cannot change your own role"':''} onclick="staffRole('${id}','${rr}')">${rr}</button>`).join('');
+  const roleBtns=['viewer','operator','superadmin'].map(rr=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" aria-pressed="${s.platform_role===rr?'true':'false'}" ${self?'disabled title="you cannot change your own role"':''} onclick="staffRoleConfirm('${id}','${rr}')">${rr}</button>`).join('');
   const acct = s.disabled
     ? `<button class="btn safe sm" onclick="staffEnable('${id}')">Enable account</button>`
-    : (self?'<span class="sub mono" style="font-size:10px;">you cannot disable yourself</span>':`<button class="btn danger sm" onclick="staffDisable('${id}')">Disable account</button>`);
+    : (self?'<span class="sub mono" style="font-size:10px;">you cannot disable yourself</span>':`<button class="btn danger sm" onclick="staffConfirm('${id}','disable')">Disable account</button>`);
   const body=`<div class="flabel" style="margin-top:0;">platform role</div>
     <div class="segmented" role="group" aria-label="role" style="flex-wrap:wrap;">${roleBtns}</div>
-    <div class="flabel">account</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${acct}<button class="btn sm" onclick="staffMfaReset('${id}')">Reset MFA</button></div>
+    <div class="flabel">account</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${acct}<button class="btn sm" onclick="staffConfirm('${id}','mfareset')">Reset MFA</button></div>
     <div class="flabel">recent activity</div><div id="mActivity" class="twrap scrolly" style="max-height:210px;"><div class="sub mono">loading…</div></div>`;
   openModal({eyebrow:s.platform_role+(s.disabled?' · disabled':'')+(s.mfa_enabled?' · mfa on':''), title:'Manage '+s.email,
     bodyHTML:body, footHTML:`<button class="btn" onclick="closeModal()">Close</button>`, onOpen:()=>loadStaffActivity(id)});
@@ -4803,24 +4871,66 @@ async function loadStaffActivity(id){
   if(!r||!r.ok){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">activity unavailable</div>'; return; }
   const items=(await r.json()).items||[];
   if(!items.length){ el.innerHTML='<div class="sub mono" style="padding:8px 0;">No recorded activity.</div>'; return; }
-  el.innerHTML='<table class="tbl cardify"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}${a.by_self?'':' <span class="chip dim">to them</span>'}</td></tr>`).join('')+'</tbody></table>';
+  el.innerHTML='<table class="tbl cardify"><tbody>'+items.map(a=>`<tr><td class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td class="mono" style="font-size:11px;">${esc(a.action)}${a.by_self?'':' <span class="tag">to them</span>'}</td></tr>`).join('')+'</tbody></table>';
 }
 async function staffRole(id,role){
-  const r=await api('/admin/v1/staff/'+id+'/role',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({platform_role:role})});
+  let r; try{ r=await api('/admin/v1/staff/'+id+'/role',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({platform_role:role})}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing changed.','error'); return; }
   const d=await r.json().catch(()=>({}));
   if(r.ok){ toast('role updated to '+role); await loadStaff(); staffManage(id); } else toast(d.detail||('role change failed ('+r.status+')'));
 }
 async function staffEnable(id){
-  const r=await api('/admin/v1/staff/'+id+'/enable',{method:'POST'});
+  let r; try{ r=await api('/admin/v1/staff/'+id+'/enable',{method:'POST'}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing changed.','error'); return; }
   if(r.ok){ toast('account enabled','success'); await loadStaff(); staffManage(id); } else toast('enable failed ('+r.status+')');
 }
+/* This file already gates strictly smaller actions behind a confirm: revoking a
+   single org's API key opens a modal that says it cannot be undone, and
+   offboarding a tenant asks you to type its name. Disabling a colleague's
+   platform access, clearing a superadmin's second factor and promoting an
+   account to superadmin had nothing — one click each. Staff who learn that the
+   dangerous things ask twice will click straight through the ones that do not.
+   Reuses openModal exactly as the org actions do; the mutators below are
+   unchanged and are now the confirmed half. */
+function staffConfirm(id,kind){
+  const s=(STAFF_CACHE||[]).find(x=>x.id===id);
+  if(!s){ toast('That account is no longer in the loaded list — refreshing.','warn'); loadStaff(); return; }
+  const who=esc(s.email);
+  const M={
+    disable:['danger · staff account','Disable '+s.email,
+      'They lose access to this console immediately and every session they hold is ended. The account is kept and can be enabled again.',
+      'btn danger','Disable account','staffDisable'],
+    mfareset:['danger · staff account','Reset MFA for '+s.email,
+      'Their second factor is cleared, so the next sign-in needs only their password until they enrol again. Do this only when you have confirmed who you are talking to.',
+      'btn danger','Reset MFA','staffMfaReset'],
+  }[kind];
+  openModal({eyebrow:M[0],title:M[1],
+    bodyHTML:'<div class="sub">'+M[2]+'</div>',
+    footHTML:'<button class="btn" onclick="closeModal()">Cancel</button>'
+      +'<button class="'+M[3]+'" onclick="closeModal();'+M[5]+'(\''+esc(id)+'\')">'+M[4]+'</button>'});
+}
+function staffRoleConfirm(id,role){
+  const s=(STAFF_CACHE||[]).find(x=>x.id===id);
+  if(!s){ toast('That account is no longer in the loaded list — refreshing.','warn'); loadStaff(); return; }
+  if(s.platform_role===role) return;
+  /* The glosses exist in the creation picker and were dropped from the one place
+     the promotion actually happens. */
+  const GLOSS={viewer:'read-only',operator:'can suspend and enable orgs',superadmin:'full control of the platform, including staff accounts'};
+  openModal({eyebrow:role==='superadmin'?'danger · superadmin':'staff account',
+    title:'Change role for '+s.email,
+    bodyHTML:'<div class="sub">From <b>'+esc(s.platform_role)+'</b> to <b>'+esc(role)+'</b> — '+esc(GLOSS[role]||'')+'.</div>',
+    footHTML:'<button class="btn" onclick="closeModal()">Cancel</button>'
+      +'<button class="btn '+(role==='superadmin'?'danger':'pri')+'" onclick="closeModal();staffRole(\''+esc(id)+'\',\''+esc(role)+'\')">Change role</button>'});
+}
 async function staffDisable(id){
-  const r=await api('/admin/v1/staff/'+id+'/disable',{method:'POST'});
+  let r; try{ r=await api('/admin/v1/staff/'+id+'/disable',{method:'POST'}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing changed.','error'); return; }
   const d=await r.json().catch(()=>({}));
   if(r.ok){ toast('account disabled','success'); await loadStaff(); staffManage(id); } else toast(d.detail||('disable failed ('+r.status+')'));
 }
 async function staffMfaReset(id){
-  const r=await api('/admin/v1/staff/'+id+'/mfa/reset',{method:'POST'});
+  let r; try{ r=await api('/admin/v1/staff/'+id+'/mfa/reset',{method:'POST'}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing changed.','error'); return; }
   if(r.ok){ toast('MFA enrolment reset','success'); await loadStaff(); staffManage(id); } else toast('MFA reset failed ('+r.status+')');
 }
 
@@ -4956,15 +5066,16 @@ async function _doChangePw(){
   toast('password changed — check your manager saved the new one','success');
 }
 async function mfaEnableFlow(){
-  const r=await api('/admin/v1/auth/mfa/enable',{method:'POST'});
-  if(!r.ok){ toast('could not start MFA enrolment','error'); return; }
+  let r; try{ r=await api('/admin/v1/auth/mfa/enable',{method:'POST'}); }catch(e){ r=null; }
+  if(!r||!r.ok){ toast(r?('Could not start MFA enrolment (HTTP '+r.status+').'):'No response from the API — enrolment did not start.','error'); return; }
   openModal({eyebrow:'your account', title:'Enable MFA',
     bodyHTML:`<div class="sub" style="margin-bottom:12px;">We emailed a 6-digit code to <b>${esc(ME?ME.email:'')}</b>. Enter it to turn on MFA.</div><label class="flabel" style="margin-top:0;" for="mfaCode">code</label><input class="cin" id="mfaCode" inputmode="numeric" placeholder="123456"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
     footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doMfaConfirm()">Confirm</button>`});
 }
 async function _doMfaConfirm(){
   const code=($('mfaCode').value||'').trim();
-  const r=await api('/admin/v1/auth/mfa/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})});
+  let r; try{ r=await api('/admin/v1/auth/mfa/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})}); }catch(e){ r=null; }
+  if(!r){ $('mfaErr').textContent='No response from the API — MFA was not enabled.'; return; }
   const d=await r.json().catch(()=>({}));
   if(r.ok){ closeModal(); toast('MFA enabled','success'); if(ME)ME.mfa_enabled=true; loadSettings(); } else $('mfaErr').textContent=d.detail||'Invalid code.';
 }
@@ -4975,7 +5086,8 @@ function mfaDisable(){
 }
 async function _doMfaDisable(){
   const pw=$('mfaPw').value;
-  const r=await api('/admin/v1/auth/mfa/disable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})});
+  let r; try{ r=await api('/admin/v1/auth/mfa/disable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})}); }catch(e){ r=null; }
+  if(!r){ $('mfaErr').textContent='No response from the API — MFA is still on.'; return; }
   const d=await r.json().catch(()=>({}));
   if(r.ok){ closeModal(); toast('MFA disabled','success'); if(ME)ME.mfa_enabled=false; loadSettings(); } else $('mfaErr').textContent=d.detail||'Failed.';
 }
@@ -4983,14 +5095,18 @@ let CONFIG_META={};
 async function loadConfig(){
   const el=$('setConfig'); if(!el)return;
   let r; try{ r=await api('/admin/v1/config'); }catch(e){ r=null; }
-  if(!r||!r.ok){ el.innerHTML='<div class="sub mono">unavailable ('+(r?r.status:'network')+')</div>'; return; }
+  if(!r||!r.ok){ el.innerHTML=fault('Platform configuration did not load.',r?('HTTP '+r.status):'no response from the API',"loadConfig()"); return; }
   const cfg=(await r.json()).config||{}; CONFIG_META=cfg;
   const groups={};
   Object.keys(cfg).forEach(k=>{ const g=cfg[k].group||'Other'; (groups[g]=groups[g]||[]).push(k); });
   el.innerHTML=Object.keys(groups).map(g=>
     `<div class="flabel" style="margin-top:14px;">${esc(g)}</div>`+groups[g].map(k=>{
       const m=cfg[k];
-      const tag=m.overridden?'<span class="chip info" style="font-size:8px;">override</span>':`<span class="sub mono" style="font-size:9px;">default ${esc(m.default)}</span>`;
+      /* An overridden value is precisely NOT the default — the one row in a
+         group worth finding. It wore the quiet tier at a size below this file's
+         type floor, so it read as decoration beside the defaults it differs
+         from. */
+      const tag=m.overridden?'<span class="chip warn">override</span>':`<span class="sub mono" style="font-size:9px;">default ${esc(m.default)}</span>`;
       return `<div style="margin-bottom:10px;"><label class="sub" style="font-size:11px;display:block;margin-bottom:4px;">${esc(m.label||k)} ${tag}</label><input class="cin" data-cfgkey="${esc(k)}" inputmode="numeric" value="${esc(m.value)}">${m.help?`<div class="sub" style="font-size:10px;margin-top:2px;">${esc(m.help)}</div>`:''}</div>`;
     }).join('')
   ).join('');
@@ -5003,7 +5119,8 @@ async function saveConfig(){
     else if(v!==String(m.value)) updates[k]=v;
   });
   if(!Object.keys(updates).length){ toast('no changes to save','warn'); return; }
-  const r=await api('/admin/v1/config',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({updates})});
+  let r; try{ r=await api('/admin/v1/config',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({updates})}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing changed.','error'); return; }
   const d=await r.json().catch(()=>({}));
   if(r.ok){ toast('configuration saved','success'); loadConfig(); } else toast(d.detail||('save failed ('+r.status+')'));
 }
@@ -5013,7 +5130,8 @@ async function sendBroadcast(){
   const lvlBtn=document.querySelector('#bcLevel .segbtn[aria-pressed="true"]');
   const level=lvlBtn?lvlBtn.dataset.level:'info';
   const email_staff=$('bcEmail').checked;
-  const r=await api('/admin/v1/broadcast',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title,body,level,email_staff})});
+  let r; try{ r=await api('/admin/v1/broadcast',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title,body,level,email_staff})}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing was posted or emailed.','error'); return; }
   const d=await r.json().catch(()=>({}));
   if(r.ok){ toast('announcement posted'+(d.emailed?(' · emailed '+d.emailed+' staff'):'')); $('bcTitle').value=''; $('bcBody').value=''; $('bcEmail').checked=false; loadAnnouncements(); loadBanner(); }
   else toast(d.detail||('broadcast failed ('+r.status+')'));
@@ -5027,7 +5145,8 @@ async function loadAnnouncements(){
   el.innerHTML=items.map(a=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);"><span class="chip ${a.level==='critical'?'bad':a.level==='warning'?'warn':'info'}">${esc(a.level)}</span><div style="min-width:0;flex:1;"><b style="font-size:12px;">${esc(a.title)}</b><div class="sub" style="font-size:11px;">${esc((a.body||'').slice(0,120))}</div></div><button class="btn sm danger" onclick="deactivateAnn('${a.id}')">Deactivate</button></div>`).join('');
 }
 async function deactivateAnn(id){
-  const r=await api('/admin/v1/announcements/'+id+'/deactivate',{method:'POST'});
+  let r; try{ r=await api('/admin/v1/announcements/'+id+'/deactivate',{method:'POST'}); }catch(e){ r=null; }
+  if(!r){ toast('No response from the API — nothing changed.','error'); return; }
   if(r.ok){ toast('deactivated','success'); loadAnnouncements(); loadBanner(); } else toast('deactivate failed','error');
 }
 async function loadBanner(){

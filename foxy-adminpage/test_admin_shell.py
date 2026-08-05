@@ -3309,5 +3309,195 @@ def test_the_scrollable_regions_on_these_pages_are_reachable() -> None:
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# A6 · staff + settings — the accounts that hold the platform, and the switches
+# that govern it. The last two pages of the refinement pass, and the two that
+# every earlier phase's conventions had reached last.
+# ═══════════════════════════════════════════════════════════════════════════
+
+A6_PAGES = ("staff", "settings")
+
+
+def _a6_js(name: str) -> str:
+    return _js_func(name)
+
+
+def test_mfa_off_is_an_exception_and_not_an_absence() -> None:
+    """The redefined vocabulary made a latent mislabel expensive. The absence
+    tier is documented at its own rule as "not a status at all", and its mark is
+    deliberately left under 1.4.11 — measured 1.47-1.54:1 — because absence has
+    no meaning for a mark to carry; the word does the work.
+
+    An account with no second factor is not an absence. It is the single row a
+    quarterly hygiene pass exists to find, and under the absence tier it rendered
+    as the quietest thing in the table — quieter than the accounts that are fine.
+    The measurement below is the argument: the absence tier would ship a
+    meaning-bearing indicator at a ratio that is only defensible when the
+    indicator means nothing."""
+    for fn in ("renderStaff", "loadSettings"):
+        body = _js_func(fn)
+        assert "chip warn" in body and "MFA" in body.upper() or "chip warn" in body, (
+            f"{fn} no longer marks a missing second factor as an exception"
+        )
+        assert not re.search(r'chip dim">(off|MFA off)<', body), (
+            f"{fn} put the second factor back in the absence tier"
+        )
+    # the absence tier's mark is under 3:1 by design — so it must not carry meaning
+    for theme in ("dark", "light"):
+        for panel in ("--surf", "--surf2"):
+            r = _ratio(_token("--line2", theme), _token(panel, theme))
+            assert r < 3.0, (
+                "the absence mark now clears 3:1, so the argument for keeping a "
+                "security state out of that tier needs re-deriving, not copying"
+            )
+            w = _ratio(_token("--ink", theme), _token(panel, theme))
+            assert w >= 4.5, f"{theme} the exception word is {w:.2f}:1 on {panel}"
+
+
+def test_never_signed_in_takes_the_tier_that_was_built_for_it() -> None:
+    """The absence tier's own rule names this exact word as its use case, and it
+    was the one place not using it — plain text — while the tier was being spent
+    on a live security state instead."""
+    body = _js_func("_lastSeen")
+    assert re.search(r'chip dim">never<', body), (
+        "a staff account that has never signed in is no longer marked as absence"
+    )
+
+
+def test_a_dormant_account_cannot_read_as_a_recent_one() -> None:
+    """The shared time formatter renders month, day and clock and NO YEAR —
+    right for a session seen this week, wrong for the one column on this page
+    whose whole job is surfacing accounts nobody has touched. A sign-in from two
+    years ago rendered character-identical in form to one from three weeks ago,
+    so the hygiene pass read a stale account as current. The day formatter, one
+    line below it in the same file, has carried the year all along."""
+    body = _js_func("_lastSeen")
+    assert "fmtDay(" in body, "the last-login column dropped the year again"
+    assert "fmtTime(" not in body, "the yearless formatter is back on this column"
+    assert "STALE_DAYS" in body and "chip warn" in body, (
+        "a dormant account no longer marks itself as the exception it is"
+    )
+    # the threshold has to be a real number of days, not a placeholder
+    m = re.search(r"const STALE_DAYS=(\d+);", SRC)
+    assert m and 30 <= int(m.group(1)) <= 365, "the dormancy threshold is not a plausible age"
+
+
+def test_every_column_on_an_a6_page_names_itself() -> None:
+    """Under 760px these tables drop their header row entirely, so the binding
+    and the per-cell label are the only things left tying a value to its column.
+    These ten were the last unbound ones in the file.
+
+    The sessions table also ended in an EMPTY header cell — worse than an unbound
+    one, because a reader lands on a column that exists and hears nothing for
+    it. Named the way the data browser already names its own action column."""
+    heads = re.findall(r"<thead>.*?</thead>", _nocomment(_page("staff")), re.S)
+    heads += re.findall(r"<thead>.*?</thead>", _js_func("loadSessions"), re.S)
+    assert len(heads) == 2, f"expected the two A6 headers, found {len(heads)}"
+    for h in heads:
+        cells = re.findall(r"<th\b[^>]*>", h)
+        assert cells, "a header row lost its cells"
+        for c in cells:
+            assert "scope=" in c, f"an A6 column does not bind its cells: {c}"
+    # and no header cell may be empty of text
+    for h in heads:
+        for m in re.finditer(r"<th\b[^>]*>(.*?)</th>", h, re.S):
+            assert m.group(1).strip(), "a column header announces nothing"
+
+
+def test_the_last_two_pages_announce_themselves() -> None:
+    """Fifteen sibling pages carry a screen-reader heading; these two were the
+    only ones left without, so navigating by heading landed nowhere and the only
+    text naming them is the watermark, which is hidden from the tree."""
+    for page in A6_PAGES:
+        assert re.search(r'<h1 class="sr-only">[^<]+</h1>', _nocomment(_page(page))), (
+            f"{page} has no heading"
+        )
+
+
+def test_the_loading_row_spans_the_table_it_is_in() -> None:
+    """It spanned four of six columns, so the first thing the page ever rendered
+    sat under Last login with two empty cells beside it. The error and empty
+    states in the same table already used the right number."""
+    mk = _nocomment(_page("staff"))
+    cols = len(re.findall(r"<th\b", mk))
+    for m in re.finditer(r'colspan="(\d+)"', mk):
+        assert int(m.group(1)) == cols, (
+            f"a row spans {m.group(1)} of {cols} columns"
+        )
+
+
+def test_the_staff_list_says_which_failure_it_hit() -> None:
+    """It printed a permission sentence for ANY non-ok status. A 500, a 502 and a
+    504 all rendered it, with the real code sitting unused in the same template
+    string. A viewer reads it and is right; a superadmin reads it during an
+    outage and concludes their own account has been demoted, and this page has no
+    other signal to correct them with."""
+    body = _js_func("loadStaff")
+    assert "403" in body, "the permission message is no longer conditional on a status"
+    assert "faultRow(" in body, "the loader hand-rolls a dead end again"
+    assert re.search(r"try\{\s*r\s*=\s*await api\(", body), "the staff loader can fail silently again"
+    # the permission wording must sit on the permission branch only
+    perm = body[body.index("perm"):]
+    assert perm.index("superadmin-only") < perm.index("did not load"), (
+        "the permission sentence escaped its branch"
+    )
+
+
+def test_no_call_on_these_two_pages_can_fail_silently() -> None:
+    """api() resolves to a bare fetch, which THROWS on a dropped connection.
+    Eleven call sites here were unguarded, so a network blip produced an
+    unhandled rejection and the control did nothing at all — no message, no
+    change. A superadmin clicks Disable account, nothing moves, and they walk
+    away believing the account is disabled."""
+    fns = ("loadStaff", "createStaff", "staffDisable", "staffEnable", "staffRole",
+           "staffMfaReset", "loadStaffActivity", "saveProfile", "savePrefs",
+           "loadSessions", "revokeSession", "logoutEverywhere", "mfaEnableFlow",
+           "_doMfaConfirm", "_doMfaDisable", "loadConfig", "saveConfig",
+           "sendBroadcast", "loadAnnouncements", "deactivateAnn")
+    for fn in fns:
+        body = _js_func(fn)
+        calls = len(re.findall(r"\bapi\(", body))
+        if not calls:
+            continue
+        assert re.search(r"try\{\s*r\s*=\s*await api\(", body), f"{fn} calls the API unguarded"
+        # Two of these answer a null r through a ternary rather than an early
+        # return. Both are real handling, so the assertion is that SOMETHING
+        # tests r for falsiness -- not that it is spelled one particular way.
+        assert re.search(r"if\(!r[\)|&]", body) or re.search(r"[^\w]r\?", body), (
+            f"{fn} guards the throw but has no branch for the null it produces — "
+            f"the click still does nothing"
+        )
+
+
+def test_the_irreversible_staff_actions_ask_first() -> None:
+    """The same file gates revoking ONE tenant's API key behind a modal that says
+    it cannot be undone, and offboarding a tenant behind typing its name. Ending
+    a colleague's access, clearing a superadmin's second factor and promoting an
+    account to full control had nothing — one click each. Staff who learn that
+    dangerous things ask twice will click straight through the ones that do not."""
+    for helper in ("staffConfirm", "staffRoleConfirm", "confirmLogoutEverywhere"):
+        assert "openModal(" in _js_func(helper), f"{helper} no longer confirms anything"
+    mgr = _js_func("staffManage")
+    for direct in ("staffDisable('", "staffMfaReset('", "staffRole('"):
+        assert direct not in mgr, f"the modal calls {direct}…) without confirming first"
+    # and the page's own control must route through the confirmation too
+    assert "confirmLogoutEverywhere()" in _nocomment(_page("settings")), (
+        "log out everywhere fires straight from the button again"
+    )
+
+
+def test_the_one_time_password_is_copyable_and_announced() -> None:
+    """The most sensitive string either page produces, shown once. It was 10.5px
+    muted body text with no way to copy it and no live region, so a screen-reader
+    user heard nothing and the credential was unrecoverable. The component that
+    solves all three already ships and is used by the campaign panel."""
+    assert "_secretRow('one-time password'" in _js_func("createStaff"), (
+        "the temp password is hand-rendered again"
+    )
+    mk = _nocomment(_page("staff"))
+    out = re.search(r'<div id="nsOut"[^>]*>', mk)
+    assert out and "aria-live" in out.group(0), "the credential is written into a silent element"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))
