@@ -1,4 +1,4 @@
-# foxyaudit.tech — three sites, one backend. Caddy auto-provisions Let's Encrypt
+# foxyaudit.tech — four sites, one backend. Caddy auto-provisions Let's Encrypt
 # certificates for every hostname below (DNS must already point at this VM).
 # Caddy ignores client-supplied X-Forwarded-For (no trusted_proxies configured),
 # so the backend always sees the real client IP.
@@ -37,4 +37,41 @@ admin.foxyaudit.tech {
 	@notadmin not path /admin*
 	respond @notadmin 404
 	reverse_proxy foxy-backend:8000
+}
+
+# Site 4 — Paddle checkout (static). NO reverse_proxy: this page talks to Paddle
+# and never to our backend, so the origin that runs third-party payment script
+# has no route to the API at all.
+#
+# It is a separate hostname on purpose. Paddle.js has to be loaded from Paddle's
+# CDN, and every other surface in this product is deliberately CDN-free; giving
+# the checkout its own origin means that allowance is scoped to this block and
+# the marketing site, dashboard and admin console keep their own policies
+# untouched.
+checkout.foxyaudit.tech {
+	encode gzip
+	root * /srv/checkout
+	file_server
+
+	header {
+		# The ONLY third-party origin allowed anywhere in this policy is Paddle.
+		#   script-src   cdn.paddle.com — Paddle.js itself. 'unsafe-inline' is
+		#                allowed because this policy cannot be verified against a
+		#                live Paddle checkout from here, and a CSP that silently
+		#                blocks the SDK would break the only page that can take
+		#                money. Our own code is external ('self') and the page's
+		#                single input (_ptxn) is regex-validated and written with
+		#                textContent, so there is no injection sink for inline
+		#                script to be reached through. Tighten once a real
+		#                sandbox checkout has been observed.
+		#   frame-src    Paddle renders the actual card form in its own iframe.
+		#   connect-src  Paddle.js calls its API from the page.
+		#   form-action  'none' — this page posts no form anywhere, ever.
+		Content-Security-Policy "default-src 'none'; script-src 'self' https://cdn.paddle.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.paddle.com; font-src 'self' data:; frame-src https://*.paddle.com https://paddle.com; connect-src https://*.paddle.com https://paddle.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# This page is a payment step, not a landing page. Keeping it out of
+		# search stops expired _ptxn links being indexed and followed later.
+		X-Robots-Tag "noindex, nofollow"
+	}
 }

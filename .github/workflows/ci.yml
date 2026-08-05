@@ -134,6 +134,13 @@ jobs:
         # controller through a DOM stub; ubuntu-latest ships Node, which is why
         # this stays on this runner rather than needing a setup step.
         run: pytest foxy-dashboard -q
+      # M3a. Wired in here rather than left unrun. checkout.foxyaudit.tech is the
+      # only page in this product that loads third-party script, and these guards
+      # assert the CSP scoping, the absence of any API key in what the browser
+      # receives, and that the sandbox/live switch cannot be mis-set. A guard
+      # suite nothing runs is worse than no guard suite — it reads as coverage.
+      - name: Checkout page guards (Paddle)
+        run: pytest foxy-checkout -q
       - name: Offline judge demo
         run: python demo/offline_demo.py
       - name: Live OpenAI demo boundary tests

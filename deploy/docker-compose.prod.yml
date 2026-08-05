@@ -209,6 +209,21 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../foxy-sale-page:/srv/sale:ro
+      # The Paddle checkout page (M3a). A DIRECTORY mount like the sale page
+      # above, not a file mount: `git reset --hard` on deploy replaces files
+      # with new inodes, and a single-file bind would keep serving the stale
+      # pre-deploy copy until the container was recreated.
+      - ../foxy-checkout:/srv/checkout:ro
+      # Its one deployment value — the PUBLIC Paddle client-side token — lives
+      # OUT of git and is mounted over the page's config.js. Same reason the
+      # installer binaries live outside the repo: the deploy resets the working
+      # tree, so a tracked config file would be overwritten on every push. This
+      # one IS a single-file mount, and safely so — the file is never replaced
+      # by the deploy, which is the condition that makes the inode problem above
+      # apply. Absent on a fresh VM: the page then serves its honest
+      # "unconfigured" state instead of failing blank. See
+      # foxy-checkout/config.example.js.
+      - /home/devops/foxy-checkout-config/config.js:/srv/checkout/config.js:ro
       # Installer binaries (out-of-git; the release workflow scp's them here).
       - /home/devops/foxy-downloads:/srv/downloads:ro
       - caddy_data:/data
