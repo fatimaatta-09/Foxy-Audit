@@ -3582,6 +3582,17 @@ def test_save_is_blocked_while_any_field_is_invalid() -> None:
         "the refusal is not gated on the check"
     )
     assert "api(" not in head, "a request can still be sent while a field is invalid"
+    # ⚠ ADDED AT THE MERGE GATE. Everything above asserts the refusal is WRITTEN
+    # and correctly ordered — none of it asserts the branch can FIRE. Swapping
+    # the condition for a constant false keeps every string above present, in
+    # order, and passes: the save then PUTs a payload built from fields it has
+    # just found invalid. Same family as A6's helper that nothing called.
+    cond = re.search(r"if\s*\(([^)]*)\)\s*\{\s*bad\[0\]", head)
+    assert cond, "the refusal is no longer a branch on the failed set"
+    assert "bad" in cond.group(1), (
+        "the refusal is gated on something other than the failed fields — a "
+        "constant here reopens the exact defect: " + cond.group(1)
+    )
 
 
 def test_an_invalid_field_announces_itself() -> None:
