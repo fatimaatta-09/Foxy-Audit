@@ -18,11 +18,22 @@
   'use strict';
 
   var PADDLE_JS = 'https://cdn.paddle.com/paddle/v2/paddle.js';
+  // ⚠ PROVISIONAL — 15s is a guess, and it is the ONE number on this page that
+  // was not read off Paddle's documentation.
+  //
   // A checkout that never reports `checkout.loaded` is a checkout that never
-  // opened — a rejected or expired transaction is the usual reason, and Paddle
-  // does not always emit an error for one. Without this the page would sit on
-  // "Opening…" forever, which is the silent-nothing state this page exists to
-  // avoid.
+  // opened, and a rejected or expired transaction is the usual reason. Paddle
+  // documents `checkout.error` but does not say whether a refused transaction id
+  // emits one, so this timeout is what stops the page sitting on "Opening…"
+  // forever — the silent-nothing state it exists to avoid.
+  //
+  // TO CORRECT IT: open a checkout with a deliberately bad `_ptxn` against the
+  // sandbox and watch the console. If Paddle fires `checkout.error` promptly,
+  // this timeout becomes a backstop and can go up. If it fires nothing, measure
+  // how long a GOOD checkout takes to report `checkout.loaded` on a slow
+  // connection and leave generous headroom — too short shows "expired" to
+  // somebody whose checkout was merely slow, which costs a sale.
+  // One constant, one place to change.
   var LOAD_TIMEOUT_MS = 15000;
 
   var el = function (id) { return document.getElementById(id); };

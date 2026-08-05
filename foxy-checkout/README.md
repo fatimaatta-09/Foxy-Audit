@@ -104,13 +104,40 @@ because announcing "checkout is open" as an alert is noise.
 
 ## Security
 
-- **One third-party origin, ever: Paddle.** The CSP is on the Caddy site block
-  and denies by default. It is scoped to this hostname, which is the whole
-  reason the checkout is a separate subdomain — the marketing site, dashboard
-  and admin console keep their own policies untouched.
-- **No backend route.** The site block is `file_server` only, with no
-  `reverse_proxy`, so the origin that runs third-party payment script has no
-  path to the API.
+- **One third-party origin, ever: Paddle.** The CSP denies by default and is
+  scoped to this hostname, which is the whole reason the checkout is a separate
+  subdomain — the marketing site, dashboard and admin console keep their own
+  policies untouched.
+- **No backend route.** Static file serving only, no proxy, so the origin that
+  runs third-party payment script has no path to the API.
+
+### ⚠ `'unsafe-inline'` in `script-src` is PROVISIONAL — remove it after the first real checkout
+
+The policy currently allows `'unsafe-inline'` on `script-src`. **Nobody has yet
+watched Paddle.js run under this policy**, and a CSP that silently blocks the SDK
+breaks the only page in the product that can take money. So it ships loose in the
+one direction that cannot be verified from a developer machine, and tight
+everywhere else.
+
+What makes that acceptable rather than lazy: none of *our* code is inline (there
+are zero inline `<script>` blocks, and a guard fails if one appears), the page's
+only input is `_ptxn`, which is matched against `^txn_[A-Za-z0-9]{1,64}$`, and
+nothing on the page uses `innerHTML`. There is no injection sink for inline
+script to be reached through.
+
+**The exact edit, once one real sandbox checkout has completed end to end:**
+
+1. Delete the two occurrences of ` 'unsafe-inline'` from the `script-src`
+   directive — **`deploy/nginx-foxyaudit.conf`** (the live one) and
+   **`deploy/Caddyfile`** (the dedicated-box copy). Leave `style-src`'s
+   `'unsafe-inline'` alone; Paddle injects styles.
+2. `pytest foxy-checkout -q` — `test_the_two_csp_copies_are_byte_identical`
+   fails if you edit only one of them.
+3. Run a sandbox checkout again and watch the browser console. If Paddle.js
+   needs inline script after all, the console says so explicitly and you put it
+   back with a note recording that it is required rather than untested.
+
+Until step 3 has actually been done, this stays.
 - **`_ptxn` is validated, never trusted.** It is the page's only input, matched
   against `^txn_[A-Za-z0-9]{1,64}$` and only ever written with `textContent`.
   Nothing on this page uses `innerHTML`.

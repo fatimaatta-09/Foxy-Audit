@@ -25,6 +25,7 @@ HTML = (HERE / "index.html").read_text(encoding="utf-8")
 JS = (HERE / "checkout.js").read_text(encoding="utf-8")
 CONFIG_EXAMPLE = (HERE / "config.example.js").read_text(encoding="utf-8")
 CADDYFILE = (REPO / "deploy" / "Caddyfile").read_text(encoding="utf-8")
+NGINX = (REPO / "deploy" / "nginx-foxyaudit.conf").read_text(encoding="utf-8")
 COMPOSE = (REPO / "deploy" / "docker-compose.prod.yml").read_text(encoding="utf-8")
 
 #: The one third-party origin this whole surface is allowed to touch.
@@ -194,6 +195,31 @@ def test_nothing_is_written_to_the_page_with_innerhtml() -> None:
 
 # ── 5 · exactly one third party ─────────────────────────────────────────────
 
+def test_the_open_timeout_stays_one_named_provisional_constant() -> None:
+    """15s is the one number on this page that was NOT read off Paddle's docs —
+    Paddle does not document whether a refused transaction id emits an error, so
+    this timeout is what stops the page sitting on "Opening…" forever.
+
+    It has to stay findable and stay named. Inlining it puts a magic number in a
+    callback where the person who finally sees a real refused transaction will
+    not think to look, and there is no other signal telling them it was a guess.
+    """
+    code = _strip_js_comments(JS)
+    assert re.search(r"var LOAD_TIMEOUT_MS = \d+;", code), (
+        "the timeout is no longer a named constant"
+    )
+    assert "LOAD_TIMEOUT_MS)" in code, "setTimeout no longer uses the named constant"
+    assert not re.search(r"setTimeout\([^)]*,\s*\d{3,}\s*\)", code), (
+        "a raw millisecond literal was inlined into a setTimeout"
+    )
+    # The comment is the other half: a named constant nobody knows is a guess is
+    # just a tidier guess. Read the file WITH comments for this one.
+    decl = JS[:JS.index("var LOAD_TIMEOUT_MS")]
+    assert "PROVISIONAL" in decl[-1200:], (
+        "the constant no longer says it is provisional"
+    )
+
+
 def test_paddle_js_is_loaded_from_paddles_own_cdn() -> None:
     """Paddle requires it; a self-hosted copy of a payment SDK would be both a
     licence problem and a stale-code problem."""
@@ -293,6 +319,102 @@ def test_the_csp_is_scoped_to_the_checkout_site_only() -> None:
         body = _site_block(other)
         assert "paddle" not in body.lower(), f"{other} now references Paddle"
         assert "Content-Security-Policy" not in body, f"{other} gained a CSP"
+
+
+# ── 6b · the CSP lives in TWO files, and they must not drift ────────────────
+# nginx is the source of truth: `caddy` sits behind profiles:["edge"] and is not
+# started on the shared VM, so the nginx header is the one a customer receives.
+# The Caddyfile still carries the same policy because it describes the same four
+# sites for a dedicated box. Two copies of a security header that can drift is
+# how one gets tightened and the live one does not.
+
+
+def _nginx_server_block(server_name: str) -> str:
+    """One `server { … }` block, sliced by brace balance from its server_name."""
+    at = NGINX.index(f"server_name {server_name};")
+    start = NGINX.rindex("server {", 0, at)
+    depth, i = 0, start
+    while i < len(NGINX):
+        if NGINX[i] == "{":
+            depth += 1
+        elif NGINX[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return NGINX[start:i + 1]
+        i += 1
+    raise AssertionError(f"the {server_name} server block never closes")
+
+
+def _nginx_csp() -> str:
+    block = _nginx_server_block("checkout.foxyaudit.tech")
+    m = re.search(r'add_header Content-Security-Policy "([^"]+)"', block)
+    assert m, "the checkout vhost has no CSP"
+    return m.group(1)
+
+
+def _caddy_csp() -> str:
+    m = re.search(r'Content-Security-Policy "([^"]+)"', _checkout_block())
+    assert m, "the checkout Caddy site has no CSP"
+    return m.group(1)
+
+
+def test_the_two_csp_copies_are_byte_identical() -> None:
+    """Not "equivalent" — identical. A policy that differs by a space is a policy
+    somebody has to diff by eye to compare, and the whole point of holding two
+    copies is that nobody has to."""
+    nginx_policy, caddy_policy = _nginx_csp(), _caddy_csp()
+    assert nginx_policy == caddy_policy, (
+        "the nginx and Caddy content-security policies have drifted\n"
+        f"  nginx: {nginx_policy!r}\n"
+        f"  caddy: {caddy_policy!r}"
+    )
+
+
+def test_the_nginx_csp_survives_a_404() -> None:
+    """`always`, or nginx omits the header on any non-2xx. config.js legitimately
+    404s on a deployment nobody has configured yet, and that response renders in
+    the same browsing context as the page."""
+    block = _nginx_server_block("checkout.foxyaudit.tech")
+    for header in ("Content-Security-Policy", "X-Content-Type-Options",
+                   "Referrer-Policy", "X-Robots-Tag"):
+        m = re.search(r'add_header %s "[^"]+"([^;]*);' % header, block)
+        assert m, f"{header} is missing from the checkout vhost"
+        assert "always" in m.group(1), f"{header} is not set with `always`"
+
+
+def test_the_checkout_vhost_is_static_and_scoped() -> None:
+    """No proxy_pass: the origin running third-party payment script has no route
+    to the API. And the CSP must not have leaked onto the other three vhosts."""
+    block = _nginx_server_block("checkout.foxyaudit.tech")
+    assert "proxy_pass" not in block, "the checkout vhost can reach the backend"
+    assert "root /home/devops/foxy-audit/foxy-checkout;" in block
+    assert NGINX.count("Content-Security-Policy") == 1, (
+        "a CSP has appeared outside the checkout vhost"
+    )
+    for other in ("foxyaudit.tech www.foxyaudit.tech", "app.foxyaudit.tech",
+                  "admin.foxyaudit.tech"):
+        assert "paddle" not in _nginx_server_block(other).lower(), (
+            f"the {other} vhost now references Paddle"
+        )
+
+
+def test_the_checkout_vhost_does_not_rewrite_a_missing_file_to_the_page() -> None:
+    """`=404`, not the marketing vhost's `/index.html` fallback. config.js is
+    absent until the owner mounts one, and the page depends on that being a clean
+    404 — a fallback would hand the browser HTML to parse as JavaScript. Caddy's
+    file_server 404s here too, so this is what keeps the two edges alike."""
+    block = _nginx_server_block("checkout.foxyaudit.tech")
+    assert "=404" in block
+    assert "/index.html;" not in block.split("try_files")[1].split(";")[0] + ";"
+
+
+def test_certbot_is_told_about_the_new_hostname() -> None:
+    """The install comments are the runbook. A hostname missing from the certbot
+    line is a hostname with no certificate, which on a payment page is fatal."""
+    head = NGINX[:NGINX.index("# ── Site 1")]
+    assert "-d checkout.foxyaudit.tech" in head, (
+        "certbot is never told to issue a certificate for checkout."
+    )
 
 
 def test_compose_mounts_the_page_and_its_out_of_git_config() -> None:

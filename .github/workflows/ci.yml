@@ -141,6 +141,11 @@ jobs:
       # suite nothing runs is worse than no guard suite — it reads as coverage.
       - name: Checkout page guards (Paddle)
         run: pytest foxy-checkout -q
+      # And the admin console's 270, which had never run in CI at all. Register
+      # #55 is exactly this shape: guards that exist, pass locally, and report
+      # nothing when a merge breaks them. Same runner, no new dependency.
+      - name: Admin console guards
+        run: pytest foxy-adminpage -q
       - name: Offline judge demo
         run: python demo/offline_demo.py
       - name: Live OpenAI demo boundary tests
