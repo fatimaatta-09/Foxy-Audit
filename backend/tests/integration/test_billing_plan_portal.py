@@ -6,6 +6,7 @@ graceful 503/400 when billing isn't configured / no customer yet).
 """
 from __future__ import annotations
 
+from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Organization
 
@@ -58,3 +59,36 @@ def test_portal_graceful_without_billing(make_org, login):
     c = login(org["admin_email"], org["admin_password"])
     r = c.post("/v1/billing/portal")
     assert r.status_code in (400, 503), r.text
+
+
+# ── the upgrade list must know about every processor, not just Stripe ────────
+# Written by MAIN at the M3a deployment gate, not by an executor. The live
+# deployment had working Paddle checkout and an upgrade page reading "No upgrade
+# options available", because this endpoint decided sellability from
+# `stripe_price_*` alone while `upgrade_session` had moved on to Paddle.
+
+def _plans(client, org):
+    r = client.get("/v1/billing/plans", headers=org["auth"])
+    assert r.status_code == 200, r.text
+    return r.json()["plans"]
+
+
+def test_a_paddle_only_deployment_still_lists_its_plans(make_org, client, monkeypatch):
+    """The regression itself: Paddle configured, Stripe not, list must not be empty."""
+    s = get_settings()
+    monkeypatch.setattr(s, "stripe_price_pro", "")
+    monkeypatch.setattr(s, "stripe_price_max", "")
+    monkeypatch.setattr(s, "paddle_price_pro", "pri_test_pro")
+    monkeypatch.setattr(s, "paddle_price_max", "pri_test_max")
+    tiers = {p["tier"] for p in _plans(client, make_org())}
+    assert "pro" in tiers, "a Paddle price alone must make a tier sellable"
+    assert "max" in tiers
+
+
+def test_a_tier_neither_processor_sells_is_still_hidden(make_org, client, monkeypatch):
+    """The other direction — the guard must not simply list everything."""
+    s = get_settings()
+    for attr in ("stripe_price_pro", "stripe_price_max", "stripe_price_companion",
+                 "stripe_price_guardian", "paddle_price_pro", "paddle_price_max"):
+        monkeypatch.setattr(s, attr, "")
+    assert _plans(client, make_org()) == [], "nothing configured sells nothing"

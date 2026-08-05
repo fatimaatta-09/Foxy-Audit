@@ -1134,17 +1134,24 @@ def billing_plans(org: Organization = Depends(resolve_org)):
     """The plans this deployment can actually sell, for the in-dashboard upgrade
     page (P2 §10.2 — it must not bounce anyone to the marketing site).
 
-    A tier only appears if its Stripe price id is configured here, so a
-    half-configured deployment offers nothing it cannot complete. NO PRICES are
-    returned: the amount lives in Stripe and is confirmed at checkout, and
+    A tier only appears if EITHER processor has a price id configured for it, so
+    a half-configured deployment offers nothing it cannot complete. NO PRICES are
+    returned: the amount lives at the processor and is confirmed at checkout, and
     inventing one in the dashboard would be exactly the fake data this project
     forbids. Quota and anchor cadence DO come from config, so they are real.
+
+    ⚠ BOTH PROCESSORS, and that is what this function's guard is for.
+    M2 taught ``upgrade_session`` to use Paddle but left this listing reading only
+    ``stripe_price_*``. On a Paddle-only deployment every tier was skipped, the
+    upgrade page rendered "No upgrade options available", and the working Paddle
+    checkout behind it was unreachable — the button was fine and the list that
+    decides whether to show it was empty.
     """
     s = get_settings()
     current = (org.plan_tier or "free").strip().lower()
     out = []
     for tier, (price_attr, mode) in _PLANS.items():
-        if not getattr(s, price_attr, ""):
+        if not getattr(s, price_attr, "") and not paddle.price_for(tier):
             continue                       # not sellable on this deployment
         out.append({
             "tier": tier,
