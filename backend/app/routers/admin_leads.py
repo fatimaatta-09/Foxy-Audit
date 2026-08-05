@@ -10,7 +10,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..admin_audit import client_ip, record_admin_action
@@ -41,15 +41,24 @@ def list_leads(
     q: str | None = None,
 ):
     """All leads bucketed into a kanban (new/trial/converted/churned) + counts."""
-    rows = db.execute(
-        select(MarketingLead).order_by(MarketingLead.created_at.desc()).limit(1000)
-    ).scalars().all()
+    # The search used to run in Python AFTER .limit(1000), so it only ever
+    # searched the newest thousand leads. A lead older than that answered "no
+    # such lead" instead of "not in this window" -- the console's own principle
+    # calls a confident wrong answer worse than a visible failure, and this one
+    # was invisible. Filtering in SQL puts the whole table behind the box and
+    # keeps the cap as what it was meant to be: a page size, not a search scope.
+    stmt = select(MarketingLead)
     if q:
-        ql = q.strip().lower()
-        rows = [
-            r for r in rows
-            if ql in " ".join([r.email or "", r.name or "", r.company or "", r.source or ""]).lower()
-        ]
+        like = "%%%s%%" % q.strip().lower()
+        stmt = stmt.where(or_(
+            func.lower(func.coalesce(MarketingLead.email, "")).like(like),
+            func.lower(func.coalesce(MarketingLead.name, "")).like(like),
+            func.lower(func.coalesce(MarketingLead.company, "")).like(like),
+            func.lower(func.coalesce(MarketingLead.source, "")).like(like),
+        ))
+    rows = db.execute(
+        stmt.order_by(MarketingLead.created_at.desc()).limit(1000)
+    ).scalars().all()
     oids = [r.converted_org_id for r in rows if r.converted_org_id]
     names: dict = {}
     if oids:

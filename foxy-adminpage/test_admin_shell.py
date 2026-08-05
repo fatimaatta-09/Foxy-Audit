@@ -2913,5 +2913,239 @@ def test_no_mojibake_survives() -> None:
     assert not re.search(r"[ÂÃ]\S|â€.", SRC), "mojibake is back in the file"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# A5 · leads + inbox — the pre-sales pipeline and the support inbox.
+#
+# These two pages are where staff act on people OUTSIDE the company: a prospect
+# who gets an email, a lead who gets marked churned. Almost every guard below
+# holds one shape in place — the page stating something that is not true of what
+# it is showing, or of what it just did.
+# ═══════════════════════════════════════════════════════════════════════════
+
+A5_PAGES = ("leads", "inbox")
+
+
+def test_the_reply_reports_whether_the_email_actually_went_out() -> None:
+    """The endpoint records the reply, tries to send it, and returns which of
+    those happened. sendReply read r.ok alone, so a mail provider that was down
+    returned 200 and the console said it had emailed a prospect it had not —
+    then painted a replied mark on the row so nobody would look again. The truth
+    was already in the response body; we were not reading it."""
+    body = _js_func("sendReply")
+    assert "emailed" in body, "sendReply reports success from the status code alone again"
+    assert re.search(r"if\s*\(\s*d\.emailed\s*\)", body), (
+        "nothing branches on whether the email was actually sent"
+    )
+    assert body.count("toast(") >= 2, "the sent and not-sent outcomes collapsed into one message"
+
+
+def test_no_outward_action_can_be_double_submitted() -> None:
+    """busy() sets aria-busy, which .btn[aria-busy] already turns into
+    pointer-events:none — so calling it IS the guard. It had shipped for four
+    phases with no caller on either of these pages, and the uncovered action was
+    the one that emails a person: two clicks sent two mails AND overwrote the
+    first reply's stored text, because the server keeps a single reply column."""
+    for fn in ("sendReply", "claimMsg", "releaseMsg", "leadMove"):
+        assert re.search(r"busy\(\s*btn", _js_func(fn)), f"{fn} lost its double-submit guard"
+    # the guard is worthless if the markup never hands the button over
+    js = _js_nocomment()
+    for call in ("sendReply('", "claimMsg('", "releaseMsg('", "leadMove('"):
+        at = js.index(call)
+        assert "this" in js[at:at + 90], f"{call}...) is called without its button"
+
+
+def test_no_action_on_these_pages_is_an_anchor_wearing_a_button() -> None:
+    """claim, release and force-release were anchors with an onclick and a
+    `return false`. They navigate nowhere, announce as links, and take Enter but
+    not Space. A2 fixed eight of these by sweeping the class they shared; these
+    three carried no class, so the sweep could not see them."""
+    js = _js_nocomment()
+    detail = js[js.index("function renderInboxDetail"):]
+    detail = detail[: detail.index("async function sendReply")]
+    assert 'href="#"' not in detail, "an inbox action is an anchor again"
+    for page in A5_PAGES:
+        assert 'href="#"' not in _a2_page(page), f"{page} markup has an anchor acting as a button"
+
+
+def test_the_reply_box_says_who_it_emails_while_you_type() -> None:
+    """It had no label and no aria-label — no accessible name at all, on the
+    highest-stakes control on either page. The recipient was named in the
+    placeholder, which is the one place a fact disappears the moment you start
+    writing the message it is a fact about."""
+    body = _js_func("renderInboxDetail")
+    assert 'for="replyBox"' in body, "the reply box lost its label"
+    label = body[body.index('for="replyBox"'):]
+    label = label[: label.index("</label>")]
+    assert "emails" in label and "it.email" in label, (
+        "the label no longer names the address the reply goes to"
+    )
+
+
+def test_every_mark_on_the_selected_row_is_legible_on_it() -> None:
+    """The four marks were inline hues on bare spans, so the selected-row
+    override could not reach them — it keys off two utility classes and these
+    carried neither. The selected row is painted in the same value the lock mark
+    was painted in, so on the open row the lock measured 1.00:1. That is the row
+    it matters on: "someone else already owns this" is the fact that stops a
+    second email going to a live prospect.
+
+    Recomputed from the token values rather than compared to a number written
+    beside them."""
+    css = _css()
+    for cls in (".ib-lock", ".ib-done", ".ib-new", ".ib-pri"):
+        assert cls in css, f"{cls} is gone — the marks are inline hues again"
+    assert "var(--foxink)" in _scope(".inbox-row.on .ib-lock"), (
+        "the marks no longer restate themselves on the selected row"
+    )
+    # BOTH themes: --fox and --fox3 are re-themed, --foxink is not. Measuring only
+    # the dark scope passed a light-mode figure this guard had never seen.
+    # Measured today: dark 7.46 / 4.92, light 5.60 / 3.33 against the two stops.
+    # The floor is 1.4.11's 3.0 rather than 4.5 because no ink clears 4.5 against
+    # the light gradient's dark stop -- pure black is 3.60 -- so a 4.5 assertion
+    # here would be a number that cannot be met rather than one being held. The
+    # incumbent .inbox-row.on rule paints every other word in the row in this same
+    # ink at these same ratios; the marks now match it instead of being invisible.
+    ink = _token("--foxink")
+    for theme in ("dark", "light"):
+        for stop in ("--fox", "--fox3"):      # the two stops of the row's gradient
+            r = _ratio(_token("--foxink", theme), _token(stop, theme))
+            assert r >= 3.0, (
+                f"the mark measures {r:.2f}:1 against {stop} in {theme} on the selected row"
+            )
+    assert _token("--foxink", "light") == ink, "--foxink is re-themed now; re-measure the marks"
+    # And no fill under it: a dark wash cut from the same ink measured 1.64:1 as
+    # a FILL against that gradient — the order of the wash it would have replaced.
+    assert "background:none" in _scope(".inbox-row.on .ib-pri"), (
+        "a plate is being drawn under the urgency mark on the selected row again"
+    )
+    # the row's own urgency rail had the same problem, one level up
+    assert "var(--foxink)" in _scope(".inbox-row.pri.on"), (
+        "the urgency rail is an orange rail down an orange gradient again"
+    )
+
+
+def test_a_failed_leads_load_does_not_leave_the_stage_counts_standing() -> None:
+    """The failure path wrote a fault into the board and left the strip above it
+    untouched, so a failed refresh rendered four confident stage totals from a
+    previous fetch directly over the words "Leads did not load". loadOverview
+    clears both of its funnels in this same idiom; this one was missed."""
+    body = _js_func("loadLeads")
+    fail = body[: body.index("const d=await r.json()")]
+    assert "$('ldFunnel').innerHTML=''" in fail, "stale stage counts survive a failed load"
+    assert "$('ldScope')" in fail, "the scope line survives a failed load"
+
+
+def test_the_filter_counts_count_the_list_they_sit_above() -> None:
+    """The counts were tallied over every loaded message while the list beneath
+    them was ALSO filtered by the search box — so typing a domain left the
+    buttons advertising the whole inbox. The number on the button was not the
+    number of rows pressing it would give you."""
+    assert "_inboxSearched()" in _js_func("_inboxCounts"), (
+        "the filter counts ignore the search box again"
+    )
+    assert "_inboxSearched()" in _js_func("renderInboxList"), (
+        "the list and the counts are reading two different sources again"
+    )
+
+
+def test_an_empty_stage_draws_no_bar() -> None:
+    """funnelRow floored the width at Math.max(2, ...) and .funbar i adds a
+    min-width on top of it, so a stage holding nothing rendered a short coloured
+    stub — the numeral said 0 and the bar disagreed with it."""
+    body = _js_func("funnelRow")
+    assert re.search(r"val\s*>\s*0", body), "a zero bucket draws a bar again"
+    assert "min-width:3px" in _css(), (
+        "the min-width this guard exists to neutralise is gone; re-check funnelRow"
+    )
+
+
+def test_the_four_stages_have_one_source() -> None:
+    """The strip and the board were two literal lists of the same four buckets
+    carrying two colour vocabularies, and they did not agree: the first stage was
+    one token in the strip and another in the board, which resolve to the same
+    value in one theme and to two different blues in the other."""
+    assert "LEAD_STAGES" in SRC, "the stage table is gone"
+    body = _js_func("loadLeads")
+    assert "LEAD_STAGES" in body, "loadLeads stopped reading the stage table"
+    for legacy in ("['new','New'", "var(--blue)"):
+        assert legacy not in body, f"a second stage vocabulary is back in loadLeads ({legacy})"
+    stages = SRC[SRC.index("const LEAD_STAGES=["):]
+    stages = stages[: stages.index("];")]
+    for tok in ("--info-bg", "--warn-bg", "--safe-bg", "--breach-bg"):
+        assert tok in stages, f"{tok} left the stage table"
+
+
+def test_both_pipeline_pages_announce_themselves() -> None:
+    """Thirteen of this file's pages carry an sr-only h1. These two did not, and
+    the only other text naming them is the watermark, which is aria-hidden — so
+    both presented zero headings to the accessibility tree."""
+    for page in A5_PAGES:
+        assert re.search(r'<h1 class="sr-only">[^<]+</h1>', _a2_page(page)), (
+            f"{page} has no heading"
+        )
+    for field, page in (("inboxSearch", "inbox"), ("ldSearch", "leads")):
+        assert 'for="%s"' % field in _a2_page(page), f"{field} is unlabelled again"
+
+
+def test_the_stage_move_clears_the_pointer_target_minimum() -> None:
+    """The only action the leads page has. It was inline padding with 9px type,
+    measured 45x22 rendered, and 22 is under the 24 SC 2.5.8 asks — and being
+    inline it also beat the coarse-pointer rescue rule, which is a media query
+    and cannot outrank a style attribute."""
+    m = re.search(r"min-height:(\d+)px", _scope(".lead-card .lc-moves .btn"))
+    assert m and int(m.group(1)) >= 24, "the stage-move target is under the pointer minimum again"
+    # Scoped to the button tag itself. The moves expression also holds the
+    # read-only fallback, which is a label and not a target; a slice that wide
+    # policed the wrong element and failed for the wrong reason.
+    body = _js_func("_leadCard")
+    moves = body[body.index("const moves="): body.index("const utm=")]
+    tag = moves[moves.index("<button"): moves.index(">", moves.index("<button"))]
+    assert "style=" not in tag, (
+        "the move buttons are sized inline again, out of reach of the rescue rule"
+    )
+
+
+def test_the_inbox_can_have_a_breakpoint_at_all() -> None:
+    """The two panes were an inline grid on a bare div, and an inline grid is
+    unreachable from every media query in the file. Measured at a 375px viewport
+    the detail pane ran to x=524 and the document scrolled sideways, taking the
+    message body, the reply box and the send control off screen — which is the
+    whole job of the page."""
+    assert "mailgrid" in _css(), "the inbox grid is not a class"
+    mk = _a2_page("inbox")
+    assert 'class="mailgrid"' in mk, "the inbox page stopped using the class"
+    assert "grid-template-columns" not in mk, "the inbox grid is inline again"
+    stacked = [b for _w, b in _width_media_blocks() if "mailgrid" in b]
+    assert stacked, "the inbox grid has no width breakpoint"
+    assert any("1fr" in b for b in stacked), (
+        "the breakpoint exists but does not collapse the panes to one column"
+    )
+
+
+def test_the_console_still_has_no_native_dialog() -> None:
+    """One survived, on the inbox claim path, on a surface whose modal section is
+    headed as the replacement for the native dialogs. It also blocked the unread
+    poll for as long as it sat there. Named by pattern rather than spelled out,
+    because a guard that greps this file greps its own explanation."""
+    assert not re.search(r"(?<![\w.])" + "aler" + r"t\s*\(", _js_nocomment()), (
+        "a native dialog is back"
+    )
+
+
+def test_the_scrollable_regions_on_these_pages_are_reachable() -> None:
+    """A comment in this file calls .scrolly the only scrollable region it has.
+    It was wrong by four, and all four are on these two pages: the message list,
+    and one inner scroller per stage column. Same SC 2.1.1 defect .scrolly was
+    fixed for, in markup that names no class."""
+    assert re.search(r'class="clay inbox-pane"[^>]*tabindex="0"', _a2_page("inbox")), (
+        "the message list is a focusless scroll region again"
+    )
+    cols = _js_func("loadLeads")
+    at = cols.index("overflow:auto")
+    assert 'tabindex="0"' in cols[max(0, at - 220):at], (
+        "the stage columns scroll with no way to reach them from the keyboard"
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

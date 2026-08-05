@@ -210,3 +210,41 @@ def test_leads_kanban_and_status(make_staff, staff_login, client):
         assert db.query(AdminAction).filter(AdminAction.action == "lead.status").count() == 1
     finally:
         db.close()
+
+
+def test_lead_search_reaches_past_the_page_cap(make_staff, staff_login):
+    """The search ran in Python AFTER .limit(1000), so it only ever searched the
+    newest thousand leads. A lead older than that answered "no such lead" rather
+    than "not in this window" — the console's own principle calls a confident
+    wrong answer worse than a visible failure, and this one was silent: an empty
+    kanban under a search box looks exactly like a lead that does not exist.
+
+    Seeded one over the cap so the target is genuinely outside the window. The
+    rows are bulk-inserted in one statement; the assertion is that the needle is
+    found at all, not where it sorts."""
+    old = _seed_lead("needle.oldest@x.com", "new", company="Findable Ltd")
+    db = SessionLocal()
+    try:
+        # push the needle out of the newest-1000 window
+        base = datetime.now(timezone.utc) - timedelta(days=400)
+        db.get(MarketingLead, uuid.UUID(old)).created_at = base
+        db.commit()
+        db.execute(MarketingLead.__table__.insert(), [
+            {"id": uuid.uuid4(), "email": "filler%d@x.com" % i, "status": "new",
+             "created_at": datetime.now(timezone.utc)}
+            for i in range(1000)
+        ])
+        db.commit()
+    finally:
+        db.close()
+    s = make_staff()
+    c = staff_login(s["email"], s["password"])
+    # the needle is outside the window an unfiltered read returns …
+    window = c.get("/admin/v1/leads").json()
+    assert not any(x["email"] == "needle.oldest@x.com" for x in window["buckets"]["new"])
+    # … and the search must still find it.
+    found = c.get("/admin/v1/leads?q=findable").json()
+    assert any(x["email"] == "needle.oldest@x.com" for x in found["buckets"]["new"]), (
+        "the lead search is filtering after the cap again — old leads read as nonexistent"
+    )
+    assert found["counts"]["new"] == len(found["buckets"]["new"])

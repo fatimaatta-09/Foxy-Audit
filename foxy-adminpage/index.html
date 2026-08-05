@@ -1190,6 +1190,13 @@ input::-webkit-calendar-picker-indicator:hover{opacity:1;background:var(--surf3)
 .segbtn{font-family:var(--disp);font-weight:600;font-size:12px;color:var(--muted);background:none;border:1px solid transparent;border-radius:var(--r-xs);padding:7px 16px;min-height:38px;cursor:pointer;transition:background var(--dur) ease,color var(--dur) ease,box-shadow var(--dur) ease}
 .segbtn:hover{color:var(--ink)}
 .segbtn[aria-pressed="true"]{background:linear-gradient(150deg,var(--fox-hi),var(--fox));color:var(--on-pri);box-shadow:var(--clay-press)}
+/* A5. The inbox filter row is six of these in a 300px rail, so it does need a
+   smaller step — but it was taking one as five inline declarations written by
+   renderInboxFilters, which made it an undeclared sixth size AND put it out of
+   reach of the coarse-pointer rescue below (an inline padding beats a rule in a
+   media query). Declared here so both problems go away at once. */
+.segbtn.xs{min-height:32px;padding:4px 10px;font-size:11px}
+@media (hover:none){ .segbtn.xs{min-height:44px} }
 
 /* ════════ A3 · THE OPS SUB-NAV ════════
    Register #68. This row is ONE component repeated on four ops pages, and it
@@ -1323,6 +1330,75 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 .inbox-row.on{background:linear-gradient(150deg,var(--fox),var(--fox3));color:var(--foxink)}
 .inbox-row.on .sub,.inbox-row.on .mono{color:var(--foxink) !important;opacity:.85}
 .inbox-row.pri{box-shadow:inset 3px 0 0 var(--accent)}
+
+/* ── the four marks a row carries, and what the SELECTED row does to them ──
+   A5. renderInboxList wrote these four as inline hues on bare spans, so the
+   override directly above could not reach them — it keys off the two utility
+   classes and these carried neither. The selected row paints the same warm
+   gradient the lock mark was painted in: the fill under the mark and the mark
+   itself resolved to the SAME declared value, so on the open row the mark
+   measured 1.00:1 at the top of the gradient. Not dim — absent.
+
+   That is the row where it matters. "Someone else already owns this" is the one
+   fact that stops a second reply going out to a live prospect, and it went
+   blank on the row being composed in.
+
+   So the marks are classes now, and the selected row restates all four in
+   --foxink, the ink this gradient is already designed to carry (the rule above
+   sets it for every other word in the row). The urgency mark cannot keep a
+   translucent warm plate over a warm gradient — a fill that dissolves into its
+   own background is the defect this surface has shipped twice — so under the
+   selected row it takes a dark plate cut from the same ink instead. Measured as
+   FILL against the gradient's two stops, not as ink alone. */
+.ib-lock{color:var(--fox);font-weight:700}
+.ib-done{color:var(--ok);font-weight:700}
+.ib-new{color:var(--danger)}
+.ib-pri{display:inline-flex;align-items:center;gap:3px;background:var(--warn-soft);color:var(--warnc);
+  font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:var(--r-xs)}
+.inbox-row.on .ib-lock,.inbox-row.on .ib-done,.inbox-row.on .ib-new{color:var(--foxink)}
+/* No plate under the selected row, for R1's reason and not a different one: a
+   dark wash cut from --foxink measured 1.64:1 as a FILL against the gradient it
+   sits on, which is the same order as the amber wash it would have replaced.
+   A fill you do not draw cannot dissolve. The word and its glyph carry it, at
+   4.92:1 on the gradient's dark stop and 7.46:1 on its light one, and the row's
+   own urgency rail below is the mark that survives at a glance. */
+.inbox-row.on .ib-pri{background:none;color:var(--foxink)}
+/* the urgency rail is --accent, which resolves to the same warm value the
+   selected row is painted in: an invisible rail down an orange gradient. Same
+   reasoning as the marks. */
+.inbox-row.pri.on{box-shadow:inset 3px 0 0 var(--foxink)}
+
+/* ── the inbox's two panes ──
+   A5. This was an inline `minmax(300px,380px) 1fr` on a bare div, and an inline
+   grid is unreachable from any media query — so the page could not have had a
+   breakpoint at all. Measured at a 375px viewport: the list held its 300px
+   floor, the detail pane was squeezed to 182px and still ran to x=524, and the
+   document scrolled sideways. The reply box, the send control and the message
+   body were all off-screen, which is the whole job of the page.
+
+   .split (2fr 1fr) is the file's other two-column pattern but it is the wrong
+   ratio here — a message list wants a fixed-ish rail, not a proportion — so
+   this is its own rule rather than a reuse that would have to fight itself. */
+.mailgrid{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:var(--s-4);align-items:start}
+.mailgrid .inbox-pane{padding:10px;max-height:78vh;overflow:auto}
+@media(max-width:820px){
+  .mailgrid{grid-template-columns:1fr}
+  .mailgrid .inbox-pane{max-height:none}
+}
+
+/* A5. The lead card's own surface. It was six inline declarations repeated per
+   card by _leadCard; the actions row is split out because a UTM label and three
+   destination buttons were sharing one flex line, at one height, with one
+   radius — so the one thing on the card that is NOT clickable read as a fourth
+   button. */
+.lead-card{border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 10px;background:var(--surf2)}
+.lead-card .lc-who{font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lead-card .lc-moves{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}
+/* SC 2.5.8 asks 24x24 of a pointer target. These measured 45x22 rendered — the
+   only action the page has, capped under the minimum by an inline padding that
+   also beat the coarse-pointer rescue rule. Sized here instead, so the rescue
+   at (hover:none) can still reach it. */
+.lead-card .lc-moves .btn{min-height:26px;padding:3px 8px;font-size:10px}
 
 /* ════════ PAGES ════════ */
 .page{display:none}
@@ -2231,14 +2307,22 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── INBOX ──────────────── -->
     <section class="page" id="page-inbox">
+      <h1 class="sr-only">Support inbox</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <div style="display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start;">
-        <div class="clay" style="padding:10px;max-height:78vh;overflow:auto;">
+      <!-- The grid was inline, which put it out of reach of every media query in
+           the file — see .mailgrid. The list pane scrolls, so it takes the same
+           tabindex/role/label the file already established on .scrolly: that
+           comment claims .scrolly is the only scrollable region and it was wrong
+           by four, all of them on this phase's two pages. -->
+      <div class="mailgrid">
+        <div class="clay inbox-pane" tabindex="0" role="group" aria-labelledby="inboxPaneLab">
+          <h2 class="sr-only" id="inboxPaneLab">Messages</h2>
+          <label class="sr-only" for="inboxSearch">Search messages</label>
           <input class="cin" id="inboxSearch" placeholder="Search sender, subject, message…" oninput="renderInboxList()" style="margin-bottom:8px;">
-          <div id="inboxFilters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>
-          <div id="inboxList"><div class="sub" style="padding:16px;">Loading…</div></div>
+          <div id="inboxFilters" role="group" aria-label="Filter messages" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>
+          <div id="inboxList" aria-live="polite" onkeydown="inboxKey(event)"><div class="sub" style="padding:16px;">Loading…</div></div>
         </div>
-        <div class="clay pad" id="inboxDetail" style="min-height:320px;"><div class="sub" style="text-align:center;padding:60px 0;">Select a message to read &amp; reply.</div></div>
+        <div class="clay pad" id="inboxDetail" style="min-height:320px;"><div class="sub" style="text-align:center;padding:60px 0;">Select a message to read and reply.</div></div>
       </div>
     </section>
 
@@ -2313,9 +2397,23 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 
     <!-- ──────────────── LEADS ──────────────── -->
     <section class="page" id="page-leads">
+      <h1 class="sr-only">Leads pipeline</h1>
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
-      <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">funnel</div><div class="panel-t">Conversion</div></div><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div><div class="fun" id="ldFunnel"></div></div>
-      <div id="ldKanban" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
+      <!-- It said eyebrow `funnel`, title `Conversion`. It is neither. The four
+           values are terminal buckets — admin_leads assigns each lead to exactly
+           one — so nothing narrows through the strip, churned routinely exceeds
+           converted, and each bar is scaled against the largest bucket rather
+           than against the stage above it. No conversion rate can be read off
+           it. Retitled to the thing it does measure.
+
+           The search moved OUT of this panel's header. It filters the board
+           below and outside the panel, and sitting in the panel head it stated
+           the wrong scope by proximity — while ALSO rescoping these four numbers
+           silently, because the API filters before it counts. #ldScope now says
+           so in words whenever a query is active. -->
+      <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">pipeline</div><div class="panel-t">Leads by stage</div><div class="sub" id="ldScope" style="font-size:11.5px;margin-top:2px;"></div></div></div><div class="fun" id="ldFunnel"></div></div>
+      <div class="panel-h" style="margin-bottom:10px;"><h2 class="panel-t" style="font-size:15px;">Board</h2><div><label class="sr-only" for="ldSearch">Search leads</label><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div></div>
+      <div id="ldKanban" aria-live="polite" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
     </section>
 
     <!-- ──────────────── EVALUATION CAMPAIGNS ──────────────── -->
@@ -3352,7 +3450,15 @@ const CANNED=[
   {label:'Book a call', body:'Happy to walk you through this on a quick call. What times work for you this week?\n\n'},
   {label:'Resolved', body:'Glad we could help! Let us know if anything else comes up.\n\n— Foxy Audit support'},
 ];
-function insertCanned(i){ const b=$('replyBox'); if(!b||!CANNED[i])return; b.value=CANNED[i].body+(b.value||''); b.focus(); }
+/* It prepended, so `Resolved` — the only canned block that carries a sign-off —
+   landed ABOVE whatever had been typed, and clicking two chips stacked them in
+   reverse order. setRangeText is the platform's own insert-at-caret and keeps
+   undo working, which rewriting .value does not. */
+function insertCanned(i){ const b=$('replyBox'); if(!b||!CANNED[i])return;
+  const t=CANNED[i].body;
+  if(b.setRangeText){ b.setRangeText(t,b.selectionStart,b.selectionEnd,'end'); }
+  else { b.value=(b.value||'')+t; }
+  b.focus(); }
 function _inboxMatch(it,f){
   if(f==='unread') return !it.read;
   if(f==='priority') return !!it.priority;
@@ -3361,17 +3467,39 @@ function _inboxMatch(it,f){
   if(f==='unclaimed') return !it.claimed_by_id;
   return true;
 }
+/* The search term, and the list once it has been applied. Both the counts and
+   the rendered list read this, which is the whole point: the counts used to be
+   tallied over every loaded message while the list below them was ALSO filtered
+   by the search box. Type a domain and the buttons still advertised the whole
+   inbox — the number on the button was not the number of rows pressing it
+   would give you. One source, so the two cannot drift again. */
+function _inboxQuery(){ return ($('inboxSearch')?$('inboxSearch').value:'').trim().toLowerCase(); }
+function _inboxSearched(){
+  const q=_inboxQuery(); if(!q) return INBOX;
+  return INBOX.filter(it=>((it.email||'')+' '+(it.name||'')+' '+(it.company||'')+' '+(it.subject||'')+' '+(it.message||'')).toLowerCase().includes(q));
+}
 function _inboxCounts(){
-  const c={all:INBOX.length,unread:0,priority:0,replied:0,mine:0,unclaimed:0};
-  INBOX.forEach(it=>{ if(!it.read)c.unread++; if(it.priority)c.priority++; if(it.replied_at)c.replied++; if(ME&&it.claimed_by_id===ME.id)c.mine++; if(!it.claimed_by_id)c.unclaimed++; });
+  const rows=_inboxSearched();
+  const c={all:rows.length,unread:0,priority:0,replied:0,mine:0,unclaimed:0};
+  rows.forEach(it=>{ if(!it.read)c.unread++; if(it.priority)c.priority++; if(it.replied_at)c.replied++; if(ME&&it.claimed_by_id===ME.id)c.mine++; if(!it.claimed_by_id)c.unclaimed++; });
   return c;
 }
 function renderInboxFilters(){
   const el=$('inboxFilters'); if(!el)return;
   const c=_inboxCounts();
   const defs=[['all','All'],['unread','Unread'],['priority','Priority'],['unclaimed','Unclaimed'],['mine','Mine'],['replied','Replied']];
-  el.innerHTML=defs.map(d=>'<button class="segbtn" style="min-height:30px;padding:4px 10px;font-size:11px;border-radius:7px;" aria-pressed="'+(INBOX_FILTER===d[0]?'true':'false')+'" onclick="INBOX_FILTER=\''+d[0]+'\';renderInboxFilters();renderInboxList()">'+d[1]+' <b style="opacity:.65;">'+(c[d[0]]||0)+'</b></button>').join('');
+  /* .segbtn.xs rather than five inline declarations overriding the shared
+     control. The inline set was a sixth, undeclared size of the console's
+     segmented button, and it beat the coarse-pointer rescue rule. */
+  el.innerHTML=defs.map(d=>'<button class="segbtn xs" type="button" aria-pressed="'+(INBOX_FILTER===d[0]?'true':'false')+'" onclick="INBOX_FILTER=\''+d[0]+'\';renderInboxFilters();renderInboxList()">'+d[1]+' <b style="opacity:.65;">'+(c[d[0]]||0)+'</b></button>').join('');
 }
+/* Bound by delegation on the list, not per row. It used to be an onkeydown
+   attribute on every row, and openMessage rewrites the list's innerHTML — so
+   the first Enter destroyed the focused row, focus fell to <body>, and the
+   handler was no longer attached to anything reachable. Arrow navigation, the
+   only accelerator either of these pages has, died on first use. Delegation
+   survives the rebuild; restoring focus (below) gives it something to step
+   from. */
 function inboxKey(e){
   if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
   e.preventDefault();
@@ -3389,47 +3517,82 @@ async function loadInbox(){
   if(INBOX_OPEN){const it=INBOX.find(x=>x.id===INBOX_OPEN); it?renderInboxDetail(it):($('inboxDetail').innerHTML='<div class="sub" style="text-align:center;padding:60px 0;">Select a message to read &amp; reply.</div>');}
 }
 function renderInboxList(){
-  const q=($('inboxSearch')?$('inboxSearch').value:'').trim().toLowerCase();
-  if(!INBOX.length){$('inboxList').innerHTML='<div class="chart-empty" style="min-height:120px;">No messages yet.</div>';return;}
-  let rows=INBOX.filter(it=>_inboxMatch(it,INBOX_FILTER));
-  if(q) rows=rows.filter(it=>((it.email||'')+' '+(it.name||'')+' '+(it.company||'')+' '+(it.subject||'')+' '+(it.message||'')).toLowerCase().includes(q));
-  if(!rows.length){$('inboxList').innerHTML='<div class="chart-empty" style="min-height:120px;">No messages match this filter'+(q?' + search':'')+'.</div>';return;}
-  $('inboxList').innerHTML=rows.map(it=>{
-    const lock=it.claimed_by?'<span style="color:var(--fox);font-weight:700;">● '+esc(it.claimed_by.split('@')[0])+'</span>':'';
-    const done=it.replied_at?'<span style="color:var(--ok);font-weight:700;">&#10003; replied</span>':'';
-    const dot=it.read?'':'<span style="color:var(--danger);">&#9679; </span>';
-    const pri=it.priority?'<span style="display:inline-flex;align-items:center;gap:3px;background:var(--warn-soft);color:var(--warnc);font-size:8px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:5px;"><svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor" style="flex-shrink:0;"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>PRIORITY</span>':'';
-    return '<button class="inbox-row'+(it.priority?' pri':'')+(it.id===INBOX_OPEN?' on':'')+'" onclick="openMessage(\''+it.id+'\')" onkeydown="inboxKey(event)">'+
+  const q=_inboxQuery(), el=$('inboxList');
+  if(!INBOX.length){el.innerHTML='<div class="chart-empty" style="min-height:120px;">No messages yet.<span class="hint">Demo and contact form submissions land here.</span></div>';return;}
+  const rows=_inboxSearched().filter(it=>_inboxMatch(it,INBOX_FILTER));
+  if(!rows.length){el.innerHTML='<div class="chart-empty" style="min-height:120px;">'
+    +(q?'No messages match “'+esc(q)+'” in this filter.':'No messages in this filter.')
+    +'<span class="hint">'+(q?'Clear the search, or switch to All.':'Switch to All to see every message.')+'</span></div>';return;}
+  /* The four marks carry classes now. They were inline hues on bare spans, and
+     the selected row's own gradient is drawn in one of those same hues — so on
+     the open row the lock mark measured 1.00:1 and the urgency plate dissolved.
+     See .ib-lock / .inbox-row.on .ib-* in the sheet. The lock also states what
+     it means rather than relying on a coloured bullet alone (1.4.1). */
+  el.innerHTML=rows.map(it=>{
+    const lock=it.claimed_by?'<span class="ib-lock">● claimed by '+esc(it.claimed_by.split('@')[0])+'</span>':'';
+    const done=it.replied_at?'<span class="ib-done">&#10003; replied</span>':'';
+    const dot=it.read?'':'<span class="ib-new">&#9679; </span>';
+    const pri=it.priority?'<span class="ib-pri"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" style="flex-shrink:0;" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>PRIORITY</span>':'';
+    return '<button class="inbox-row'+(it.priority?' pri':'')+(it.id===INBOX_OPEN?' on':'')+'" type="button" data-mid="'+esc(it.id)+'"'
+      +' aria-current="'+(it.id===INBOX_OPEN?'true':'false')+'" onclick="openMessage(\''+it.id+'\')">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">'+
-        '<span style="font-weight:'+(it.read?600:800)+';font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+dot+esc(it.email)+'</span>'+
+        '<span style="font-weight:'+(it.read?600:800)+';font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+dot+(it.read?'':'<span class="sr-only">Unread. </span>')+esc(it.email)+'</span>'+
         '<span class="sub mono" style="font-size:9px;white-space:nowrap;">'+fmtTime(it.created_at)+'</span>'+
       '</div>'+
       '<div class="sub" style="font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc((it.subject||it.message||'').slice(0,72))+'</div>'+
-      '<div style="margin-top:4px;font-size:10px;display:flex;gap:8px;align-items:center;">'+pri+done+lock+'</div>'+
+      '<div style="margin-top:4px;font-size:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'+pri+done+lock+'</div>'+
     '</button>';
   }).join('');
 }
 
 async function openMessage(id){
   INBOX_OPEN=id; const it=INBOX.find(x=>x.id===id); if(!it)return;
-  if(!it.read){try{await api('/admin/v1/inbox/'+id+'/read',{method:'POST'})}catch(e){} it.read=true; updateInboxBadge(INBOX.filter(x=>!x.read).length);}
+  /* The badge was recomputed here from the loaded array — a third source for
+     one number. The list endpoint caps at 500 and reports `unread` over that
+     window; /unread-count counts the whole table. Past the cap those two
+     already disagree, and this made a third. Ask the authority instead. */
+  if(!it.read){try{await api('/admin/v1/inbox/'+id+'/read',{method:'POST'})}catch(e){} it.read=true; pollInbox();}
   renderInboxList(); renderInboxDetail(it);
+  /* renderInboxList replaced the row that had focus, so focus fell to <body>
+     and arrow navigation had nothing to step from. Put it back on the row the
+     user just opened. */
+  const row=document.querySelector('#inboxList .inbox-row[data-mid="'+id+'"]');
+  if(row&&document.activeElement===document.body)row.focus();
 }
 function renderInboxDetail(it){
-  const other=it.claimed_by_id&&ME&&it.claimed_by_id!==ME.id;
-  const mine=it.claimed_by_id&&ME&&it.claimed_by_id===ME.id;
+  /* `other` required ME, so before the profile resolved a message another
+     admin holds rendered the full editable footer — the read-only branch was
+     unreachable exactly when the lock was unknown. Unknown now reads as
+     locked, which is the safe direction: the cost of a wrong guess here is a
+     second email to a live prospect. */
+  const other=!!it.claimed_by_id&&(!ME||it.claimed_by_id!==ME.id);
+  const mine=!!it.claimed_by_id&&!!ME&&it.claimed_by_id===ME.id;
   const prior=it.reply?`<div style="margin-top:16px;padding:12px 14px;border-left:3px solid var(--fox);background:var(--surf2);border-radius:6px;"><div class="eyebrow" style="margin:0 0 4px;">replied · ${fmtTime(it.replied_at)}</div><div style="font-size:13px;white-space:pre-wrap;">${esc(it.reply)}</div></div>`:'';
   let foot='';
   if(other){
-    foot=`<div style="margin-top:16px;background:var(--surf2);border:2px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--muted);font-size:12px;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Locked by <b>${esc(it.claimed_by)}</b> — read-only.${ME&&ME.platform_role==='superadmin'?` <a href="#" onclick="releaseMsg('${it.id}');return false;" style="color:var(--fox2);">force release</a>`:''}</div>`;
+    foot=`<div style="margin-top:16px;background:var(--surf2);border:2px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--muted);font-size:12px;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;" aria-hidden="true"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Locked by <b>${esc(it.claimed_by||'another admin')}</b> — read-only.${ME&&ME.platform_role==='superadmin'?` <button type="button" class="btn ghost sm" style="margin-left:6px;" onclick="releaseMsg('${it.id}',this)">Force release</button>`:''}</div>`;
   }else{
-    const claim=it.claimed_by_id?'':`<a href="#" onclick="claimMsg('${it.id}');return false;" class="sub" style="font-size:11px;color:var(--fox);">claim (lock to me)</a>`;
-    const rel=mine?`<a href="#" onclick="releaseMsg('${it.id}');return false;" class="sub" style="font-size:10px;">release lock</a>`:'';
-    foot=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;">${CANNED.map((c,i)=>`<button class="btn sm" type="button" onclick="insertCanned(${i})">${esc(c.label)}</button>`).join('')}</div><textarea id="replyBox" class="cin" placeholder="Write a reply — this emails ${esc(it.email)}…" style="width:100%;min-height:120px;margin-top:8px;resize:vertical;"></textarea>
-      <div style="display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap;">
-        <button class="btn pri" onclick="sendReply('${it.id}')">Send reply</button>
+    /* These three were <a href="#"> with an onclick and a `return false`. They
+       navigate nowhere, announce as links, and take Enter but not Space — the
+       same defect .linklike carried, in a costume the class-scoped sweep that
+       fixed the other eight could not see. They are buttons. */
+    const claim=it.claimed_by_id?'':`<button type="button" class="btn ghost sm" onclick="claimMsg('${it.id}',this)">Claim (lock to me)</button>`;
+    const rel=mine?`<button type="button" class="btn ghost sm" onclick="releaseMsg('${it.id}',this)">Release lock</button>`:'';
+    /* A reply that already exists is REPLACED, not appended: the server writes
+       one `reply` column. The footer used to render an identical empty compose
+       box under the reply just sent, with Send live and nothing saying the next
+       one overwrites the record of the last. On a product whose pitch is that
+       records cannot be quietly altered, that is the wrong thing to leave
+       unsaid — so it is said, and the control names what it does. */
+    const again=!!it.replied_at;
+    const warn=again?`<div class="annbar warning" style="margin-top:16px;">You already replied to this message on ${fmtTime(it.replied_at)}. Sending again emails ${esc(it.email)} a second time and replaces the reply recorded above.</div>`:'';
+    foot=`${warn}<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;">${CANNED.map((c,i)=>`<button class="btn sm" type="button" onclick="insertCanned(${i})">${esc(c.label)}</button>`).join('')}</div>
+      <label for="replyBox" class="sub" style="display:block;font-size:11.5px;margin-top:10px;">Reply — this emails <b>${esc(it.email)}</b></label>
+      <textarea id="replyBox" class="cin" placeholder="Write a reply…" style="width:100%;min-height:120px;margin-top:4px;resize:vertical;"></textarea>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn pri" type="button" onclick="sendReply('${it.id}',this)">${again?'Send again and replace':'Send reply'}</button>
         ${claim}${rel}
-        <span id="replyMsg" class="sub" style="font-size:11px;"></span>
+        <span id="replyMsg" class="sub" role="status" aria-live="polite" style="font-size:11px;"></span>
       </div>`;
   }
   $('inboxDetail').innerHTML=`
@@ -3439,16 +3602,47 @@ function renderInboxDetail(it){
     <div style="margin-top:16px;font-size:14px;line-height:1.65;white-space:pre-wrap;">${esc(it.message||'')}</div>
     ${prior}${foot}`;
 }
-async function sendReply(id){
+/* The one action on either of these pages that reaches a person outside the
+   company, and it was the one action with no guards at all.
+
+   1. It reported success from `r.ok`. The endpoint returns {"emailed": bool} —
+      it records the reply, then tries to send, and says which happened. A mail
+      provider that is down returns 200 with emailed:false, and the console said
+      "Sent & emailed" over a prospect who never heard from us, then painted a
+      green "replied" mark on the row so nobody would look again. The backend was
+      already handing us the truth; we were not reading it.
+   2. No busy(). Two clicks sent two emails AND overwrote the first reply's
+      stored text, because the server writes one `reply` column. The guard has
+      shipped in this file since A0 and simply had no caller here.
+   3. The confirmation was written into #replyMsg and destroyed on the same line
+      by the reload that rebuilds the pane. toast() outlives the re-render. */
+async function sendReply(id,btn){
   const box=$('replyBox'); if(!box)return; const msg=(box.value||'').trim(); const st=$('replyMsg');
-  if(!msg){st.textContent='Write something first.';return;}
-  st.textContent='Sending…';
-  let r;try{r=await api('/admin/v1/inbox/'+id+'/reply',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:msg})})}catch(e){r=null}
-  if(r&&r.ok){st.textContent='✓ Sent & emailed.'; await loadInbox();}
-  else{let e={};try{e=await r.json()}catch(_){} st.textContent=(e.detail||'Failed to send.');}
+  if(!msg){st.textContent='Write something first.'; box.focus(); return;}
+  return busy(btn,async function(){
+    st.textContent='Sending…';
+    let r;try{r=await api('/admin/v1/inbox/'+id+'/reply',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:msg})})}catch(e){r=null}
+    if(!r){st.textContent='';toast('No response from the API — the reply was not sent.','error');return;}
+    if(!r.ok){let e={};try{e=await r.json()}catch(_){} st.textContent=(e.detail||'Failed to send.'); await loadInbox(); return;}
+    let d={};try{d=await r.json()}catch(_){}
+    st.textContent='';
+    if(d.emailed)toast('Replied — emailed the sender.','success');
+    else toast('Reply recorded, but the email did not go out. Send it another way.','warn');
+    await loadInbox();
+  });
 }
-async function claimMsg(id){let r;try{r=await api('/admin/v1/inbox/'+id+'/claim',{method:'POST'})}catch(e){r=null} if(r&&!r.ok){const e=await r.json().catch(()=>({}));alert(e.detail||'Could not claim.');} loadInbox();}
-async function releaseMsg(id){try{await api('/admin/v1/inbox/'+id+'/release',{method:'POST'})}catch(e){} loadInbox();}
+/* alert() was the only one in the file, on a surface whose modal section is
+   headed as the replacement for the native dialogs. It also blocks the unread
+   poll for as long as it sits there. */
+async function claimMsg(id,btn){return busy(btn,async function(){
+  let r;try{r=await api('/admin/v1/inbox/'+id+'/claim',{method:'POST'})}catch(e){r=null}
+  if(!r)toast('No response from the API — nothing was claimed.','error');
+  else if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.detail||'Could not claim it.','error');}
+  await loadInbox();});}
+async function releaseMsg(id,btn){return busy(btn,async function(){
+  let r;try{r=await api('/admin/v1/inbox/'+id+'/release',{method:'POST'})}catch(e){r=null}
+  if(!r||!r.ok)toast((r&&(await r.json().catch(()=>({}))).detail)||'Could not release the lock.','error');
+  await loadInbox();});}
 function updateInboxBadge(n){n=n||0;['inboxBadge','logoBadge','topInboxBadge'].forEach(id=>{const b=$(id);if(!b)return;if(n>0){b.textContent=n>99?'99+':n;b.style.display='';}else b.style.display='none';});}
 async function pollInbox(){try{const r=await api('/admin/v1/inbox/unread-count');if(r.ok){updateInboxBadge((await r.json()).unread);}}catch(e){}}
 
@@ -3769,10 +3963,17 @@ $('gateReset').addEventListener('submit',async e=>{
 async function doLogout(){await api('/admin/v1/auth/logout',{method:'POST'});location.reload()}
 
 /* ──────────── overview ──────────── */
+/* A5 - a bucket of zero drew a bar. The floor was Math.max(2,...) and .funbar i
+   carries min-width:3px on top of it, so an empty stage rendered a short
+   coloured stub that reads as "a few" at a glance: the numeral said 0 and the
+   bar disagreed with it. Zero now draws an empty track, which is the only
+   honest width for it. Shared with the overview funnels, which carried the same
+   defect for the same reason. */
 function funnelRow(label,val,max,color){
   const w=max>0?Math.max(2,Math.round(val/max*100)):2;
+  const bar=(val>0)?`<i style="width:${w}%;${color?`background:${color};`:''}"></i>`:'';
   return `<div class="funrow"><div class="funlab">${esc(label)}</div>
-    <div class="funbar"><i style="width:${w}%;${color?`background:${color};`:''}"></i></div>
+    <div class="funbar">${bar}</div>
     <div class="funnum">${num(val)}</div></div>`;
 }
 /* A2 · inherited from A1. Same defect as loadHealth: a failed /stats toasted
@@ -4959,31 +5160,79 @@ function auditExport(){
 }
 let _ldT;
 function leadsDebounced(){ clearTimeout(_ldT); _ldT=setTimeout(()=>loadLeads(),250); }
+/* ONE table for the four stages. The bar strip and the board were two literal
+   lists of the same four buckets carrying two different colour vocabularies —
+   and they did not agree: `new` was --blue in the strip and --info-bg in the
+   board, which happen to resolve to the same value in dark and to two different
+   blues in light. The same bucket, twice, six inches apart, in two colours. */
+/* Matches the API's own ceiling. When the board is holding exactly that many,
+   it is almost certainly holding a window rather than the pipeline, and #ldScope
+   says so instead of letting the four totals read as the whole book. */
+const LEAD_CAP=1000;
+const LEAD_STAGES=[
+  ['new','New','info','var(--info-bg)'],
+  ['trial','Trial','warn','var(--warn-bg)'],
+  ['converted','Converted','safe','var(--safe-bg)'],
+  ['churned','Churned','bad','var(--breach-bg)'],
+];
 async function loadLeads(){
   const q=$('ldSearch')?$('ldSearch').value.trim():'';
   let r; try{ r=await api('/admin/v1/leads'+(q?('?q='+encodeURIComponent(q)):'')); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('ldKanban').innerHTML=fault('Leads did not load.','',"loadLeads()"); return; }
+  if(!r||!r.ok){
+    /* #ldFunnel was left holding the previous fetch's numbers while the board
+       below it said the load had failed — four confident stage counts above a
+       "did not load". loadOverview clears both of its funnels on failure, in
+       this same idiom; this one had been missed. */
+    $('ldKanban').innerHTML=fault('Leads did not load.',r?('HTTP '+r.status):'no response from the API',"loadLeads()");
+    $('ldFunnel').innerHTML=''; $('ldScope').textContent=''; return;
+  }
   const d=await r.json();
-  const c=d.counts||{new:0,trial:0,converted:0,churned:0};
-  const mx=Math.max(c.new,c.trial,c.converted,c.churned,1);
-  $('ldFunnel').innerHTML=funnelRow('new',c.new,mx,'var(--blue)')+funnelRow('trial',c.trial,mx,'var(--warn-bg)')+funnelRow('converted',c.converted,mx,'var(--safe-bg)')+funnelRow('churned',c.churned,mx,'var(--breach-bg)');
-  const cols=[['new','New','info'],['trial','Trial','warn'],['converted','Converted','safe'],['churned','Churned','bad']];
-  $('ldKanban').innerHTML=cols.map(([k,label,col])=>{
-    const items=(d.buckets&&d.buckets[k])||[];
-    const cards=items.length?items.map(l=>_leadCard(l,k)).join(''):'<div class="sub mono" style="padding:8px 2px;">none</div>';
-    return `<div class="clay pad"><div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;"><span class="chip ${col}">${label}</span><b class="mono">${items.length}</b></div><div style="display:flex;flex-direction:column;gap:8px;max-height:62vh;overflow:auto;">${cards}</div></div>`;
+  /* Counts derived from the buckets that are about to be drawn, rather than
+     from the sibling `counts` object. They agree today because the API builds
+     one from the other; reading both meant the page could state a stage total
+     that its own column beneath did not contain. */
+  const bucket=k=>(d.buckets&&d.buckets[k])||[];
+  const total=LEAD_STAGES.reduce((n,s)=>n+bucket(s[0]).length,0);
+  const mx=Math.max.apply(null,LEAD_STAGES.map(s=>bucket(s[0]).length).concat([1]));
+  $('ldFunnel').innerHTML=LEAD_STAGES.map(s=>funnelRow(s[1],bucket(s[0]).length,mx,s[3])).join('');
+  /* The API filters before it counts, so a search silently rewrites these four
+     numbers into the numbers for the matches. Said out loud, or not at all. */
+  $('ldScope').textContent=q?('matching “'+q+'” · '+total+' of the leads loaded')
+    :(total>=LEAD_CAP?('the '+num(LEAD_CAP)+' most recent leads'):'');
+  $('ldKanban').innerHTML=LEAD_STAGES.map(([k,label,col])=>{
+    const items=bucket(k);
+    const cards=items.length?items.map(l=>_leadCard(l,k)).join('')
+      :'<div class="chart-empty" style="min-height:70px;">'+(q?'No matches here.':'No leads in '+label.toLowerCase()+'.')
+        +'<span class="hint">'+(q?'Clear the search to see the stage.':'They arrive from the sale site and move by hand.')+'</span></div>';
+    return `<div class="clay pad"><div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;"><span class="chip ${col}">${label}</span><b class="mono">${items.length}</b></div>`
+      +`<div tabindex="0" role="group" aria-label="${label} leads" style="display:flex;flex-direction:column;gap:8px;max-height:62vh;overflow:auto;">${cards}</div></div>`;
   }).join('');
 }
+/* The UTM label and the three destination buttons shared one flex row at one
+   height and one radius, so the single thing on the card that is NOT clickable
+   read as a fourth button. The attribution now sits with the text it describes,
+   and the actions get their own row. Sizes moved to .lead-card: they were inline
+   at font-size:9px with 3px of padding, measured 45x22 rendered, and 22 is under
+   the 24 SC 2.5.8 asks of a pointer target - on the only action the page has. */
 function _leadCard(l,cur){
-  const moves=can('operator')?['new','trial','converted','churned'].filter(s=>s!==cur).map(s=>`<button class="btn sm" style="padding:3px 7px;font-size:9px;" onclick="leadMove('${l.id}','${s}')">→ ${s}</button>`).join(''):'';
-  const utm=l.utm_source?`<span class="chip dim" style="font-size:8px;">${esc(l.utm_source)}</span>`:'';
-  const conv=l.converted_org_name?`<div class="sub mono" style="font-size:9px;color:var(--ok);">→ ${esc(l.converted_org_name)}</div>`:'';
-  return `<div style="border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:var(--surf2);"><div style="font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.email)}</div><div class="sub" style="font-size:10.5px;">${esc(l.company||l.name||'—')}${l.source?' · '+esc(l.source):''}</div>${conv}<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${utm}${moves}</div></div>`;
+  const moves=can('operator')?LEAD_STAGES.map(s=>s[0]).filter(s=>s!==cur).map(s=>`<button class="btn sm" type="button" onclick="leadMove('${l.id}','${s}',this)">→ ${s}</button>`).join('')
+    :'<span class="sub mono" style="font-size:10px;">read-only</span>';
+  const utm=l.utm_source?`<span class="chip dim" style="font-size:10px;margin-left:6px;">${esc(l.utm_source)}</span>`:'';
+  const conv=l.converted_org_name?`<div class="sub mono" style="font-size:10px;color:var(--ok);">→ ${esc(l.converted_org_name)}</div>`:'';
+  return `<div class="lead-card"><div class="lc-who">${esc(l.email)}</div><div class="sub" style="font-size:10.5px;">${esc(l.company||l.name||'—')}${l.source?' · '+esc(l.source):''}${utm}</div>${conv}<div class="lc-moves">${moves}</div></div>`;
 }
-async function leadMove(id,status){
-  const r=await api('/admin/v1/leads/'+id+'/status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({status})});
-  const d=await r.json().catch(()=>({}));
-  if(r.ok){ toast('lead moved to '+status); loadLeads(); } else toast(d.detail||('move failed ('+r.status+')'));
+/* api() resolves to a bare fetch, which THROWS on a dropped connection. This
+   was unguarded, so a network failure produced an unhandled rejection and the
+   button did nothing at all - no toast, no error, no change on the card. The
+   loader two functions above already guards the same call correctly. */
+async function leadMove(id,status,btn){
+  return busy(btn,async function(){
+    let r; try{ r=await api('/admin/v1/leads/'+id+'/status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({status})}); }catch(e){ r=null; }
+    if(!r){ toast('No response from the API - the lead was not moved.','error'); return; }
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ toast('Lead moved to '+status+'.','success'); loadLeads(); }
+    else toast(d.detail||('Move failed (HTTP '+r.status+').'),'error');
+  });
 }
 /* ════════════════════ PHASE A — cross-cutting FE systems ════════════════════
    Delayed tooltip (data-tip) · sensitive mask/reveal+copy · command palette (Cmd/Ctrl-K)
