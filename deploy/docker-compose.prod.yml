@@ -75,6 +75,16 @@ services:
       - STRIPE_PRICE_MAX=${STRIPE_PRICE_MAX:-}
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
       - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO:-}
+      # Paddle (M2). This block is an ALLOWLIST: a value in deploy/.env that is
+      # not named here never reaches the container. PADDLE_* was added to
+      # config.py and to nothing else, so a correctly-filled .env produced an
+      # upgrade page with no plans and a checkout that could not be created.
+      - PADDLE_API_KEY=${PADDLE_API_KEY:-}
+      - PADDLE_WEBHOOK_SECRET=${PADDLE_WEBHOOK_SECRET:-}
+      - PADDLE_ENV=${PADDLE_ENV:-sandbox}
+      - PADDLE_PRICE_PRO=${PADDLE_PRICE_PRO:-}
+      - PADDLE_PRICE_MAX=${PADDLE_PRICE_MAX:-}
+      - PADDLE_SIGNATURE_TOLERANCE_SECONDS=${PADDLE_SIGNATURE_TOLERANCE_SECONDS:-300}
       - TRIAL_DAYS=${TRIAL_DAYS:-7}
       - MONTHLY_QUOTA_FREE=${MONTHLY_QUOTA_FREE:-500}
       - MONTHLY_QUOTA_PRO=${MONTHLY_QUOTA_PRO:-25000}
