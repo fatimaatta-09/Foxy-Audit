@@ -36,7 +36,7 @@ plan opens with a path that can take money **this week**, independent of it.
 | Decision | Choice |
 |---|---|
 | MoR | **Apply to Paddle and Polar now; build against Paddle.** Paddle pays out to Payoneer directly; Polar pays out via Stripe Connect Express, which would leave the new Payoneer account unused. |
-| Swap shape | **Adapter seam, Stripe left dormant.** Nothing deleted, every existing test keeps passing, KYC failure is not a dead end. |
+| Swap shape | ~~Adapter seam, Stripe left dormant.~~ **Revised same day: no seam.** Paddle is built directly; Stripe is left untouched and unconfigured, and deleted once Paddle takes a real payment. The seam rested on a miscounted test figure — see §3. |
 | Interim revenue | **Yes — Payoneer payment request + staff activation.** Verified available to Pakistani businesses today; cards accepted at up to 3.99%. |
 
 ---
