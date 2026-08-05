@@ -92,13 +92,42 @@ This is why M0 exists and why it ships before anything else.
 
 ## 3 · Phases
 
+> **REVISED 2026-08-05, after M0 merged. M1 is CUT.** See "Why the seam was
+> wrong" below. Paddle is now built directly.
+
 | Phase | Branch | Scope | Ships alone? |
 |---|---|---|---|
-| **M0** | `fix/staff-plan-activation` | Make the staff activation path actually unlock a paid customer, and record what they paid. Backend + admin console. | **Yes — this is the deadline item** |
-| **M1** | `feat/payments-seam` | A provider seam under `backend/app/payments/`; today's Stripe code moved behind it verbatim. **Zero behaviour change.** | Yes |
-| **M2** | `feat/payments-paddle` | The Paddle adapter behind the seam. Dark unless `PADDLE_*` is configured. | Yes |
-| **M3** | `feat/payments-surfaces` | Provider-aware copy across dashboard / sale page / desktop / admin; a `payment_processor` column. | Yes |
-| **M4** | — owner, not code | Paddle + Polar KYC; the consent copy's legal read. | — |
+| **M0** | `fix/staff-plan-activation` | Make the staff activation path actually unlock a paid customer, and record what they paid. | **merged `aeb2c14`** |
+| ~~M1~~ | — | ~~provider seam~~ | **CUT — see below** |
+| **M2** | `feat/payments-paddle` | Paddle checkout + webhook, built directly. Dark unless `PADDLE_*` is configured. | Yes |
+| **M3** | `feat/payments-surfaces` | Provider-aware copy; the remaining Paddle surfaces (portal, cancel, invoices, sale page). | Yes |
+| **M4** | — owner, not code | Paddle KYC (sandbox needs none — start building now); the consent copy's legal read. | — |
+
+### Why the seam was wrong
+
+M1 was justified here with "~179 tests touch Stripe, so removing it is expensive."
+**That number was miscounted** — it is tests in files that *mention* Stripe, not
+tests that *depend* on it. Measured: `test_subscription_lock` 25 tests / 1
+Stripe-coupled line, `test_card_gate_grandfather` 11 / **0**,
+`test_tracking_billing` 9 / **0**, `test_billing_plan_portal` 6 / **0**. They test
+`billing_state`, which does not move under any processor.
+
+The deeper error: **an abstraction seam's job is to hold two live
+implementations, and there is only ever going to be one.** Stripe has never run —
+no key in `backend/.env`, no payment ever taken. It is dead code, not a system.
+Building a layer so dead code can sit beside live code is work with no payoff.
+
+So: build Paddle directly. Leave the Stripe files untouched and unconfigured.
+Delete them once Paddle has taken one real payment.
+
+### And the sequencing changed too
+
+M0 already makes the product chargeable — Payoneer payment request, then staff
+activation. That is sufficient for the first handful of customers, and invoicing
+is how regulated buyers (healthcare, finance, legal) expect to pay anyway.
+**Paddle is for when manual re-invoicing every customer every month stops
+scaling** — plus VAT liability and self-serve. Build it, but the binding
+constraint remains sales, not this.
 
 **Deliberately not in scope:** renaming `stripe_customer_id` /
 `stripe_subscription_id` / `stripe_events` / `stripe_invoice_id`. That is a
@@ -182,52 +211,22 @@ Cross-surface, per §6.6: this touches `billing_state`, so also run
 
 ---
 
-## 5 · M1 — the provider seam
+## 5 · M1 — CUT
 
-**Branch:** `feat/payments-seam`. **This phase changes no behaviour at all.**
+The provider seam is not being built. See "Why the seam was wrong" in §3. Nothing
+under `backend/app/payments/` is created; `billing.py` keeps its Stripe code
+exactly as it is, unconfigured and unreachable.
 
-Create `backend/app/payments/` with:
-
-- `base.py` — a `PaymentProvider` protocol: `checkout_session(org, plan, *, upgrade: bool)`,
-  `portal_session(org)`, `cancel_subscription(org)`, `verify_webhook(body, headers) -> NormalisedEvent`,
-  and a `configured` property.
-- `normalised.py` — the event vocabulary the app already speaks, lifted out of
-  Stripe's: `checkout_completed` · `card_setup_completed` · `card_attached` ·
-  `card_detached` · `subscription_updated` · `subscription_cancelled` ·
-  `invoice_recorded`, each carrying `org_id | customer_id | subscription_id |
-  plan | status | invoice fields`.
-- `stripe_provider.py` — today's code, moved, not rewritten.
-- `registry.py` — pick the provider from config; return a null provider when
-  nothing is configured so every route keeps answering **503**, exactly as now.
-
-`billing.py`'s route handlers stay where they are and keep their status codes,
-their rate limits, their `_GATE_EXEMPT` paths and their docstrings. Only the
-provider calls move.
-
-**Keep `billing_state.py` as the mapping's owner.** Its module docstring already
-states the stored vocabulary is *not* Stripe's — that decision is what makes this
-seam cheap, and it must survive: `NEVER_ACTIVATED` / `PAST_DUE` / `ENDED` and the
-reason strings are the wire contract three surfaces switch on.
-
-**What must NOT move.** The reason strings in `billing_state.py`
-(`card_required`, `subscription_past_due`, `evaluation_expired`, …) are matched
-verbatim by the dashboard, the desktop and the admin console. Changing one is a
-cross-surface break, not a rename. `desktop/foxy_client.py` matches wire detail
-strings as constants.
-
-**Proof of no-change:** the existing ~179 tests are the golden vector and must
-pass unchanged — **do not edit a billing test in this phase.** If a test needs
-editing, the refactor changed behaviour and that is the finding to report back.
-
----
-
-## 6 · M2 — the Paddle adapter
+## 6 · M2 — Paddle, built directly
 
 **Branch:** `feat/payments-paddle`.
 
-`backend/app/payments/paddle_provider.py`, plus `PADDLE_*` settings in
-`config.py` (empty by default → the provider reports unconfigured → 503, same as
-Stripe today).
+No seam. `backend/app/paddle.py` alongside the existing modules, plus `PADDLE_*`
+settings in `config.py` (empty by default → 503, same as Stripe today).
+
+**Sandbox needs no KYC approval** — sandbox keys (prefix `sdbx_`) are issued
+immediately at `sandbox-vendors.paddle.com/signup` while verification runs in
+parallel, so this phase is not blocked on the owner's application.
 
 **Verify every API detail against Paddle's live documentation, not against this
 plan and not from memory.** Names, event types, the signature-header format and
@@ -254,8 +253,9 @@ The three things that must map, and they are the reason Paddle was chosen:
 Log the exception **type**, not `str(exc)`, anywhere a key could be in the
 message — `gemini.py` sets the precedent and hard rule 6 requires it.
 
-Until M3, Paddle events land in `stripe_events`. That is ugly and it is
-deliberate: it is one table rename versus shipping a second webhook log.
+Paddle events get their own `payment_events` table (migration **0062**), not
+`stripe_events`. Reusing a table named for another processor is the kind of lie
+that costs an hour of confusion later, and the migration is cheap.
 
 ---
 
