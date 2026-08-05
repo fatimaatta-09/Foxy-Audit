@@ -3380,6 +3380,20 @@ def test_a_dormant_account_cannot_read_as_a_recent_one() -> None:
     # the threshold has to be a real number of days, not a placeholder
     m = re.search(r"const STALE_DAYS=(\d+);", SRC)
     assert m and 30 <= int(m.group(1)) <= 365, "the dormancy threshold is not a plausible age"
+    # ⚠ ADDED AT THE MERGE GATE. Everything above inspects the helper's BODY, so
+    # it stays green while the column that needed it stops calling it: swapping
+    # the cell back to `s.last_login?fmtTime(...)` reproduced the original defect
+    # exactly and all 256 guards passed. Guarding a definition is not guarding
+    # its use — and on this surface the use is the whole finding.
+    cell = re.search(r'data-label="Last login"[^>]*>\$\{([^}]+)\}', _js_func("renderStaff"))
+    assert cell, "the roster's last-login cell moved or stopped being a template hole"
+    assert "_lastSeen(" in cell.group(1), (
+        "the roster stopped calling the dormancy-aware formatter: " + cell.group(1)
+    )
+    assert "fmtTime(" not in cell.group(1), (
+        "the yearless formatter is back at the call site, which is where it does "
+        "the damage: " + cell.group(1)
+    )
 
 
 def test_every_column_on_an_a6_page_names_itself() -> None:
