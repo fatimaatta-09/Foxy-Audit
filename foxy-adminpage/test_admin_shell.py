@@ -1022,38 +1022,72 @@ def _css_rule(selector: str) -> str:
     return css[i + len(selector) + 1: css.index("}", i)]
 
 
-def test_the_chip_is_a_solid_fill_with_no_border() -> None:
-    """The old chip was a translucent tint plus a 30%-mix border. Over .k-teal's
-    deep stop its own ink measured 1.55:1 — that is item 4. Only an opaque fill
-    makes the face behind it stop mattering."""
-    base = _css_rule(".chip")
-    assert "border:0" in base, "the chip still draws a border"
-    assert "border:1px" not in base
-    for cls, fill, ink in (("safe", "--safe-bg", "--safe-tx"),
-                           ("bad", "--breach-bg", "--breach-tx"),
-                           ("warn", "--warn-bg", "--warn-tx"),
-                           ("info", "--info-bg", "--info-tx")):
-        rule = _css_rule(f".chip.{cls}")
-        assert f"background:var({fill})" in rule, f".chip.{cls} is not a solid fill: {rule}"
-        assert f"color:var({ink})" in rule, f".chip.{cls} does not use its paired ink: {rule}"
-        assert "border-color" not in rule, f".chip.{cls} kept a border colour"
-        assert "-soft" not in rule, f".chip.{cls} is still a translucent tint"
+def _base_status_rule() -> str:
+    """The BASE status-mark rule, anchored so the on-face override cannot shadow
+    it. A plain substring search matches the descendant selector too; this file
+    has already shipped one guard that read an override and reported the base as
+    broken."""
+    m = re.search(r"(?:^|\})\.chip\{([^}]*)\}", _css(), re.M)
+    assert m, "the base status rule is gone"
+    return m.group(1)
 
 
-def test_the_chip_separates_from_the_face_without_a_border() -> None:
-    """Solid fixes the text and breaks the edge: #3ddc84 on .k-teal's light stop
-    is 1.01:1, so the word reads but the pill dissolves into the card. The owner
-    ruled out a border, so the boundary has to come from the lift."""
-    assert "box-shadow" in _css_rule(".chip"), "nothing separates the pill from the face"
+def test_the_status_chip_is_a_margin_mark_not_a_pill() -> None:
+    """Three passes argued about making the pill legible — tint, then solid fill,
+    then an inverted plate — and none asked whether a pill was the right object.
+    The defect that survived all three: a Status column is six rows of the
+    expected state and one of the exception, every one a saturated filled pill,
+    so the exception had nothing left to be louder with.
+
+    R2 removes the container. Named by property rather than by literal here,
+    because a guard that greps this file greps the explanation above it."""
+    base = _base_status_rule()
+    for prop, why in (("background:none", "a fill is being drawn again"),
+                      ("box-shadow:none", "the pill's boundary shadow came back"),
+                      ("border:0", "the pill outline came back")):
+        assert prop in base, f"{why}: {base}"
+    assert re.search(r"border-left:3px solid", base), "the mark lost its rule: " + base
+    assert "letter-spacing:.12em" in base, "the mark lost its tracking"
+    # the padding must be one-sided; a symmetric box is a pill by another name
+    pad = re.search(r"padding:([^;}]+)", base)
+    assert pad and pad.group(1).strip().startswith("0 0 0"), (
+        "the mark padded itself back into a box: " + (pad.group(1) if pad else "none")
+    )
+
+
+def test_nothing_draws_a_container_around_a_status() -> None:
+    """This replaces a guard that asserted a boundary shadow EXISTED, to stop the
+    solid pill dissolving into a hero face. There is no pill to dissolve now, and
+    that guard kept passing after the change for the wrong reason: the property
+    it searched for is still present in the rule, set to none. Assert the
+    rendered intent instead of the token."""
+    # EVERY rule that names the component, not a hand-listed three. Rendering the
+    # pre-change comparison showed why: the on-face override no longer restates
+    # background, so a fill added to any MODIFIER is not reset by it, and a
+    # hand-listed set of parent rules would never have looked there.
+    rules = [(sel.strip(), body) for sel, body in re.findall(r"([^{}]+)\{([^}]*)\}", _css())
+             if re.search(r"\.chip", sel)]
+    assert len(rules) >= 6, f"only {len(rules)} status rules found — the sweep is not seeing them"
+    for sel, body in rules:
+        assert not re.search(r"background:\s*(?!none)\S", body), f"a status grew a fill: {sel}"
+        assert not re.search(r"box-shadow:\s*(?!none)\S", body), f"a status grew a plate: {sel}"
+        assert "border-radius:var(--r-" not in body, f"a status took the pill radius: {sel}"
 
 
 def test_the_dim_chip_does_not_shout_in_a_status_colour() -> None:
-    """`never` and `not_applicable` mark absence, not a state."""
-    rule = _css_rule(".chip.dim")
+    """`never` and `not_applicable` mark absence, not a state. A0's reasoning
+    survives R2 unchanged — the mark carries no meaning to lose, the word does —
+    only the word is a grey on the panel now rather than ink on a plate."""
+    rule = _scope(".chip.dim{")
     for status in ("--safe-bg", "--breach-bg", "--warn-bg", "--info-bg",
                    "--ok", "--danger", "--warnc", "--infoc"):
-        assert status not in rule, f".chip.dim borrowed {status}"
-    assert "background:var(--line2)" in rule and "color:var(--ink2)" in rule, rule
+        assert status not in rule, f"the absence mark borrowed {status}"
+    assert "color:var(--muted2)" in rule and "--line2" in rule, rule
+    # absence must stay quieter than the quietest real status
+    for theme in ("dark", "light"):
+        for panel in ("--surf", "--surf2"):
+            r = _ratio(_token("--muted2", theme), _token(panel, theme))
+            assert r >= 4.5, f"{theme} absence word is {r:.2f}:1 on {panel}"
 
 
 # ── the hero info button ──
@@ -1315,13 +1349,17 @@ def test_a_status_on_a_hero_face_is_a_margin_mark_not_a_pill() -> None:
     of a card. R1 removes the object instead of re-colouring it — a fill you do
     not draw cannot dissolve into anything."""
     rule = _scope(".kpi .face .chip{")
-    assert "background:none" in rule, (
-        "the on-face status has a fill again — that is the pill, and a pill on a "
-        "gradient is the 1.005:1 defect whatever colour it is"
-    )
-    assert "box-shadow:none" in rule, "the pill's boundary shadow came back"
+    # R2 reconciliation: this rule used to restate six declarations purely to UNDO
+    # a filled base. The base is a mark now, so those moved down to it and the
+    # cover for "no container on a face" is test_nothing_draws_a_container_around
+    # _a_status, which checks the base AND both overrides. What is asserted here
+    # is only what a face genuinely needs differently from a panel.
     assert re.search(r"border-left:4px solid var\(--foxink\)", rule), (
         "the margin mark lost its rule: " + rule
+    )
+    assert not re.search(r"background|box-shadow", rule), (
+        "the on-face rule is restating what the base already says — that is the "
+        "half-definition R2 removed: " + rule
     )
     assert "color:var(--foxink)" in rule, "the word is not in the face ink"
     assert re.search(r"font-weight:8\d\d", rule) and "letter-spacing:.14em" in rule, (
@@ -1386,29 +1424,153 @@ def test_the_health_hero_is_still_the_case_this_was_built_for() -> None:
 
 # ── 2 · chips on flat panels, the other context ──────────────────────────────
 
-def test_every_meaning_bearing_chip_fill_separates_from_every_panel() -> None:
-    """.dim is exempt and says so at its rule: its fill carries no meaning to
-    lose (the word clears 6.79/5.32), and any fill that would reach 3.0 against
-    near-white paper would be louder than a real status."""
+def _srgb_mix(hex_a: str, hex_b: str, pct: float) -> str:
+    """color-mix(in srgb, a pct%, b) — the same space the stylesheet asks for."""
+    a = [int(hex_a.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    b = [int(hex_b.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    f = pct / 100.0
+    return "#%02x%02x%02x" % tuple(round(a[i] * f + b[i] * (1 - f)) for i in range(3))
+
+
+def _mark_colour(kind: str, theme: str) -> str:
+    """What the margin rule actually resolves to, mix and all. Read out of the
+    stylesheet rather than restated here — a guard that hardcodes the percentage
+    is asserting a constant against itself."""
+    # Every rule whose selector names this modifier, in source order, because the
+    # two loud modifiers share one grouped selector. Matching the first
+    # `.chip.<kind>{` finds that group and reports the standalone rule as missing
+    # — the shadowing trap this file already carries two notes about.
+    decls = [d for sel, d in re.findall(r"([^{}]+)\{([^}]*)\}", _css())
+             if ".chip." + kind in sel]
+    assert decls, f"no rule declares the {kind} mark"
+    vals = [m.group(1).strip() for d in decls
+            for m in [re.search(r"border-left-color:\s*([^;}]+)", d)] if m]
+    assert vals, f"the {kind} mark has no colour: {decls}"
+    val = vals[-1]
+    mix = re.fullmatch(
+        r"color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%\s*,\s*var\((--[a-z0-9-]+)\)\)",
+        val)
+    if mix:
+        return _srgb_mix(_token(mix.group(1), theme), _token(mix.group(3), theme),
+                         float(mix.group(2)))
+    plain = re.fullmatch(r"var\((--[a-z0-9-]+)\)", val)
+    assert plain, f"the {kind} mark is neither a token nor a mix of two: {val}"
+    return _token(plain.group(1), theme)
+
+
+def test_every_status_mark_separates_from_every_panel() -> None:
+    """The mark is the only coloured thing left, so it carries 1.4.11's 3.0:1
+    alone, against both panels a status lands on, in both themes.
+
+    Absence is exempt and says so at its own rule, on A0's reasoning: it carries
+    no meaning to lose and the nearest grey that would clear 3.0 against
+    near-white paper is louder than every real status."""
     for theme in ("dark", "light"):
-        for kind, tok in CHIP_KINDS.items():
-            if kind == "dim":
-                continue
-            fill = _token(tok, theme)
-            for p in ("--bg", "--surf", "--surf2", "--surf3"):
-                r = _ratio(fill, _token(p, theme))
+        for kind in ("safe", "info", "warn", "bad"):
+            mark = _mark_colour(kind, theme)
+            for p in ("--surf", "--surf2"):
+                r = _ratio(mark, _token(p, theme))
                 assert r >= 3.0, (
-                    f"{theme} .chip.{kind} ({fill}) is {r:.2f}:1 on {p} — no visible pill"
+                    f"{theme} {kind} mark ({mark}) is {r:.2f}:1 on {p} — invisible margin"
                 )
 
 
-def test_every_chip_ink_is_legible_on_its_own_fill() -> None:
-    inks = {"safe": "--safe-tx", "bad": "--breach-tx", "warn": "--warn-tx",
-            "info": "--info-tx", "dim": "--ink2"}
+def _word_colour(kind: str, theme: str) -> str:
+    """The ink the word actually resolves to: the base declaration, then any
+    modifier rule that overrides it, in source order.
+
+    Written the lazy way first — a dict of the tokens each tier was SUPPOSED to
+    use — and a mutation that changed the stylesheet to a near-invisible grey
+    left it green, because it was comparing the file's tokens to a copy of the
+    file's tokens rather than to what the rule says. That is the one failure mode
+    this section's own header warns about, reproduced.
+    """
+    ink = None
+    for sel, body in re.findall(r"([^{}]+)\{([^}]*)\}", _css()):
+        sel = sel.strip()
+        if not re.fullmatch(r"\.chip(?:\.\w+)?(?:,\s*\.chip(?:\.\w+)?)*", sel):
+            continue
+        names = {p.strip() for p in sel.split(",")}
+        if not ({".chip", ".chip." + kind} & names):
+            continue
+        m = re.search(r"(?:^|;)\s*color:\s*var\((--[a-z0-9-]+)\)", body)
+        if m:
+            ink = m.group(1)
+    assert ink, f"nothing sets the {kind} word's colour"
+    return _token(ink, theme)
+
+
+def test_every_status_word_is_legible_on_its_panel() -> None:
+    """There is no fill to be legible on any more; the word sits on the panel,
+    and both panels exist in this file — a status lands on either.
+
+    The ink is read out of the stylesheet, not restated here."""
     for theme in ("dark", "light"):
-        for kind, tok in CHIP_KINDS.items():
-            r = _ratio(_token(inks[kind], theme), _token(tok, theme))
-            assert r >= 4.5, f"{theme} .chip.{kind} ink is {r:.2f}:1 on its fill"
+        for kind in ("safe", "info", "warn", "bad", "dim"):
+            ink = _word_colour(kind, theme)
+            for p in ("--surf", "--surf2"):
+                r = _ratio(ink, _token(p, theme))
+                assert r >= 4.5, f"{theme} {kind} word ({ink}) is {r:.2f}:1 on {p}"
+
+
+def test_the_expected_and_the_exception_do_not_read_alike() -> None:
+    """The point of the whole change, and the one a naive "the mark exists" test
+    would pass while defeating. If every row is a mark of the same weight, six
+    rows of the expected state still shout as loudly as the one exception and
+    nothing has been fixed — it is the same defect in a thinner costume.
+
+    So: the two tiers must differ on the WORD, which is what the eye reads in a
+    column, and not only on the rule beside it."""
+    quiet = _scope(".chip.safe{") + _base_status_rule()
+    loud = _scope(".chip.warn,.chip.bad{")
+    assert "color:var(--ink)" in loud and "color:var(--muted)" in quiet, (
+        "the expected state and the exception are inked alike"
+    )
+    qw = re.search(r"font-weight:(\d+)", quiet)
+    lw = re.search(r"font-weight:(\d+)", loud)
+    assert qw and lw and int(lw.group(1)) > int(qw.group(1)), (
+        "the exception carries no extra weight"
+    )
+    assert re.search(r"border-left-width:4px", loud), "the exception's rule did not thicken"
+    # and the loud word must actually out-contrast the quiet one, not just differ
+    for theme in ("dark", "light"):
+        for p in ("--surf", "--surf2"):
+            hi = _ratio(_token("--ink", theme), _token(p, theme))
+            lo = _ratio(_token("--muted", theme), _token(p, theme))
+            assert hi > lo * 2, (
+                f"{theme}: the exception word is only {hi / lo:.1f}x the expected "
+                f"word on {p} — that is not a hierarchy, it is a rounding error"
+            )
+
+
+def test_the_quiet_mark_is_desaturated_not_dimmed() -> None:
+    """Mixing the hue toward the PANEL was the first attempt and it spends
+    CONTRAST, which is the one budget a status mark cannot pay from: at 45% the
+    marks land at 2.35-2.94:1 against the panels, under 1.4.11. Clearing 3.0 that
+    way needs 75-80%, by which point nothing is quiet.
+
+    Mixing toward a neutral spends CHROMA instead. This asserts the axis, because
+    the two mixes are one token apart in the source and look identical in review
+    — and only one of them is accessible."""
+    for kind in ("safe", "info"):
+        rule = _scope(".chip.%s{" % kind)
+        m = re.search(r"color-mix\(in srgb,\s*var\(--[a-z0-9-]+\)\s*[\d.]+%\s*,\s*"
+                      r"var\((--[a-z0-9-]+)\)\)", rule)
+        assert m, f"the {kind} mark is no longer a mix: {rule}"
+        assert m.group(1) in ("--muted", "--muted2", "--ink2"), (
+            f"the {kind} mark is being mixed toward {m.group(1)} — if that is a "
+            f"panel token, it is buying quiet with contrast"
+        )
+    # and the mix must genuinely cost saturation
+    for theme in ("dark", "light"):
+        for kind, tok in (("safe", "--safe-bg"), ("info", "--info-bg")):
+            def chroma(h):
+                v = [int(h.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+                return max(v) - min(v)
+            full, quiet = chroma(_token(tok, theme)), chroma(_mark_colour(kind, theme))
+            assert quiet < full * 0.75, (
+                f"{theme} {kind}: chroma {full} -> {quiet}, barely quieter"
+            )
 
 
 def test_a_category_is_not_dressed_as_a_status() -> None:

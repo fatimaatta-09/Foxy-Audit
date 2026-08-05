@@ -71,11 +71,15 @@
   --fox-grad:#d95400;
   --foxink:  #1a0900;
 
-  /* status — as a PILL FILL (text is always --*-tx, judged on its own pair) */
+  /* status — the HUE of a state, now spent on a margin mark rather than on a
+     pill fill. R2 removed the container, so the paired inks went with it exactly
+     as R1's four face inks went with the plate: --breach-tx / --warn-tx /
+     --info-tx had no consumer left and are deleted rather than left declared.
+     --safe-tx survives on .btn.safe, which is still a filled control. */
   --safe-bg:   #3ddc84; --safe-tx:   #07210f;
-  --breach-bg: #ff4d4d; --breach-tx: #2a0303;
-  --warn-bg:   #ffc83d; --warn-tx:   #2a1d00;
-  --info-bg:   #5b8cff; --info-tx:   #06121f;
+  --breach-bg: #ff4d4d;
+  --warn-bg:   #ffc83d;
+  --info-bg:   #5b8cff;
   /* status — as BARE TEXT on a surface. A fill colour and a text colour are
      not the same job. Measured on --bg: safe 10.40:1 · warn 12.00:1 ·
      breach 5.67:1. */
@@ -272,13 +276,13 @@ html[data-theme="light"]{
      Measured: --on-pri on #db6413 5.40:1, on --fox #f05700 5.60:1; the fill
      itself 3.16:1 and 3.04:1 against --surf. */
   --fox-hi:#db6413;
-  --safe-bg:#12843c; --safe-tx:#FFFFFF; --breach-bg:#DC2626; --breach-tx:#FFFFFF;
-  /* #F59E0B was a fill nobody measured AS a fill: 1.74:1 against --bg and
-     2.02:1 against --surf3, so on paper the warn pill had no edge at all and
-     .chip's dark boundary shadow is invisible under amber. Deepened until the
-     pill separates (4.08:1 worst) and flipped to white ink (5.02:1), which is
-     what every other light status fill here already does. */
-  --warn-bg:#B45309; --warn-tx:#FFFFFF; --info-bg:#1d68c9; --info-tx:#FFFFFF;
+  --safe-bg:#12843c; --safe-tx:#FFFFFF; --breach-bg:#DC2626;
+  /* #F59E0B was a colour nobody measured AS a fill: 1.74:1 against --bg and
+     2.02:1 against --surf3, so on paper the amber pill had no edge at all.
+     Deepened until it separated (4.08:1 worst). The pill is gone at R2 and the
+     value stays: it is now a 4px mark on the same paper and wants the same
+     separation, measuring 4.42 / 4.58 against the two panels. */
+  --warn-bg:#B45309; --info-bg:#1d68c9;
   --safe-ink:#107435; --warn-ink:#8c5a06; --breach-ink:#c42020;
   /* the light source flips: a near-white highlight and a warm grey shadow */
   --lt: rgba(255,255,255,.95);
@@ -716,39 +720,94 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .kpi .kval{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:clamp(22px,2.2vw,30px);font-weight:600;margin-top:6px;letter-spacing:-.5px;color:var(--ink);line-height:1.1}
 .kpi .kfoot{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:4px}
 
-/* ════════ CHIPS / BADGES (solid fill) ════════
-   Was a translucent tint plus a 30% color-mix border. That reads fine on a flat
-   panel and turns to mud on a decorative hero face: the old .chip.safe over
-   .k-teal's deep stop measured 1.55:1 for its own ink, and over .k-indigo 2.16:1.
-   Solid fill covers what is behind it, so the face stops mattering — measured
-   ink-on-fill, worst case across both themes, is 4.78:1 (light .safe).
+/* ════════ STATUS MARKS ════════
+   THE HISTORY, because three passes argued about the same object and only the
+   last one asked the right question.
 
-   The fill introduces one problem the tint did not have: the PILL EDGE. A solid
-   #3ddc84 on .k-teal's light stop is 1.01:1 — the word is perfectly legible but
-   the pill dissolves into the card and reads as loose text. That was diagnosed
-   correctly here and then answered with a 1px shadow, which is not an answer:
-   the shadow is a fixed black tuned for dark surfaces, and the FILL still
-   matched the face. A0 finished it — see .kpi .face .chip below. */
+   It began as a translucent tint plus a 30% mixed border, which read fine on a
+   flat panel and turned to mud on a decorative hero face — the green one over
+   the teal face's deep stop measured 1.55:1 for its own ink. A0 answered with a
+   solid fill, which covers what is behind it and fixed the ink (worst case
+   4.78:1). The fill then created the PILL EDGE problem: a solid green on the
+   teal face's light stop is 1.01:1, so the word read and the pill dissolved. A0
+   answered THAT with a 1px shadow, which was not an answer, then with an
+   inverted near-black plate, which was a second card-shaped object on a card.
+   R1 deleted the plate on the faces. R2 deletes the container everywhere.
+
+   Every one of those passes was about making the pill LEGIBLE. None of them
+   asked whether a pill was the right object, and the defect that survived all
+   three is below: six filled pills in a column, all shouting equally. */
+/* ── R2 · MARK AND EXCEPTION ───────────────────────────────────────────────
+   Owner decision from a rendered comparison. The pill above was not wrong about
+   colour; it was wrong about EMPHASIS. A Status column is six rows of ACTIVE and
+   one of DISABLED, and every one of them was a saturated filled pill — so the
+   expected state shouted exactly as loudly as the exception, and the exception
+   had nothing left to be louder with. Red among green is only findable by
+   reading. The fix is information design, not palette: spend loudness on the row
+   that is not what you expected to see.
+
+   So the container goes, as it went on the faces, and two tiers replace it:
+
+     EXPECTED  quiet word in --muted at 700, mark 3px, hue at 55%
+     EXCEPTION loud  word in --ink   at 800, mark 4px, hue at full
+     ABSENCE   --muted2 word on a --line2 mark; not a status at all
+
+   Hue still says WHICH state (amber is not red). Weight says WHETHER this is the
+   state you expected. Two channels, one job each — that is the whole change.
+
+   ⚠ THE QUIET MARK IS DESATURATED, NOT DIMMED, and the difference is the
+   accessibility of the thing. Mixing the hue toward the PANEL was tried first
+   and measured: at the 45% it was specified with, safe/info/bad land at
+   2.35-2.94:1 against the panels in one theme or both, under 1.4.11's 3.0:1 —
+   because mixing toward the background spends CONTRAST, which is the one budget
+   a status mark cannot pay from. Clearing 3.0 that way needs 75-80%, by which
+   point nothing is quiet. Mixing toward --muted instead spends CHROMA: at 55%
+   saturation drops by about half (159->84 for green, 164->83 for blue) while
+   every pair sits at 4.7-7.2:1. Quiet is a saturation property; legibility is a
+   luminance property; the first pass was paying with the wrong one.
+
+   Measured at 55%, mark vs panel, both panels, both themes:
+     safe 7.23 / 7.00 dark · 4.89 / 5.07 light
+     info 5.23 / 5.06 dark · 5.25 / 5.44 light
+   Full strength, exception marks:
+     warn 11.24 / 10.88 dark · 4.42 / 4.58 light
+     bad   5.31 /  5.15 dark · 4.25 / 4.40 light
+   Words, as text (4.5:1): quiet --muted 5.18/5.02 dark · 5.33/5.53 light;
+   loud --ink 15.79/15.29 dark · 14.46/14.99 light.
+
+   The 2px radius is the ladder's documented exemption for a 3-4px bar, the same
+   one the on-face rule below and the eyebrow rule take. */
 .chip{
   display:inline-flex;align-items:center;gap:var(--s-1);
-  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.5px;
-  border:0;border-radius:var(--r-xs);padding:var(--s-1) var(--s-2);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
   text-transform:uppercase;white-space:nowrap;line-height:1.5;
-  box-shadow:0 1px 2px rgba(0,0,0,.28);
+  background:none;box-shadow:none;border:0;border-radius:2px;
+  border-left:3px solid var(--line2);padding:0 0 0 var(--s-2);
+  color:var(--muted);font-weight:700;
 }
-.chip.safe{background:var(--safe-bg);color:var(--safe-tx)}
-.chip.bad{background:var(--breach-bg);color:var(--breach-tx)}
-.chip.warn{background:var(--warn-bg);color:var(--warn-tx)}
-.chip.info{background:var(--info-bg);color:var(--info-tx)}
+/* expected — the state you came in assuming. It is still legible, still hued,
+   and it does not compete. */
+.chip.safe{border-left-color:color-mix(in srgb,var(--safe-bg) 55%,var(--muted))}
+.chip.info{border-left-color:color-mix(in srgb,var(--info-bg) 55%,var(--muted))}
+/* exception — the row you are scanning for. `warn` sits HERE, with `bad`, and
+   the argument is the one this whole change rests on: the ladder asks "is this
+   the state I expected?", not "how bad is it". Every status that maps to warn —
+   warning, stale, pending — is a row a human has to look at, and a quiet warn
+   would rebuild the original defect one severity down: one stale worker hiding
+   in a column of ok, findable only by reading. Amber against red already
+   carries how bad it is; that is what the hue is for. */
+.chip.warn,.chip.bad{color:var(--ink);font-weight:800;border-left-width:4px}
+.chip.warn{border-left-color:var(--warn-bg)}
+.chip.bad{border-left-color:var(--breach-bg)}
 /* Absence, not a status: `never` and `not_applicable` must not shout in a status
-   hue. --line2 is the quietest fill that is still a step off every surface it
-   lands on (1.54:1 dark / 1.47:1 light vs the panel) and carries --ink2 at
-   6.79:1 / 5.32:1.
-   Those two figures are under the 3.0:1 of 1.4.11 and stay that way ON PURPOSE:
-   a dim chip's fill carries no meaning to lose — the word does, at 6.79/5.32 —
-   and the nearest fill that would clear 3.0 against near-white paper is a dark
-   grey, i.e. louder than every real status. Measured, rejected, left. */
-.chip.dim{background:var(--line2);color:var(--ink2)}
+   hue. A0's reasoning survives the change and is unchanged by it — the mark
+   carries no meaning to lose, the word does — only now the word is --muted2
+   (4.66:1 dark / 4.95:1 light on --surf; 4.51 / 5.13 on --surf2) rather than
+   ink on a plate, and --line2 rules the margin at 1.54 / 1.47. That figure is
+   under 3.0:1 and stays there ON PURPOSE: the nearest grey that would clear it
+   against near-white paper is darker, i.e. louder, than every real status.
+   Measured, rejected, left — twice now. */
+.chip.dim{color:var(--muted2);border-left-color:var(--line2)}
 
 /* ── R1 · THE MARGIN MARK: the same status on a DECORATIVE HERO FACE ──────
    Live on the health page: #hStatus sits in a .kval inside .kpi.k-teal .face
@@ -778,16 +837,31 @@ html[data-theme="light"] .pg-wm{opacity:.06}
    .chip.dim already makes above, and 1.4.1 is satisfied by the word, not the
    fill. The four inks died with the plate; --face-ink-dim survives for .tag.
 
-   Scoped to .kpi .face, so the pill in a table is untouched: those are two
-   genuinely different contexts, which is why one treatment never worked.
+   ⚠ RECONCILED AT R2, AND THIS IS THE HALF-DEFINITION WARNING. R1 wrote this
+   rule against a base that was a filled pill, so it had to say background:none,
+   box-shadow:none, border:0, a radius and a padding just to UNDO the base. The
+   base is a margin mark now, so all six of those said the same thing twice and
+   are gone. What is left is only what genuinely differs on a face, and each line
+   has a reason a panel does not share:
 
-   The 2px radius is the ladder's documented exemption for a 3-4px bar — the
-   same one .eyebrow::before takes, on the same object. --r-xs would curve a
-   4px rule into a wedge. */
+     the hue     — a face is a bright gradient, so no status hue survives on it
+                   (see the measurement above); --foxink is the one ink that does
+     the weight  — a face carries ONE card, not a column, so there is no column
+                   for an exception to stand out from. The expected/exception
+                   split is meaningless here and is deliberately flattened: every
+                   on-face mark is 800 and 4px, whatever status it carries
+     size/track  — the face's own type scale, not the table's
+
+   Do not re-add a fill or a shadow here to "make it safe". There is nothing left
+   to make safe; the base draws no container. Re-declaring one rebuilds the plate
+   the owner rejected, at a specificity that beats every rule above.
+
+   The 2px radius lives on the base now — the ladder's documented exemption for a
+   3-4px bar, the same one .eyebrow::before takes. --r-xs would curve it into a
+   wedge. */
 .kpi .face .chip{
-  background:none;box-shadow:none;border-radius:2px;
-  border:0;border-left:4px solid var(--foxink);
-  padding:0 0 0 9px;color:var(--foxink);
+  border-left:4px solid var(--foxink);padding-left:9px;
+  color:var(--foxink);
   font-size:11px;font-weight:800;letter-spacing:.14em;
 }
 
