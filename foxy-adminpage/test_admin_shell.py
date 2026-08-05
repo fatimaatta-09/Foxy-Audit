@@ -3513,5 +3513,174 @@ def test_the_one_time_password_is_copyable_and_announced() -> None:
     assert out and "aria-live" in out.group(0), "the credential is written into a silent element"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# A7 · two follow-ups on shipped pages: the platform-config fields stop
+# manufacturing integers out of things nobody typed, and the two lists that
+# lacked a search get one.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_an_emptied_config_field_cannot_reach_the_server() -> None:
+    """The severe half, and not the one the register describes. The old test was
+    Number.isInteger(Number(v)), and Number is a coercion rather than a parse:
+    an emptied box became 0, which passes the integer test, differs from the
+    stored value, and was PUT. The page then reported a save, because it had
+    saved — it saved zero. A quota or a retention window silently becoming 0 is
+    a data defect, not a UX gap."""
+    v = _js_func("_cfgValidate")
+    assert "v===''" in v.replace('"', "'"), "an empty field is no longer refused"
+    assert "would save 0" in v, "the message no longer names what emptying would do"
+    # and the coercion that produced the zero must be gone from the value test
+    save = _js_func("saveConfig")
+    assert "Number.isInteger(Number(" not in save, "the coercion test is back"
+
+
+def test_the_validator_is_actually_called_before_a_save() -> None:
+    """A6 shipped a helper whose body was guarded and whose CALL SITE was not,
+    and the defect came back with every guard green. So this asserts the wiring,
+    not the rule: the save path must run the check, and the field must run it as
+    the operator types."""
+    save = _js_func("saveConfig")
+    assert "cfgFieldCheck(" in save, "saveConfig no longer validates anything"
+    assert "_cfgValidate(" in _js_func("cfgFieldCheck"), "the check stopped reading the rule"
+    # rendered fields must carry the live check too
+    load = _js_func("loadConfig")
+    assert "cfgFieldCheck(this)" in load, "a config field is rendered without its check"
+
+
+def test_a_value_nobody_typed_as_a_number_is_refused() -> None:
+    """Every one of these passed the old integer test and was stored as the
+    number on the right: hex as 16, binary as 3, exponent as 1000, a leading
+    plus as 5. A negative passed the browser and was rejected by the API on a
+    round trip, which is a worse way to learn it. The rule is a digit test now,
+    stated in words at the field, and the sign is allowed only when the key's
+    own minimum is negative — read from the schema rather than assumed."""
+    v = _js_func("_cfgValidate")
+    assert "d+$/" in v, "the digit rule is gone"
+    flat = v.replace(" ", "")
+    # Both patterns must exist AND the choice between them must be the key's
+    # own minimum. Asserting only that the comparison appears somewhere passed
+    # while the rule was hardcoded, because the same comparison also picks the
+    # wording of the message below it.
+    assert "(min<0?" in flat and flat.count("d+$/") >= 2, (
+        "the sign rule is hardcoded instead of chosen by the key's own minimum"
+    )
+    assert "isSafeInteger" in v, "a number too large to store exactly is accepted again"
+
+
+def test_save_is_blocked_while_any_field_is_invalid() -> None:
+    """Editing two fields and getting one wrong used to PUT the good one and
+    report success, leaving the operator believing both had landed. Nothing goes
+    until everything is valid, and every field is checked rather than stopping
+    at the first, so they are all shown at once."""
+    save = _js_func("saveConfig")
+    head = save[: save.index("const updates=")]
+    assert "filter(" in head and "return;" in head, (
+        "the save no longer refuses before it builds the payload"
+    )
+    assert head.index("cfgFieldCheck") < head.index("return;"), (
+        "the refusal is not gated on the check"
+    )
+    assert "api(" not in head, "a request can still be sent while a field is invalid"
+
+
+def test_an_invalid_field_announces_itself() -> None:
+    """A red border is not a message. The console had one aria-invalid in the
+    whole file and no error class on any input, so this is the first shared
+    version of both."""
+    load = _js_func("loadConfig")
+    assert 'aria-invalid="false"' in load, "fields render with no validity state"
+    assert "aria-describedby" in load, "the message is not bound to the field"
+    assert 'role="status"' in load and 'aria-live' in load, (
+        "the message is written into an element nothing announces"
+    )
+    check = _js_func("cfgFieldCheck")
+    assert "aria-invalid" in check, "the validity state is never updated"
+
+
+def test_the_invalid_state_reads_as_an_exception() -> None:
+    """A validation message is a status, so it answers to the same vocabulary as
+    the rest: an invalid field is an EXCEPTION, not an absence. The sentence
+    takes the exception ink and the mark takes full strength.
+
+    Measured from the tokens in both themes, because the panel a card sits on
+    and the theme both move underneath this."""
+    rule = _scope(".fielderr{")
+    assert "color:var(--ink)" in rule, "the message dropped to a quieter ink"
+    assert "var(--breach-bg)" in rule, "the message lost its mark"
+    for theme in ("dark", "light"):
+        for panel in ("--surf", "--surf2"):
+            word = _ratio(_token("--ink", theme), _token(panel, theme))
+            assert word >= 4.5, f"{theme} the message is {word:.2f}:1 on {panel}"
+            mark = _ratio(_token("--breach-bg", theme), _token(panel, theme))
+            assert mark >= 3.0, f"{theme} the mark is {mark:.2f}:1 on {panel}"
+    # the field itself has to change too — a message with no anchor is a footnote
+    assert "border-color:var(--breach-bg)" in _scope(".cin.invalid{"), (
+        "the invalid input no longer marks itself"
+    )
+
+
+def test_both_new_searches_reset_the_pager() -> None:
+    """Both lists page locally. Filter to three results while sitting on page
+    three and the table is empty under a pager insisting there are results."""
+    for fn in ("orgSearchChanged", "staffSearchChanged"):
+        body = _js_func(fn)
+        assert "pgReset(" in body, f"{fn} leaves the reader on a page that no longer exists"
+
+
+def test_both_pagers_count_the_list_the_table_contains() -> None:
+    """foxPageSlice derives its total from the array it is handed, so the count
+    is only honest if the FILTERED array is what gets handed over. Passing the
+    unfiltered one states a number the table does not contain — the same defect
+    class as a revenue KPI counting rows it is not showing."""
+    for fn, filt, raw in (("renderOrgs", "_orgsFiltered()", "ORGS_ALL"),
+                          ("renderStaff", "_staffFiltered()", "STAFF_CACHE")):
+        body = _js_func(fn)
+        assert filt in body, f"{fn} does not filter"
+        slice_call = body[body.index("foxPageSlice("):]
+        slice_call = slice_call[: slice_call.index(")")]
+        assert raw not in slice_call, (
+            f"{fn} pages the unfiltered list, so the pager counts rows the table "
+            f"is not showing"
+        )
+
+
+def test_a_filtered_list_says_so() -> None:
+    """An operator must never be able to read a filtered list as the whole list.
+    The leads board already states its scope in words for this reason and is the
+    precedent being copied."""
+    for page, node in (("orgs", "orgScope"), ("staff", "staffScope")):
+        mk = _nocomment(_page(page))
+        el = re.search(r'<div[^>]*id="%s"[^>]*>' % node, mk)
+        assert el, f"{page} has no scope line"
+        assert 'role="status"' in el.group(0) and "aria-live" in el.group(0), (
+            f"{page}'s scope line changes silently"
+        )
+    for fn, node in (("renderOrgs", "orgScope"), ("renderStaff", "staffScope")):
+        body = _js_func(fn)
+        assert node in body and "matching" in body, f"{fn} never states its scope"
+        assert " of " in body, f"{fn} states a count without saying what it is out of"
+
+
+def test_an_empty_result_is_not_an_empty_list() -> None:
+    """Forty organizations and none matching `acme` is not the same page as no
+    organizations at all, and saying the second when the first is true is a
+    false statement about the data."""
+    for fn in ("renderOrgs", "renderStaff"):
+        body = _js_func(fn)
+        assert body.count("innerHTML='<tr>") >= 2 or body.count('innerHTML=\'<tr>') >= 2, (
+            f"{fn} has only one empty state"
+        )
+        assert "match" in body.lower(), f"{fn} does not distinguish no-results from no-rows"
+
+
+def test_both_new_searches_are_labelled() -> None:
+    """Placeholders vanish the moment you type, so a placeholder is not a name."""
+    for page, node in (("orgs", "orgSearch"), ("staff", "staffSearch")):
+        mk = _nocomment(_page(page))
+        assert 'for="%s"' % node in mk, f"{node} is unlabelled"
+        assert re.search(r'<input[^>]*id="%s"' % node, mk), f"{node} is gone"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

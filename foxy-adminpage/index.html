@@ -1127,6 +1127,34 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 }
 .cin::placeholder{color:var(--muted2)}
 .cin:focus{border-color:var(--fox);box-shadow:var(--focus)}
+/* ── A7 · A FIELD THAT IS WRONG SAYS SO, AT THE FIELD ────────────────────────
+   The console had three hand-rolled error lines (the sign-in gate, the password
+   modal, the MFA modal) and no shared one, no error class on any input, and one
+   aria-invalid in the whole file. So this is built as a component rather than a
+   fourth one-off: any form that grows a rule can reach for it.
+
+   It answers to the status vocabulary, because a validation message IS a status.
+   An invalid field is an EXCEPTION, so it takes the exception treatment — the
+   sentence in --ink, and a full-strength 4px mark — rather than the quiet tier
+   or a red sentence on its own. Measured, both themes, both panels:
+     the sentence  --ink        14.46-15.79:1   (AA, and the loudest ink here)
+     the mark      --breach-bg   4.25-5.31:1    (clears 1.4.11's 3.0 for a mark)
+   --danger was the alternative and measures 5.15-6.47:1 — legible, but three
+   times quieter than the ink beside it, which is the wrong weight for the one
+   line on the card that is stopping a save.
+
+   The 2px radius is the ladder's documented exemption for a 3-4px bar, the same
+   one the status mark and the eyebrow rule take. No transition is declared here:
+   .cin already animates its border-colour, and the file-wide reduced-motion
+   sweep neutralises it. */
+.cin.invalid{border-color:var(--breach-bg)}
+.cin.invalid:focus{border-color:var(--breach-bg)}
+.fielderr{
+  display:none;margin-top:var(--s-1);padding:0 0 0 var(--s-2);
+  border-left:4px solid var(--breach-bg);border-radius:2px;
+  color:var(--ink);font-size:11.5px;line-height:1.45;
+}
+.fielderr.on{display:block}
 /* .flabel is a real <label for> now, not a styled <div>. There were 47 of them
    and zero `for` attributes in 4,125 lines, so every field in the console —
    including the staff password on the sign-in gate — announced as "edit, blank"
@@ -2171,6 +2199,17 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </label>
       </div>
       <div class="clay pad twrap">
+        <!-- The count line is not decoration. This list is already narrowed by
+             the offboarded toggle above, and a search narrows it again, so the
+             totals a reader carries away have to say what they are totals OF.
+             The leads board states its scope the same way and for the same
+             reason. role=status so the change is announced; a table that
+             silently loses rows is not. -->
+        <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="sub mono" id="orgScope" role="status" aria-live="polite" style="font-size:11px;"></div>
+          <div><label class="sr-only" for="orgSearch">Search organizations</label>
+            <input class="cin" id="orgSearch" placeholder="search name, id, contact…" oninput="orgSearchChanged()" style="max-width:250px;margin-bottom:0;"></div>
+        </div>
         <table class="tbl cardify" id="orgTbl">
           <thead><tr>
             <th scope="col">Org</th><th scope="col">Plan</th><th scope="col">Subscription</th><th scope="col">Access</th><th scope="col">Contact</th><th scope="col">Created</th>
@@ -2301,6 +2340,11 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
       <div class="pagehead"><span class="pg-wm" aria-hidden="true"></span></div>
       <div class="split">
         <div class="clay pad twrap">
+          <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px;">
+            <div class="sub mono" id="staffScope" role="status" aria-live="polite" style="font-size:11px;"></div>
+            <div><label class="sr-only" for="staffSearch">Search staff accounts</label>
+              <input class="cin" id="staffSearch" placeholder="search email or role…" oninput="staffSearchChanged()" style="max-width:230px;margin-bottom:0;"></div>
+          </div>
           <table class="tbl cardify">
             <!-- Every column binds itself. Under 760px this table drops its header
                  row entirely, so the binding and the per-cell label are the only
@@ -4219,7 +4263,7 @@ async function loadKpiSparks(){
 }
 
 let ORG_OPEN=null;
-let ORGS_ALL=[];
+let ORGS_ALL=[],ORG_Q='';
 /* A toast is a receipt for something the operator just did, not a report on
    something they are waiting for: it is gone in 3.2s and it leaves the table
    reading "loading…" forever, so a dead endpoint is indistinguishable from a
@@ -4243,9 +4287,38 @@ async function loadOrgs(){
 /* /organizations returns the whole list with no offset, so the slice is local.
    Do not "fix" that by adding limit/offset to the router — it changes an
    /admin/v1/* response shape and needs its own review. */
+/* Client-side, like the inbox: loadOrgs already holds every row in memory and
+   pages it locally, so filtering here needs no endpoint, no debounce and no
+   backend change. Resetting the page is not optional — filter to three results
+   while sitting on page three and the table is empty under a pager insisting
+   there are results. */
+function orgSearchChanged(){
+  ORG_Q=($('orgSearch')?$('orgSearch').value:'').trim().toLowerCase();
+  pgReset('orgs'); renderOrgs();
+}
+function _orgsFiltered(){
+  if(!ORG_Q) return ORGS_ALL;
+  /* Only fields the row actually shows. Searching something invisible makes a
+     row appear for a reason the reader cannot see. */
+  return ORGS_ALL.filter(function(o){
+    return ((o.name||'')+' '+(o.id||'')+' '+(o.contact_email||'')+' '+(o.plan_tier||''))
+      .toLowerCase().indexOf(ORG_Q)>=0;
+  });
+}
 function renderOrgs(){
-  const orgs=window.foxPageSlice(ORGS_ALL,pgState('orgs',25),'orgPager',renderOrgs,'Organization pages');
-  if(!ORGS_ALL.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  const all=ORGS_ALL, rows=_orgsFiltered();
+  const off=$('showDeleted')&&$('showDeleted').checked?' · offboarded included':'';
+  const sc=$('orgScope');
+  if(sc) sc.textContent=(ORG_Q
+    ? 'matching “'+ORG_Q+'” · '+rows.length+' of '+all.length+' organization'+(all.length===1?'':'s')
+    : all.length+' organization'+(all.length===1?'':'s'))+off;
+  /* The pager is handed the FILTERED array, so "1-25 of N" counts what the
+     table contains rather than what the fetch returned. */
+  const orgs=window.foxPageSlice(rows,pgState('orgs',25),'orgPager',renderOrgs,'Organization pages');
+  /* An empty result is not an empty list. "no organizations yet" is false when
+     there are forty and none of them match. */
+  if(!all.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  if(!rows.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations match “'+esc(ORG_Q)+'”</td></tr>';return}
   $('orgRows').innerHTML=orgs.map(o=>{
     const access=o.deleted?'<span class="chip dim">offboarded</span>'
       :o.suspended?'<span class="chip bad">suspended</span>'
@@ -4664,7 +4737,7 @@ function renderTraffic(){
 }
 
 /* ──────────── staff ──────────── */
-let STAFF_CACHE=[];
+let STAFF_CACHE=[],STAFF_Q='';
 /* It printed "requires superadmin" for ANY non-ok status. A 500, a 502, a 504
    and a 404 all rendered the same sentence, with the real code sitting in the
    same template string being ignored. A viewer reads it and correctly concludes
@@ -4708,9 +4781,25 @@ function _lastSeen(iso){
     ? '<span class="chip warn">dormant · '+days+'d</span> <span class="sub mono" style="font-size:10px;">'+when+'</span>'
     : when;
 }
+function staffSearchChanged(){
+  STAFF_Q=($('staffSearch')?$('staffSearch').value:'').trim().toLowerCase();
+  pgReset('staff'); renderStaff();
+}
+function _staffFiltered(){
+  if(!STAFF_Q) return STAFF_CACHE;
+  return STAFF_CACHE.filter(function(s){
+    return ((s.email||'')+' '+(s.platform_role||'')).toLowerCase().indexOf(STAFF_Q)>=0;
+  });
+}
 function renderStaff(){
-  const rows=window.foxPageSlice(STAFF_CACHE,pgState('staff',25),'staffPager',renderStaff,'Staff pages');
-  if(!STAFF_CACHE.length){$('staffRows').innerHTML='<tr><td colspan="6" class="sub mono">no staff accounts</td></tr>';return}
+  const all=STAFF_CACHE||[], match=_staffFiltered();
+  const sc=$('staffScope');
+  if(sc) sc.textContent=STAFF_Q
+    ? 'matching “'+STAFF_Q+'” · '+match.length+' of '+all.length+' account'+(all.length===1?'':'s')
+    : all.length+' account'+(all.length===1?'':'s');
+  const rows=window.foxPageSlice(match,pgState('staff',25),'staffPager',renderStaff,'Staff pages');
+  if(!all.length){$('staffRows').innerHTML='<tr><td colspan="6" class="sub mono">no staff accounts</td></tr>';return}
+  if(!match.length){$('staffRows').innerHTML='<tr><td colspan="6" class="sub mono">no accounts match “'+esc(STAFF_Q)+'”</td></tr>';return}
   $('staffRows').innerHTML=rows.map(s=>{
     const self=ME&&s.id===ME.id;
     return `<tr class="rowbtn" onclick="staffManage('${s.id}')">
@@ -5107,15 +5196,85 @@ async function loadConfig(){
          type floor, so it read as decoration beside the defaults it differs
          from. */
       const tag=m.overridden?'<span class="chip warn">override</span>':`<span class="sub mono" style="font-size:9px;">default ${esc(m.default)}</span>`;
-      return `<div style="margin-bottom:10px;"><label class="sub" style="font-size:11px;display:block;margin-bottom:4px;">${esc(m.label||k)} ${tag}</label><input class="cin" data-cfgkey="${esc(k)}" inputmode="numeric" value="${esc(m.value)}">${m.help?`<div class="sub" style="font-size:10px;margin-top:2px;">${esc(m.help)}</div>`:''}</div>`;
+      /* inputmode is a keyboard hint, not a constraint — it does not stop a
+         paste and it does not stop a desktop keyboard. The rule is stated in
+         words below the field and enforced in _cfgValidate. */
+      const eid='cfgerr-'+esc(k), hid='cfghelp-'+esc(k);
+      const describedby=(m.help?hid+' ':'')+eid;
+      return `<div style="margin-bottom:10px;"><label class="sub" for="cfg-${esc(k)}" style="font-size:11px;display:block;margin-bottom:4px;">${esc(m.label||k)} ${tag}</label>`
+        +`<input class="cin" id="cfg-${esc(k)}" data-cfgkey="${esc(k)}" inputmode="numeric" aria-invalid="false" aria-describedby="${describedby}"`
+        +` oninput="cfgFieldCheck(this)" onblur="cfgFieldCheck(this)" value="${esc(m.value)}">`
+        +`${m.help?`<div class="sub" id="${hid}" style="font-size:10px;margin-top:2px;">${esc(m.help)}</div>`:''}`
+        +`<div class="fielderr" id="${eid}" role="status" aria-live="polite"></div></div>`;
     }).join('')
   ).join('');
 }
+/* WHY A REGEX AND NOT Number(). The old test was
+   `Number.isInteger(Number(v))`, and Number() is a coercion, not a parse: it
+   turns things nobody typed as a number into perfectly valid integers, and the
+   old code then PUT them.
+
+     ""      -> 0      passes isInteger    <- clearing a box SAVED ZERO
+     "0x10"  -> 16     passes              <- stored 16
+     "0b11"  -> 3      passes              <- stored 3
+     "1e3"   -> 1000   passes              <- stored 1000
+     "+5"    -> 5      passes
+     "-3"    -> -3     passes              <- every key here has min 0
+     "5.5"   -> 5.5    fails, dropped in silence — the reported symptom
+     "abc"   -> NaN    fails, dropped in silence
+
+   The empty case is the severe one and it is not what the register describes: an
+   emptied box is not "no change", it is Number("")===0, which differs from the
+   stored value and gets written. A retention window or a quota silently becoming
+   0 is a data defect. (It only fires when the current value is non-zero — if the
+   value is already 0 the string compare matches and nothing is sent.)
+
+   A digit regex states the rule the operator can actually read, and closes all
+   eight rows at once. The sign is allowed only when the key's own minimum is
+   negative, so the rule comes from the schema rather than from an assumption —
+   every key ships min:0 today, and reading it means a future signed key does not
+   quietly become unenterable. */
+function _cfgValidate(inp){
+  const m=CONFIG_META[inp.dataset.cfgkey]||{}, v=inp.value.trim();
+  /* Only `int` has a rule anyone can state. Every key the API ships is int
+     today; anything else passes through untouched rather than being judged by a
+     rule that was not written for it. */
+  if(m.type!=='int') return null;
+  const min=(typeof m.min==='number')?m.min:0;
+  if(v==='') return 'Enter a value. Leaving this empty would save 0.';
+  if(!(min<0?/^-?\d+$/:/^\d+$/).test(v))
+    return min<0
+      ? 'Whole numbers only — no decimal point and no separators.'
+      : 'Whole numbers only — no decimal point, no minus sign and no separators.';
+  const n=Number(v);
+  if(!Number.isSafeInteger(n)) return 'That number is too large to store exactly.';
+  if(n<min) return 'Must be '+min+' or more.';
+  return null;
+}
+function cfgFieldCheck(inp){
+  const msg=_cfgValidate(inp), box=$('cfgerr-'+inp.dataset.cfgkey);
+  inp.classList.toggle('invalid',!!msg);
+  inp.setAttribute('aria-invalid',msg?'true':'false');
+  if(box){ box.textContent=msg||''; box.classList.toggle('on',!!msg); }
+  return !msg;
+}
 async function saveConfig(){
+  const inputs=[].slice.call(document.querySelectorAll('#setConfig [data-cfgkey]'));
+  /* Every field is checked, not just until the first failure, so the operator
+     sees all of them at once. Nothing is PUT while anything is invalid — a save
+     that goes through with one field dropped is how "configuration saved" came
+     to be a false statement about what had happened. */
+  const bad=inputs.filter(function(inp){ return !cfgFieldCheck(inp); });
+  if(bad.length){
+    bad[0].focus();
+    toast(bad.length===1?'One field needs fixing before this can be saved.'
+                        :(bad.length+' fields need fixing before this can be saved.'),'error');
+    return;
+  }
   const updates={};
-  document.querySelectorAll('#setConfig [data-cfgkey]').forEach(inp=>{
+  inputs.forEach(function(inp){
     const k=inp.dataset.cfgkey, m=CONFIG_META[k]||{}, v=inp.value.trim();
-    if(m.type==='int'){ const n=Number(v); if(Number.isInteger(n)&&String(n)!==String(m.value)) updates[k]=n; }
+    if(m.type==='int'){ const n=Number(v); if(String(n)!==String(m.value)) updates[k]=n; }
     else if(v!==String(m.value)) updates[k]=v;
   });
   if(!Object.keys(updates).length){ toast('no changes to save','warn'); return; }
