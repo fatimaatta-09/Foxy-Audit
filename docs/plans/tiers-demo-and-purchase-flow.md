@@ -71,9 +71,9 @@ Ordered by what unblocks money, not by what is most interesting.
 
 | Phase | Branch | Scope | Blocks revenue? |
 |---|---|---|---|
-| **M3a** | `feat/paddle-checkout-page` | `checkout.foxyaudit.tech` — the Paddle.js page. **Already prompted.** | **YES — no card can be taken without it** |
+| **M3a** | `feat/paddle-checkout-page` | `checkout.foxyaudit.tech` — the Paddle.js page | **merged `28a7c49`** |
 | **M4a** | `feat/tier-model` | Backend: separate paid-premium from evaluation-premium, the demo state + approval, the trial dashboard lock scoped to demo orgs, clock-at-approval | Partly |
-| **M4b** | `feat/sale-page-tiers` | Pricing page: 3 tiers with real prices; remove companion/guardian; demo route; Premium contact route | **YES — Paddle domain review needs prices** |
+| **M4b** | `feat/sale-page-tiers` | Pricing page: 3 tiers with real prices; Premium contact route | **merged `761868d`** |
 | **M4c** | `feat/admin-approvals` | Admin console: the approvals queue | No |
 | **M4d** | `feat/welcome-page` | `welcome.html`: SDK link, demo locking, account-first ordering | No |
 | **M3b** | `feat/paddle-surfaces` | Registers #98, #93, #94, #97 | No |

@@ -97,11 +97,19 @@ This is why M0 exists and why it ships before anything else.
 
 | Phase | Branch | Scope | Ships alone? |
 |---|---|---|---|
-| **M0** | `fix/staff-plan-activation` | Make the staff activation path actually unlock a paid customer, and record what they paid. | **merged `aeb2c14`** |
+| **M0** | `fix/staff-plan-activation` | Staff activation actually unlocks a paid customer | **merged `aeb2c14`** |
 | ~~M1~~ | — | ~~provider seam~~ | **CUT — see below** |
-| **M2** | `feat/payments-paddle` | Paddle checkout + webhook, built directly. Dark unless `PADDLE_*` is configured. | Yes |
-| **M3** | `feat/payments-surfaces` | Provider-aware copy; the remaining Paddle surfaces (portal, cancel, invoices, sale page). | Yes |
-| **M4** | — owner, not code | Paddle KYC (sandbox needs none — start building now); the consent copy's legal read. | — |
+| **M2** | `feat/payments-paddle` | Paddle checkout + webhook, built directly | **merged `a44e1c0`** |
+| **M3a** | `feat/paddle-checkout-page` | `checkout.foxyaudit.tech` + nginx vhost + CSP | **merged `28a7c49`** |
+| — | (MAIN, at the gate) | the plans list only knew Stripe · `PADDLE_*` never reached the container | **`e85e305`, `2d42609`** |
+| **M3b** | `fix/plan-change-correctness` | #101 a paid org has no trial · #97 a renewal is not a decision | **merged `0baf7e7`** |
+| **M3c** | `feat/admin-payment-visibility` | #93 the payment reference is readable | **merged `1b24c61`** |
+| **M3d** | `feat/paddle-events-console` | #98 event log · #102 no payload exposed · #103 replay | **merged `23252a1`** |
+| **M3e** | not started | the Stripe copy still on the dashboard and desktop; #94 customer invoice view | — |
+| **M4** | — owner, not code | **Paddle verification** — blocked on the policy docs, a registered address and a phone number | — |
+
+> **A real purchase completed end to end in Paddle sandbox on 2026-08-06.**
+> Signed-in customer → checkout → webhook → their own workspace on Pro.
 
 ### Why the seam was wrong
 
