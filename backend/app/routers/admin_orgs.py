@@ -218,10 +218,15 @@ def set_organization_plan(
         if body.monthly_log_quota is not None
         else effective_quota(db, plan, get_settings())
     )
-    org.trial_ends_at = (
-        datetime.now(timezone.utc) + timedelta(days=get_settings().trial_days)
-        if plan == "free" else None
-    )
+    if plan == "free":
+        org.trial_ends_at = (datetime.now(timezone.utc)
+                             + timedelta(days=get_settings().trial_days))
+    else:
+        # Behaviour-identical to the conditional this replaces. Routed through
+        # the helper so "a paid tier has no trial" is stated in ONE place —
+        # this path was the only one that got it right, and the two purchase
+        # paths that got it wrong now call the same function (register #101).
+        billing_state.end_trial(org)
     org.subscription_status = "active"
     org.past_due_since = None            # no stale clock left behind a staff reactivation
     billing_state.end_evaluation(org)    # or the paid customer stays locked — see above

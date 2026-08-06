@@ -708,6 +708,59 @@ def _paddle_provision(db: Session, data: dict, plan_tier: str) -> tuple[dict, st
             "plan_tier": plan_tier}, str(org.id)
 
 
+def _paddle_renewal(db: Session, org: Organization,
+                    data: dict) -> tuple[dict, str | None]:
+    """A recurring charge succeeded. Confirm the money; do NOT rewrite the plan.
+
+    No commit — the caller commits once, together with the event row.
+
+    THE DEFECT THIS EXISTS TO STOP (register #97)
+    ---------------------------------------------
+    Paddle fires ``transaction.completed`` on every renewal, carrying the same
+    ``custom_data`` and the same price as the original purchase. Re-applying the
+    tier from that price is invisible while the two agree — and the moment staff
+    downgrade somebody by hand through ``POST /admin/v1/organizations/{id}/plan``,
+    the next renewal silently puts the purchased tier back. Monthly, silent, and
+    the two paths that fight are the two paths this product actually uses to
+    change a plan.
+
+    So a renewal is allowed to say "they are still paying" and nothing more:
+
+    * ``subscription_status = "active"`` and ``past_due_since = None`` — a
+      completed charge is exactly the evidence that a dunning clock should stop.
+    * the Paddle ids are bound if they were missing, because an id we did not
+      have is new information rather than a contradiction.
+    * the evaluation and the trial end, for the same reason they end on a
+      purchase: this org is paying.
+    * ``plan_tier`` and ``monthly_log_quota`` are NOT touched. Whatever set them
+      last — a purchase, or a human — keeps them.
+
+    A divergence between the renewal's price and the stored tier is logged at
+    INFO rather than acted on. It is the normal shape of a staff downgrade, so
+    it is not a warning; but it is worth being able to find in a log when
+    somebody asks why a customer is on a tier their invoice does not match.
+    """
+    priced_tier = paddle.plan_from(data)
+    customer_id = str(data.get("customer_id") or "").strip()
+    subscription_id = str(data.get("subscription_id") or data.get("id") or "").strip()
+    if customer_id and not org.paddle_customer_id:
+        org.paddle_customer_id = customer_id
+    if subscription_id.startswith("sub_") and not org.paddle_subscription_id:
+        org.paddle_subscription_id = subscription_id
+
+    org.subscription_status = "active"
+    org.past_due_since = None
+    billing_state.end_evaluation(org)
+    billing_state.end_trial(org)
+
+    stored = (org.plan_tier or "").strip().lower()
+    if priced_tier and priced_tier != stored:
+        log.info("Paddle renewal for org %s is priced %s while the org is on %s; "
+                 "leaving the stored tier alone", org.id, priced_tier, stored or "none")
+    return ({"status": "renewed", "org_id": str(org.id), "plan_tier": org.plan_tier},
+            str(org.id))
+
+
 def _paddle_apply_purchase(db: Session, data: dict) -> tuple[dict, str | None]:
     """A purchase completed: put the right workspace on the plan it paid for.
 
@@ -724,7 +777,21 @@ def _paddle_apply_purchase(db: Session, data: dict) -> tuple[dict, str | None]:
     is what Paddle actually charged for; custom data is something we put on the
     checkout and is the field a determined buyer would try to edit. Resolving
     from the price means an org cannot be granted a tier it did not pay for.
+
+    NOT EVERY `transaction.completed` IS A DECISION. A renewal carries the same
+    payload shape and is told apart by the transaction's `origin` — see
+    `paddle.chooses_a_plan` and `_paddle_renewal`.
     """
+    # A RENEWAL IS NOT A DECISION (register #97). Checked before either door,
+    # because a renewal reaches both: an authenticated purchase's custom_data is
+    # copied onto the subscription and so onto every later transaction, while an
+    # anonymous one's carries no org id and has to be resolved by customer id.
+    if not paddle.chooses_a_plan(data):
+        org = _paddle_org(db, data)
+        if org is None:
+            return {"status": "org_not_found"}, None
+        return _paddle_renewal(db, org, data)
+
     plan_tier = paddle.plan_from(data)
     claimed_org = paddle.org_id_from(data)
     if not claimed_org:
@@ -758,6 +825,7 @@ def _paddle_apply_purchase(db: Session, data: dict) -> tuple[dict, str | None]:
     # expired evaluator pays and stays locked, which is register #36 and the
     # exact defect M0 fixed on the staff path.
     billing_state.end_evaluation(org)
+    billing_state.end_trial(org)         # register #101 — they have paid
     log.info("Paddle: upgraded org %s to %s", org.id, plan_tier)
     return {"status": "upgraded", "org_id": str(org.id), "plan_tier": plan_tier}, str(org.id)
 
@@ -938,6 +1006,7 @@ def _upgrade_existing_org(db: Session, org_id: str, customer_id: str,
     org.subscription_status = "active"
     org.past_due_since = None            # nothing is owed the moment this lands
     billing_state.end_evaluation(org)
+    billing_state.end_trial(org)         # register #101 — they have paid
 
     log.info("Upgraded org %s to %s for customer %s", org.id, plan_tier, customer_id)
     return {"status": "upgraded", "org_id": str(org.id), "plan_tier": plan_tier}, str(org.id)

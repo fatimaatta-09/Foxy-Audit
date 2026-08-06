@@ -302,6 +302,37 @@ def end_evaluation(org) -> None:
     org.evaluation_ends_at = None
 
 
+def end_trial(org) -> None:
+    """A customer who has paid is not on a trial (M3b · register #101).
+
+    SEPARATE FROM ``end_evaluation`` ON PURPOSE. They read as the same gesture
+    and are not: an evaluation is a granted regime with credits and a window,
+    and a trial is the free tier's clock. ``set_organization_plan`` ends an
+    evaluation even when it sets somebody to FREE — where the trial is
+    *granted*, not ended — so folding one into the other would be wrong on the
+    one path that already gets both right.
+
+    WHY THIS EXISTS AT ALL
+    ----------------------
+    ``trial_ends_at`` is stamped at signup and, before this, was cleared in
+    exactly one place: ``redeem_offer``. **No purchase path cleared it.** Neither
+    processor's upgrade touched it, so buying a plan left the stamp behind
+    forever and an org reading Pro / Active / 25,000 credits was still told its
+    trial ended in seven days. Observed live 2026-08-06.
+
+    Harmless today by luck rather than design: ``capture_block``'s trial gate
+    requires ``plan_tier == "free"``, so a paid org is never blocked by it. M4a
+    adds a trial condition to ``dashboard_lock``, and a paid org carrying a stale
+    stamp is precisely the row a scoping error would lock out — someone who has
+    just paid. Clearing it now deletes that class of row before the lock exists.
+
+    Safe on an org that never had a trial: the field is already NULL. This does
+    NOT grant one — only the free tier does that, and only from
+    ``set_organization_plan`` and signup.
+    """
+    org.trial_ends_at = None
+
+
 def dashboard_lock(org, now: datetime | None = None) -> Condition | None:
     """Everything that locks the dashboard, most actionable condition first.
 

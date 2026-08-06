@@ -62,6 +62,55 @@ _PRICE_ATTRS = {
     "max": "paddle_price_max",
 }
 
+# ── transaction origin: who decided this charge (M3b · register #97) ────────
+# Verbatim from Paddle's transaction object schema — "Describes how this
+# transaction was created" — read off the get-transaction API reference. All six
+# values are listed so the next reader does not have to go and find them again:
+ORIGIN_API = "api"                    # created via the Paddle API — OUR first purchase
+ORIGIN_WEB = "web"                    # created by Paddle.js for a checkout
+ORIGIN_SUBSCRIPTION_UPDATE = "subscription_update"          # a change, billed now
+ORIGIN_SUBSCRIPTION_RECURRING = "subscription_recurring"    # A RENEWAL
+ORIGIN_SUBSCRIPTION_CHARGE = "subscription_charge"          # one-time charge on a sub
+ORIGIN_SUBSCRIPTION_PAYMENT_METHOD_CHANGE = "subscription_payment_method_change"
+
+#: The origins that mean SOMEBODY CHOSE THIS PLAN, so the tier the price implies
+#: is an instruction rather than an echo of an old one.
+#:
+#: `api` is what this product's own first purchases carry: the backend creates
+#: the transaction with `POST /transactions` and Paddle.js only opens it, so it
+#: is API-created even though a human clicked Buy. `web` covers a checkout that
+#: creates its own transaction. `subscription_update` is a real plan change
+#: billed immediately.
+#:
+#: Everything else — a renewal, a one-time charge, a $0 payment-method update —
+#: re-states a decision already made, and must never overwrite one made since.
+PLAN_CHOOSING_ORIGINS = frozenset({
+    ORIGIN_API, ORIGIN_WEB, ORIGIN_SUBSCRIPTION_UPDATE,
+})
+
+
+def origin_of(data: dict) -> str:
+    """The transaction's `origin`, lowercased. "" when the field is absent."""
+    return str((data or {}).get("origin") or "").strip().lower()
+
+
+def chooses_a_plan(data: dict) -> bool:
+    """Whether this transaction may SET the org's tier.
+
+    True for a first purchase or a deliberate change; False for a renewal, which
+    only re-charges a decision already recorded.
+
+    AN ABSENT `origin` COUNTS AS CHOOSING, and that direction is deliberate.
+    Paddle always sends the field, so the fallback is only reachable on a payload
+    that is malformed or predates it. Of the two ways to be wrong, failing to
+    upgrade somebody who has just paid is far worse than re-applying a tier that
+    already matches — and the second only bites once staff have downgraded by
+    hand, which is a state a human can see and correct.
+    """
+    origin = origin_of(data)
+    return True if not origin else origin in PLAN_CHOOSING_ORIGINS
+
+
 #: Paddle's subscription status → the vocabulary already stored in
 #: `organizations.subscription_status` and read by `billing_state`.
 #:
