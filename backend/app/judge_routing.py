@@ -6,14 +6,18 @@ chain snapshot — routing is an operational/billing decision, not evidence):
   judge_provider  gemini | openai | both
   judge_key_mode  own (BYOK, the tenant's encrypted key) | platform (Foxy's keys)
 
-``platform`` is a paid privilege. The allowed set is ONE constant —
-:data:`PLATFORM_KEY_TIERS` — so changing who gets it is a one-line change.
+``platform`` is a paid privilege, decided in ONE place —
+:func:`platform_keys_allowed`. Which TIERS qualify is still a one-line change
+(:data:`PLATFORM_KEY_TIERS`); since M4a the tier is no longer the whole test,
+because ``premium`` is also what an evaluation offer sets. That function takes
+the organisation and answers for three populations rather than one — read it
+before changing who pays for grading.
 
-The tier is re-checked HERE, at grading time, against the org's live plan_tier.
-A premium org that selects platform keys and later downgrades therefore stops
-spending Foxy's key immediately: it falls back to its own key, and with no own
-key the provider is simply skipped (an honest ``evaluator_unavailable``), never
-silently billed to the platform.
+The decision is re-made HERE, at grading time, against the org's live row. A
+premium org that selects platform keys and later downgrades — or an evaluator
+whose window shuts — therefore stops spending Foxy's key immediately: it falls
+back to its own key, and with no own key the provider is simply skipped (an
+honest ``evaluator_unavailable``), never silently billed to the platform.
 
 Decrypted keys exist only inside the returned :class:`JudgeRouting`, for the
 duration of one grading call. They are never logged, persisted, or serialised.
@@ -27,6 +31,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from . import billing_state
 from .config import get_settings
 from .crypto_secrets import SecretDecryptionError, SecretsNotConfigured, decrypt_secret
 from .models import OrgPolicy, Organization
@@ -91,9 +96,49 @@ def resolve_model(provider: str, stored: str | None) -> str:
     return default
 
 
-def platform_keys_allowed(plan_tier: str | None) -> bool:
-    """True when this plan may grade on Foxy's platform provider keys."""
-    return (plan_tier or "") in PLATFORM_KEY_TIERS
+def platform_keys_allowed(org) -> bool:
+    """True when this ORG may grade on Foxy's platform provider keys.
+
+    TAKES THE ORG, NOT THE TIER, SINCE M4a — and that is the whole point. The
+    tier set below still decides which plans are privileged, but ``premium``
+    stopped being a sufficient answer the day Premium became something customers
+    buy: an evaluation offer sets exactly that string, deliberately and
+    permanently (see ``billing_state.evaluation_lock``). A function handed only
+    ``"premium"`` cannot tell a paying enterprise customer from an evaluator
+    whose window shut months ago, and this is the decision that spends Foxy's own
+    LLM key.
+
+    Three populations, and they do not all get the same answer:
+
+    * **Paid Premium** — yes. The owner chose this knowing the cost is unbounded.
+    * **A LIVE evaluation** — yes, unchanged from before M4a. Not needing your own
+      provider key is most of what a judge offer is for, and taking it away here
+      would quietly gut the offer while claiming to fix a leak.
+    * **An EXPIRED evaluation** — no. This is the one that changes. Such an org
+      keeps reading ``premium`` forever, so before M4a it kept the privilege
+      forever too.
+
+    The live exposure that closes was bounded rather than dramatic, and it is
+    worth stating accurately: an expired evaluator cannot capture
+    (``capture_block`` answers ``evaluation_expired``), so no NEW events reach
+    the worker. What could still be graded on Foxy's key was whatever sat
+    un-graded in the outbox when the window shut, plus its retries. The real
+    defect was never the size of that bill — it was that ``plan_tier`` could no
+    longer answer "is this org a customer?", and four other entitlements were
+    asking it the same way.
+
+    Accepts anything with a ``plan_tier`` attribute, and ``None`` for "no org",
+    which answers False — a routing decision with no organisation behind it must
+    never resolve to spending the platform's key.
+    """
+    if org is None:
+        return False
+    if (getattr(org, "plan_tier", None) or "").strip().lower() not in PLATFORM_KEY_TIERS:
+        return False
+    # The tier qualifies. It only counts if something real put the org there:
+    # money, or an offer still inside its window. Tier-agnostic on purpose —
+    # PLATFORM_KEY_TIERS above stays the one place that decides WHICH tiers.
+    return billing_state.entitlement_is_earned(org)
 
 
 @dataclass(frozen=True)
@@ -184,7 +229,7 @@ def resolve_judge_routing(db: Session, org_id) -> JudgeRouting:
 
     if key_mode == "platform":
         org = db.get(Organization, oid)
-        if not platform_keys_allowed(org.plan_tier if org else None):
+        if not platform_keys_allowed(org):
             # Server-side tier gate, re-checked at grading time (e.g. after a
             # downgrade): fall back to BYOK rather than spending Foxy's key.
             key_mode = "own"

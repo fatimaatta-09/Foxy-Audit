@@ -22,6 +22,11 @@ def _configure(monkeypatch, claims: dict):
     monkeypatch.setattr(auth_google, "get_settings",
                         lambda: types.SimpleNamespace(google_oauth_client_id="test-client-id",
                                                       trial_days=7,
+                                                      # M4a: this double stands in for the whole
+                                                      # Settings object, so a field the provisioning
+                                                      # path reads has to exist on it or every test
+                                                      # here dies on an AttributeError.
+                                                      demo_approval_required=False,
                                                       quota_for=lambda tier: 500))
     monkeypatch.setattr(auth_google, "_verify_google_token",
                         lambda credential, client_id: claims)

@@ -59,6 +59,27 @@ class Organization(Base):
         String(320), nullable=True, default=None)            # owner/billing contact
     trial_ends_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None)
+    # ── M4a · the manually-approved demo (migration 0064) ────────────────────
+    # NULL | "pending" | "approved". NULL is the whole safety property and is
+    # never written by anything: it means "this organisation did not arrive
+    # through the demo route", which is true of every row that existed before
+    # this column and of every org a purchase creates. The trial lock fires only
+    # on "approved", so a grandfathered free org cannot be locked BY
+    # CONSTRUCTION — no date cutoff, and no count of production rows needed to
+    # know it is safe.
+    #
+    # A pending org cannot capture and cannot read its dashboard. Its
+    # `trial_ends_at` stays NULL until approval, which `capture_block` already
+    # reads as "not started" rather than "expired" — the clock is deliberately
+    # started by the approval, not by the signup.
+    #
+    # There is NO "rejected" value on purpose. A refusal is already expressible
+    # with `suspended` + `suspended_reason`, which every auth channel enforces
+    # and which has its own message; inventing a second vocabulary for it would
+    # add a reason string to three surfaces for one word of copy. See M4a's
+    # report.
+    approval_status: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, default=None)
     # Card-on-file state for the signup payment gate (P3 §4, migration 0055). The
     # card itself lives at Stripe — these four columns are the answer to "is there
     # one?" plus a display label. Nothing here can be used to charge anybody.

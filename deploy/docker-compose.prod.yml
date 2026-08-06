@@ -86,6 +86,9 @@ services:
       - PADDLE_PRICE_MAX=${PADDLE_PRICE_MAX:-}
       - PADDLE_SIGNATURE_TOLERANCE_SECONDS=${PADDLE_SIGNATURE_TOLERANCE_SECONDS:-300}
       - TRIAL_DAYS=${TRIAL_DAYS:-7}
+      # M4a. Default FALSE: turning it on makes every new signup wait for a
+      # human, so it is the deliberate act of saying the approvals queue exists.
+      - DEMO_APPROVAL_REQUIRED=${DEMO_APPROVAL_REQUIRED:-false}
       - MONTHLY_QUOTA_FREE=${MONTHLY_QUOTA_FREE:-500}
       - MONTHLY_QUOTA_PRO=${MONTHLY_QUOTA_PRO:-25000}
       - MONTHLY_QUOTA_MAX=${MONTHLY_QUOTA_MAX:-250000}

@@ -155,6 +155,24 @@ class Settings(BaseSettings):
     # you enable it, then set require_card_on_file. One without the other is
     # either a no-op or an outage.
     card_gate_grandfather_before: str = ""
+    # ── M4a · the manually-approved demo ─────────────────────────────────────
+    # When ON, a self-serve signup provisions a PENDING organisation: it cannot
+    # capture and cannot read its dashboard until a human approves it, and its
+    # 7-day clock starts AT APPROVAL rather than at signup (approving takes a day
+    # or two, and starting the clock at signup silently hands someone a five-day
+    # demo).
+    #
+    # OFF by default, and that is not timidity — it is the same shape as
+    # `require_card_on_file` above: the machinery ships before the surface that
+    # operates it. The approvals queue is M4c. Turning this on while there is no
+    # queue means every new signup waits in a state only a direct API call can
+    # clear, so the flag is the deliberate act of saying the queue now exists.
+    #
+    # NOTHING about the trial lock depends on this flag. That lock is scoped to
+    # organisations carrying an `approval_status`, and every organisation that
+    # existed before this migration carries NULL — so grandfathered free orgs are
+    # exempt BY CONSTRUCTION, whichever way this is set.
+    demo_approval_required: bool = False
     # ── D1 · the subscription lock ───────────────────────────────────────────
     # ON by default, unlike the card gate directly above, because the blast
     # radius is a different shape. The card gate had to ship off because its

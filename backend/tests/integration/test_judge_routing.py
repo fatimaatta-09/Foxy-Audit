@@ -287,7 +287,41 @@ def test_no_key_reaches_the_verdict_event_or_chain(make_org, client, monkeypatch
 # ── the tier matrix lives in ONE constant ────────────────────────────────────
 
 def test_platform_key_tiers_is_the_single_source_of_truth():
+    """M4a changed this function's argument from a tier STRING to the ORG.
+
+    Not a weakening — the opposite. `premium` alone stopped being a sufficient
+    answer once Premium became something customers buy, because an evaluation
+    offer sets the same string; the org is what carries the difference. The
+    original assertions are all still here, now made through a row.
+
+    The last two are new and are why the restructure happened. This constant has
+    to stay LOAD-BEARING: an earlier M4a draft tested `plan_tier == "premium"`
+    inside the predicate as well, which made deleting the membership check below
+    a no-op and would have made adding a tier here grant nothing. Re-breaking
+    caught it; these two assertions are what stop it coming back.
+    """
+    class _Org:
+        def __init__(self, tier):
+            self.plan_tier = tier
+            self.evaluation_offer_id = None
+            self.evaluation_ends_at = None
+
     assert judge_routing.PLATFORM_KEY_TIERS == {"premium"}
-    assert judge_routing.platform_keys_allowed("premium") is True
+    assert judge_routing.platform_keys_allowed(_Org("premium")) is True
     for tier in ("pro", "free", "trial", "max", None, "other"):
-        assert judge_routing.platform_keys_allowed(tier) is False
+        assert judge_routing.platform_keys_allowed(_Org(tier)) is False
+    assert judge_routing.platform_keys_allowed(None) is False
+
+    # The constant decides, and nothing else hardcodes the tier beside it.
+    monkey = judge_routing.PLATFORM_KEY_TIERS
+    try:
+        judge_routing.PLATFORM_KEY_TIERS = {"max"}
+        assert judge_routing.platform_keys_allowed(_Org("max")) is True, (
+            "adding a tier to PLATFORM_KEY_TIERS granted nothing — the tier is "
+            "hardcoded somewhere else as well"
+        )
+        assert judge_routing.platform_keys_allowed(_Org("premium")) is False, (
+            "removing a tier from PLATFORM_KEY_TIERS revoked nothing"
+        )
+    finally:
+        judge_routing.PLATFORM_KEY_TIERS = monkey

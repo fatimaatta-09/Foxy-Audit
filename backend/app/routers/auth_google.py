@@ -57,11 +57,20 @@ def _provision_google_org(db: Session, email: str, name: str | None, sub: str) -
     """Create a fresh free-tier org + admin for a first-time Google user. Mirrors
     /v1/signup but passwordless + email pre-verified (no set-password email)."""
     plaintext_key = "foxy_sk_" + secrets.token_hex(24)
+    # M4a — the SECOND free-signup door, and it has to answer the approval
+    # question the same way `/v1/signup` does. A demo route that only queues the
+    # email/password door is not a demo route: anyone refused there, or unwilling
+    # to wait, signs in with Google and is provisioned instantly. Same flag, same
+    # two moves — created pending, and the 7-day clock left unstarted until a
+    # human approves.
+    pending = get_settings().demo_approval_required
     org = Organization(
         name=((name or email).strip() or email)[:255],
         api_key_hash=hashlib.sha256(plaintext_key.encode("utf-8")).hexdigest(),
         plan_tier="free", contact_email=email,
-        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=get_settings().trial_days),
+        approval_status="pending" if pending else None,
+        trial_ends_at=None if pending else (
+            datetime.now(timezone.utc) + timedelta(days=get_settings().trial_days)),
         monthly_log_quota=get_settings().quota_for("free"))
     db.add(org)
     db.flush()

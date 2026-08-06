@@ -44,7 +44,29 @@ The dashboard lock and the capture block are deliberately NOT the same set:
   still inside a live offer — the window is open, the allowance is simply spent —
   so it keeps reading its own evidence. Only the WINDOW closing locks.
 
-Which leaves the lock meaning one thing: **you owe us, or you never paid.**
+M4a ADDED THE TWO CONDITIONS THAT ARE NOT ABOUT MONEY
+-----------------------------------------------------
+Until then the lock meant one thing — *you owe us, or you never paid* — and that
+sentence was here, and M4a made it false. A demo waiting for approval owes
+nothing and has failed at nothing; a demo on day 8 was never asked for a card.
+Both are the same new shape: **a granted window that has not opened, or has
+closed.** So the lock now means *you owe us, you never paid, or your access was
+time-boxed and this is not that time.*
+
+They are also the two places where the dashboard lock and the CAPTURE BLOCK
+agree, which is otherwise rare here. A pending workspace must not record either:
+the usual "evidence survives every payment problem" reasoning protects a
+relationship that exists, and there is not one yet.
+
+WHAT SCOPES THE TRIAL LOCK, AND WHY IT IS NOT A FLAG OR A DATE
+--------------------------------------------------------------
+It could lock out grandfathered free organisations, which is the one outcome the
+owner ruled out, and nobody has production access to count them. So it is scoped
+by CONSTRUCTION: it fires only on ``approval_status == "approved"``, a column
+nothing but the demo route writes, and migration 0064 back-fills nothing. Every
+organisation that already exists holds NULL and is exempt without anybody
+counting anything — no cutoff date to be wrong the moment it passes, and no
+setting whose default decides whether real customers keep their dashboards.
 """
 
 from __future__ import annotations
@@ -85,6 +107,10 @@ SUBSCRIPTION_INACTIVE = "subscription_inactive"   # capture-side name, unchanged
 # client already switching on them keep working.
 EVALUATION_EXPIRED = "evaluation_expired"
 EVALUATION_CREDITS_EXHAUSTED = "evaluation_credits_exhausted"
+# M4a — the only new reason this phase adds, and it is genuinely new: no existing
+# string describes "signed up, waiting for a human". Reusing `trial_expired` for
+# it would tell someone whose clock has not started that it has run out.
+ACCOUNT_PENDING = "account_pending"
 
 
 @dataclass(frozen=True)
@@ -111,6 +137,56 @@ def on_a_paid_plan(org) -> bool:
     """
     return (org.plan_tier or "").strip().lower() not in {"", "free"}
 
+
+def entitlement_is_earned(org, now: datetime | None = None) -> bool:
+    """False when this org's tier was left behind by a LAPSED evaluation offer (M4a).
+
+    THE ONE PREDICATE entitlement decisions route through, and it is deliberately
+    TIER-AGNOSTIC. The obvious shape — ``on_paid_premium(org)``, testing
+    ``plan_tier == "premium"`` directly — is what the plan specified and what this
+    function replaced, because re-breaking it proved the obvious shape silently
+    kills :data:`judge_routing.PLATFORM_KEY_TIERS`: with the tier hardcoded in
+    two places, deleting the constant's membership test changed no behaviour at
+    all, and adding ``"max"`` to that constant would have granted nothing while
+    appearing to. The constant decides WHICH tiers are privileged; this decides
+    whether the tier a row carries means anything. One job each.
+
+    ``plan_tier="premium"`` needs the second question asked at all because it has
+    two meanings now that Premium is sold. An evaluation offer sets exactly that
+    string, and ``evaluation_lock``'s docstring explains at length why leaving it
+    there when the window shuts is deliberate rather than a bug. So the tier
+    alone can no longer answer "is this org a customer?", while five entitlements
+    were still asking it that way — including the one that spends Foxy's own LLM
+    key.
+
+    The row already carries the distinguishing fact, and ``evaluation_offer_id``
+    has exactly three writers, which is what makes this sound:
+
+    * ``billing.signup`` with an offer, and ``billing.redeem_offer`` — SET it, at
+      the same moment they set the tier. So "premium with an offer" can only ever
+      mean an evaluation.
+    * ``end_evaluation`` — CLEARS it, on every purchase path and, since M0, on
+      staff activation. An evaluator who buys therefore reads earned.
+    * expiry — writes nothing. A lapsed evaluator keeps the marker forever, which
+      is precisely how it stays distinguishable.
+
+    A LIVE offer still counts as earned. Not needing your own provider key is most
+    of what a judge offer is FOR, and narrowing this to money-only would have
+    gutted the offer while claiming to fix a leak. The window closing is the
+    event that withdraws it, and ``evaluation_lock`` owns that comparison — a
+    second copy of it here is a second place for it to be wrong.
+    """
+    if not getattr(org, "evaluation_offer_id", None):
+        return True
+    return evaluation_lock(org, now) is None
+
+
+# `on_paid_premium` and `evaluation_is_live` were here, exactly as the plan
+# specified them, and both folded into `entitlement_is_earned` above. Named in
+# case somebody comes looking: the tier-specific version made
+# judge_routing.PLATFORM_KEY_TIERS dead code, which re-breaking caught and
+# review would not have. The reasoning that was in their docstrings moved with
+# them rather than being deleted.
 
 def grace_ends_at(org) -> datetime | None:
     """When a ``past_due`` org stops being given the benefit of the doubt.
@@ -229,6 +305,13 @@ def card_lock(org) -> Condition | None:
 #: One message for both surfaces. The expiry is the same fact whether it is
 #: refusing a capture or explaining a locked dashboard, and the action is the
 #: same action, so saying it twice in two voices would only invite drift.
+#: Shared by the capture block and, since M4a, the dashboard's trial lock. One
+#: fact ends both, so one sentence says it — the alternative is two wordings of
+#: "your trial ended" that nothing keeps in step.
+_TRIAL_EXPIRED_MESSAGE = (
+    "Your 7-day trial has ended. Upgrade to continue capturing events."
+)
+
 _EVALUATION_EXPIRED_MESSAGE = (
     "Your evaluation offer has ended. Upgrade to unlock your workspace and "
     "continue capturing events — everything you already recorded is kept, and "
@@ -329,8 +412,130 @@ def end_trial(org) -> None:
     Safe on an org that never had a trial: the field is already NULL. This does
     NOT grant one — only the free tier does that, and only from
     ``set_organization_plan`` and signup.
+
+    M4a: it also clears a pending demo marker, because somebody who bought is no
+    longer an applicant waiting in a queue and should not appear in one. That is
+    DATA HYGIENE, not the safety property — ``awaiting_approval`` independently
+    refuses to call a paying org pending, so a purchase path that never reaches
+    this function still cannot lock a customer out. Two different jobs: this one
+    keeps the stored row honest for a SQL query; that one keeps the behaviour
+    right regardless.
     """
     org.trial_ends_at = None
+    if getattr(org, "approval_status", None) == "pending":
+        org.approval_status = None
+
+
+_ACCOUNT_PENDING_MESSAGE = (
+    "We're reviewing your request for a demo workspace. You'll get an email as "
+    "soon as it's approved, and your 7 days start then — not now."
+)
+
+
+def awaiting_approval(org) -> bool:
+    """True while a demo signup is waiting for a human (M4a).
+
+    Reads ``== "pending"``, never ``!= "approved"``. NULL is not a state this
+    feature owns: it means the organisation did not arrive through the demo route
+    at all, which is true of every row that predates migration 0064 and of every
+    org a purchase creates. Phrasing it as a negation would lock all of them out
+    on deploy.
+
+    MONEY OUTRANKS THE QUEUE, and this clause is load-bearing rather than tidy.
+    Somebody who signs up, is not willing to wait for a human, and buys a plan
+    must not still be told we are reviewing their request — that is the M0 defect
+    exactly (register #101's sibling): a purchase that changes nothing because
+    some other field was left behind. ``end_trial`` also clears the marker on all
+    four purchase paths so the stored row is truthful and a queue can filter it
+    in SQL, but the guarantee lives HERE: a fifth purchase path that forgets to
+    call it still cannot lock a paying customer out.
+    """
+    if on_a_paid_plan(org):
+        return False
+    return (getattr(org, "approval_status", None) or "").strip().lower() == "pending"
+
+
+def pending_lock(org) -> Condition | None:
+    """A workspace nobody has approved yet cannot be used (M4a).
+
+    Locking rather than showing an empty dashboard is the honest version: there
+    is nothing in there and nothing the person can do about it, and a working-
+    looking page that records nothing is worse than a sentence explaining why.
+    ``/v1/auth/`` and ``/v1/billing/`` stay reachable through ``_GATE_EXEMPT``,
+    so they can still sign out — and still buy a plan instead of waiting, which
+    is the one action that resolves this without anybody's approval.
+    """
+    if not awaiting_approval(org):
+        return None
+    return Condition(ACCOUNT_PENDING, _ACCOUNT_PENDING_MESSAGE)
+
+
+def trial_lock(org, now: datetime | None = None) -> Condition | None:
+    """Day 7 closes an approved demo's dashboard (M4a). NEW — and the dangerous one.
+
+    Until now trial expiry lived only in ``capture_block``: a free org past its
+    trial kept reading its dashboard and simply stopped recording. The owner
+    wants day 7 to lock.
+
+    THE SCOPE IS THE WHOLE PROBLEM
+    ------------------------------
+    Existing free organisations are grandfathered by an explicit owner decision,
+    and nobody has production access to count how many there are. So this is
+    scoped **by construction** rather than by a number: the first condition is
+    ``approval_status == "approved"``, and that column is written by nothing
+    except the demo route. Every organisation that existed before migration 0064
+    holds NULL and can never satisfy it — no cutoff date, no census, no way for
+    the answer to drift as time passes.
+
+    The other two conditions are not redundant with it, they are the ones that
+    keep it true afterwards. ``plan_tier == "free"`` means an approved demo that
+    BUYS stops being locked by this the moment the tier changes, and
+    ``trial_ends_at is not None`` means a demo still waiting (NULL until
+    approval) reads as *not started* rather than *expired* — the same reading
+    ``capture_block``'s trial branch has always taken, confirmed rather than
+    assumed. Since M3b every purchase path also clears the stamp, so a paying
+    customer carrying a stale one — precisely the row a scoping error would lock
+    out — no longer exists either.
+
+    It emits ``trial_expired``, which is already in the shared vocabulary and
+    already has dashboard copy, so this lock needs no new wording anywhere. The
+    message is ``capture_block``'s, word for word: the same fact ends both, and
+    two sentences saying it differently is how they drift apart.
+    """
+    if not (getattr(org, "approval_status", None) or "").strip().lower() == "approved":
+        return None
+    if (org.plan_tier or "").strip().lower() != "free":
+        return None
+    ends = _aware(getattr(org, "trial_ends_at", None))
+    if ends is None or (now or datetime.now(timezone.utc)) < ends:
+        return None
+    return Condition(TRIAL_EXPIRED, _TRIAL_EXPIRED_MESSAGE)
+
+
+def approve_demo(org, now: datetime | None = None) -> None:
+    """A human said yes — start the demo, and start its clock now (M4a).
+
+    THE CLOCK STARTS HERE AND NOWHERE ELSE. That is the whole reason approval is
+    a state rather than a boolean somebody flips: reviewing a request takes a day
+    or two, so a ``trial_ends_at`` stamped at signup would quietly hand out a
+    five-day demo and call it seven. Signup deliberately leaves the field NULL,
+    which ``capture_block`` and ``trial_lock`` both already read as *not started*
+    rather than *expired* — so the window between signing up and being approved
+    costs the applicant nothing.
+
+    Sits beside ``end_trial`` and ``end_evaluation`` for the same reason those
+    exist: the two fields have to move together, and a caller that sets one is a
+    caller that will eventually forget the other.
+
+    Idempotent in the only sense that matters — approving twice re-starts the
+    clock, which is what a staff member pressing the button again is asking for.
+    It is NOT a way to grant a trial to an arbitrary org: ``approval_status`` is
+    written by the demo route, and a caller has to have decided this org belongs
+    in that queue before it gets here.
+    """
+    org.approval_status = "approved"
+    org.trial_ends_at = ((now or datetime.now(timezone.utc))
+                         + timedelta(days=get_settings().trial_days))
 
 
 def dashboard_lock(org, now: datetime | None = None) -> Condition | None:
@@ -347,8 +552,25 @@ def dashboard_lock(org, now: datetime | None = None) -> Condition | None:
     "your payment failed" than "add a card" — the first is what is actually
     costing them access, and the card they would be asked for is very likely the
     one that just declined.
+
+    M4a adds two, at the two ends:
+
+    ``pending_lock`` goes FIRST because it is the most specific state there is —
+    the workspace has not been approved, so it has no plan, no subscription and
+    no card to have a problem with, and any other gate that spoke would describe
+    a relationship that has not started.
+
+    ``trial_lock`` goes ahead of the CARD gate rather than last. A demo whose 7
+    days are up is on the free tier, so the subscription gate cannot fire on it
+    and the order between those two is unobservable — but the card gate can, in a
+    deployment that has set a cutoff, and "your trial ended, upgrade" is the true
+    answer where "add a card" is a policy detail that would not unlock anything.
     """
-    return evaluation_lock(org, now) or subscription_lock(org, now) or card_lock(org)
+    return (pending_lock(org)
+            or evaluation_lock(org, now)
+            or trial_lock(org, now)
+            or subscription_lock(org, now)
+            or card_lock(org))
 
 
 def capture_block(org, now: datetime, pending: int = 1) -> Condition | None:
@@ -377,14 +599,25 @@ def capture_block(org, now: datetime, pending: int = 1) -> Condition | None:
 
     Deliberately unchanged by D1: ``past_due`` and ``incomplete`` lock the
     dashboard and DO NOT appear here. See the module docstring.
+
+    M4a puts the pending state ahead of everything, and this is one of the two
+    places where the capture side and the dashboard side genuinely agree: a
+    workspace nobody has approved must not record either. It is not the usual
+    "evidence survives every payment problem" case — there is no relationship
+    yet to preserve evidence for, and a demo that captures before approval is the
+    free-access farming the approval exists to stop.
     """
+    # NOT named `pending` — that is this function's batch-size parameter, and
+    # shadowing it turned `pending > 0` below into `None > 0`, a TypeError on
+    # every ingest by an org holding an evaluation offer. Caught by the full
+    # suite, not by this phase's own guards.
+    unapproved = pending_lock(org)
+    if unapproved is not None:
+        return unapproved
     if ((org.plan_tier or "").strip().lower() == "free"
             and org.trial_ends_at is not None
             and now >= _aware(org.trial_ends_at)):
-        return Condition(
-            TRIAL_EXPIRED,
-            "Your 7-day trial has ended. Upgrade to continue capturing events.",
-        )
+        return Condition(TRIAL_EXPIRED, _TRIAL_EXPIRED_MESSAGE)
     if on_a_paid_plan(org) and (org.subscription_status or "").strip().lower() in ENDED:
         return Condition(
             SUBSCRIPTION_INACTIVE,

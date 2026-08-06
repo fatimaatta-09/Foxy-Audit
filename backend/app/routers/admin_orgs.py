@@ -43,6 +43,10 @@ class OrgListItem(BaseModel):
     deleted: bool = False
     contact_email: str | None = None
     created_at: str | None = None
+    #: M4a. NULL for every organisation that did not arrive through the demo
+    #: route — which is every row older than migration 0064, and every org a
+    #: purchase creates. "pending" is what M4c's approvals queue filters on.
+    approval_status: str | None = None
 
 
 class OrgDetail(OrgListItem):
@@ -64,9 +68,10 @@ class PlanRequest(BaseModel):
     #: What the customer actually paid against, when they paid outside the
     #: payment processor — an invoice number, a payment-request id. Free text on
     #: purpose: it names somebody else's record, and we cannot validate the
-    #: shape of every one of them. It is recorded on the AdminAction and nowhere
-    #: else; deliberately NOT written to `invoices`, whose `stripe_invoice_id` is
-    #: UNIQUE NOT NULL and means a Stripe invoice.
+    #: shape of every one of them. Recorded on the AdminAction, and — since M3f
+    #: widened `invoices` to be processor-neutral — also as a customer-visible
+    #: receipt with `provider="manual"`. It is NOT written to
+    #: `stripe_invoice_id`, which still means a Stripe invoice and nothing else.
     payment_reference: str | None = Field(default=None, max_length=128)
 
 
@@ -76,6 +81,7 @@ def _list_item(o: Organization) -> OrgListItem:
         subscription_status=o.subscription_status, suspended=bool(o.suspended),
         deleted=o.deleted_at is not None, contact_email=o.contact_email,
         created_at=o.created_at.isoformat() if o.created_at else None,
+        approval_status=o.approval_status,
     )
 
 
@@ -303,6 +309,10 @@ class OrgOverview(BaseModel):
     trial_ends_at: str | None = None
     contact_email: str | None = None
     created_at: str | None = None
+    #: M4a. NULL for every organisation that did not arrive through the demo
+    #: route — which is every row older than migration 0064, and every org a
+    #: purchase creates. "pending" is what M4c's approvals queue filters on.
+    approval_status: str | None = None
     ip_allowlist: list[str] = []
     user_count: int = 0
     api_key_count: int = 0
@@ -382,6 +392,7 @@ def org_overview(
         suspended_reason=org.suspended_reason, deleted=org.deleted_at is not None,
         monthly_log_quota=org.monthly_log_quota, trial_ends_at=_iso(org.trial_ends_at),
         contact_email=org.contact_email, created_at=_iso(org.created_at),
+        approval_status=org.approval_status,
         ip_allowlist=allowlist, user_count=user_count, api_key_count=key_count,
         active_key_count=active_keys, ledger_height=last_seq, ledger_head=head_hash,
         total_logs=total_logs, breaches=breaches,
@@ -692,6 +703,48 @@ def extend_trial(
                         ip=client_ip(request))
     db.commit()
     return {"status": "updated", "trial_ends_at": new_end.isoformat()}
+
+
+@router.post("/v1/organizations/{org_id}/approve", dependencies=[Depends(require_step_up_dep)])
+def approve_organization(
+    org_id: str,
+    request: Request,
+    staff: StaffUser = Depends(require_platform_role("operator")),
+    db: Session = Depends(get_db),
+):
+    """Approve a pending demo workspace and start its 7 days (M4a · register #94's sibling).
+
+    Shipped in the same phase as the pending state on purpose. A state a signup
+    can enter and nothing can leave is a trap door, and M4c — which builds the
+    queue this button belongs to — would otherwise have to be a backend phase in
+    disguise. The console can arrive later; the exit must not.
+
+    Refuses anything that is not pending, rather than quietly stamping a fresh
+    trial on it. ``approve`` on an already-approved org would restart the clock,
+    and on an org that never came through the demo route (``approval_status`` is
+    NULL — every organisation older than migration 0064) it would enrol a
+    grandfathered customer into the trial lock they are exempt from. Both are
+    silent damage, so both are a 409.
+
+    A REFUSAL IS NOT EXPRESSED HERE. There is no ``rejected`` value: ``suspend``
+    already refuses a workspace, on every auth channel, with its own message and
+    its own audit action. Adding a second vocabulary for the same outcome would
+    put a new reason string on three surfaces to say a word this one already says.
+    """
+    org = _load_active_org(db, org_id)
+    if not billing_state.awaiting_approval(org):
+        raise HTTPException(status_code=409, detail={
+            "code": "not_pending",
+            "message": "This workspace is not waiting for approval.",
+        })
+    billing_state.approve_demo(org)
+    record_admin_action(db, staff, "org.approve", target_org_id=org.id,
+                        target_type="organization", target_id=str(org.id),
+                        detail={"trial_ends_at": org.trial_ends_at.isoformat()},
+                        ip=client_ip(request))
+    db.commit()
+    return {"status": "approved", "org_id": str(org.id),
+            "trial_ends_at": org.trial_ends_at.isoformat()}
 
 
 @router.post("/v1/organizations/{org_id}/offboard", dependencies=[Depends(require_step_up_dep)])

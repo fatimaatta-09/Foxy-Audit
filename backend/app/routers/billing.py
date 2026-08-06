@@ -238,10 +238,20 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
         raise HTTPException(status_code=409, detail="an account already exists for this email")
 
     plaintext_key, key_hash = _generate_api_key()
+    # M4a — the demo now waits for a human, when the deployment says so. Two
+    # things move together and must: the org is created PENDING, and its 7-day
+    # clock is NOT started. Approval starts it, because approving takes a day or
+    # two and stamping it here would quietly hand someone a five-day demo.
+    #
+    # An evaluation offer is never pending. That relationship was already
+    # approved by whoever issued the code, and routing a judge through a queue
+    # they have already been invited past would be absurd.
+    pending = get_settings().demo_approval_required and not offer
     org = Organization(
         name=(payload.name or email_addr).strip()[:255], api_key_hash=key_hash,
         plan_tier="premium" if offer else "free", contact_email=email_addr,
-        trial_ends_at=None if offer else datetime.now(timezone.utc) + timedelta(
+        approval_status="pending" if pending else None,
+        trial_ends_at=None if (offer or pending) else datetime.now(timezone.utc) + timedelta(
             days=get_settings().trial_days),
         monthly_log_quota=None if offer else get_settings().quota_for("free"),
         evaluation_offer_id=offer["offer_id"] if offer else None,
@@ -275,6 +285,18 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
         "status": "created", "org_id": str(org.id), "api_key": plaintext_key,
         "message": "Check your email to set your password.",
     }
+    if pending:
+        # Additive, and honest at the one moment it matters. Telling someone only
+        # to set a password, when the workspace behind it will answer 402 to
+        # everything until a human looks at it, is the "broken page" outcome this
+        # phase exists to avoid. The sale page's own copy is M4b/M4d's; this is
+        # what the API says about itself.
+        response["approval_status"] = "pending"
+        response["message"] = (
+            "Check your email to set your password. We're reviewing your request "
+            "for a demo workspace and will email you when it's approved — your 7 "
+            "days start then."
+        )
     if offer:
         response["evaluation_offer"] = {
             "label": "Premium judge access",

@@ -105,7 +105,10 @@ def _to_config(row: OrgPolicy, org: Organization | None = None) -> "PolicyConfig
         gemini_key_set=bool((row.gemini_key_enc or "").strip()),
         openai_key_set=bool((row.openai_key_enc or "").strip()),
         plan_tier=tier,
-        platform_keys_allowed=platform_keys_allowed(tier),
+        # The ORG, not `tier` (M4a): premium alone no longer distinguishes a
+        # paying customer from an evaluator, and this boolean is what the
+        # dashboard uses to decide whether to OFFER platform keys at all.
+        platform_keys_allowed=platform_keys_allowed(org),
         judge_gemini_model=row.gemini_judge_model,
         judge_openai_model=row.openai_judge_model,
         # Resolved, not reported raw: an org pinned to a model that has since been
@@ -232,7 +235,7 @@ def update_policies(
     # ── Per-tenant AI Judge selection. Foxy's platform keys are a paid privilege:
     #    the tier check is SERVER-SIDE and authoritative (judge_routing re-checks
     #    it again at grading time, so a later downgrade also takes effect). ──
-    if body.judge_key_mode == "platform" and not platform_keys_allowed(org.plan_tier):
+    if body.judge_key_mode == "platform" and not platform_keys_allowed(org):
         raise HTTPException(
             status_code=403,
             detail="Foxy's managed provider keys require the premium plan; "
