@@ -1412,6 +1412,11 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
 .lock-ev svg{flex-shrink:0;width:58px;height:13px;margin-top:3px;}
 .lock-ev.rec{background:var(--surf2);border-color:var(--line);color:var(--safe-ink);}
 .lock-ev.stop{background:rgba(255,200,61,.13);border-color:var(--warn-bg);color:var(--warn-ink);}
+/* M4a · not-started. Deliberately the QUIETEST of the three: `.stop` is amber
+   because something a customer relied on has broken, and nothing has broken
+   here — they applied an hour ago. Warning-coloured chrome on a first screen
+   would invent a problem to go with the wait. */
+.lock-ev.wait{background:var(--surf2);border-color:var(--line);color:var(--ink);}
 .lock-ev-t{font-size:12px;font-weight:800;line-height:1.35;}
 /* --ink2, never --muted2: this is live text and muted2 is 3.01:1 dark / 2.71:1
    light. §13's contrast guard exists to catch exactly that substitution. */
@@ -2909,7 +2914,9 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
      for, and a lock with no way out is a support ticket, not a payment wall. -->
 <div class="lock-ov" id="billLock" role="dialog" aria-modal="true" aria-labelledby="billLockT">
   <div class="clay pad lockcard">
-    <div class="eyebrow" style="margin-bottom:7px;">billing</div>
+    <!-- Set per condition by render(): every state here is a billing one except
+         M4a's pending-approval, which is not. -->
+    <div class="eyebrow" id="billLockKind" style="margin-bottom:7px;">billing</div>
     <div class="lock-t" id="billLockT"></div>
     <!-- The server's own `message`, verbatim. Not a second copy of that sentence
          kept here, so the two can never drift out of agreement. -->
@@ -5827,7 +5834,21 @@ async function loadLoginHistory(scope){
 
      E3 adds the evaluation pair. Both say "upgrade", because buying a plan is
      the only thing that clears either — the offer's window has closed or its
-     allowance is spent, and neither is a card problem a portal could fix. */
+     allowance is spent, and neither is a card problem a portal could fix.
+
+     M4a adds the first condition with NO ACTION BEHIND IT. Every other row here
+     names something the customer can go and do; a workspace waiting for a human
+     reviewer has nothing — no card to add, no plan a portal could fix, nobody to
+     hurry. So its label is empty, and an empty one is what tells the renderer to
+     draw no button rather than a control that sits there inviting a click and
+     then does nothing.
+
+     `act` is still present and still real. It is `wait`, which `run` refuses
+     outright: the fall-through for an unrecognised action is a POST to
+     /v1/billing/portal, and a workspace that has never paid has no billing
+     account, so that button would have answered "there is no billing account to
+     open yet" — a dead end wearing a primary button. The value is named for the
+     state rather than left blank, so the refusal reads as chosen. */
   var REASON={
     card_required:          {cta:'Add payment method',        act:'card'},
     subscription_incomplete:{cta:'Finish setting up billing',  act:'portal'},
@@ -5835,7 +5856,8 @@ async function loadLoginHistory(scope){
     subscription_cancelled: {cta:'See upgrade options',        act:'upgrade'},
     trial_expired:          {cta:'See upgrade options',        act:'upgrade'},
     evaluation_expired:     {cta:'See upgrade options',        act:'upgrade'},
-    evaluation_credits_exhausted:{cta:'See upgrade options',   act:'upgrade'}
+    evaluation_credits_exhausted:{cta:'See upgrade options',   act:'upgrade'},
+    account_pending:        {cta:'',                          act:'wait'}
   };
   /* A reason this build has not heard of still has to render something the
      customer can act on — a newer server can add one at any time. */
@@ -5852,14 +5874,21 @@ async function loadLoginHistory(scope){
     return i>0?[msg.slice(0,i+1),msg.slice(i+2)]:[msg||'',''];
   }
 
-  /* Five links of the hash chain. The last one goes dashed when capture has
-     stopped — the chain is the product, and whether it is still extending is
-     the one fact this screen exists to get right. */
-  function chain(broken){
+  /* Five links of the hash chain, dashed from `solid` onward. The chain is the
+     product, and how far it got is the one fact this screen exists to say:
+
+       5  every link solid      — capture is running
+       4  the last one dashed   — capture has stopped
+       0  none of them solid    — capture has never started
+
+     The third is M4a's. A workspace waiting for approval has an empty ledger,
+     and the same glyph that says "this stopped" would have said it about a chain
+     that was never there. Same device, one number, no new artwork. */
+  function chain(solid){
     var s='<svg viewBox="0 0 62 14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">';
     for(var i=0;i<5;i++){
       s+='<rect x="'+(1+i*12)+'" y="1" width="12" height="12" rx="6"'
-        +((broken&&i===4)?' stroke-dasharray="2.6 2.6"':'')+'/>';
+        +((i>=solid)?' stroke-dasharray="2.6 2.6"':'')+'/>';
     }
     return s+'</svg>';
   }
@@ -5869,14 +5898,30 @@ async function loadLoginHistory(scope){
      recording and leaves the dashboard open. `null` means we have not been able
      to ask — draw nothing rather than assert something about an audit trail we
      have not checked. */
-  function evidence(blocked){
+  function evidence(blocked, notStarted){
+    /* Checked FIRST, and it has to be. A workspace waiting for approval is
+       refused capture exactly like a cancelled one and arrives here with the
+       same `true`, so the stopped variant below would have reassured it that
+       "everything captured so far stays intact" — about an empty ledger. True
+       and useless is still the wrong thing to put on a first screen.
+
+       No apostrophes in here, and no naming the field this arrives on: the guard
+       below strips single-quoted strings before grepping, so one apostrophe in a
+       comment pairs with the next real quote and leaves the markup exposed to
+       it. That is how this comment first failed the test it is explaining. */
+    if(notStarted)
+      return '<div class="lock-ev wait">'+chain(0)+'<div>'
+        +'<div class="lock-ev-t">Nothing is being recorded yet</div>'
+        +'<div class="lock-ev-d">Capture begins when your workspace is approved. '
+        +'Your API key is already issued and works from that moment.</div>'
+        +'</div></div>';
     if(blocked===true)
-      return '<div class="lock-ev stop">'+chain(true)+'<div>'
+      return '<div class="lock-ev stop">'+chain(4)+'<div>'
         +'<div class="lock-ev-t">New evidence is not being recorded</div>'
         +'<div class="lock-ev-d">Everything captured so far stays intact, verifiable and exportable.</div>'
         +'</div></div>';
     if(blocked===false)
-      return '<div class="lock-ev rec">'+chain(false)+'<div>'
+      return '<div class="lock-ev rec">'+chain(5)+'<div>'
         +'<div class="lock-ev-t">Your evidence is still being recorded</div>'
         +'<div class="lock-ev-d">The chain keeps extending while this is open, and nothing already captured is affected.</div>'
         +'</div></div>';
@@ -5886,6 +5931,14 @@ async function loadLoginHistory(scope){
   /* Every action POSTs to /v1/billing/*, which auth.py exempts from the gate, so
      they work from inside the locked state. That is the point of the exemption. */
   function run(kind,btn,say){
+    /* `wait` has no action and must never acquire one by falling through. The
+       default below is a POST to /v1/billing/portal, and the workspace this
+       state belongs to has never paid, so that request answers 400 and the
+       customer is told there is no billing account to open — about an account
+       nobody asked them to have. Render draws no button for it; this is the
+       second lock on the same door, because a future caller of `run` will not
+       be reading the table. */
+    if(kind==='wait')return;
     if(kind==='upgrade'){
       /* Not locked: the upgrade page is reachable and is the fuller surface. */
       if(!$('billLock').classList.contains('on')){ window.go('upgrade',null); return; }
@@ -5996,9 +6049,13 @@ async function loadLoginHistory(scope){
       +'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">'
       +'<path d="M12 3.6 21 19H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg></span>'
       +'<div class="ann-body"><b>'+esc(p[0])+'</b> '+esc(p[1]+tail)+'</div>'
-      +'<button class="ann-act" type="button" id="billBanGo">'+esc(c.cta)+' →</button>';
+      /* No label, no action, no button — same rule as the overlay. Unreachable
+         today, because the only condition without one also locks and a locked
+         state clears this banner; kept in step anyway, since `$('billBanGo')`
+         would be null and the wiring below would throw. */
+      +(c.cta?'<button class="ann-act" type="button" id="billBanGo">'+esc(c.cta)+' →</button>':'');
     var go=$('billBanGo');
-    go.onclick=function(){ run(c.act,go,function(m){ if(m)window.showToast(m); }); };
+    if(go)go.onclick=function(){ run(c.act,go,function(m){ if(m)window.showToast(m); }); };
   }
 
   function clearBanner(){ var b=$('billBanner'); b.className='annbanner'; b.innerHTML=''; }
@@ -6015,13 +6072,26 @@ async function loadLoginHistory(scope){
       var p=split(st.message||FALLBACK_MSG);
       $('billLockT').textContent=p[0];
       $('billLockD').textContent=p[1];
-      $('billLockEv').innerHTML=evidence(st.capture_blocked);
+      /* Asked of the table via `c`, never of the server field it came from.
+         Nothing inside this branch may re-read that field — it is the rule the
+         whole D4 split rests on, and there is a guard that greps for it here. */
+      $('billLockEv').innerHTML=evidence(st.capture_blocked, c.act==='wait');
+      /* The card is labelled for the condition, not for the department. Every
+         other state here really is billing; a workspace waiting for a human
+         review has no billing at all, and "BILLING" over "we're reviewing your
+         request" is the first thing a new demo user would read as "something is
+         wrong with my payment". */
+      var kind=$('billLockKind'); if(kind)kind.textContent=c.act==='wait'?'access':'billing';
       var go=$('billLockGo');
       /* D4 relabelled an upgrade-shaped condition "Manage billing" because the
          action behind it was the portal. E3 made the action the real one, so
-         the button says what the table says again. */
+         the button says what the table says again. M4a adds the case where the
+         table says nothing: no label means no action exists, and the button is
+         removed rather than disabled. A disabled control still says "there is
+         something here for you, just not yet", and there is not. */
+      var acts=!!c.cta;
       go.textContent=c.cta;
-      go.onclick=function(){ run(c.act,go,function(m){ $('billLockErr').textContent=m; }); };
+      go.onclick=acts?function(){ run(c.act,go,function(m){ $('billLockErr').textContent=m; }); }:null;
       ov.classList.add('on');
       document.body.style.overflow='hidden';
       /* A fresh open starts from the CTA, never mid-way through somebody else's
@@ -6030,8 +6100,20 @@ async function loadLoginHistory(scope){
       if(!wasOn){
         $('billLockErr').textContent='';
         $('billLockPlans').innerHTML=''; go.style.display='';
-        try{ go.focus(); }catch(e){}
+        /* Focus has to land somewhere inside an aria-modal dialog. With no CTA
+           the first real control is "Sign out", which is also the only thing
+           this state can act on. */
+        try{ (acts?go:($('billLockOut')||go)).focus(); }catch(e){}
       }
+      /* AFTER the fresh-open reset, not instead of it. That reset undoes the
+         hide `chooser()` applies when it swaps the CTA for a plan list, and it
+         has to stay inside `if(!wasOn)` or a throttled re-render wipes a plan
+         list the customer is reading. A condition with no action has no CTA to
+         restore, so the hide is re-applied here — outside the branch, because it
+         is true on every render and there is no chooser in this state to fight
+         with. Moving the line above into the main path instead looked tidier and
+         would have re-shown the button under an open chooser. */
+      if(!acts)go.style.display='none';
       return;
     }
 

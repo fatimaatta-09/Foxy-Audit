@@ -102,12 +102,52 @@ def test_every_condition_carries_its_own_action(lockjs):
     the customer. A table entry with no `act` renders a lock with no way out."""
     table = lockjs[lockjs.index("var REASON={"):lockjs.index("var UNKNOWN=")]
     rows = re.findall(r"^\s{4}[a-z_]+:\s*\{(.*)\}", table, re.M)
-    assert len(rows) == 7, f"expected seven conditions, found {len(rows)}"
+    # Eight since M4a. The count is a "did you forget an entry" tripwire, so
+    # BUMPING it is the maintenance it asks for — it fires precisely when the
+    # table changes and makes somebody look at the new row. Loosening it to >= or
+    # deleting it is the thing that would be a weakening.
+    assert len(rows) == 8, f"expected eight conditions, found {len(rows)}"
     for row in rows:
         for field in ("cta:", "act:"):
             assert field in row, f"a condition is missing {field}: {row}"
+    # `act` is required of every row, INCLUDING the one with nothing to do — its
+    # value is what stops `run` falling through to the billing portal. An empty
+    # `cta` is the only thing allowed to be blank, and only one row may be.
+    blank = [r for r in rows if re.search(r"cta:\s*''", r)]
+    assert len(blank) == 1, f"expected exactly one action-less condition, found {len(blank)}"
+    assert not re.search(r"act:\s*''", " ".join(rows)), (
+        "a condition has no action at all — `run` would fall through to the portal")
     assert "var UNKNOWN=" in lockjs, "an unrecognised reason has nothing to render"
 
+
+def test_a_condition_with_no_action_renders_no_button(lockjs):
+    """M4a · the first state where the customer has nothing to go and do.
+
+    A control that sits there looking pressable and then does nothing is worse
+    than no control, and a DISABLED one is barely better — it still says "there
+    is something here for you, just not yet", and there is not. So the button is
+    removed, and what removes it is the absence of a label rather than a check
+    against the reason string: the table stays the one place that decides.
+    """
+    body = lockjs[lockjs.index("function render(st){"):lockjs.index("\n  var inflight")]
+    assert "var acts=!!c.cta" in body, (
+        "whether a condition has an action is no longer read off its label")
+    assert "if(!acts)go.style.display='none'" in body, (
+        "a condition with no action still renders its button")
+    assert "go.onclick=acts?" in body, (
+        "a button with no action is still being wired to run()")
+
+
+def test_the_no_op_action_cannot_fall_through_to_the_portal(lockjs):
+    """`run` ends in a POST to /v1/billing/portal for anything it does not
+    recognise. The workspace this state belongs to has never paid and has no
+    billing account, so that request answers 400 — a dead end reached by a route
+    nobody chose. The refusal is first in the function, before any branch."""
+    fn = lockjs[lockjs.index("function run(kind,btn,say){"):lockjs.index("var num=")]
+    assert "if(kind==='wait')return;" in fn, (
+        "the no-op action falls through to a billing request")
+    assert fn.index("kind==='wait'") < fn.index("kind==='upgrade'"), (
+        "the refusal is not the first thing run() does")
 
 def test_the_wording_of_a_condition_is_never_kept_here_as_well(lockjs):
     """The sentence naming the condition is on the wire, written once per reason
@@ -128,9 +168,27 @@ def test_the_wording_of_a_condition_is_never_kept_here_as_well(lockjs):
 # ── the audit trail, which is the product ───────────────────────────────────
 
 def test_capture_state_is_read_from_its_own_field(lockjs):
-    """Never from `locked`, and never inferred. The strip's three states are the
-    three values `capture_blocked` can hold."""
-    fn = lockjs[lockjs.index("function evidence(blocked){"):lockjs.index("/* Every action POSTs")]
+    """Never from `locked`, and never inferred.
+
+    M4a widened this deliberately. `capture_blocked` is a boolean and cannot
+    express a FOURTH state the strip now has to draw: a workspace waiting for
+    approval reads `true` there, exactly like a cancelled one, and would have
+    been told "everything captured so far stays intact" about an empty ledger.
+    So the not-started case arrives as its own argument and is checked first.
+
+    Every original tooth is still here — the started cases still switch on
+    `capture_blocked` exactly, the strip still may not read the dashboard lock,
+    and an unknown state still draws nothing.
+    """
+    fn = lockjs[lockjs.index("function evidence(blocked"):lockjs.index("/* Every action POSTs")]
+    # Both teeth are needed, and the obvious single one was neither. Comparing
+    # `fn.index("notStarted") < fn.index("blocked===true")` measures where the
+    # PARAMETER first appears — which is the signature, always first — so
+    # `if(false)` and `if(blocked===true&&notStarted)` both sailed through it.
+    assert re.search(r"if\(notStarted\)", fn), (
+        "the not-started branch is no longer reached by its own argument")
+    assert fn.index("lock-ev wait") < fn.index("lock-ev stop"), (
+        "a workspace that never captured anything falls into the stopped variant")
     assert "blocked===true" in fn and "blocked===false" in fn, (
         "the evidence strip is no longer switching on capture_blocked exactly")
     # String literals first — the markup names the .lock-ev classes. What is left
