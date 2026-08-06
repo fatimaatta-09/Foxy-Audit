@@ -351,6 +351,46 @@ def plan_from(data: dict) -> str | None:
     return None
 
 
+def amount_of(data: dict) -> tuple[int | None, str]:
+    """The total a customer actually paid, in MINOR UNITS, and its currency.
+
+    `details.totals.grand_total` and `currency_code`, read off Paddle's
+    transaction schema. Paddle sends the amount as a STRING in the lowest
+    denomination — "1000" is 10 USD, and also ¥1000, and also 1.000 KWD. It is
+    stored exactly as sent and never divided here: how many minor units make a
+    major one is a property of the currency (ISO 4217), and dividing by 100
+    everywhere understates yen 100x and overstates dinar 10x. Formatting is the
+    reader's job, and both surfaces already know how.
+
+    Returns (None, code) when the total is missing or not an integer, so an
+    unparseable amount becomes a dash rather than a zero.
+    """
+    code = str((data or {}).get("currency_code") or "usd").strip().lower()[:3] or "usd"
+    raw = (((data or {}).get("details") or {}).get("totals") or {}).get("grand_total")
+    if raw is None:
+        return None, code
+    try:
+        return int(str(raw).strip()), code
+    except (TypeError, ValueError):
+        log.warning("paddle transaction carried a non-integer grand_total")
+        return None, code
+
+
+def billing_period(data: dict) -> tuple[datetime | None, datetime | None]:
+    """`billing_period.starts_at` / `.ends_at`, both RFC 3339. A one-time charge
+    has no period, and None is the honest answer for it."""
+    bp = (data or {}).get("billing_period") or {}
+
+    def _p(v):
+        if not v:
+            return None
+        try:
+            return datetime.fromisoformat(str(v).replace("Z", "+00:00")).astimezone(
+                timezone.utc)
+        except ValueError:
+            return None
+    return _p(bp.get("starts_at")), _p(bp.get("ends_at"))
+
 def occurred_at(envelope: dict) -> datetime | None:
     """The event's own RFC-3339 timestamp, if it parses."""
     raw = (envelope or {}).get("occurred_at")

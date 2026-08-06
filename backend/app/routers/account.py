@@ -40,8 +40,20 @@ router = APIRouter()
 
 class InvoiceItem(BaseModel):
     id: str
-    stripe_invoice_id: str
-    amount_cents: int
+    #: M3f — ADDITIVE. Both shipped clients (the dashboard's invoice table and
+    #: `desktop/billing_data.invoice_rows`) read date/amount/currency/status/
+    #: period and none of them reads `stripe_invoice_id`, so widening this
+    #: response cannot break either. Checked before changing it.
+    provider: str = "stripe"                 # stripe | paddle | manual
+    #: What to show a customer who asks "which payment is this?" — the
+    #: processor's own id, or the reference a staff member recorded.
+    reference: str | None = None
+    #: Optional since M3f: only a genuine Stripe invoice has one, and only a
+    #: Stripe row can be resolved to a hosted PDF.
+    stripe_invoice_id: str | None = None
+    #: NULL when nobody recorded an amount — a staff activation records which
+    #: payment was seen, not its size. Rendered as a dash, never as zero.
+    amount_cents: int | None = None
     currency: str
     status: str
     period_start: str | None = None
@@ -103,7 +115,13 @@ def list_invoices(
     db: Session = Depends(get_db),
     limit: int = Query(default=24, ge=1, le=100),
 ):
-    """This org's billing history (populated by the Stripe webhook), newest first."""
+    """This org's payment history, newest first.
+
+    Every processor, and payments taken outside one. A card payment arrives from
+    the Paddle webhook; a payment invoiced directly arrives when a staff member
+    activates the plan and records the reference it was paid against. An org that
+    has never paid gets an empty list, which is the honest answer for it.
+    """
     rows = db.execute(
         select(Invoice)
         .where(Invoice.org_id == org.id)
@@ -112,7 +130,9 @@ def list_invoices(
     ).scalars().all()
     return [
         InvoiceItem(
-            id=str(i.id), stripe_invoice_id=i.stripe_invoice_id,
+            id=str(i.id), provider=i.provider,
+            reference=i.provider_ref or i.stripe_invoice_id,
+            stripe_invoice_id=i.stripe_invoice_id,
             amount_cents=i.amount_cents, currency=i.currency, status=i.status,
             period_start=i.period_start.isoformat() if i.period_start else None,
             period_end=i.period_end.isoformat() if i.period_end else None,

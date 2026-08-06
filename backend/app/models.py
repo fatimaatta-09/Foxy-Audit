@@ -841,14 +841,36 @@ class Invoice(Base):
     """Billing history for an org. RLS-scoped by org_id like audit_logs — a
     customer reads its OWN invoices; staff (superuser, GUC unset) read all."""
     __tablename__ = "invoices"
+    # What makes both M3f writers idempotent: a replayed Paddle webhook and a
+    # staff member pressing Apply twice land on the row already there. Declared
+    # here as well as in migration 0063 so the model and the schema agree —
+    # otherwise an autogenerate would propose dropping it.
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_ref", name="uq_invoices_provider_ref"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
-    stripe_invoice_id: Mapped[str] = mapped_column(
-        String(255), unique=True, index=True, nullable=False)
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    # ── M3f · the processor that took the money ────────────────────────────
+    # `stripe_invoice_id` keeps meaning EXACTLY what its name says: the id of a
+    # Stripe invoice. It is nullable now because rows from other processors do
+    # not have one — NOT so that a Paddle id or a Payoneer reference can be
+    # written into it. Overloading a column named for one processor is a lie
+    # about the table that the next reader has to un-learn.
+    provider: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="stripe")   # stripe|paddle|manual
+    #: The processor's own id (`txn_…`), or the reference a staff member typed
+    #: when a customer paid outside any processor. NULL for a legacy Stripe row.
+    provider_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_invoice_id: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True)
+    #: NULLABLE since M3f. A staff member activating a plan records WHICH payment
+    #: they saw, not how much it was — there is no amount field on that form. A
+    #: zero would say the customer paid nothing, which is the fake data this
+    #: project forbids, so an unrecorded amount is NULL and renders as a dash.
+    amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="usd")
     status: Mapped[str] = mapped_column(String(16), nullable=False)      # draft|open|paid|void|uncollectible
     period_start: Mapped[datetime | None] = mapped_column(

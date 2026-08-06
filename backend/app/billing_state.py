@@ -443,3 +443,62 @@ def describe(org, now: datetime | None = None) -> Condition:
             return Condition(SUBSCRIPTION_CANCELLED, blocked.message)
         return blocked
     return Condition(NONE, "No action needed.")
+
+
+def record_payment(db, org, *, provider: str, reference: str | None,
+                   amount_cents: int | None = None, currency: str = "usd",
+                   status: str = "paid",
+                   period_start=None, period_end=None) -> None:
+    """Write the customer-visible record of a payment (M3f · register #94).
+
+    ONE place, because two very different paths produce the same fact: the Paddle
+    webhook when a transaction completes, and `admin_orgs.set_organization_plan`
+    when a staff member types the reference a customer paid against. Before this,
+    the first lived only in `payment_events` (a staff webhook log, not a receipt)
+    and the second only in `admin_actions` — so a customer who had paid saw an
+    empty billing page either way.
+
+    WHAT THIS DELIBERATELY DOES NOT CARRY. No processor payload. #102 was opened
+    this week because `payload` was reachable through the staff data browser, and
+    a customer-visible table is a worse place for it than that one. An amount, a
+    currency, a date, a status and a reference is the whole receipt.
+
+    IDEMPOTENT on `(provider, provider_ref)`, which migration 0063 made UNIQUE:
+    a replayed webhook and a staff member pressing Apply twice both land on the
+    row that is already there. A reference of None cannot be deduplicated — NULLs
+    are distinct — so callers that have no reference get one row per call, and
+    both of this phase's callers always have one.
+
+    RLS: `invoices` is FORCE ROW LEVEL SECURITY with an `org_isolation` policy on
+    `org_id` (migration 0015). The GUC is set first for the same reason
+    `_handle_invoice` sets it — a no-op under the superuser the app connects as,
+    and required the moment anything runs under the confined `foxy_app` role.
+    """
+    from sqlalchemy import select as _select, text as _text
+
+    from .models import Invoice
+
+    db.execute(_text("SELECT set_config('app.current_org', :oid, true)"),
+               {"oid": str(org.id)})
+    if reference:
+        existing = db.execute(
+            _select(Invoice).where(Invoice.provider == provider,
+                                   Invoice.provider_ref == reference)
+        ).scalar_one_or_none()
+        if existing is not None:
+            if existing.org_id != org.id:
+                # The UNIQUE is global, which is right for a processor's own id
+                # but means a staff member reusing one reference across two orgs
+                # leaves the second without a receipt. That is silent to the
+                # customer either way; it should not also be silent to us.
+                log.warning("payment reference already recorded against another "
+                            "org; no receipt written for org %s", org.id)
+            return
+    db.add(Invoice(
+        org_id=org.id, provider=provider, provider_ref=reference,
+        stripe_invoice_id=None,          # only a real Stripe invoice ever has one
+        amount_cents=amount_cents,
+        currency=(currency or "usd")[:3].lower(),
+        status=(status or "paid")[:16],
+        period_start=period_start, period_end=period_end,
+    ))

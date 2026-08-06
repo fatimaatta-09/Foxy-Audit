@@ -5043,8 +5043,31 @@ async function loadLoginHistory(scope){
   const api=(path,opts)=>fetch(path,Object.assign({credentials:'same-origin'},opts||{}));
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num=n=>Number(n||0).toLocaleString();
-  const money=(cents,cur)=>{ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:(cur||'usd').toUpperCase()}).format((cents||0)/100); }
-    catch(e){ return ((cents||0)/100).toFixed(2)+' '+String(cur||'usd').toUpperCase(); } };
+  /* Two defects this phase makes reachable, both in one expression.
+
+     `(cents||0)` turned an unrecorded amount into $0.00 — telling a customer they
+     paid nothing. A staff activation records WHICH payment was seen, not how much
+     it was, so a null amount is now a dash.
+
+     `/100` was applied to every currency. Right for USD, wrong for the two other
+     kinds ISO 4217 has: ¥1000 IS ¥1000, and 1000 KWD is 1.000 KWD, so a flat
+     divisor understates yen 100x and overstates dinar 10x. The divisor now comes
+     from the currency's own minor-unit count, which Intl already knows —
+     maximumFractionDigits is 0 for JPY, 2 for USD, 3 for KWD — so there is no
+     hand-kept table here to fall out of date, and it agrees with
+     desktop/billing_data.py's ZERO_DECIMAL / THREE_DECIMAL by construction. */
+  const money=(cents,cur)=>{
+    if(cents===null||cents===undefined||cents==='') return '—';
+    const code=String(cur||'usd').toUpperCase();
+    const n=Number(cents); if(!Number.isFinite(n)) return '—';
+    try{
+      const f=new Intl.NumberFormat(undefined,{style:'currency',currency:code});
+      return f.format(n/Math.pow(10,f.resolvedOptions().maximumFractionDigits));
+    }catch(e){ return String(n)+' '+code; }
+  };
+  /* How the money arrived, in the customer's words — legible beside a card
+     payment without pretending the two are the same thing. */
+  const payVia=p=>({paddle:'card',stripe:'card',manual:'invoiced'})[String(p||'')]||'';
   const day=s=>{ if(!s)return '—'; try{ return new Date(s+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(e){ return s; } };
   const fmtD=s=>{ if(!s)return '—'; try{ return new Date(s).toLocaleDateString(); }catch(e){ return '—'; } };
   const td='padding:11px 10px;border-bottom:2px dashed var(--line);';
@@ -5144,12 +5167,23 @@ async function loadLoginHistory(scope){
           ?_iRows.map(i=>'<tr>'
             +'<td style="'+tdMono+'">'+fmtD(i.created_at)+'</td>'
             +'<td style="'+td+'text-align:right;font-weight:700;">'+esc(money(i.amount_cents,i.currency))+'</td>'
-            +'<td style="'+td+'"><span class="pill '+invPill(i.status)+'"><i></i>'+esc(i.status)+'</span></td>'
+            +'<td style="'+td+'"><span class="pill '+invPill(i.status)+'"><i></i>'+esc(i.status)+'</span>'
+              +'<span class="mono" style="color:var(--muted);font-size:10px;margin-left:7px;">'+esc(payVia(i.provider))+'</span></td>'
             +'<td style="'+tdMono+'">'+(i.period_start?fmtD(i.period_start)+' – '+fmtD(i.period_end):'—')
-              +' <a href="#" onclick="openInvoice(event,\''+i.id+'\')" style="color:var(--fox2);margin-left:6px;white-space:nowrap;">PDF ↗</a></td>'
+              /* The PDF resolves through Stripe, so it is offered only on a row Stripe
+                 can resolve. A Paddle or manually-recorded payment has no hosted
+                 invoice, and a link that always fails is worse than no link. The
+                 reference shows instead — it is what a customer quotes when asking
+                 which payment this was. */
+              +(i.provider==='stripe'
+                 ?' <a href="#" onclick="openInvoice(event,\''+i.id+'\')" style="color:var(--fox2);margin-left:6px;white-space:nowrap;">PDF ↗</a>'
+                 :(i.reference?' <span class="mono" style="color:var(--muted);margin-left:6px;">'+esc(i.reference)+'</span>':''))
+              +'</td>'
             +'</tr>').join('')
           :'<tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">No invoices yet — card payments appear here after your first billing cycle. Plans invoiced directly are not listed.</td></tr>';
-        if($('bilInvoiceChart')&&window.foxChart){ const invArr=(Array.isArray(inv)?inv:[]).slice().reverse();
+        if($('bilInvoiceChart')&&window.foxChart){ /* Only rows with a real amount. A manually-recorded payment has none, and a
+             bar of height zero would claim the customer paid nothing. */
+          const invArr=(Array.isArray(inv)?inv:[]).filter(x=>x&&x.amount_cents!=null).slice().reverse();
           if(invArr.length)window.foxChart('bilInvoiceChart',{type:'bar',height:130,tone:'blue',data:invArr.map(iv=>({label:fmtD(iv.created_at),value:Math.round((iv.amount_cents||0)/100),sub:money(iv.amount_cents,iv.currency)})),aria:'invoice totals over time'});
           else $('bilInvoiceChart').innerHTML='<div class="empty" style="padding:12px 0;"><div class="empty-t">No invoices yet</div><div class="empty-d">Card payments appear here after your first billing cycle. Plans invoiced directly are not listed.</div></div>';
         }

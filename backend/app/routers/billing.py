@@ -708,6 +708,29 @@ def _paddle_provision(db: Session, data: dict, plan_tier: str) -> tuple[dict, st
             "plan_tier": plan_tier}, str(org.id)
 
 
+def _record_paddle_payment(db: Session, org: Organization, data: dict) -> None:
+    """One Paddle transaction, as a customer-visible receipt.
+
+    Keyed on the transaction id, which makes it idempotent: a replayed webhook
+    and a staff replay both land on the row already there rather than showing
+    the customer the same payment twice.
+
+    The amount is stored in MINOR UNITS exactly as Paddle sent it — see
+    `paddle.amount_of` for why nothing is divided by 100 on the way in.
+    """
+    txn = str((data or {}).get("id") or "").strip()
+    if not txn:
+        # No id means no idempotency key, and a receipt that can duplicate
+        # itself on every retry is worse than no receipt.
+        log.warning("paddle transaction carried no id; no receipt recorded")
+        return
+    amount, currency = paddle.amount_of(data)
+    starts, ends = paddle.billing_period(data)
+    billing_state.record_payment(
+        db, org, provider="paddle", reference=txn, amount_cents=amount,
+        currency=currency, status="paid", period_start=starts, period_end=ends)
+
+
 def _paddle_renewal(db: Session, org: Organization,
                     data: dict) -> tuple[dict, str | None]:
     """A recurring charge succeeded. Confirm the money; do NOT rewrite the plan.
@@ -752,6 +775,9 @@ def _paddle_renewal(db: Session, org: Organization,
     org.past_due_since = None
     billing_state.end_evaluation(org)
     billing_state.end_trial(org)
+    # A renewal is money the customer paid, so it earns a receipt too. Without
+    # this they would see month one and then silence.
+    _record_paddle_payment(db, org, data)
 
     stored = (org.plan_tier or "").strip().lower()
     if priced_tier and priced_tier != stored:
@@ -826,6 +852,9 @@ def _paddle_apply_purchase(db: Session, data: dict) -> tuple[dict, str | None]:
     # exact defect M0 fixed on the staff path.
     billing_state.end_evaluation(org)
     billing_state.end_trial(org)         # register #101 — they have paid
+    # The customer-visible receipt (register #94). `payment_events` records the
+    # webhook for staff; this is the row the person who paid can actually see.
+    _record_paddle_payment(db, org, data)
     log.info("Paddle: upgraded org %s to %s", org.id, plan_tier)
     return {"status": "upgraded", "org_id": str(org.id), "plan_tier": plan_tier}, str(org.id)
 

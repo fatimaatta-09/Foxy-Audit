@@ -237,6 +237,14 @@ def set_organization_plan(
         # trail is the only record this payment has; a key holding "" would read
         # as "we looked and there was no reference", which is a different claim.
         detail["payment_reference"] = reference
+        # And the customer sees it too (register #94 · M3f). Until now this
+        # reference existed only on the AdminAction row — readable by STAFF
+        # since M3c, and invisible to the person who actually paid, whose
+        # billing page stayed empty. No amount is recorded because this form
+        # has none: staff record WHICH payment they saw, not how much it was,
+        # and a zero would tell the customer they paid nothing.
+        billing_state.record_payment(db, org, provider="manual",
+                                     reference=reference, status="paid")
     record_admin_action(
         db, staff, "org.plan.set", target_org_id=org.id,
         target_type="organization", target_id=str(org.id),
