@@ -2268,7 +2268,8 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           <div class="skel-row"><div class="skel circ"></div><div class="grow"><div class="skel h" style="width:38%"></div><div class="skel line" style="width:64%;margin-top:6px"></div></div></div>
         </div>
         <div style="font-size:10.5px;color:var(--muted);line-height:1.6;margin-top:14px;border-top:2px dashed var(--line);padding-top:11px;">
-          Credits and anchor cadence are your plan's contracted limits. The amount is confirmed by Stripe at checkout — Foxy does not hold a copy of the price.
+          Credits and anchor cadence are your plan's contracted limits. The amount is confirmed at checkout — Foxy does not hold a copy of the price.
+          <br>Payments are handled by <strong>Paddle</strong>, our merchant of record. Your card statement will show <strong>PADDLE.NET</strong>, not Foxy Audit.
         </div>
       </div>
     </div>
@@ -5147,10 +5148,10 @@ async function loadLoginHistory(scope){
             +'<td style="'+tdMono+'">'+(i.period_start?fmtD(i.period_start)+' – '+fmtD(i.period_end):'—')
               +' <a href="#" onclick="openInvoice(event,\''+i.id+'\')" style="color:var(--fox2);margin-left:6px;white-space:nowrap;">PDF ↗</a></td>'
             +'</tr>').join('')
-          :'<tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">No invoices yet — they appear after the first Stripe billing cycle.</td></tr>';
+          :'<tr><td colspan="4" style="padding:16px 10px;color:var(--muted);font-size:12px;">No invoices yet — card payments appear here after your first billing cycle. Plans invoiced directly are not listed.</td></tr>';
         if($('bilInvoiceChart')&&window.foxChart){ const invArr=(Array.isArray(inv)?inv:[]).slice().reverse();
           if(invArr.length)window.foxChart('bilInvoiceChart',{type:'bar',height:130,tone:'blue',data:invArr.map(iv=>({label:fmtD(iv.created_at),value:Math.round((iv.amount_cents||0)/100),sub:money(iv.amount_cents,iv.currency)})),aria:'invoice totals over time'});
-          else $('bilInvoiceChart').innerHTML='<div class="empty" style="padding:12px 0;"><div class="empty-t">No invoices yet</div><div class="empty-d">Invoice totals appear after your first Stripe billing cycle.</div></div>';
+          else $('bilInvoiceChart').innerHTML='<div class="empty" style="padding:12px 0;"><div class="empty-t">No invoices yet</div><div class="empty-d">Card payments appear here after your first billing cycle. Plans invoiced directly are not listed.</div></div>';
         }
       }
     }catch(e){}

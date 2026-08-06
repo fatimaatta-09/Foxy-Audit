@@ -531,3 +531,95 @@ def test_the_plan_dialog_carries_the_tier_and_not_the_label(app):
         assert dialog.tier() == "max"
     finally:
         dialog.deleteLater()
+
+
+# ── M3e · the desktop stopped naming the processor that never charged anyone ──
+# Paddle has taken a real purchase. These guards are scoped to the CUSTOMER-FACING
+# constants, not to the files: `billing_data.py` still names Stripe in developer
+# comments and must, because the currency tables cite stripe.com/docs/currencies
+# for how zero-decimal (¥1000) and three-decimal (KWD) amounts are encoded — an
+# ISO-4217 fact Stripe happens to document well, and the logic that reads it is
+# what keeps money rendering correctly.
+
+_WRONG_PROCESSOR = "Strip" + "e"      # assembled: this comment is scanned too
+
+
+def _customer_facing_strings() -> list[str]:
+    """Every string in billing_data.py a customer can actually read."""
+    return [bd.UPGRADE_BLURB, bd.STATEMENT_NOTE, bd.NO_LINE_ITEMS,
+            *bd.INVOICE_EMPTY, *bd.INVOICE_COLUMNS]
+
+
+def test_no_customer_facing_string_names_the_wrong_processor():
+    for s in _customer_facing_strings():
+        assert _WRONG_PROCESSOR not in s, s
+
+
+def test_the_currency_tables_are_untouched():
+    """The comments above these cite a payment processor and must keep doing so:
+    they describe how minor units arrive on the wire, and changing the logic would
+    misrender money. ¥1000 is 1000 and 1.000 KWD is 1000 — neither is /100."""
+    assert "JPY" in bd.ZERO_DECIMAL and "KRW" in bd.ZERO_DECIMAL
+    assert "KWD" in bd.THREE_DECIMAL and "BHD" in bd.THREE_DECIMAL
+    # 1000 minor units is ¥1,000 and $10.00 — the zero-decimal rule, which is
+    # the thing the cited tables encode. (Grouping separators are the formatter's;
+    # the first version of this guard asserted "¥1000" and was simply wrong about
+    # its own expectation, not about the code.)
+    assert bd.money(1000, "JPY") == "¥1,000", bd.money(1000, "JPY")
+    assert bd.money(1000, "USD") == "$10.00", bd.money(1000, "USD")
+    assert bd.money(1000, "KWD") == "1.000 KWD", bd.money(1000, "KWD")
+
+
+def test_the_invoice_empty_state_is_true_for_a_customer_who_paid_by_invoice():
+    """An org invoiced directly through Payoneer is legitimately paid up and will
+    never have a row here (register #94, not fixed in this phase)."""
+    body = bd.INVOICE_EMPTY[1]
+    assert "invoiced directly are not listed" in body, body
+    assert "billing cycle" in body
+
+
+def test_the_statement_note_exists_and_says_what_the_charge_looks_like():
+    """Paddle is the merchant of record, so the charge is Paddle's and not ours.
+    A buyer who does not know sees an unrecognised line, and that is how a
+    chargeback starts."""
+    note = bd.STATEMENT_NOTE
+    assert "PADDLE.NET" in note
+    assert "merchant of record" in note
+    assert "Foxy Audit" in note, "the note never says which name is missing"
+
+
+def test_the_statement_note_claims_only_the_fixed_prefix():
+    """What follows `PADDLE.NET*` is a 2–10 character descriptor the seller sets
+    in Paddle, defaulting to the first ten characters of the company name given
+    at signup. Asserting a suffix nobody has verified would be inventing the one
+    string a worried customer checks against."""
+    for invented in ("PADDLE.NET* FOXY", "PADDLE.NET*FOXY", "FOXYAUDIT"):
+        assert invented not in bd.STATEMENT_NOTE, invented
+    for s in (bd.UPGRADE_BLURB, bd.STATEMENT_NOTE):
+        assert "PADDLE.NET*" not in s, (
+            "the note shows the asterisk, which reads as a descriptor we have not set"
+        )
+
+
+def test_the_point_of_purchase_says_it_too():
+    """The upgrade dialog is where somebody decides to pay. Telling them
+    afterwards is telling them too late."""
+    assert "PADDLE.NET" in bd.UPGRADE_BLURB
+    assert "merchant of record" in bd.UPGRADE_BLURB
+
+
+def test_the_billing_page_actually_renders_the_note():
+    """A6's lesson: a guard that reads a constant is not guarding its use. The
+    note existing and the page never showing it are the same thing to a customer.
+    Asserted at the CALL SITE."""
+    src = (Path(__file__).resolve().parent / "billing_page.py").read_text(encoding="utf-8")
+    src = re.sub(r"(?m)^\s*#.*$", "", src)
+    assert "bd.STATEMENT_NOTE" in src, (
+        "billing_page never renders STATEMENT_NOTE, so the constant is decorative"
+    )
+
+
+def test_the_upgrade_blurb_still_invents_no_price():
+    """The existing rule, re-asserted because this phase rewrote that string:
+    a number written in a client is fake data about money."""
+    assert not re.search(r"[$£€]\s*\d|\bUSD\b|/\s*mo\b", bd.UPGRADE_BLURB), bd.UPGRADE_BLURB

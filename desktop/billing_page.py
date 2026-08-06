@@ -83,8 +83,8 @@ class BillingSections:
                                colour=WEB["fox2"], mono=True, spacing=1.5)
         col.addWidget(o.bil_eyebrow)
         col.addWidget(_label("Usage & billing.", size=26, bold=True))
-        col.addWidget(_label("Daily rollups from the audit ledger · invoices "
-                             "synced from Stripe.", size=12,
+        col.addWidget(_label("Daily rollups from the audit ledger · card invoices "
+                             "synced from Paddle.", size=12,
                              colour=WEB["muted"], wrap=True))
         lay.addLayout(col, 1)
 
@@ -240,6 +240,11 @@ class BillingSections:
                                     data=[], aria="Invoice totals over time")
         lay.addWidget(o.bil_inv_chart)
         lay.addWidget(_label(bd.NO_LINE_ITEMS, size=10, colour=WEB["muted"],
+                             wrap=True))
+        # Said once on this page, next to the invoices, because this is where a
+        # customer looks when a charge on their statement is not a name they
+        # recognise. See bd.STATEMENT_NOTE for why only the fixed prefix is named.
+        lay.addWidget(_label(bd.STATEMENT_NOTE, size=10, colour=WEB["muted"],
                              wrap=True))
         lay.addWidget(_table_head(bd.INVOICE_COLUMNS, (3, 2, 2, 3)))
         o.bil_inv_rows = QVBoxLayout()

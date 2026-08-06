@@ -356,8 +356,9 @@ UPGRADE_NONE = ("This workspace is billed outside self-serve checkout. "
 #: The dialog's own line. It says which workspace, because that is the only
 #: thing this flow decides that the browser could not decide for itself.
 UPGRADE_BLURB = ("Checkout opens in your browser and applies to the workspace "
-                 "you are signed in to. No price is shown here — Stripe "
-                 "confirms the amount before you pay.")
+                 "you are signed in to. No price is shown here — the amount is "
+                 "confirmed before you pay. Paddle is our merchant of record, so "
+                 "your card statement shows PADDLE.NET, not Foxy Audit.")
 
 
 def upgrade_result(status: int | None) -> str:
@@ -412,8 +413,25 @@ def invoice_link_result(status: int | None) -> str:
 
 # ── invoice history ─────────────────────────────────────────────────────────
 INVOICE_COLUMNS = ("Date", "Amount", "Status", "Period")
+#: True for BOTH kinds of paying customer. An org invoiced directly through
+#: Payoneer is legitimately paid up and will never have a row here (register
+#: #94, not fixed in this phase), so promising invoices "after your first
+#: billing cycle" was a promise this list cannot keep for them.
 INVOICE_EMPTY = ("No invoices yet",
-                 "Invoices appear after your first Stripe billing cycle.")
+                 "Card payments appear here after your first billing cycle. "
+                 "Plans invoiced directly are not listed.")
+
+#: Paddle is the MERCHANT OF RECORD, so the charge on a customer's statement
+#: is Paddle's, not ours. A buyer who does not know that sees an unrecognised
+#: line and an unrecognised line is how a chargeback starts.
+#:
+#: `PADDLE.NET*` is the fixed part and the only part worth stating here: what
+#: follows the asterisk is a 2–10 character descriptor the seller configures in
+#: Paddle (Checkout → Checkout settings), defaulting to the first ten characters
+#: of the company name given at signup. Naming a suffix we have not verified
+#: would be inventing the one string a worried customer checks against.
+STATEMENT_NOTE = ("Payments are handled by Paddle, our merchant of record — your "
+                  "card statement shows PADDLE.NET, not Foxy Audit.")
 
 #: The web's note under the bar chart, quoted — it is a statement about what
 #: Foxy stores, and softening it would misdescribe the product.
