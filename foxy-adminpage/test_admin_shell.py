@@ -3744,5 +3744,116 @@ def test_a_blank_reference_is_not_sent_as_an_empty_string() -> None:
     )
 
 
+# ── M3c · the audit trail's Detail column (register #93) ────────────────────
+# `payment_reference` was write-only: staff could record what a customer paid
+# against and then had no way to read it back. It is stored on the AdminAction
+# row, `/admin/v1/audit` has always returned `detail`, and `loadAudit` rendered
+# six columns and never it. For a payment taken outside the processor, that row
+# is the only record there is.
+
+
+def _audit_code(name: str) -> str:
+    """A function's source with `//` line comments stripped.
+
+    These blocks document their own rules — the comment above `auditDetail`
+    names `payment_reference`, `esc` and `JSON.stringify` — so a structural check
+    over raw text can be satisfied by the prose describing the rule instead of
+    the rule itself. This file has been bitten by that shape more than once.
+    """
+    return re.sub(r"(?m)(?<!:)//.*$", "", _js_func(name))
+
+
+def test_the_audit_table_has_a_detail_column() -> None:
+    mk = _nocomment(_page("audit"))
+    head = re.search(r"<thead>.*?</thead>", mk, re.S)
+    assert head, "the audit table has no header"
+    cols = re.findall(r'<th scope="col">([^<]*)</th>', head.group(0))
+    assert cols == ["When", "Actor", "Action", "Target", "Org", "IP", "Detail"], cols
+
+
+def test_load_audit_actually_renders_the_detail() -> None:
+    """A6's lesson: a guard that reads a helper is not guarding its use. The
+    helper stayed perfect while `renderStaff` stopped calling it and all 256
+    guards stayed green. Assert the CALL SITE."""
+    body = _audit_code("loadAudit")
+    assert "auditDetail(a.detail)" in body, (
+        "loadAudit no longer renders the detail, so the reference is write-only again"
+    )
+    assert 'data-label="Detail"' in body, "the stacked layout would not label the cell"
+    assert 'class="kvcell"' in body, (
+        "the detail cell lost the class its phone layout is keyed on"
+    )
+
+
+def test_every_audit_colspan_counts_the_new_column() -> None:
+    """Three of them — loading, empty and fault. A stale colspan leaves the
+    empty state a column short and visibly wrong."""
+    body = _audit_code("loadAudit")
+    assert 'colspan="6"' not in body and "faultRow(6" not in body
+    assert 'colspan="7"' in body and "faultRow(7" in body
+    mk = _nocomment(_page("audit"))
+    loading = re.search(r'<tbody id="auRows"[^>]*>\s*<tr><td colspan="(\d+)"', mk)
+    assert loading and loading.group(1) == "7", "the loading row spans the wrong width"
+
+
+def test_the_detail_renderer_escapes_both_halves() -> None:
+    """`detail` is JSONB and untrusted at BOTH ends: the value is free text a
+    staff member typed, and a hand-written row can carry any key at all. This
+    console has an esc() helper; neither half may be interpolated raw."""
+    body = _audit_code("auditDetail")
+    assert "esc(k)" in body, "the detail KEY is interpolated unescaped"
+    assert "esc(s)" in body, "the detail VALUE is interpolated unescaped"
+    assert not re.search(r"\+\s*(k|s)\s*\+", body), (
+        "a raw key or value is concatenated into the markup"
+    )
+
+
+def test_the_detail_value_is_reproduced_exactly() -> None:
+    """This is the only record a payment made outside the processor has, so the
+    reference must come back out in the case it went in: no truncation, no
+    ellipsis, and NOT `.tag`'s uppercase — an invoice number is case-sensitive."""
+    body = _audit_code("auditDetail")
+    assert ".slice(" not in body and ".substring(" not in body, "the value is truncated"
+    assert "toUpperCase" not in body and "toLowerCase" not in body
+    kvv = re.search(r"\.kvv\{([^}]*)\}", _style_block())
+    assert kvv, ".kvv is gone"
+    assert "text-transform" not in kvv.group(1), (
+        "the value is case-folded, so an invoice reference cannot be read back"
+    )
+    assert "overflow-wrap:anywhere" in kvv.group(1), (
+        "a long unbroken reference will widen the table instead of wrapping"
+    )
+
+
+def test_an_absent_detail_says_so_rather_than_rendering_nothing() -> None:
+    """Most admin actions carry no detail. An empty cell reads as a rendering
+    failure; the em-dash is the absence marker the other five cells already use.
+
+    Asserted on the two EARLY RETURNS, not on the character appearing somewhere
+    in the function. The first version counted em-dashes anywhere in the body and
+    survived a mutation that emptied both returns — because a third em-dash lives
+    in the null-value expression further down and kept the count above zero.
+    """
+    body = _audit_code("auditDetail")
+    returns = re.findall(r"return\s+('[^']*'|\"[^\"]*\");", body)
+    assert len(returns) >= 2, "the absent-detail early returns are gone"
+    for literal in returns:
+        assert "—" in literal, (
+            f"an absent detail returns {literal} — an empty cell reads as a "
+            f"rendering failure, not as 'there was nothing here'"
+        )
+
+
+def test_the_detail_cell_stacks_on_a_phone() -> None:
+    """The stacked layout is a `space-between` flex row whose label does not
+    shrink, so the pairs were squeezed into what was left and wrapped one
+    character per line, with long values pushed outside the card. Found by
+    rendering 375px, not by reading it."""
+    rule = re.search(r"\.tbl\.cardify td\.kvcell\{([^}]*)\}", _style_block())
+    assert rule, "the phone layout for the detail cell is gone"
+    assert "flex-direction:column" in rule.group(1)
+    assert "align-items:flex-start" in rule.group(1)
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

@@ -930,6 +930,19 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--neutral) 26%,transparent);
 }
 .kpi .face .tag{background:var(--foxink);color:var(--face-ink-dim);box-shadow:none}
+/* One key/value pair from an admin_actions `detail` blob (M3c · #93).
+   `detail` is JSONB and every action writes a different shape, so this renders
+   PAIRS rather than columns — it has to stay readable without pretending there
+   is a schema underneath it.
+   The KEY reuses `.tag`: a detail key is a category label, which is what `.tag`
+   already exists for, and uppercasing a key name loses nothing.
+   The VALUE deliberately does not. `.tag` carries `text-transform:uppercase`
+   and `white-space:nowrap`, and this value is the ONLY record a payment made
+   outside the processor has — an invoice reference must come back out in the
+   case it went in, and it has to wrap rather than widen the table. */
+.kv{display:inline-flex;align-items:baseline;gap:var(--s-1);max-width:100%;
+  margin:0 var(--s-2) var(--s-1) 0}
+.kvv{font-family:var(--mono);font-size:10.5px;color:var(--ink);overflow-wrap:anywhere}
 
 /* ════════ TABLES ════════ */
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
@@ -1706,6 +1719,15 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
      as blank. An action cell carries its own button and needs no label. */
   .tbl.cardify td:empty{display:none}
   .tbl.cardify tr:last-child{margin-bottom:0}
+/* The detail cell is the one cell whose content is a LIST, and the stacked
+   layout above is a `space-between` flex row whose label does not shrink. That
+   squeezed the pairs into whatever was left and, with `overflow-wrap:anywhere`
+   doing as it was told, wrapped "pro" one character per line and pushed the
+   long values outside the card. Caught by rendering 375px, not by reading it.
+   So on a phone this cell stacks: the label on its own line, each pair below it
+   with the full width of the card to use. */
+.tbl.cardify td.kvcell{flex-direction:column;align-items:flex-start;gap:4px}
+.tbl.cardify td.kvcell .kv{max-width:100%;flex-wrap:wrap}
 
   /* the top bar wraps rather than dropping its right-hand half: the crumb takes
      the first row, the actions and the signed-in identity the second. */
@@ -2517,7 +2539,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <button class="btn sm" id="auClear" style="margin-bottom:4px;" onclick="auditClear()">clear</button>
       </div>
       <div class="sub mono" id="auNote" role="status" aria-live="polite" style="margin:-6px 0 14px;"></div>
-      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Org</th><th scope="col">IP</th></tr></thead><tbody id="auRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
+      <div class="clay pad twrap"><table class="tbl cardify"><thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Org</th><th scope="col">IP</th><th scope="col">Detail</th></tr></thead><tbody id="auRows" aria-live="polite"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody></table><div id="auPager"></div></div>
     </section>
 
     <!-- ──────────────── LEADS ──────────────── -->
@@ -2719,6 +2741,31 @@ async function _stepUpSubmit(){
   else { const d=r?await r.json().catch(()=>({})):{}; if(m) m.textContent=(d.detail||'Invalid or expired code'); }
 }
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* An admin_actions `detail` blob, rendered as key/value pairs (M3c · #93).
+
+   BOTH HALVES ARE UNTRUSTED. The value is free text a staff member typed —
+   `payment_reference` is literally an invoice number pasted from somewhere else
+   — and the KEY comes out of JSONB too, so a hand-written row can carry any key
+   at all. Both go through esc(); neither is interpolated raw.
+
+   Values are printed verbatim apart from escaping. This is the only record a
+   payment taken outside the processor has, so it has to read back exactly as it
+   was entered: no truncation, no case folding, no ellipsis. A long one wraps
+   (`.kvv` sets overflow-wrap) rather than stretching the table.
+
+   Nested objects are JSON.stringify'd rather than walked. No admin action
+   writes one today, and inventing a tree renderer for a shape nothing produces
+   is exactly the speculative work this file does not need. */
+function auditDetail(d){
+  if(!d||typeof d!=='object'||Array.isArray(d)) return '<span class="mono">—</span>';
+  const keys=Object.keys(d);
+  if(!keys.length) return '<span class="mono">—</span>';
+  return keys.map(k=>{
+    const v=d[k];
+    const s=(v===null||v===undefined)?'—':(typeof v==='object'?JSON.stringify(v):String(v));
+    return '<span class="kv"><span class="tag">'+esc(k)+'</span><span class="kvv">'+esc(s)+'</span></span>';
+  }).join('');
+}
 /* A value bound into an inline onclick crosses TWO parsers, and esc() alone
    only satisfies the second. The HTML attribute parser decodes entities FIRST,
    so esc("O'Brien Health") -> O&#39;Brien Health -> JS then sees a bare
@@ -5501,10 +5548,10 @@ async function loadAudit(keepOff){
   if(!keepOff)AU_OFF=0;
   const p=_auditParams(); p.set('limit','50'); p.set('offset',String(AU_OFF));
   let r; try{ r=await api('/admin/v1/audit?'+p.toString()); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('auRows').innerHTML=faultRow(6,'The audit trail did not load.',"loadAudit()"); return; }
+  if(!r||!r.ok){ $('auRows').innerHTML=faultRow(7,'The audit trail did not load.',"loadAudit()"); return; }
   const d=await r.json();
-  if(!d.items.length){ $('auRows').innerHTML='<tr><td colspan="6" class="sub mono">no matching actions</td></tr>'; $('auPager').innerHTML=''; return; }
-  $('auRows').innerHTML=d.items.map(a=>`<tr><td data-label="When" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td data-label="Actor" class="mono" style="font-size:11px;">${esc(a.actor||'—')}</td><td data-label="Action" class="mono" style="font-size:11px;">${esc(a.action)}</td><td data-label="Target" class="mono" style="font-size:10px;">${esc(a.target_type||'—')}${a.target_id?(' '+esc(a.target_id.slice(0,8))+'…'):''}</td><td data-label="Org" class="mono" style="font-size:10px;">${esc(a.org_name||'—')}</td><td data-label="IP" class="mono" style="font-size:10px;">${esc(a.ip||'—')}</td></tr>`).join('');
+  if(!d.items.length){ $('auRows').innerHTML='<tr><td colspan="7" class="sub mono">no matching actions</td></tr>'; $('auPager').innerHTML=''; return; }
+  $('auRows').innerHTML=d.items.map(a=>`<tr><td data-label="When" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(a.at)}</td><td data-label="Actor" class="mono" style="font-size:11px;">${esc(a.actor||'—')}</td><td data-label="Action" class="mono" style="font-size:11px;">${esc(a.action)}</td><td data-label="Target" class="mono" style="font-size:10px;">${esc(a.target_type||'—')}${a.target_id?(' '+esc(a.target_id.slice(0,8))+'…'):''}</td><td data-label="Org" class="mono" style="font-size:10px;">${esc(a.org_name||'—')}</td><td data-label="IP" class="mono" style="font-size:10px;">${esc(a.ip||'—')}</td><td data-label="Detail" class="kvcell" style="font-size:10px;">${auditDetail(a.detail)}</td></tr>`).join('');
   window.foxPager('auPager',{page:Math.floor(d.offset/d.limit)+1,pageSize:d.limit,
     total:d.total,label:'Audit log pages',
     onPage:function(pg){ AU_OFF=(pg-1)*50; loadAudit(true); }});
