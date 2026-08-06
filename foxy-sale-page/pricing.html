@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pricing — Foxy Audit</title>
-<meta name="description" content="Start with a 7-day Foxy Audit trial, then choose Pro, Max, or a custom enterprise deployment for verifiable, content-blind AI audit evidence.">
+<meta name="description" content="Foxy Audit pricing: Pro at $49/month, Max at $199/month, and negotiated Premium plans for verifiable, content-blind AI audit evidence.">
 <link rel="canonical" href="https://foxyaudit.tech/pricing.html">
 <link rel="icon" type="image/png" href="/logo.png">
 <meta name="theme-color" content="#ff7a2e">
@@ -27,22 +27,10 @@
     <a class="back" href="/">← Back to all cards</a>
     <p class="sec-eb">Pricing</p>
     <h1 class="sec-h">Pay for what you verify.</h1>
-    <p class="sub">Start with a demo, then choose the plan that fits. No credit card needed to look around.</p>
+    <p class="sub">Two plans you can buy in a minute, and one we work out with you. Prices are in US dollars, billed monthly, and cancellable from your dashboard.</p>
   </div>
 
   <div class="price-grid">
-    <div class="price-card">
-      <p class="price-name">Free trial</p>
-      <p class="price-amt">$0<span>/7 days</span></p>
-      <p class="price-tag">For testing the integration before you buy.</p>
-      <ul class="price-list">
-        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>500 audit-event credits</li>
-        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Hash chain + public verify endpoint</li>
-        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>1 SDK key + 2 dashboard seats</li>
-        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>AI judge on your own Gemini/OpenAI key</li>
-      </ul>
-      <a class="price-btn" href="/?plan=free">Start free trial</a>
-    </div>
     <div class="price-card">
       <span class="price-pill">Most popular</span>
       <p class="price-name">Pro</p>
@@ -70,14 +58,34 @@
       </ul>
       <a class="price-btn" href="/?plan=max">Start Max</a>
     </div>
+    <div class="price-card">
+      <p class="price-name">Premium</p>
+      <!-- No number, deliberately. Premium is negotiated end to end — credits,
+           terms and price — so any figure printed here would be one this company
+           cannot honour for every buyer. "Let's talk" is the honest amount. -->
+      <p class="price-amt">Let's talk</p>
+      <p class="price-tag">For regulated teams with their own volume, terms and deployment.</p>
+      <ul class="price-list">
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Credits, seats and retention agreed with you</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>AI judge on our keys — the model calls are on us</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>SSO, customer-controlled deployment, bespoke SLA</li>
+        <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Invoiced directly, not through the card checkout</li>
+      </ul>
+      <a class="price-btn ghost" href="/book-a-demo.html?plan=premium">Talk to us</a>
+    </div>
   </div>
 
+  <!-- The free account is NOT a priced tier and is deliberately not a card. It is
+       still the only way a new person can open an account today, so saying
+       nothing here would leave this page contradicting the button on the
+       homepage. It is described as what it currently is — not relabelled "demo",
+       which is a manually-approved thing that does not exist yet. -->
   <div class="enterprise-card">
     <div>
-      <h3>Need something custom?</h3>
-      <p>Custom volume, SSO, customer-controlled deployment, retention, keys, or a bespoke SLA for regulated teams — let's talk.</p>
+      <h3>Want to try it first?</h3>
+      <p>You can open a free account with 500 audit-event credits and no card, and upgrade whenever you are ready. We are moving to an approved 7-day evaluation, so this route will change.</p>
     </div>
-    <a class="price-btn" href="/contact.html">Contact us</a>
+    <a class="price-btn ghost" href="/?plan=free">Create an account</a>
   </div>
 
   <p class="sec-eb" style="margin-top:76px;">Frequently asked</p>
@@ -91,7 +99,12 @@
     <div class="faq-item">
       <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Who pays for the AI judge's model calls?
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-      <div class="faq-a"><p>On Free, Pro and Max, you do — you bring your own Gemini or OpenAI key, add it in the dashboard, and those model calls land on your provider bill at your rates. Audit-event credits cover capture, chaining, anchoring and exports; they are not model tokens. Premium can either keep using its own key or switch to Foxy's managed keys, where the model calls are on us. Your key is stored encrypted, used only in memory at grading time, and never shown back to you or written into your audit chain. See <a href="/judge.html">the judge</a>.</p></div>
+      <div class="faq-a"><p>On Pro and Max — and on a free account — you do: you bring your own Gemini or OpenAI key, add it in the dashboard, and those model calls land on your provider bill at your rates. Audit-event credits cover capture, chaining, anchoring and exports; they are not model tokens. Premium can either keep using its own key or switch to Foxy's managed keys, where the model calls are on us. Your key is stored encrypted, used only in memory at grading time, and never shown back to you or written into your audit chain. See <a href="/judge.html">the judge</a>.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">How am I billed, and by whom?
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div class="faq-a"><p>Pro and Max are monthly subscriptions in US dollars. Payment is handled by <strong>Paddle</strong>, who act as the merchant of record and appear as the seller on your statement and your receipt — card details are entered on Paddle's checkout and never reach Foxy Audit. Any sales tax or VAT is calculated and remitted by Paddle at checkout. Premium is agreed in writing and invoiced directly, so it does not go through the card checkout at all.</p></div>
     </div>
     <div class="faq-item">
       <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Is this SOC 2 certified?
@@ -106,7 +119,7 @@
     <div class="faq-item">
       <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Can I cancel anytime?
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-      <div class="faq-a"><p>Yes — Pro and Max can be cancelled from the dashboard and remain available through the paid period. Custom plans follow the terms in your agreement.</p></div>
+      <div class="faq-a"><p>Yes — Pro and Max can be cancelled from the dashboard and remain available through the paid period, so you keep what you have already paid for. Premium follows the terms in your agreement.</p></div>
     </div>
   </div>
 

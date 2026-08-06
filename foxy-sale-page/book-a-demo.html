@@ -250,9 +250,17 @@
     try{
       let token='';
       if(typeof grecaptcha!=='undefined'){ token = await grecaptcha.execute('6LfaFFctAAAAAMFaCIzraQ3PYWJGuXgtTNcBglsr',{action:'book_demo'}); }
+      // Premium is sold by conversation, so its enquiries come through this same
+      // form rather than a second one. The subject is the only thing that
+      // changes: a negotiated-tier enquiry and a generic demo request deserve
+      // very different response times and are otherwise indistinguishable in the
+      // inbox. `source` stays "demo" so the existing pipeline, its priority
+      // routing and its superadmin alert are untouched.
+      const premium = new URLSearchParams(location.search).get('plan') === 'premium';
       const r = await fetch(FOXY_API + '/v1/leads', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ name:(fn+' '+ln).trim(), email:em, company:co, source:'demo',
-          subject:'Demo request', message:'Job title: '+jt+'\nAI governance stage: '+mt, recaptcha_token: token }) });
+          subject: premium ? 'Premium plan enquiry' : 'Demo request',
+          message:'Job title: '+jt+'\nAI governance stage: '+mt, recaptcha_token: token }) });
       if(!r.ok) throw 0;
       seal();
     }catch(_){ $('go').disabled=false; err.textContent="Couldn't send — please try again or email foxyaudit@gmail.com"; }

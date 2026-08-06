@@ -286,7 +286,7 @@
     transition:transform 150ms ease;box-shadow:var(--clay-sm);}
   .price-btn:hover{transform:translateY(-2px);}
   .price-btn:active{transform:translate(3px,3px);box-shadow:var(--clay-press);}
-  .price-btn.ghost{background:var(--line);color:var(--ink);box-shadow:none;}
+  .price-btn.ghost{background:var(--line);color:var(--ink);box-shadow:none;border:1px solid var(--muted);}  /* --muted, not --line: the ghost drops the clay shadow, so the border is its ONLY boundary, and --line measures 1.29:1 against the card it sits on (WCAG 1.4.11 wants 3:1). --muted is 4.73:1. This rule shipped unused since it was written and pricing.html is its first renderer — an unrendered style has never been measured. */
   .price-list{list-style:none;padding:0;margin:22px 0 0;display:flex;flex-direction:column;gap:9px;}
   .price-list li{font-size:12.5px;color:var(--ink);display:flex;gap:8px;align-items:flex-start;}
   .price-list svg{width:14px;height:14px;stroke:var(--fox);flex-shrink:0;margin-top:2px;}
@@ -1136,8 +1136,10 @@ setInterval(()=>{ if(!animating && !modalBackdrop.classList.contains('open')) ne
       if (c) p.push({ x: c.left + c.width / 2 + window.scrollX, y: c.top + window.scrollY - 20 + k * 44 });   // spread same-row spots down so the fox walks across them
     });
     addSpots('#how');
-    const gc = document.querySelector('[data-lead="signup-companion"]');
-    if (gc){ const r = gc.getBoundingClientRect(); p.push({ x: r.left + r.width / 2 + window.scrollX, y: r.top + window.scrollY - 28 }); }   // above the pricing button
+    // A spot above the pricing button used to go here, keyed on
+    // `[data-lead="signup-companion"]`. No element has ever carried that value,
+    // so the lookup was always null and the spot was never added — removing it
+    // with the companion plan changes nothing the fox actually walked on.
     addSpots('#team');
     addSpots('#support');
     const btn = document.querySelector('[data-lead="cta-hero"]');
@@ -1425,12 +1427,22 @@ document.getElementById('leadSubmit').addEventListener('click', async e => {
       window.location.href = '/welcome.html';
       return;
     }
-    if (src === 'signup-pro' || src === 'signup-max' || src === 'signup-companion' || src === 'signup-guardian') {
-      const plan = (src === 'signup-max') ? 'max' : (src === 'signup-guardian' ? 'guardian' : (src === 'signup-companion' ? 'companion' : 'pro'));
+    // Two sellable plans. `companion` and `guardian` went with the three-tier
+    // model: neither has a price at the processor, and the branches naming them
+    // were unreachable anyway — no element ever carried those data-lead values
+    // and `?plan=` has only ever accepted free, pro and max.
+    if (src === 'signup-pro' || src === 'signup-max') {
+      const plan = (src === 'signup-max') ? 'max' : 'pro';
       const r = await fetch(FOXY_API + '/v1/billing/checkout-session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, plan }) });
       if (r.ok) { const d = await r.json(); if (d.checkout_url) { window.location.href = d.checkout_url; return; } }
-      await postLead({ email, source: src, subject: plan, message: 'Interested in the ' + plan + ' plan (checkout not yet enabled).' });
-      leadMsg.style.color = 'var(--safe-bg)'; leadMsg.textContent = '✓ Got it — we\'ll email you to finish checkout.'; setTimeout(closeLeadModal, 2400); return;
+      // Checkout IS configured now, so reaching this line is a real fault — a
+      // refused transaction, or an unreachable processor. "We'll email you to
+      // finish checkout" was honest while no processor existed and is a promise
+      // nobody will keep today; quietly filing them as a lead when their
+      // purchase failed is the mailing-list signup they did not ask for.
+      leadMsg.style.color = 'var(--warn-bg)';
+      leadMsg.textContent = "Checkout didn't open and nothing was charged. Please try again, or email support@foxyaudit.tech and we'll set it up.";
+      return;
     }
     if (src === 'signup-free' || src === 'cta-hero' || src === 'cta') {
       const r = await fetch(FOXY_API + '/v1/signup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
