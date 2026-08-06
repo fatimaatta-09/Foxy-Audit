@@ -54,8 +54,21 @@ router = APIRouter()
 # Columns this browser must never render, on any table. The *_key_enc columns hold
 # customers' BYOK provider keys: staff never read a tenant's provider key, not even
 # as ciphertext (see app/crypto_secrets.py).
+# `payload` is the raw webhook body a processor sent us (M3d · #102). Paddle's
+# carries the customer's name, email and billing address, and Stripe's carries
+# the equivalent — dormant only because no Stripe payload has ever been written.
+# Neither belongs in a generic staff browser: a product that sells on data
+# minimisation should not hand a reviewer a table of its customers' addresses
+# because it was one line less work than a purpose-built route.
+#
+# Safe as a GLOBAL rule, checked rather than assumed: of the 14 registered
+# tables, `stripe_events` is the only one carrying a column of this name, and it
+# appears in neither that table's `search` nor its `filterable` list — so nothing
+# staff legitimately read or filter on is lost. `payment_events` is deliberately
+# not registered here at all; it has a purpose-built route in `admin_billing`
+# that builds every item from an explicit field list.
 _NEVER_EXPOSE = {"password_hash", "key_hash", "api_key_hash",
-                 "gemini_key_enc", "openai_key_enc"}
+                 "gemini_key_enc", "openai_key_enc", "payload"}
 
 TABLE_REGISTRY: dict[str, dict[str, Any]] = {
     # "filterable" is a SEPARATE, explicit allowlist from "search": search is

@@ -2501,6 +2501,21 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </div>
         <div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Org</th><th scope="col">Received</th><th scope="col">Error</th><th scope="col" style="text-align:right;">Action</th></tr></thead><tbody id="seRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="sePager"></div></div>
       </div>
+
+      <!-- Paddle events (M3d · #98). Beside the Stripe feed rather than on a new
+           page: same router, same question, and this is where staff already look
+           for billing. Paddle is the processor that actually takes money here;
+           Stripe has never taken one. Presented exactly like the feed above, so
+           there is one visual language for "a webhook log" on this console. -->
+      <div class="clay pad" style="margin-top:16px;">
+        <div class="panel-h"><div><div class="eyebrow">webhooks</div><div class="panel-t">Paddle events</div></div>
+          <div class="fauxselect" id="peStatus" data-value="" data-onchange="paddleFilterChanged" style="min-width:150px;">
+            <button type="button" class="cin fauxselect-trigger"><span class="fauxselect-label">all statuses</span><svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+            <div class="fauxselect-list"><div class="fauxselect-opt sel" data-value="">all statuses</div><div class="fauxselect-opt" data-value="failed">failed</div><div class="fauxselect-opt" data-value="processed">processed</div><div class="fauxselect-opt" data-value="ignored">ignored</div><div class="fauxselect-opt" data-value="received">received</div></div>
+          </div>
+        </div>
+        <div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Org</th><th scope="col">Received</th><th scope="col">Error</th><th scope="col" style="text-align:right;">Action</th></tr></thead><tbody id="peRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="pePager"></div></div>
+      </div>
     </section>
 
     <!-- ──────────────── SECURITY ──────────────── -->
@@ -5421,6 +5436,7 @@ async function loadRevenue(){
     series:plans.map(p=>({name:p,values:bpm.map(x=>(x.plans[p]||0)/100)})),
     yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'revenue by plan', empty:'No paid invoices yet'});
   loadStripeEvents();
+  loadPaddleEvents();
 }
 /* A4 · the status select named loadStripeEvents as its own data-onchange, and
    _fauxCommit invokes that callback as window[cb](root) — it passes the SELECT
@@ -5476,6 +5492,49 @@ async function _doReplayStripe(id,btn){
     if(!r){ toast('replay failed — no response from the API','error'); return; }
     const d=await r.json().catch(()=>({}));
     if(r.ok){ toast('event replayed · '+(d.result||d.event_status||'ok'),'success'); loadStripeEvents(); }
+    else toast(d.detail||('replay failed ('+r.status+')'),'error');
+  });
+}
+
+/* ── Paddle events + replay (M3d · #98 · #103) ───────────────────────────────
+   Deliberately the same shape as loadStripeEvents above: same table, same chip
+   vocabulary, same pager, same operator gate. One visual language for "a
+   webhook log" beats a second one invented for the processor that matters. */
+function paddleFilterChanged(){ pgReset('paddle'); loadPaddleEvents(); }
+async function loadPaddleEvents(page){
+  const st=fauxVal('peStatus');
+  const pg=pgState('paddle',25); if(page)pg.page=page;
+  const off=(pg.page-1)*pg.size;
+  let r; try{ r=await api('/admin/v1/billing/payment-events?limit='+pg.size+'&offset='+off+(st?('&status='+st):'')); }catch(e){ r=null; }
+  if(!r||!r.ok){ $('peRows').innerHTML=faultRow(6,'Paddle events did not load.',"loadPaddleEvents()"); window.foxPager('pePager',{total:0}); return; }
+  const _d=await r.json(), items=_d.items||[];
+  window.foxPager('pePager',{page:pg.page,pageSize:pg.size,total:_d.total||items.length,
+    label:'Paddle event pages',onPage:loadPaddleEvents});
+  if(!items.length){ $('peRows').innerHTML='<tr><td colspan="6" class="sub mono">no paddle events'+(st?(' with status '+esc(st)):'')+'</td></tr>'; return; }
+  const canReplay=can('operator');
+  $('peRows').innerHTML=items.map(e=>{
+    const cls=e.status==='processed'?'safe':e.status==='failed'?'bad':e.status==='ignored'?'dim':'warn';
+    /* Offered on failed and received only, and the ROUTE refuses the rest as
+       well — a restriction that lives only in the markup is not a restriction.
+       Those two are the rows where the handler demonstrably did not finish;
+       re-running a processed one can only apply stale state. */
+    const replayable=(e.status==='failed'||e.status==='received');
+    const act=(canReplay&&replayable)?`<button class="btn sm pri" onclick="replayPaddle('${jsq(e.id)}','${jsq(e.type||'this event')}')">Replay</button>`:'';
+    return `<tr><td data-label="Type" class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td data-label="Status"><span class="chip ${cls}">${esc(e.status)}</span></td><td data-label="Org" class="mono" style="font-size:10px;">${e.org_id?sens(e.org_id,{short:e.org_id.slice(0,8)+'…'}):'—'}</td><td data-label="Received" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td data-label="Error" class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td data-label="Action" style="text-align:right;">${act}</td></tr>`;
+  }).join('');
+}
+function replayPaddle(id,type){
+  openModal({eyebrow:'ops · re-runs a Paddle webhook', title:'Replay this event',
+    bodyHTML:`<div class="sub">Foxy will run <b>${esc(type||'this event')}</b> again as if Paddle had just delivered it. It does <b>not</b> contact Paddle, so nothing can be charged or refunded — but everything the handler does to this workspace happens again: the plan and credits are re-applied, any trial and evaluation end, and a brand-new workspace would be emailed a set-password link.</div><div class="sub" style="margin-top:10px;">Only events that failed or never finished can be replayed.</div>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doReplayPaddle('${jsq(id)}',this)">Replay event</button>`});
+}
+async function _doReplayPaddle(id,btn){
+  await busy(btn,async function(){
+    let r;try{ r=await api('/admin/v1/billing/payment-events/'+encodeURIComponent(id)+'/replay',{method:'POST'}); }catch(e){ r=null; }
+    closeModal();
+    if(!r){ toast('replay failed — no response from the API','error'); return; }
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ toast('event replayed — '+(d.result||d.event_status||'ok'),'success'); loadPaddleEvents(); }
     else toast(d.detail||('replay failed ('+r.status+')'),'error');
   });
 }

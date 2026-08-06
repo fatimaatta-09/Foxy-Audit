@@ -850,8 +850,11 @@ def test_every_table_cardifies() -> None:
     'different pages behave differently' that was reported."""
     tables = _tables()
     # 18 since round-2 item 9 removed the Settings self-activity card, whose
-    # loader built the nineteenth.
-    assert len(tables) == 18, f"expected 18 tables, found {len(tables)}"
+    # loader built the nineteenth. 19 since M3d added the Paddle events feed
+    # beside the Stripe one on the revenue page. The count has to move with a
+    # legitimate table; the real assertion — that every one of them opts in to
+    # cardify — is the loop below and is unchanged.
+    assert len(tables) == 19, f"expected 19 tables, found {len(tables)}"
     missing = [t[:70] for t in tables if "tbl cardify" not in t[:60]]
     assert not missing, f"tables that still scroll sideways instead of stacking: {missing}"
 
@@ -3853,6 +3856,99 @@ def test_the_detail_cell_stacks_on_a_phone() -> None:
     assert rule, "the phone layout for the detail cell is gone"
     assert "flex-direction:column" in rule.group(1)
     assert "align-items:flex-start" in rule.group(1)
+
+
+# ── M3d · the Paddle events feed and its replay (#98 · #103) ────────────────
+
+
+def _pe_code(name: str) -> str:
+    """A function's source with `//` line comments stripped — these blocks
+    explain their own rules, and a structural check over raw text is otherwise
+    satisfied by the prose describing the rule rather than the rule."""
+    return re.sub(r"(?m)(?<!:)//.*$", "", _js_func(name))
+
+
+def test_the_revenue_page_shows_the_paddle_feed() -> None:
+    """Paddle is the processor that actually takes money here; Stripe has never
+    taken one and has had a feed since P4."""
+    mk = _nocomment(_page("revenue"))
+    assert 'id="peRows"' in mk, "the Paddle events table is gone"
+    assert 'id="pePager"' in mk
+    assert "Paddle events" in mk
+    assert 'id="seRows"' in mk, "the Stripe feed was displaced rather than joined"
+
+
+def test_the_paddle_feed_is_actually_loaded() -> None:
+    """A table nobody fills is worse than no table: it reads as 'no events'."""
+    assert "loadPaddleEvents()" in _pe_code("loadRevenue"), (
+        "the revenue page never calls loadPaddleEvents, so the feed stays on "
+        "'loading…' forever"
+    )
+
+
+def test_the_paddle_feed_reads_the_purpose_built_route() -> None:
+    """NOT the generic data browser: that returns every column minus a denylist,
+    and a Paddle payload carries the customer's name, email and address."""
+    body = _pe_code("loadPaddleEvents")
+    assert "/admin/v1/billing/payment-events" in body
+    assert "/admin/v1/data/" not in body
+
+
+def test_replay_is_offered_only_where_it_can_help() -> None:
+    """`failed` and `received` are the rows where the handler demonstrably did
+    not finish. Re-running a processed one can only apply stale state."""
+    body = _pe_code("loadPaddleEvents")
+    m = re.search(r"const replayable=\(([^)]*)\)", body)
+    assert m, "the replayable test is gone"
+    assert "'failed'" in m.group(1) and "'received'" in m.group(1)
+    assert "'processed'" not in m.group(1) and "'ignored'" not in m.group(1)
+    assert "canReplay&&replayable" in body, (
+        "the button is rendered without checking both the role and the status"
+    )
+
+
+def test_the_replay_button_goes_through_a_confirmation() -> None:
+    """Replay is irreversible-shaped. It must not fire from the row."""
+    body = _pe_code("loadPaddleEvents")
+    assert "replayPaddle(" in body
+    assert "_doReplayPaddle(" not in body, (
+        "the row fires the replay directly, with no confirmation step"
+    )
+    assert "_doReplayPaddle(" in _pe_code("replayPaddle"), (
+        "the confirmation never reaches the request"
+    )
+
+
+def test_the_confirmation_says_what_running_it_again_does() -> None:
+    """Vague confirmations get clicked through. This one has to name the two
+    things a staff member would want to know: that no money moves, and that a
+    brand-new workspace gets emailed."""
+    body = _pe_code("replayPaddle")
+    low = body.lower()
+    assert "charged" in low and "refunded" in low, (
+        "the modal does not say whether money can move"
+    )
+    assert "set-password" in low or "email" in low, (
+        "the modal does not warn that a new workspace is emailed"
+    )
+
+
+def test_the_paddle_row_escapes_everything_it_renders() -> None:
+    """`type` and `error` come from a processor, and the id is bound into an
+    inline handler — which crosses two parsers, which is what `jsq` is for."""
+    body = _pe_code("loadPaddleEvents")
+    for field in ("e.type", "e.status"):
+        assert f"esc({field}" in body, f"{field} is rendered unescaped"
+    assert "esc((e.error" in body, "the processor's error text is rendered unescaped"
+    assert "jsq(e.id)" in body, "the id is interpolated into an onclick without jsq"
+
+
+def test_the_paddle_feed_has_a_fault_state_that_retries_itself() -> None:
+    body = _pe_code("loadPaddleEvents")
+    m = re.search(r"faultRow\(\s*(\d+)\s*,[^,]*,\s*\"([A-Za-z_$][\w$]*)\(", body)
+    assert m, "the Paddle feed has no fault row"
+    assert m.group(1) == "6", "the fault row spans the wrong number of columns"
+    assert m.group(2) == "loadPaddleEvents", "the retry calls something else"
 
 
 if __name__ == "__main__":  # pragma: no cover
