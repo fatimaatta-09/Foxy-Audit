@@ -1545,6 +1545,47 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
 @keyframes grow{from{transform:scaleX(0);transform-origin:left}to{transform:scaleX(1)}}
 @keyframes sheen{0%,60%{transform:translateX(-100%)}100%{transform:translateX(220%)}}
 .funnum{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;font-weight:700;text-align:right;color:var(--ink)}
+/* ── C3 · the quota meter. IT ENCODES A THRESHOLD, NOT A PROPORTION. ─────────
+   A red-to-green ramp makes every row a slightly different colour and none of
+   them findable — the operator's question is "who is near their limit", not
+   "how full is each one". So it takes R2's ladder, the same one the status mark
+   uses, and the console keeps speaking one language:
+
+     under 80%   --muted fill,     numbers in --muted    — recedes
+     >= 80%      --warn-bg fill,   numbers in --ink @800 — an EXCEPTION
+     >= 100%     --breach-bg fill, numbers in --ink @800 — a BREACH
+
+   Hue says WHICH state, weight says WHETHER it is the state you expected, and a
+   WORD ("near" / "over") says it in text so the tier is never colour alone.
+
+   ⚠ THE TRACK IS --line AND THAT IS A MEASURED CHOICE, not the nearest grey.
+   Every fill has to clear 3:1 against the track it sits in, and an empty track
+   has to be visible against the panel or the two honest states draw nothing at
+   all. Measured, both themes, fill-vs-track (muted/warn/breach) / track-vs-panel:
+
+     --surf2  5.02 10.88 5.15 / 1.03   track invisible on the panel
+     --surf3  4.68 10.15 4.80 / 1.11   track invisible on the panel
+     --line   3.97  8.61 4.07 / 1.30   ← dark
+     --line   4.25  3.52 3.39 / 1.25   ← light
+     --line2  3.63  3.01 2.89 / 1.47   breach fails 3:1 in light
+
+   --line is the only candidate clearing 3:1 for all three fills in BOTH themes
+   while leaving an empty track you can see. NOT copied from .funbar above: that
+   is a funnel row, and its gradient, glow and infinite sheen are a progress
+   ornament. A quota cell is a measurement. */
+.qmeter{display:block;min-width:92px}
+.qmeter-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:10.5px;color:var(--muted);white-space:nowrap}
+.qmeter-n b{font-weight:700;color:var(--muted)}
+.qmeter.warn .qmeter-n b,.qmeter.bad .qmeter-n b{color:var(--ink);font-weight:800}
+.qmeter-w{margin-left:5px;font-size:9px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--ink)}
+.qmeter-t{height:5px;margin-top:5px;border-radius:var(--r-xs);background:var(--line);overflow:hidden}
+.qmeter-t i{display:block;height:100%;min-width:3px;border-radius:var(--r-xs);background:var(--muted)}
+.qmeter.warn .qmeter-t i{background:var(--warn-bg)}
+.qmeter.bad .qmeter-t i{background:var(--breach-bg)}
+/* the two honest states. --muted2 is a LIVE label on this surface (4.95:1 on
+   --surf), not a disabled colour: the sentence IS the answer here, not a greyed
+   placeholder waiting for a number that is coming. */
+.qmeter-abs{font-family:var(--mono);font-size:10.5px;color:var(--muted2);white-space:nowrap}
 
 /* `.drawer td` sat here, tinting the org list's inline detail row. That row was
    built only by toggleOrg, which had no call sites and is gone; the rule
@@ -2254,9 +2295,9 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </div>
         <table class="tbl cardify" id="orgTbl">
           <thead><tr>
-            <th scope="col">Org</th><th scope="col">Plan</th><th scope="col">Subscription</th><th scope="col">Access</th><th scope="col">Contact</th><th scope="col">Created</th>
+            <th scope="col">Org</th><th scope="col">Plan</th><th scope="col">This month</th><th scope="col">Subscription</th><th scope="col">Access</th><th scope="col">Contact</th><th scope="col">Created</th>
           </tr></thead>
-          <tbody id="orgRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody>
+          <tbody id="orgRows" aria-live="polite"><tr><td colspan="7" class="sub mono">loading…</td></tr></tbody>
         </table><div id="orgPager"></div>
       </div>
     </section>
@@ -4573,7 +4614,7 @@ async function loadOrgs(){
   let r; try{ r=await api('/admin/v1/organizations'+inc); }catch(e){ r=null; }
   if(!r||!r.ok){
     $('orgPager').innerHTML='';
-    $('orgRows').innerHTML=faultRow(6,'Organizations did not load.','loadOrgs()',
+    $('orgRows').innerHTML=faultRow(7,'Organizations did not load.','loadOrgs()',
       r?('HTTP '+r.status):'no response from the API');
     return;
   }
@@ -4624,6 +4665,54 @@ function _orgsFiltered(){
       .toLowerCase().indexOf(ORG_Q)>=0;
   });
 }
+/* C3 · one org's quota cell. THREE STATES, and the two that are not a
+   measurement were designed first — the happy one is the easy one.
+
+   ⚠ THE DENOMINATOR IS THE ENFORCED CAP, NOT THE PLAN'S. `monthly_log_quota` is
+   the column logs.py's credits_exhausted gate actually tests
+   (`if quota is not None`), so NULL means nothing is counting against this org.
+   That is a REAL state and a common one: every creation path stores
+   settings.quota_for(plan), which is None for premium and guardian, and
+   billing_state nulls it while an evaluation offer is live — its own comment
+   says "the quota gate is inert on exactly the orgs this pair applies to".
+   Resolving platform_config.effective_quota() here instead would put a
+   denominator under precisely those organisations and draw a bar filling toward
+   a limit that will never be applied. A full bar is a lie about a plan that
+   cannot fill.
+
+   ⚠ ZERO USAGE DRAWS AN EMPTY TRACK, NOT A STUB. A5 already paid for this on
+   the overview funnels: .funbar i carries min-width:3px, so a bucket of zero
+   rendered a short coloured stub that reads as "a few" while the numeral beside
+   it said 0. Same rule here — the fill element only exists when there is
+   something to fill it with, and above zero it keeps the 3px floor so one event
+   in a 25,000 allowance is still visibly not-nothing.
+
+   ⚠ THE BAR IS aria-hidden AND THAT IS DELIBERATE. role="meter" is patchily
+   supported and role="progressbar" would make a screen reader announce a figure
+   that is already sitting beside it as text. The numbers ARE the accessible
+   value — 1,240 / 25,000 — and the tier is a word, so nothing here is carried
+   by colour or by shape alone. */
+function quotaMeter(o){
+  const rolled=o.usage_rolled_up_at, used=o.usage_this_month||0, q=o.monthly_log_quota;
+  if(!rolled)
+    return '<div class="qmeter"><div class="qmeter-abs">awaiting rollup</div>'
+      +'<div class="qmeter-t" aria-hidden="true"></div></div>';
+  if(q==null)
+    return '<div class="qmeter" data-tip="No monthly cap is enforced on this workspace — '
+      +'premium and guardian plans, and any org holding an evaluation offer.">'
+      +'<div class="qmeter-abs">'+num(used)+' · unmetered</div></div>';
+  /* A hand-set allowance of 0 is reachable (PlanRequest validates >= 0), and
+     dividing by it would throw. Any usage against no allowance is over. */
+  const pct=q>0?(used/q*100):(used>0?100:0);
+  const tier=pct>=100?'bad':pct>=80?'warn':'';
+  const word=pct>=100?'over':pct>=80?'near':'';
+  const bar=used>0?'<i style="width:'+Math.min(100,pct).toFixed(1)+'%"></i>':'';
+  return '<div class="qmeter '+tier+'" data-tip="'+esc(num(used)+' of '+num(q)
+      +' events this month · '+Math.round(pct)+'% of the enforced monthly cap')+'">'
+    +'<div class="qmeter-n"><b>'+num(used)+'</b> / '+num(q)
+    +(word?'<span class="qmeter-w">'+word+'</span>':'')+'</div>'
+    +'<div class="qmeter-t" aria-hidden="true">'+bar+'</div></div>';
+}
 function renderOrgs(){
   const all=ORGS_ALL, rows=_orgsFiltered();
   const off=$('showDeleted')&&$('showDeleted').checked?' · offboarded included':'';
@@ -4644,7 +4733,7 @@ function renderOrgs(){
   const orgs=window.foxPageSlice(rows,pgState('orgs',25),'orgPager',renderOrgs,'Organization pages');
   /* An empty result is not an empty list. "no organizations yet" is false when
      there are forty and none of them match. */
-  if(!all.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  if(!all.length){$('orgRows').innerHTML='<tr><td colspan="7" class="sub mono">no organizations yet</td></tr>';return}
   /* THE EMPTY STATE EVERYONE WILL SEE. DEMO_APPROVAL_REQUIRED ships OFF, so on
      most deployments no organisation is ever pending and this is the normal
      case, not an edge one.
@@ -4660,13 +4749,13 @@ function renderOrgs(){
      confident wrong reason on the screen a staff member checks to find out
      whether anyone is waiting. */
   if(!rows.length&&ORG_PENDING_ONLY&&!ORG_Q){
-    $('orgRows').innerHTML='<tr><td colspan="6" class="sub" style="padding:14px 10px;line-height:1.6;">'
+    $('orgRows').innerHTML='<tr><td colspan="7" class="sub" style="padding:14px 10px;line-height:1.6;">'
       +'No organizations are awaiting approval.<br><span class="mono" style="font-size:11px;color:var(--muted);">'
       +'Whether any ever will is set by DEMO_APPROVAL_REQUIRED on the API, which this console cannot read.'
       +'</span></td></tr>';
     return;
   }
-  if(!rows.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations match “'+esc(ORG_Q)+'”</td></tr>';return}
+  if(!rows.length){$('orgRows').innerHTML='<tr><td colspan="7" class="sub mono">no organizations match “'+esc(ORG_Q)+'”</td></tr>';return}
   $('orgRows').innerHTML=orgs.map(o=>{
     /* `.warn`, and the tier is a decision rather than a colour. The status
        vocabulary reads EXPECTED / EXCEPTION / ABSENCE, and a workspace waiting
@@ -4687,6 +4776,7 @@ function renderOrgs(){
     return `<tr class="rowbtn" onclick="openOrg('${o.id}')">
       <td data-label="Org"><button type="button" class="rowlink" onclick="event.stopPropagation();openOrg('${o.id}')">${esc(o.name)}</button><div class="sub" style="font-size:9px;">${sens(o.id,{short:o.id.slice(0,8)+'…'})}</div></td>
       <td data-label="Plan" class="mono">${esc(o.plan_tier||'—')}</td>
+      <td data-label="This month">${quotaMeter(o)}</td>
       <td data-label="Subscription">${sub}</td><td data-label="Access">${access}</td>
       <td data-label="Contact" class="mono" style="font-size:11px;">${esc(o.contact_email||'—')}</td>
       <td data-label="Created" class="mono" style="font-size:11px;">${fmtDay(o.created_at)}</td>

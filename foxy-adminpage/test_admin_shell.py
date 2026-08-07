@@ -2515,8 +2515,11 @@ def test_the_org_list_is_not_left_on_its_loading_placeholder() -> None:
         "the org table changes silently"
     )
     body = _js_func("loadOrgs")
-    assert "faultRow(6," in body, (
-        "the org table's failure path does not fill its own six columns"
+    # SEVEN since C3 added the quota meter beside Plan. A fault row spanning the
+    # wrong count is invisible until the table is actually empty, which is why
+    # this is pinned to a number rather than to "some colspan".
+    assert "faultRow(7," in body, (
+        "the org table's failure path does not fill its own seven columns"
     )
 
 
@@ -5050,3 +5053,246 @@ def test_the_traffic_cards_gained_a_foot_they_did_not_have() -> None:
     for card in ("tErr", "tMkt", "tApp", "tAdm"):
         assert "'%sFoot'" % card in js or '"%sFoot"' % card in js or \
             "c[1]+'Foot'" in js, "%s's foot is markup nothing writes" % card
+
+
+# ── C3 · the quota meter ─────────────────────────────────────────────────────
+# The only new component in this plan. It encodes a THRESHOLD, not a proportion:
+# R2's ladder (recede / exception / breach) rather than a red-to-green ramp,
+# because the operator's question is "who is near their limit", not "how full is
+# each one" -- and a ramp makes every row a slightly different colour and none
+# of them findable.
+#
+# Almost all of these RUN quotaMeter and read the markup it returns. The three
+# tiers differ by one comparison each, and a guard that greps the file for the
+# string "warn" would pass with every threshold rewired.
+
+_QM_SHIM = """
+function num(n){return Number(n).toLocaleString('en-US');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+"""
+
+_QM_ROLLED = "'2026-08-08T00:00:00Z'"
+
+
+def _meter(cases: dict) -> dict:
+    """Run the shipped quotaMeter over each case; report what it emitted."""
+    import json
+    import os
+    import tempfile
+    probe = (_QM_SHIM + _js_decl("quotaMeter")
+             + "\nvar CASES=" + json.dumps(cases) + ";\nvar R={};\n"
+             + r"""
+for(var k in CASES){ var h=quotaMeter(CASES[k]);
+  R[k]={html:h,
+        tier:(/class="qmeter ([a-z]*)"/.exec(h)||[,''])[1],
+        width:(/width:([\d.]+)%/.exec(h)||[,null])[1],
+        hasFill:/<i /.test(h),
+        hasTrack:/qmeter-t/.test(h),
+        word:(/qmeter-w">([a-z]+)</.exec(h)||[,''])[1],
+        text:h.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim()}; }
+console.log(JSON.stringify(R));
+""")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        # encoding="utf-8" is not optional: text=True alone decodes cp1252 here
+        # and the · separator in the unmetered state comes back as mojibake.
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True, encoding="utf-8")
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+
+def _case(used, quota, rolled="2026-08-08T00:00:00Z"):
+    return {"usage_rolled_up_at": rolled, "usage_this_month": used,
+            "monthly_log_quota": quota}
+
+
+pytestmark_c3 = pytest.mark.skipif(shutil.which("node") is None,
+                                   reason="node not on PATH")
+
+
+@pytestmark_c3
+def test_the_meter_changes_tier_at_eighty_and_at_a_hundred() -> None:
+    """THE THRESHOLDS ARE THE COMPONENT. Each tier is one comparison, and each
+    boundary is asserted from BOTH sides -- a guard that only checked 50% and
+    150% would pass with the thresholds at 40 and 90.
+
+    19,999/25,000 is 79.996%, which ROUNDS to 80 for the bar's width. It must
+    still be the quiet tier: the tier reads the true percentage, not the
+    rounded one it draws with.
+    """
+    r = _meter({
+        "half":    _case(12_500, 25_000),   # 50%
+        "just_under": _case(19_999, 25_000),  # 79.996% -> rounds to 80
+        "at_80":   _case(20_000, 25_000),   # 80%
+        "at_99":   _case(24_999, 25_000),
+        "at_100":  _case(25_000, 25_000),
+        "over":    _case(27_900, 25_000),
+    })
+    assert r["half"]["tier"] == "", "a half-full quota is being flagged"
+    assert r["just_under"]["tier"] == "", (
+        "79.996%% took the exception tier: the tier is reading the rounded "
+        "width (%s) instead of the true percentage" % r["just_under"]["width"])
+    assert r["at_80"]["tier"] == "warn", "80%% is not the exception tier"
+    assert r["at_99"]["tier"] == "warn", "99%% is not the exception tier"
+    assert r["at_100"]["tier"] == "bad", "reaching the cap is not a breach"
+    assert r["over"]["tier"] == "bad"
+    # and the fill never runs past its own track
+    assert float(r["over"]["width"]) == 100.0, (
+        "an over-quota bar draws %s%% wide" % r["over"]["width"])
+
+
+@pytestmark_c3
+def test_no_tier_is_carried_by_colour_alone() -> None:
+    """R2's rule, and the reason this component is not a ramp: hue says WHICH
+    state, weight says WHETHER it is the one you expected, and a WORD says it in
+    text. A colourblind operator, a greyscale screenshot in a ticket, and a
+    forced-colors user all get the same answer.
+    """
+    r = _meter({"quiet": _case(1_000, 25_000),
+                "near": _case(21_000, 25_000),
+                "over": _case(30_000, 25_000)})
+    assert r["quiet"]["word"] == "", "a normal row is being labelled"
+    assert r["near"]["word"] == "near", "the exception tier has no word"
+    assert r["over"]["word"] == "over", "the breach tier has no word"
+    for key in ("near", "over"):
+        assert r[key]["word"] in r[key]["text"], (
+            "%s's word is not in the rendered text" % key)
+
+
+@pytestmark_c3
+def test_zero_usage_draws_an_empty_track_and_one_event_does_not() -> None:
+    """A5 PAID FOR THIS ALREADY, one component over. .funbar i carries
+    min-width:3px, so a bucket of zero rendered a short coloured stub that reads
+    as "a few" while the numeral beside it said 0 -- the bar disagreeing with
+    its own number.
+
+    The other half is C0's thin-segment rule pointed the other way: 1 event in a
+    25,000 allowance is 0.004%, which rounds to a 0.0% width, so the fill must
+    still EXIST and let the CSS floor make it visible. Draw nothing there and
+    the meter says "unused" about a live customer.
+    """
+    r = _meter({"none": _case(0, 25_000), "one": _case(1, 25_000)})
+    assert not r["none"]["hasFill"], (
+        "zero usage drew a fill: %s" % r["none"]["html"])
+    assert r["none"]["hasTrack"], "zero usage drew no track either"
+    assert "0 / 25,000" in r["none"]["text"], r["none"]["text"]
+    assert r["one"]["hasFill"], (
+        "one event drew no fill at all, so an active workspace reads as unused")
+    assert float(r["one"]["width"]) == 0.0, (
+        "the test's premise is gone: 1/25,000 no longer rounds to a 0%% width, "
+        "so this is no longer exercising the floor")
+
+
+def test_the_fill_floor_is_in_the_stylesheet() -> None:
+    """The other half of the guard above: quotaMeter emits width:0.0% for one
+    event and relies on the CSS floor to make it visible. Asserted here because
+    the two halves live in different languages and either can be removed alone.
+    """
+    css = _css()
+    m = re.search(r"\.qmeter-t i\{([^}]*)\}", css)
+    assert m, "the meter's fill rule is gone"
+    assert "min-width:3px" in m.group(1), (
+        "the fill lost its floor, so a 0.004%% usage draws nothing")
+
+
+@pytestmark_c3
+def test_an_unmetered_workspace_gets_no_bar_at_all() -> None:
+    """premium and guardian are unlimited by contract, and billing_state nulls
+    the cap while an evaluation offer is live. There is no denominator, so there
+    is no bar -- a full one would be a lie about a plan that cannot fill, and an
+    empty one would be a lie about a workspace sending 98,000 events.
+
+    Not even a track: an empty track is the "no measurement yet" state below,
+    and drawing one here would say the two are the same thing.
+    """
+    r = _meter({"un": _case(98_000, None)})["un"]
+    assert not r["hasFill"] and not r["hasTrack"], (
+        "an unmetered workspace drew a meter: %s" % r["html"])
+    assert "unmetered" in r["text"], r["text"]
+    assert "98,000" in r["text"], "the usage stopped being reported"
+    assert "%" not in r["text"], "a percentage of nothing was rendered"
+
+
+@pytestmark_c3
+def test_usage_with_no_rollup_behind_it_is_an_absence_not_a_zero() -> None:
+    """C1's null-delta rule, one component over: absence is not zero. With no
+    usage_daily rows at all, every org's sum is 0 -- and "0 / 500" reads as a
+    customer sending nothing, on a console where somebody is deciding whether to
+    chase them. The row carries usage_rolled_up_at so the two can be told apart.
+    """
+    r = _meter({"never": _case(0, 500, rolled=None)})["never"]
+    assert "awaiting rollup" in r["text"], r["text"]
+    assert "0 / 500" not in r["text"], "an unmeasured org is being shown as zero"
+    assert "%" not in r["text"], "an unmeasured org is being given a percentage"
+    assert not r["hasFill"], "an unmeasured org drew a fill"
+    assert r["hasTrack"], "the empty track that says a scale exists is gone"
+
+
+@pytestmark_c3
+def test_a_hand_set_zero_allowance_does_not_divide_by_zero() -> None:
+    """PlanRequest validates monthly_log_quota >= 0, so staff can set 0 by hand.
+    Every other path stores settings.quota_for(plan), which returns None rather
+    than 0 -- so this is only reachable through the console itself, which is
+    exactly why it is worth a guard rather than an assumption."""
+    r = _meter({"zero_cap": _case(5, 0), "zero_both": _case(0, 0)})
+    assert r["zero_cap"]["tier"] == "bad", "usage against no allowance is not over"
+    assert r["zero_both"]["tier"] == "", "0 of 0 is not a breach"
+    for k in r:
+        assert "NaN" not in r[k]["html"] and "Infinity" not in r[k]["html"], (
+            "%s produced %s" % (k, r[k]["text"]))
+
+
+def test_the_meter_is_built_from_the_measured_tokens() -> None:
+    """The track is --line because it is the ONLY candidate clearing 3:1 for all
+    three fills in BOTH themes while leaving an empty track visible against the
+    panel: --surf2 and --surf3 vanish on the panel (1.03 / 1.11), --line2 puts
+    breach at 2.89 in light. Pinned so the next person who reaches for "a
+    slightly lighter grey" has to re-measure rather than re-taste.
+
+    The fills are R2's own tokens, which is what makes this the same ladder as
+    the status mark rather than a second vocabulary for the same idea.
+    """
+    css = _css()
+    track = re.search(r"\.qmeter-t\{([^}]*)\}", css)
+    assert track, "the meter's track rule is gone"
+    assert "background:var(--line)" in track.group(1), (
+        "the track is no longer --line: %s" % track.group(1))
+    assert "background:var(--muted)" in re.search(r"\.qmeter-t i\{([^}]*)\}", css).group(1)
+    for sel, token in ((r"\.qmeter\.warn \.qmeter-t i", "--warn-bg"),
+                       (r"\.qmeter\.bad \.qmeter-t i", "--breach-bg")):
+        m = re.search(sel + r"\{([^}]*)\}", css)
+        assert m, "the meter lost its %s rule" % token
+        assert "background:var(%s)" % token in m.group(1), (
+            "the %s tier is painted %s" % (token, m.group(1)))
+    # a ramp would need a gradient; there is not one here, in either direction
+    for rule in (track.group(1), css[css.index(".qmeter-t i{"):css.index(".qmeter-t i{") + 400]):
+        assert "gradient" not in rule, (
+            "the meter grew a gradient; it encodes a threshold, not a proportion")
+
+
+def test_every_empty_state_on_the_org_table_spans_its_new_width() -> None:
+    """The table went from six columns to seven, and a stale colspan is
+    invisible until the table is actually empty -- which for three of these five
+    is the state a staff member hits on their first visit.
+
+    FIVE sites, not three: the loading row that ships in the markup and the
+    faultRow() call are both easy to miss because neither looks like an empty
+    state in the source.
+    """
+    mk = _nocomment(SRC)
+    tbody = mk[mk.index('<tbody id="orgRows"'):]
+    tbody = tbody[:tbody.index("</tbody>")]
+    assert 'colspan="7"' in tbody, "the shipped loading row still spans six"
+    body = _js_func("renderOrgs")
+    assert body.count('colspan="7"') == 3, (
+        "renderOrgs has %d seven-column empty states, expected 3"
+        % body.count('colspan="7"'))
+    assert 'colspan="6"' not in body, "an empty state still spans the old width"
+    assert "faultRow(7," in _js_func("loadOrgs"), (
+        "the fault row still spans six of seven columns")

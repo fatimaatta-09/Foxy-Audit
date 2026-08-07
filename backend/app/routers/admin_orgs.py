@@ -47,11 +47,25 @@ class OrgListItem(BaseModel):
     #: route — which is every row older than migration 0064, and every org a
     #: purchase creates. "pending" is what M4c's approvals queue filters on.
     approval_status: str | None = None
+    #: C3 · THE ENFORCED CAP, read straight off the organisation row — the same
+    #: value logs.py's `credits_exhausted` gate tests, and deliberately NOT
+    #: platform_config.effective_quota(). None means no cap is applied to this
+    #: org, which is what NULL means to the gate (`if quota is not None`), and it
+    #: is a REAL state rather than a missing one: every creation path stores
+    #: settings.quota_for(plan), which returns None for premium/guardian, and
+    #: billing_state nulls it deliberately while an evaluation offer is live.
+    #: Resolving a plan default here instead would print a denominator for
+    #: exactly the organisations nothing is counting against.
+    monthly_log_quota: int | None = None
+    #: C3 · month-to-date captured events, summed from the usage_daily rollup.
+    usage_this_month: int = 0
+    #: C3 · when the rollup last wrote anything, platform-wide. None means it has
+    #: never run, so `usage_this_month` is an absence and not a zero.
+    usage_rolled_up_at: str | None = None
 
 
 class OrgDetail(OrgListItem):
     suspended_reason: str | None = None
-    monthly_log_quota: int | None = None
     user_count: int = 0
     api_key_count: int = 0
     total_logs: int = 0
@@ -75,13 +89,16 @@ class PlanRequest(BaseModel):
     payment_reference: str | None = Field(default=None, max_length=128)
 
 
-def _list_item(o: Organization) -> OrgListItem:
+def _list_item(o: Organization, usage: int = 0,
+               rolled_up_at: str | None = None) -> OrgListItem:
     return OrgListItem(
         id=str(o.id), name=o.name, plan_tier=o.plan_tier,
         subscription_status=o.subscription_status, suspended=bool(o.suspended),
         deleted=o.deleted_at is not None, contact_email=o.contact_email,
         created_at=o.created_at.isoformat() if o.created_at else None,
         approval_status=o.approval_status,
+        monthly_log_quota=o.monthly_log_quota,
+        usage_this_month=usage, usage_rolled_up_at=rolled_up_at,
     )
 
 
@@ -96,7 +113,31 @@ def list_organizations(
     stmt = select(Organization).order_by(Organization.created_at.desc())
     if not include_deleted:
         stmt = stmt.where(Organization.deleted_at.is_(None))
-    return [_list_item(o) for o in db.execute(stmt).scalars().all()]
+    orgs = db.execute(stmt).scalars().all()
+
+    # C3 · ONE grouped query for every row. This list is unpaginated server-side
+    # — the console holds all of it in ORGS_ALL and filters client-side — so a
+    # per-org sum would be N+1 against the platform's busiest rollup.
+    #
+    # "This month" is decided in UTC, the same clock every other aggregate on
+    # this console uses (stats_timeseries, health trends, traffic). usage_daily.
+    # day is already a DATE, so the comparison is date-to-date and no cast can
+    # shift a row into the wrong month.
+    month_start = datetime.now(timezone.utc).date().replace(day=1)
+    used = {
+        row[0]: int(row[1])
+        for row in db.execute(
+            select(UsageDaily.org_id,
+                   func.coalesce(func.sum(UsageDaily.logs_count), 0))
+            .where(UsageDaily.day >= month_start)
+            .group_by(UsageDaily.org_id)
+        ).all()
+    }
+    # Whether the rollup has EVER produced a figure. A zero from a rollup that
+    # has never run is an absence, not a measurement, and the console renders
+    # the two differently — the same rule C1 applied to a null delta_pct.
+    rolled_up_at = _iso(db.execute(select(func.max(UsageDaily.computed_at))).scalar())
+    return [_list_item(o, used.get(o.id, 0), rolled_up_at) for o in orgs]
 
 
 @router.get("/v1/organizations/{org_id}", response_model=OrgDetail)
@@ -133,8 +174,11 @@ def get_organization(
     ).scalar_one()
 
     base = _list_item(org).model_dump()
+    # monthly_log_quota now rides on OrgListItem, so `base` already carries it;
+    # passing it again here is a duplicate keyword and a TypeError on every
+    # org-detail read.
     return OrgDetail(**base, suspended_reason=org.suspended_reason,
-                     monthly_log_quota=org.monthly_log_quota, user_count=user_count,
+                     user_count=user_count,
                      api_key_count=key_count, total_logs=total_logs, breaches=breaches)
 
 
