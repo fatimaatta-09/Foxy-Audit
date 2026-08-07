@@ -1422,7 +1422,13 @@ document.getElementById('leadSubmit').addEventListener('click', async e => {
         leadMsg.style.color = 'var(--warn-bg)'; leadMsg.textContent = 'That evaluation offer is unavailable.'; return;
       }
       const d = await r.json();
-      try { sessionStorage.setItem('foxy_welcome', JSON.stringify({ email, api_key: d.api_key || '', evaluation_offer: d.evaluation_offer || null })); } catch (_) {}
+      // Carried here too. An evaluation signup is never queued (M4a exempts an
+      // offer from the approval gate), so this is always null today — forwarded
+      // anyway so the two signup paths cannot answer the same question
+      // differently if that ever changes.
+      try { sessionStorage.setItem('foxy_welcome', JSON.stringify({ email, api_key: d.api_key || '',
+        evaluation_offer: d.evaluation_offer || null, approval_status: d.approval_status || null,
+        message: d.message || '' })); } catch (_) {}
       leadMsg.style.color = 'var(--safe-bg)'; leadMsg.textContent = '✓ Judge access created — taking you to setup…';
       window.location.href = '/welcome.html';
       return;
@@ -1450,7 +1456,12 @@ document.getElementById('leadSubmit').addEventListener('click', async e => {
       const d = await r.json();
       // Hand the shown-once key to the welcome/onboarding page in-memory (session
       // storage, never the URL); it clears it after reading.
-      try { sessionStorage.setItem('foxy_welcome', JSON.stringify({ email, api_key: d.api_key || '' })); } catch (_) {}
+      // M4d · approval_status and message ride along. Signup returns both when
+      // the deployment requires a human to approve a demo, and welcome.html
+      // cannot read what this line does not forward — it was dropping them, so
+      // a pending signup landed on a page promising a dashboard that answers 402.
+      try { sessionStorage.setItem('foxy_welcome', JSON.stringify({ email, api_key: d.api_key || '',
+        approval_status: d.approval_status || null, message: d.message || '' })); } catch (_) {}
       leadMsg.style.color = 'var(--safe-bg)'; leadMsg.textContent = '✓ Account created — taking you to setup…';
       window.location.href = '/welcome.html';
       return;

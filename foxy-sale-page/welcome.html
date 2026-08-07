@@ -51,6 +51,10 @@
   </div>
 
   <div class="offer-note" id="offerNote"></div>
+  <!-- M4d · filled from the signup response when a human has to approve this
+       workspace. Same treatment as the offer note above, and mutually exclusive
+       with it: an evaluation signup is never queued. -->
+  <div class="offer-note" id="pendingNote"></div>
   <div class="steps" id="steps">
     <!-- Step 1 — accept terms -->
     <div class="step-card">
@@ -94,10 +98,11 @@
     <div class="step-card">
       <h3><span class="n">4</span> Get the desktop fox <span style="font-size:11px;color:var(--muted);font-weight:500">— optional</span></h3>
       <p>Watch capture activity and backend grading alerts beside your application. <b>Early access · unsigned.</b></p>
-      <div class="dlrow">
+      <div class="dlrow" id="dlrow">
         <a class="btn" href="https://foxyaudit.tech/download/FoxyAudit-Setup.exe" style="text-decoration:none;">Windows</a>
         <a class="btn ghost" href="https://foxyaudit.tech/download/FoxyAudit-x86_64.AppImage" style="text-decoration:none;">Linux (AppImage)</a>
       </div>
+      <p class="muted-note" id="dlNote"></p>
     </div>
   </div>
 
@@ -131,7 +136,15 @@
 <script>
   const API = window.FOXY_API || ((location.hostname==='localhost'||location.hostname==='127.0.0.1')
     ? 'http://localhost:8000' : 'https://app.' + location.hostname.replace(/^www\./,''));
-  const DASH = 'https://app.foxyaudit.tech/dashboard';
+  const DASH = 'https://app.foxyaudit.tech/dashboard';
+  /* Where the final button goes, and what the gate says once the terms are
+     accepted. Named because M4d changes them for a workspace still waiting on
+     a human, and the terms interlock underneath has to keep working unchanged. */
+  let DEST = DASH;
+  const GATE_NO = 'Accept the terms above to continue.';
+  let GATE_OK = 'Thanks — you can head to your dashboard.';
+  const esc = s => String(s == null ? '' : s)
+    .replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   // The signup modal stashes {email, api_key} here just before navigating in.
   // Read it once, then clear it (the key is shown-once).
@@ -173,9 +186,83 @@
   const agree = document.getElementById('agree');
   const toDash = document.getElementById('toDash');
   const gateNote = document.getElementById('gateNote');
+
+  /* ── M4d · the workspace is waiting for a human ────────────────────────────
+     M4a made a demo signup provision a PENDING organisation: it cannot capture
+     and cannot read its dashboard until somebody approves it, and the 7-day
+     clock starts AT APPROVAL. Before this branch existed, that person landed on
+     four confident steps ending in "Open my dashboard" — and the dashboard
+     answered 402 with "we're reviewing your request". The page promised what the
+     backend refuses.
+
+     The key is still shown, in full, exactly once. Signup issues it either way,
+     it cannot be recovered afterwards, and making somebody come back for it
+     would turn a wait into a lost credential. It simply does not work yet, and
+     saying so is this branch's whole job. */
+  const PENDING = !!(data && data.approval_status === 'pending');
+  if (PENDING) {
+    /* The server's own sentence, verbatim — the same discipline the dashboard's
+       locked card follows. A second copy of it kept here is a second thing to
+       drift, and these two surfaces describe one wait. */
+    const note = document.getElementById('pendingNote');
+    if (note) {
+      note.style.display = 'block';
+      note.innerHTML = '<b>Your workspace is being reviewed.</b> '
+        + esc(data.message || "We're reviewing your request for a demo workspace. "
+              + "You'll get an email as soon as it's approved, and your 7 days start then — not now.");
+    }
+
+    /* The default subtitle promises a 7-day trial and 500 credits that have not
+       started. */
+    const sub = document.getElementById('sub');
+    if (sub) sub.textContent = 'Save your key and set up the SDK now — both are ready. '
+      + 'Your workspace opens once it is approved.';
+
+    /* Word for word what the dashboard's locked state says about the key, so a
+       customer who reads both is told the same thing twice rather than two
+       things once. */
+    if (warnEl) warnEl.textContent = 'Capture begins when your workspace is approved. '
+      + 'Your API key is already issued and works from that moment.';
+
+    /* THE DESKTOP LOCK IS ABOUT THE PLAN, NOT THE WAIT — and the distinction is
+       the point. Conflating them would tell a demo user the app arrives on
+       approval, which it never does: the owner's decision is that a demo gets
+       the dashboard and the SDK, and the desktop app is what buying adds.
+       Shown locked rather than hidden, so somebody can see what a plan includes.
+
+       `<button disabled>` rather than a dead `<a>`: the page already styles
+       `.btn[disabled]` with reduced opacity and not-allowed, and a disabled
+       button is the one control a screen reader announces as unavailable. */
+    const row = document.getElementById('dlrow');
+    if (row) {
+      row.innerHTML = '<button class="btn" type="button" disabled>Windows</button>'
+        + '<button class="btn ghost" type="button" disabled>Linux (AppImage)</button>';
+    }
+    const dl = document.getElementById('dlNote');
+    if (dl) dl.innerHTML = 'The desktop app is part of a paid plan, not the demo — '
+      + 'approval does not unlock it. <a href="/pricing.html" style="color:var(--fox)">See the plans →</a>';
+
+    /* "Open my dashboard" is a promise this page cannot keep, and a DISABLED
+       button would still say there is something here for you. There is not — not
+       for a while.
+
+       It is not removed either, which is where this differs from the dashboard's
+       locked card. That control was the last thing on a screen the customer was
+       already inside; this one is the end of a setup flow, it is the only thing
+       that records the terms consent, and the person reading it has somewhere to
+       go next. So it keeps its job and changes its destination: the guide is
+       real, it is useful during exactly this wait, and it promises nothing about
+       access. */
+    if (toDash) {
+      toDash.textContent = 'Read the setup guide →';
+      DEST = '/how-it-works.html';
+    }
+    GATE_OK = 'Thanks — we will email you the moment your workspace is approved.';
+    if (gateNote) gateNote.textContent = GATE_NO;
+  }
   agree.addEventListener('change', () => {
     toDash.disabled = !agree.checked;
-    gateNote.textContent = agree.checked ? 'Thanks — you can head to your dashboard.' : 'Accept the terms above to continue.';
+    gateNote.textContent = agree.checked ? GATE_OK : GATE_NO;
   });
 
   toDash.addEventListener('click', () => {
@@ -185,7 +272,7 @@
       fetch(API + '/v1/consent', { method:'POST', headers:{'Content-Type':'application/json'}, keepalive:true,
         body: JSON.stringify({ functional:true, policy_version:'1.0' }) }).catch(()=>{});
     } catch(_) {}
-    window.location.href = DASH;
+    window.location.href = DEST;
   });
 </script>
 </body>
