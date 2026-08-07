@@ -4593,3 +4593,272 @@ def test_a_segment_that_touches_nothing_gets_no_boundary() -> None:
                   "series": [{"name": "all", "value": 9}]}):
         assert not any(m["stroke"] for m in _draw(opts)), (
             "a mark with no neighbour was given a boundary anyway")
+
+
+# ── C1 · trends on four KPI cards (register: the plan's C1) ──────────────────
+# The four cards that gained a spark are hFailed, hAnchors, rvRev30 and kOrgs.
+# Six others deliberately did not, and one guard below pins that.
+#
+# MOST OF THESE RUN THE CODE. C0 paid for this: a deleted `d.forEach` left all
+# 369 dashboard tests green because every one of them was a grep. Where a rule
+# is about what a function PRODUCES -- a null that must not become a zero, a
+# series that must not be the wrong one -- the guard executes it and reads the
+# result, and only the DOM-shape rules are matched statically.
+
+_KPI_SHIM = """
+var EL={};
+function mk(id){ return EL[id]={id:id,textContent:'',innerHTML:'',style:{},
+  classList:{add:function(){},remove:function(){}}}; }
+['hFailedFoot','hAnchorsFoot','kOrgsTrend','rvRev30Foot','kLogsFoot',
+ 'hFailedSpark','hAnchorsSpark','kOrgsSpark','rvRev30Spark'].forEach(mk);
+function $(id){ return EL[id]||null; }
+var DREW=[];
+function chart(id,o){ DREW.push({id:id,
+  vals:(o.series&&o.series[0]&&o.series[0].values)||[], aria:o.ariaLabel||''}); }
+function _spark(){ return '#FF6A1A'; }
+function num(n){ return String(n); }
+"""
+
+
+def _run_kpi(fns: tuple, body: str) -> dict:
+    """Declare the shipped functions over a DOM stub, run `body`, return R."""
+    import json
+    import os
+    import tempfile
+    probe = (_KPI_SHIM + "\n".join(_js_decl(f) for f in fns)
+             + "\nvar R={};\n" + body + "\nconsole.log(JSON.stringify(R));\n")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        # encoding="utf-8" is NOT optional here. text=True alone decodes node's
+        # stdout with the system locale -- cp1252 on this project's Windows
+        # runners -- and the ▲ / ▼ that carry the delta's direction come back as
+        # mojibake, so an assertion about them fails against correct output.
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True, encoding="utf-8")
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+
+pytestmark_c1 = pytest.mark.skipif(shutil.which("node") is None,
+                                   reason="node not on PATH")
+
+
+@pytestmark_c1
+def test_a_delta_against_an_empty_prior_window_is_not_a_zero() -> None:
+    """THE ONE THAT PROTECTS THE NUMBER. /stats/timeseries returns delta_pct as
+    null when prev_total is 0 -- a percentage against nothing is unanswerable,
+    not 0%. Rendering it as "0%" would state that nothing changed on a card
+    where everything did.
+
+    Run, not grepped: the null branch and the zero branch differ by one
+    comparison, and a guard that only checked the string 'no prior data' was
+    present in the file would pass with the branch unreachable (A7).
+    """
+    r = _run_kpi(("_kpiDelta",), """
+_kpiDelta('hFailedFoot', null, '30d', '99 total'); R.nul=EL.hFailedFoot.textContent;
+_kpiDelta('hFailedFoot', 0,    '30d', '99 total'); R.zero=EL.hFailedFoot.textContent;
+_kpiDelta('hFailedFoot', 12.4, '30d', '99 total'); R.up=EL.hFailedFoot.textContent;
+_kpiDelta('hFailedFoot', -8,   '30d', '99 total'); R.down=EL.hFailedFoot.textContent;
+""")
+    assert "no prior data" in r["nul"], "a null delta does not say so: %r" % r["nul"]
+    assert "0%" not in r["nul"], "a null delta rendered as a percentage: %r" % r["nul"]
+    assert "%" not in r["nul"], "a null delta rendered as a rate at all: %r" % r["nul"]
+    # and a REAL zero still reads as a measured zero, or the guard above is
+    # satisfied by a function that answers 'no prior data' to everything
+    assert "0%" in r["zero"], "a measured 0%% no longer renders: %r" % r["zero"]
+    assert "no prior data" not in r["zero"], "a measured zero is being called absent"
+    assert "▲" in r["up"] and "▼" in r["down"], "direction lost its glyph"
+
+
+@pytestmark_c1
+def test_a_delta_on_a_face_writes_no_colour_at_all() -> None:
+    """P4 removed style.color from this line: an inline colour beats
+    `.kpi .face .kfoot{color:var(--foxink)}`, so it measured 1.12:1 on
+    .k-orange and all eight theme/face/direction combinations failed AA. It
+    also painted a RISE in policy breaches green.
+
+    test_direction_is_never_carried_by_colour_alone_on_a_face greps for
+    `f.style.color=`. This runs the writer and asserts nothing landed on
+    `style` at all -- which also catches setProperty, cssText, or a renamed
+    local, none of which that grep can see.
+    """
+    r = _run_kpi(("_kpiDelta",), """
+_kpiDelta('hFailedFoot', 12.4, '30d', '99 total');
+R.keys=Object.keys(EL.hFailedFoot.style);
+_kpiDelta('hFailedFoot', null, '30d', '');
+R.keys2=Object.keys(EL.hFailedFoot.style);
+""")
+    assert r["keys"] == [], "the delta writer set %s on a KPI face" % r["keys"]
+    assert r["keys2"] == [], "the null branch sets %s on a KPI face" % r["keys2"]
+
+
+@pytestmark_c1
+def test_the_health_delta_computes_its_own_null() -> None:
+    """/admin/v1/health/trends carries no delta_pct -- unlike /stats/timeseries
+    it returns daily arrays and nothing else -- so _halfDelta stands in for it
+    and has to publish the SAME contract, including the null.
+
+    The flat case is the half of this that matters: a function that returned
+    null whenever it was unsure would satisfy 'empty prior window is null' and
+    silently stop reporting real changes.
+    """
+    r = _run_kpi(("_halfDelta",), """
+R.empty_prior=_halfDelta([0,0,0,0, 5,5,5,5]);
+R.flat       =_halfDelta([3,3,3,3, 3,3,3,3]);
+R.doubled    =_halfDelta([1,1,1,1, 2,2,2,2]);
+R.halved     =_halfDelta([4,4,4,4, 1,1,1,1]);
+R.nothing    =_halfDelta([]);
+""")
+    assert r["empty_prior"] is None, "a rise from nothing was given a percentage"
+    assert r["nothing"] is None, "an empty window was given a percentage"
+    assert r["flat"] == 0, "an unchanged window is not reported as unchanged"
+    assert r["doubled"] == 100, "a doubling reads as %s%%" % r["doubled"]
+    assert r["halved"] == -75, "a fall reads as %s%%" % r["halved"]
+
+
+@pytestmark_c1
+def test_the_anchor_spark_climbs_when_the_card_climbs() -> None:
+    """THE ONE THAT STOPS AN INVERTED ALARM.
+
+    #hAnchors counts orgs whose NEWEST anchor is failed or stale: up is bad.
+    The obvious series in the same payload, anchors[].anchored, is anchoring
+    ACTIVITY per day: up is healthy. Drawing that under this number gives it a
+    line that rises when things get better beneath a figure that rises when
+    they break -- P4's inverted alarm rebuilt as a geometry instead of a hue.
+
+    `anchored - confirmed` is the only series here that moves with the card.
+    Asserted on the emitted values, because both candidates come off the same
+    array and a grep for 'anchored' cannot tell which one was drawn.
+    """
+    r = _run_kpi(("_healthSparks", "_kpiDelta", "_halfDelta"), """
+var g=[{failed:1},{failed:2},{failed:3},{failed:4}];
+var a=[{anchored:10,confirmed:10},{anchored:8,confirmed:5},
+       {anchored:9,confirmed:2},{anchored:7,confirmed:7}];
+_healthSparks(g,a);
+R.drew=DREW;
+""")
+    drew = {d["id"]: d for d in r["drew"]}
+    assert "hAnchorsSpark" in drew, "the anchor card lost its spark"
+    vals = drew["hAnchorsSpark"]["vals"]
+    assert vals == [0, 3, 7, 0], (
+        "the anchor spark plots %s; anchored-confirmed is [0, 3, 7, 0]" % vals)
+    assert vals != [10, 8, 9, 7], (
+        "the anchor spark plots raw `anchored`, which rises when anchoring is "
+        "HEALTHY -- under a number that rises when anchoring is BROKEN")
+    assert drew["hFailedSpark"]["vals"] == [1, 2, 3, 4], (
+        "the failed-grading spark no longer plots the daily failure count")
+    for d in r["drew"]:
+        assert d["aria"], "%s draws with no accessible name" % d["id"]
+
+
+@pytestmark_c1
+def test_the_masked_revenue_card_does_not_print_its_own_figure() -> None:
+    """#rvRev30 goes through sens({mask:true}) so revenue is not readable over a
+    shoulder until staff press the eye. The pattern the other cards use ends in
+    `· 1,240 total`, and doing that here would print the money in cleartext one
+    line under the control that hides it.
+
+    Driven through the real loader against a stubbed API, because the rule is
+    about what reaches the DOM: a grep for `d.total` in the function would pass
+    the moment someone wrote the same number a different way.
+    """
+    # loadRevSpark is async, so the harness's own trailing print fires first
+    # with R still empty and the resolved one lands after it. _run_kpi reads the
+    # LAST line, which is the settled result.
+    r = _run_kpi(("loadRevSpark", "_kpiDelta"), """
+var api=function(){ return Promise.resolve({ok:true, json:function(){
+  return Promise.resolve({metric:'revenue',unit:'cents',delta_pct:12.4,
+    total:987654, points:[{day:'a',value:100},{day:'b',value:200}]}); }}); };
+loadRevSpark().then(function(){
+  R.foot=EL.rvRev30Foot.textContent;
+  R.drew=DREW.length;
+  console.log(JSON.stringify(R));
+});
+""")
+    foot = r["foot"]
+    assert "987654" not in foot and "9,876" not in foot, (
+        "the 30-day revenue is printed under the masked value: %r" % foot)
+    assert "$" not in foot, "an amount reached the foot of a masked card: %r" % foot
+    # the percentage IS allowed -- a rate of change is not the amount
+    assert "12%" in foot and "▲" in foot, (
+        "the revenue card lost its delta entirely: %r" % foot)
+
+
+def test_exactly_the_intended_cards_carry_a_trend() -> None:
+    """OWNER DECISION, and the reason this is a guard rather than a comment.
+
+    Six cards count a STOCK -- how many things exist right now -- and no daily
+    history exists for any of them. A trend on "how many staff we have" would be
+    noise even if the data did exist. They must stay bare, so a later phase
+    cannot quietly add one; the four that gained a spark must keep it.
+    """
+    mk = _nocomment(SRC)
+    for card in ("kUsers", "kStaff", "rvActive", "rvTrial", "hStatus", "hWorker"):
+        assert 'id="%sSpark"' % card not in mk, (
+            "%s is a stock with no daily history and has been given a spark" % card)
+    for card in ("hFailed", "hAnchors", "rvRev30", "kOrgs", "kLogs", "kBreaches"):
+        assert 'id="%sSpark"' % card in mk, "%s lost its spark host" % card
+
+
+def test_every_sparked_card_has_somewhere_to_write_its_delta() -> None:
+    """A spark with no delta line states a shape and refuses to say how much;
+    a delta line with no host is dead markup. Anchored to the ids, not to
+    position -- S1 found a guard that matched "the first thead on the page" and
+    silently changed subject when the panel above it was deleted.
+    """
+    mk = _nocomment(SRC)
+    js = " ".join(_script_blocks())
+    for host, foot in (("hFailedSpark", "hFailedFoot"),
+                       ("hAnchorsSpark", "hAnchorsFoot"),
+                       ("rvRev30Spark", "rvRev30Foot"),
+                       ("kOrgsSpark", "kOrgsTrend"),
+                       ("kLogsSpark", "kLogsFoot"),
+                       ("kBreachesSpark", "kBreachesFoot")):
+        assert 'id="%s"' % host in mk, "%s has no host in the markup" % host
+        assert 'id="%s"' % foot in mk, "%s has no delta slot in the markup" % foot
+        assert "'%s'" % foot in js, "%s is markup nothing ever writes" % foot
+
+
+def test_the_org_count_keeps_the_foot_its_own_tooltip_points_at() -> None:
+    """#kOrgsFoot carries live data -- `12 active · 3 suspended`, plus the
+    approvals link M4c appends to it -- and the card's tooltip tells the reader
+    to look there: "The line below splits the same count into active and
+    suspended." Writing the trend into it would delete a fact and turn the
+    tooltip into a lie in one stroke, which is why kOrgs is the only one of
+    these cards with a second line.
+    """
+    js = " ".join(_script_blocks())
+    # Block comments stripped: this function's own comment EXPLAINS that it must
+    # not write #kOrgsFoot, and names it to do so. A guard that greps the raw
+    # body finds its own explanation and calls it the defect -- the trap
+    # _nocomment and _js_nocomment were written for, one language over.
+    body = re.sub(r"/\*.*?\*/", "", _js_func("loadKpiSparks"), flags=re.S)
+    assert "'kOrgsTrend'" in body or "kOrgsTrend" in body, (
+        "the org trend is not routed to its own slot")
+    assert "kOrgsFoot" not in body, (
+        "loadKpiSparks writes #kOrgsFoot, which already carries the active / "
+        "suspended split the card's own tooltip points at")
+    assert "active · '" in js, "the active/suspended split stopped being written"
+
+
+def test_a_failed_reload_takes_the_trend_down_with_the_value() -> None:
+    """Every one of these cards keeps its last good delta in the DOM. A reload
+    that fails blanks the value to "—" and would leave "30d ▲12%" and a drawn
+    sparkline sitting under it: yesterday's trend presented as today's. That is
+    A4's shape, on four more cards.
+
+    Asserted at the CALL SITES -- guarding _kpiTrendOff's body would say nothing
+    about whether any fault path reaches it (A6).
+    """
+    for fn, pairs in (("loadHealth", ("hFailedFoot", "hAnchorsFoot")),
+                      ("loadRevenue", ("rvRev30Foot",)),
+                      ("loadOverview", ("kOrgsTrend", "kLogsFoot", "kBreachesFoot"))):
+        body = _js_func(fn)
+        for foot in pairs:
+            assert re.search(r"_kpiTrendOff\('%s'" % foot, body), (
+                "%s's fault path leaves %s showing the previous poll's trend"
+                % (fn, foot))

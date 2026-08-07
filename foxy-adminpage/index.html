@@ -2121,7 +2121,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         <div id="ovTrend" style="min-height:220px;"></div>
       </div>
       <div class="grid kpis">
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Organizations" data-tip="Tenant workspaces that have not been offboarded — soft-deleted orgs are excluded. The line below splits the same count into active and suspended." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-orgs"/></svg></button><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Organizations" data-tip="Tenant workspaces that have not been offboarded — soft-deleted orgs are excluded. The line below splits the same count into active and suspended." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-orgs"/></svg></button><div class="klabel">Organizations</div><div class="kval" id="kOrgs">—</div><div class="kfoot" id="kOrgsFoot">&nbsp;</div><div class="kfoot" id="kOrgsTrend">&nbsp;</div><div id="kOrgsSpark" style="height:30px;margin-top:6px;"></div></span></div>
         <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer users" data-tip="Every customer dashboard login on the platform. Unlike the org count this is not filtered by offboarding, so users of offboarded orgs are still in here." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-users"/></svg></button><div class="klabel">Customer users</div><div class="kval" id="kUsers">—</div><div class="kfoot">across all orgs</div></span></div>
         <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Audited interactions" data-tip="Interactions the SDK committed to the ledger, summed from the daily usage rollup rather than counted row by row." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-audited"/></svg></button><div class="klabel">Audited interactions</div><div class="kval" id="kLogs">—</div><div class="kfoot" id="kLogsFoot">from usage rollup</div><div id="kLogsSpark" style="height:30px;margin-top:6px;"></div></span></div>
         <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Policy breaches" data-tip="Committed interactions flagged as a breach, all-time and across every org. Same daily rollup as the count above." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-risk"/></svg></button><div class="klabel">Policy breaches</div><div class="kval" id="kBreaches">—</div><div class="kfoot" id="kBreachesFoot">all-time, all orgs</div><div id="kBreachesSpark" style="height:30px;margin-top:6px;"></div></span></div>
@@ -2178,7 +2178,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            all four in one pass — see .segmented.opsnav in the stylesheet for why
            the obvious fix (just move it to .segmented) would NOT have worked. -->
       <nav class="segmented opsnav" aria-label="Operations" style="margin-bottom:18px;"><button type="button" class="segbtn" aria-current="page" onclick="goOps('health')">Health</button><button type="button" class="segbtn" onclick="goOps('deadletter')">Dead letters</button><button type="button" class="segbtn" onclick="goOps('anchors')">Anchors</button><button type="button" class="segbtn" onclick="goOps('alerts')">Alerts</button></nav>
-      <div class="grid kpis"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-health"/></svg></button><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-worker"/></svg></button><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-failed"/></svg></button><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot">dead-letter rows</div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-anchor"/></svg></button><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot">failed or stale latest</div></span></div></div>
+      <div class="grid kpis"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-health"/></svg></button><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-worker"/></svg></button><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-failed"/></svg></button><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot" id="hFailedFoot">dead-letter rows</div><div id="hFailedSpark" style="height:30px;margin-top:6px;"></div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-anchor"/></svg></button><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot" id="hAnchorsFoot">failed or stale latest</div><div id="hAnchorsSpark" style="height:30px;margin-top:6px;"></div></span></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" aria-live="polite" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" aria-live="polite" class="sub mono">loading…</div></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px;">
         <div class="clay pad k-orange">
@@ -2504,7 +2504,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            supporting counts go .quiet — hue in the surface, accent bar at full
            saturation, glyph in the card's deep stop, beam untouched. -->
       <div class="grid kpis">
-        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Every invoice marked paid — whichever processor or staff action recorded it — whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-revenue"/></svg></button><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
+        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Every invoice marked paid — whichever processor or staff action recorded it — whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-revenue"/></svg></button><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot" id="rvRev30Foot">paid invoices</div><div id="rvRev30Spark" style="height:30px;margin-top:6px;"></div></span></div>
         <div class="clay kpi k-magenta"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose subscription status is active right now — the status held on the org, whichever processor last wrote it. Offboarded orgs excluded." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-subscription"/></svg></button><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
         <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Trialing orgs" data-tip="Orgs whose trial window has not closed yet. This is independent of subscription status, so an org can be counted here and under active." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-trial"/></svg></button><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
       </div>
@@ -3568,6 +3568,8 @@ async function loadHealth(){
     const why=r?('HTTP '+r.status):'no response from the API';
     ['hStatus','hWorker'].forEach(id=>{$(id).innerHTML='<span class="chip bad">unknown</span>';});
     $('hFailed').textContent='—'; $('hAnchors').textContent='—';
+    _kpiTrendOff('hFailedFoot','hFailedSpark','trend unavailable');
+    _kpiTrendOff('hAnchorsFoot','hAnchorsSpark','trend unavailable');
     $('hWorkerFoot').textContent='health check unavailable';
     $('healthChecks').innerHTML=fault('The health probe did not answer.',why,'loadHealth()');
     $('healthQueue').innerHTML=fault('The grading queue could not be read.',why,'loadHealth()');
@@ -3702,9 +3704,45 @@ async function loadHealthTrends(){
       chart('hAnchorTrend',{type:'line',height:170,labels:days,xFormat:xf,
         series:[{name:'anchored',values:a.map(x=>x.anchored)},{name:'confirmed',values:a.map(x=>x.confirmed)}],
         ariaLabel:'anchor activity over 14 days', empty:'No anchor activity yet'});
+      _healthSparks(g,a);
     }
   }catch(e){}
   loadAlertHistory();
+}
+/* C1 · the sparks under Failed grading and Anchor issues. They ride THIS call —
+   the page already fetches /health/trends for the two line charts above, and a
+   second request for the same fortnight would be the same numbers twice.
+
+   ⚠ THE CARD IS A STOCK AND THE SPARK IS A FLOW, AND THEY ARE NOT THE SAME
+   QUANTITY. Read before changing either series:
+
+     hFailed  shows grading_counts['failed'] — rows SITTING at failed right now.
+              Replaying them takes the number down without touching history.
+     spark    shows UsageDaily.failed_count per day — rows that failed THAT DAY.
+
+   So the spark is the arrival rate behind the backlog, not the backlog drawn
+   over time, and the foot says which one it is. That pairing is the useful one
+   on an ops console — "47 stuck, arriving at 3 a day and rising" is two facts a
+   human needs — but only while the label keeps them apart.
+
+   ⚠ hAnchors DOES NOT PLOT `anchored`, ON PURPOSE. The card counts orgs whose
+   NEWEST anchor is failed or stale: up is bad. `anchored` is anchors created
+   per day: up is HEALTHY. Drawing that under this number gives it a line that
+   climbs when things improve, under a figure that climbs when they break — the
+   inverted alarm P4 already paid for once as a colour, rebuilt as a geometry.
+   `anchored - confirmed` is the one series in this payload that moves WITH the
+   card: anchors raised that day which have still not confirmed. */
+function _healthSparks(g,a){
+  const failed=g.map(x=>x.failed||0);
+  const unconf=a.map(x=>Math.max(0,(x.anchored||0)-(x.confirmed||0)));
+  chart('hFailedSpark',{type:'sparkline',height:30,series:[{values:failed,color:_spark('hFailedSpark')}],
+    ariaLabel:'gradings that failed per day over 14 days'});
+  chart('hAnchorsSpark',{type:'sparkline',height:30,series:[{values:unconf,color:_spark('hAnchorsSpark')}],
+    ariaLabel:'anchors still unconfirmed per day over 14 days'});
+  _kpiDelta('hFailedFoot',_halfDelta(failed),'7d',
+    failed.reduce((s,v)=>s+v,0)+' failed in 14d');
+  _kpiDelta('hAnchorsFoot',_halfDelta(unconf),'7d',
+    unconf.reduce((s,v)=>s+v,0)+' unconfirmed in 14d');
 }
 async function loadAlertHistory(){
   const el=$('hAlertHistory'); if(!el)return;
@@ -4276,6 +4314,9 @@ async function loadOverview(){
     const why=rs?('HTTP '+rs.status):'no response from the API';
     ['kOrgs','kUsers','kLogs','kBreaches','kStaff'].forEach(id=>{const e=$(id); if(e)e.textContent='—';});
     $('kOrgsFoot').textContent='platform totals unavailable';
+    _kpiTrendOff('kOrgsTrend','kOrgsSpark','trend unavailable');
+    _kpiTrendOff('kLogsFoot','kLogsSpark','trend unavailable');
+    _kpiTrendOff('kBreachesFoot','kBreachesSpark','trend unavailable');
     $('leadFun').innerHTML=fault('Platform totals did not load.',why,'loadOverview()');
     $('siteFun').innerHTML='';
     $('siteErrs').textContent='';
@@ -4392,6 +4433,56 @@ function _ovDelta(el,dp){
   e.style.color=up?'var(--ok)':'var(--danger)';
 }
 function _revFmt(v){ return '$'+Math.round(v).toLocaleString(); }
+/* C1 · the delta line on a KPI FACE. One writer for every card that has one.
+   ⚠ DO NOT ROUTE A FACE THROUGH _ovDelta ABOVE. They read alike and only one of
+   them is safe here: _ovDelta sets e.style.color to --ok / --danger, and its
+   caller #ovTrendDelta sits on a plain panel where that measures fine. On a
+   saturated .kpi .face an inline colour BEATS `.kpi .face .kfoot{color:
+   var(--foxink)}` — which is the exact defect P4 removed from this file, at
+   1.12:1 on .k-orange, with all eight theme/face/direction combinations failing
+   AA. So this writes NO colour at all and lets the face's own ink apply.
+   Its --muted branch is the same trap one step quieter: grey is tuned against
+   --surf, not against a face, and the craft floor says the same thing from the
+   other side — on a coloured surface, tint secondary text from that surface's
+   foreground, never grey.
+   DIRECTION IS THE GLYPH AND THE WORD. Never the hue. It also stops the alarm
+   inverting: a RISE in failed grading is bad and a rise in revenue is good, and
+   no single colour rule can be right for both.
+   `null` IS NOT ZERO. delta_pct comes back null when the prior window summed to
+   nothing, and a percentage against nothing is not 0% — it is unanswerable.
+   Same words _ovDelta uses, so the console says it one way. */
+function _kpiDelta(footId,dp,win,tail){
+  const f=$(footId); if(!f)return;
+  const t=tail?' · '+tail:'';
+  if(dp==null){ f.textContent='no prior data'+t; return; }
+  const up=dp>=0;
+  f.textContent=win+' '+(up?'▲':'▼')+Math.abs(dp).toFixed(0)+'%'+t;
+}
+/* C1 · the other half of the contract, and the half this file has shipped wrong
+   before. Every one of these cards keeps its last good delta in the DOM, so a
+   reload that fails leaves "30d ▲12%" and a drawn sparkline sitting under a
+   value that has just gone to "—": yesterday's trend presented as today's, with
+   nothing on screen to say so. That is A4's confident-wrong-answer shape, and
+   the fault paths that already blank the values have to blank these too. */
+function _kpiTrendOff(footId,sparkId,msg){
+  const f=$(footId); if(f)f.textContent=msg;
+  const s=$(sparkId); if(s){ s.innerHTML=''; s.classList.remove('chart-wrap'); }
+}
+/* C1 · /admin/v1/health/trends returns daily arrays and NOTHING else — no
+   delta_pct and no total, unlike /stats/timeseries. So the comparison for the
+   two health cards is computed here, over the window the page already fetched:
+   the newest half against the half before it.
+   It publishes the SAME null contract as the endpoint it stands in for —
+   null when the prior half summed to zero, never 0 — because "up from nothing"
+   has no percentage and rendering it as 0% would say the opposite of the truth. */
+function _halfDelta(vals){
+  const n=vals.length, h=Math.floor(n/2);
+  if(h<1)return null;
+  let prev=0,cur=0;
+  for(let i=0;i<h;i++)prev+=vals[i]||0;
+  for(let i=n-h;i<n;i++)cur+=vals[i]||0;
+  return prev>0?Math.round((cur-prev)/prev*1000)/10:null;
+}
 async function renderOvTrend(){
   const metric=fauxVal('ovMetric')||'interactions';
   $('ovTrendTitle').textContent=metric.charAt(0).toUpperCase()+metric.slice(1)+' · 30 days';
@@ -4433,24 +4524,30 @@ async function loadKpiSparks(){
      .kpi .face publishes --spark; this reads it per card. Keep it that way
      even though every face is saturated again — the indirection is what
      stopped a hue being hard-coded in JS in the first place. */
-  const cfg=[['interactions','kLogsSpark','kLogsFoot'],
-             ['breaches','kBreachesSpark','kBreachesFoot']];
+  /* [metric, spark host, foot to write the delta into, word for the running sum]
+     C1 · signups joins the two P4 metrics because it is the same call shape and
+     the same card grammar. It writes #kOrgsTrend, NOT #kOrgsFoot: that foot
+     already carries live data — `12 active · 3 suspended` — and the card's own
+     tooltip points a reader AT it ("The line below splits the same count into
+     active and suspended"). Overwriting it would delete a fact and turn the
+     tooltip into a lie in the same stroke. It is the only one of these cards
+     whose foot was already answering something, so it is the only one that
+     needs a second line. */
+  const cfg=[['interactions','kLogsSpark','kLogsFoot','total'],
+             ['breaches','kBreachesSpark','kBreachesFoot','total'],
+             ['signups','kOrgsSpark','kOrgsTrend','new']];
   for(const c of cfg){
     let r; try{ r=await api('/admin/v1/stats/timeseries?metric='+c[0]+'&days=30'); }catch(e){ r=null; }
     if(!r||!r.ok) continue;
     const d=await r.json();
-    const host=$(c[1]), face=host&&host.closest('.face');
-    const col=(face?getComputedStyle(face).getPropertyValue('--spark'):'').trim()||'#FF6A1A';
-    chart(c[1],{type:'sparkline',height:30,series:[{values:(d.points||[]).map(p=>p.value),color:col}]});
-    const f=$(c[2]);
-    /* The direction is carried by the ▲/▼ and the word, never by colour.
-       f.style.color used to set --ok / --danger here, and an inline style beats
-       `.kpi .face .kfoot{color:var(--foxink)}` — so this 9.5px line rendered at
-       1.12:1 on .k-orange's deep stop and 1.25:1 on .k-indigo's light stop.
-       Measured, all eight theme/face/direction combinations failed AA; the
-       token the rule would have used clears 4.64-8.33:1. It also inverted the
-       alarm: a RISE in policy breaches was painted green. */
-    if(f&&d.delta_pct!=null){ const up=d.delta_pct>=0; f.textContent='30d '+(up?'▲':'▼')+Math.abs(d.delta_pct).toFixed(0)+'% · '+num(d.total)+' total'; }
+    chart(c[1],{type:'sparkline',height:30,series:[{values:(d.points||[]).map(p=>p.value),color:_spark(c[1])}],
+      ariaLabel:c[0]+' per day over the last 30 days'});
+    /* The direction is carried by the ▲/▼ and the word, never by colour — see
+       _kpiDelta, which is the one place that rule is now enforced. The count is
+       the FLOW this spark draws, not the number on the face above it:
+       #kOrgs counts the orgs that exist, and `42 new` counts the ones that
+       arrived in the window. A stock and a flow, named apart. */
+    _kpiDelta(c[2],d.delta_pct,'30d',num(d.total)+' '+c[3]);
   }
 }
 
@@ -5706,6 +5803,7 @@ async function loadRevenue(){
   if(!r||!r.ok){
     const why=r?('HTTP '+r.status):'no response from the API';
     ['rvRev30','rvActive','rvTrial'].forEach(function(id){ $(id).textContent='—'; });
+    _kpiTrendOff('rvRev30Foot','rvRev30Spark','trend unavailable');
     $('rvSubFoot').textContent='revenue figures unavailable';
     $('rvMonthly').innerHTML=fault('The revenue trend did not load.',why,'loadRevenue()');
     $('rvByPlan').innerHTML=fault('Revenue by plan did not load.',why,'loadRevenue()');
@@ -5736,6 +5834,28 @@ async function loadRevenue(){
     series:plans.map(p=>({name:p,values:bpm.map(x=>(x.plans[p]||0)/100)})),
     yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'revenue by plan', empty:'No paid invoices yet'});
   loadPaddleEvents();
+  loadRevSpark();
+}
+/* C1 · the spark under Revenue · 30 days.
+   ⚠ THIS CARD'S VALUE IS MASKED AND THE TREND MUST NOT UNMASK IT. #rvRev30 goes
+   through sens({mask:true}) so revenue is not readable over a shoulder until
+   staff press the eye. The pattern the other three cards use ends in
+   `· 1,240 total`, and doing that here would print the same money in cleartext
+   one line under the thing that hides it — the mask would be decoration.
+   So this card gets the PERCENTAGE ONLY. A rate of change is not the amount,
+   and the sparkline itself is normalised between its own min and max, so it
+   carries shape and not magnitude. The figure stays behind the eye. */
+async function loadRevSpark(){
+  let r; try{ r=await api('/admin/v1/stats/timeseries?metric=revenue&days=30'); }catch(e){ r=null; }
+  if(!r||!r.ok)return;
+  const d=await r.json();
+  /* unit is "cents" for this metric — the shape is identical either way, but
+     _revFmt is the file's cents formatter and the axis-free spark needs no
+     other conversion. Kept explicit so a future reader does not add a second. */
+  const vals=(d.points||[]).map(p=>(p.value||0)/100);
+  chart('rvRev30Spark',{type:'sparkline',height:30,series:[{values:vals,color:_spark('rvRev30Spark')}],
+    ariaLabel:'revenue per day over the last 30 days'});
+  _kpiDelta('rvRev30Foot',d.delta_pct,'30d','');
 }
 /* ── Paddle events + replay (M3d · #98 · #103 · S1) ──────────────────────────
    Built in the same shape as the Stripe feed that used to sit above it: same
