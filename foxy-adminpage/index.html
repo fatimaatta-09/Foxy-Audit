@@ -2229,8 +2229,18 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
              silently loses rows is not. -->
         <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px;">
           <div class="sub mono" id="orgScope" role="status" aria-live="polite" style="font-size:11px;"></div>
+          <!-- M4c · beside the search, NOT beside "show offboarded" in the
+               pagehead, and the split is by what the control does: that one
+               changes what is FETCHED (it re-requests with include_deleted),
+               these two narrow what has already arrived. Grouping them by that
+               keeps "this refetches" and "this filters" from looking alike. -->
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <label class="sub mono" style="display:flex;gap:7px;align-items:center;cursor:pointer;font-size:11px;">
+            <input type="checkbox" id="orgPendingOnly" onchange="orgPendingChanged()"> awaiting approval only
+          </label>
           <div><label class="sr-only" for="orgSearch">Search organizations</label>
             <input class="cin" id="orgSearch" placeholder="search name, id, contact…" oninput="orgSearchChanged()" style="max-width:250px;margin-bottom:0;"></div>
+          </div>
         </div>
         <table class="tbl cardify" id="orgTbl">
           <thead><tr>
@@ -4229,6 +4239,50 @@ async function loadOverview(){
 /* enrich the overview with real cross-page signals (best-effort; each panel
    degrades independently if its endpoint is unavailable — no fabricated data). */
 async function loadOverviewExtras(){
+  /* M4c · how many workspaces are waiting on a human, on the page the console
+     opens to. A queue nobody notices costs the applicant days: the 7-day clock
+     starts at APPROVAL, so every hour this sits unseen is an hour of somebody
+     else's demo that never happened.
+
+     It lands in the Organizations KPI footer, which already enumerates access
+     states ("N active · N suspended"), rather than in a bento panel of its own.
+     A panel would read "nobody is waiting" on every deployment that has not
+     turned DEMO_APPROVAL_REQUIRED on — which is all of them today — and markup
+     carrying the syntax of a feature with nothing behind it is the unearned
+     system this surface has been burned by before.
+
+     Appended only when the count is non-zero, and silently skipped when the
+     fetch fails: the footer the stats endpoint already wrote stays correct, and
+     this cannot turn a working page into a fault. Same best-effort contract as
+     the health and alerts blocks above.
+
+     It costs one extra list fetch on the landing page. /organizations returns
+     every row with no offset — the same call the Organizations page makes — so
+     the count is exact rather than estimated, and there is no endpoint that
+     would answer it more cheaply without a backend change. */
+  try{
+    const r=await api('/admin/v1/organizations');
+    if(r.ok){
+      const rows=await r.json();
+      const n=(Array.isArray(rows)?rows:[]).filter(o=>(o&&o.approval_status)==='pending').length;
+      const foot=$('kOrgsFoot');
+      if(n&&foot){
+        foot.insertAdjacentHTML('beforeend',
+          /* `color:inherit`, NOT .linklike's own --fox2. Measured on the real
+             face before this line was written: --fox2 lands at 1.10:1 dark and
+             1.67:1 light against k-azure's gradient stops — effectively
+             invisible — while .kfoot's ink, mixed by A1 specifically for tinted
+             cards, holds 8.54 / 5.56. Inheriting is stronger than naming that
+             token: the two can never drift apart. The underline is what carries
+             the affordance once the colour stops doing it, and it is permanent
+             rather than hover-only, because a control that only looks like a
+             control under the cursor is not one on a touch screen. */
+          ' · <button type="button" class="linklike" onclick="goApprovals()"'
+          +' style="color:inherit;text-decoration:underline;text-underline-offset:2px;">'
+          +n+' awaiting approval</button>');
+      }
+    }
+  }catch(e){}
   try{const r=await api('/admin/v1/health');if(r.ok){const d=await r.json(),w=d.worker||{},g=d.grading||{},cts=g.counts||{};
     $('ovHealth').innerHTML=opsCheck('overall',d.status,'database · worker · queue')
       +opsCheck('worker',w.status,w.beat_at?('last '+fmtTime(w.beat_at)):'no heartbeat')
@@ -4325,7 +4379,13 @@ async function loadKpiSparks(){
 }
 
 let ORG_OPEN=null;
-let ORGS_ALL=[],ORG_Q='';
+let ORGS_ALL=[],ORG_Q='',ORG_PENDING_ONLY=false;
+/* M4c · the approvals queue is a FILTER, not a second page.
+   Every row of /admin/v1/organizations already carries `approval_status`, and
+   loadOrgs already holds the whole list in memory and pages it locally — so the
+   queue is a predicate over data that is already here, exactly the way A7's
+   search is. A separate page would mean a second fetch, a second empty state and
+   a second set of columns describing the same rows. */
 /* A toast is a receipt for something the operator just did, not a report on
    something they are waiting for: it is gone in 3.2s and it leaves the table
    reading "loading…" forever, so a dead endpoint is indistinguishable from a
@@ -4358,11 +4418,35 @@ function orgSearchChanged(){
   ORG_Q=($('orgSearch')?$('orgSearch').value:'').trim().toLowerCase();
   pgReset('orgs'); renderOrgs();
 }
+/* Same three moves as the search above, and the page reset is just as
+   non-optional: narrow to two rows while sitting on page three and the table is
+   empty under a pager insisting there are results. */
+/* The overview count is a way in, not just a number: seeing "3 awaiting
+   approval" and then having to find the filter yourself is a worse version of
+   not being told. Ticks the real checkbox rather than setting the state behind
+   it, so the control on screen agrees with what the table is showing. */
+function goApprovals(){
+  navTo('orgs');
+  const c=$('orgPendingOnly'); if(c)c.checked=true;
+  orgPendingChanged();
+}
+function orgPendingChanged(){
+  ORG_PENDING_ONLY=!!($('orgPendingOnly')&&$('orgPendingOnly').checked);
+  pgReset('orgs'); renderOrgs();
+}
+/* `=== "pending"`, never `!== "approved"`. NULL is not a state this feature
+   owns — it means the organisation did not arrive through the demo route at all,
+   which is true of every row created before M4a and of every org a purchase
+   makes. Asking the negative would put the entire tenant list in the queue. */
+function _orgIsPending(o){ return (o&&o.approval_status)==='pending'; }
+function _orgsPending(){ return ORGS_ALL.filter(_orgIsPending); }
 function _orgsFiltered(){
-  if(!ORG_Q) return ORGS_ALL;
+  let rows=ORGS_ALL;
+  if(ORG_PENDING_ONLY) rows=rows.filter(_orgIsPending);
+  if(!ORG_Q) return rows;
   /* Only fields the row actually shows. Searching something invisible makes a
      row appear for a reason the reader cannot see. */
-  return ORGS_ALL.filter(function(o){
+  return rows.filter(function(o){
     return ((o.name||'')+' '+(o.id||'')+' '+(o.contact_email||'')+' '+(o.plan_tier||''))
       .toLowerCase().indexOf(ORG_Q)>=0;
   });
@@ -4370,20 +4454,59 @@ function _orgsFiltered(){
 function renderOrgs(){
   const all=ORGS_ALL, rows=_orgsFiltered();
   const off=$('showDeleted')&&$('showDeleted').checked?' · offboarded included':'';
+  /* The waiting count rides on the count line rather than waiting to be found.
+     Somebody is waiting on US specifically: their 7 days do not start until a
+     human presses Approve, so a queue nobody notices costs the applicant days.
+     Reported whether or not the filter is on, and omitted entirely at zero — a
+     standing "0 awaiting approval" is noise on a deployment where the flag is
+     off and nobody ever will be. */
+  const pend=_orgsPending().length;
+  const wait=pend?' · '+pend+' awaiting approval':'';
   const sc=$('orgScope');
   if(sc) sc.textContent=(ORG_Q
     ? 'matching “'+ORG_Q+'” · '+rows.length+' of '+all.length+' organization'+(all.length===1?'':'s')
-    : all.length+' organization'+(all.length===1?'':'s'))+off;
+    : all.length+' organization'+(all.length===1?'':'s'))+off+wait;
   /* The pager is handed the FILTERED array, so "1-25 of N" counts what the
      table contains rather than what the fetch returned. */
   const orgs=window.foxPageSlice(rows,pgState('orgs',25),'orgPager',renderOrgs,'Organization pages');
   /* An empty result is not an empty list. "no organizations yet" is false when
      there are forty and none of them match. */
   if(!all.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations yet</td></tr>';return}
+  /* THE EMPTY STATE EVERYONE WILL SEE. DEMO_APPROVAL_REQUIRED ships OFF, so on
+     most deployments no organisation is ever pending and this is the normal
+     case, not an edge one.
+
+     "nobody is waiting" and "approval is switched off, so nobody ever will be"
+     are different facts, and THIS CONSOLE CANNOT TELL THEM APART. The flag is a
+     Settings field read by /v1/signup and the Google door; it is not in
+     CONFIG_SCHEMA, so /admin/v1/config does not carry it, and no admin route
+     returns it. Checked before writing this rather than assumed.
+
+     So the sentence claims only what was observed, and then says where the
+     other half of the answer lives. Guessing "approval is off" here would be a
+     confident wrong reason on the screen a staff member checks to find out
+     whether anyone is waiting. */
+  if(!rows.length&&ORG_PENDING_ONLY&&!ORG_Q){
+    $('orgRows').innerHTML='<tr><td colspan="6" class="sub" style="padding:14px 10px;line-height:1.6;">'
+      +'No organizations are awaiting approval.<br><span class="mono" style="font-size:11px;color:var(--muted);">'
+      +'Whether any ever will is set by DEMO_APPROVAL_REQUIRED on the API, which this console cannot read.'
+      +'</span></td></tr>';
+    return;
+  }
   if(!rows.length){$('orgRows').innerHTML='<tr><td colspan="6" class="sub mono">no organizations match “'+esc(ORG_Q)+'”</td></tr>';return}
   $('orgRows').innerHTML=orgs.map(o=>{
+    /* `.warn`, and the tier is a decision rather than a colour. The status
+       vocabulary reads EXPECTED / EXCEPTION / ABSENCE, and a workspace waiting
+       on a human is the definition of the row somebody has to look at — so it
+       is the EXCEPTION tier. NOT `.dim`: that tier is ABSENCE, its 1.5:1 mark
+       is exempt precisely because it carries no meaning, and this carries the
+       most actionable meaning on the page.
+
+       It sits between suspended and active because it is neither: nobody has
+       refused this workspace, and nobody has let it in. */
     const access=o.deleted?'<span class="chip dim">offboarded</span>'
       :o.suspended?'<span class="chip bad">suspended</span>'
+      :_orgIsPending(o)?'<span class="chip warn">awaiting approval</span>'
       :'<span class="chip safe">active</span>';
     const sub=o.subscription_status
       ?`<span class="chip ${o.subscription_status==='active'?'safe':'warn'}">${esc(o.subscription_status)}</span>`
@@ -4451,9 +4574,27 @@ function renderO3Header(d){
   const plan='<span class="tag">'+esc(d.plan_tier||'no plan')+'</span>';
   const quota='<span class="tag">quota '+(d.monthly_log_quota==null?'∞':num(d.monthly_log_quota))+'</span>';
   const trial=d.trial_ends_at?('<span class="chip warn">trial ends '+fmtDay(d.trial_ends_at)+'</span>'):'';
-  $('o3Chips').innerHTML=plan+sub+access+quota+trial;
+  /* Same tier decision as the list: the row a human has to look at. */
+  const appr=_orgIsPending(d)?'<span class="chip warn">awaiting approval</span>':'';
+  $('o3Chips').innerHTML=plan+sub+access+quota+trial+appr;
   let acts='';
   if(can('operator')){
+    /* APPROVE LIVES HERE, on the drill-down, and NOT as a button in the queue
+       row. Manual approval exists because self-serve signup was letting people
+       farm free access — so the point is that somebody LOOKS. A one-click
+       approve beside each row in a list is a rubber stamp with extra steps, and
+       it would let a reviewer clear a queue without ever seeing whose workspace
+       they were opening. Getting here means the org is on screen.
+
+       Decline delegates to the suspend control rather than inventing a state:
+       M4a considered a `rejected` value and chose against it, because `suspend`
+       + `suspended_reason` already refuses a workspace on every auth channel
+       and a second vocabulary would cost a reason string on three surfaces to
+       say one word. */
+    if(_orgIsPending(d)){
+      acts += `<button class="btn pri sm" onclick="orgApprove('${d.id}','${jsq(d.name)}')">Approve demo</button>`;
+      acts += `<button class="btn danger sm" onclick="orgDecline('${d.id}')">Decline</button>`;
+    }
     acts += d.suspended
       ? `<button class="btn safe sm" onclick="orgEnable('${d.id}')">Lift suspension</button>`
       : `<button class="btn danger sm" onclick="orgSuspend('${d.id}')">Suspend</button>`;
@@ -4920,6 +5061,48 @@ async function _doSuspend(id){
   const reason=($('mReason')?$('mReason').value:'').trim();
   const r=await api('/admin/v1/organizations/'+id+'/suspend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
   closeModal(); if(r.ok){toast('org suspended','success');_orgActionDone()}else toast('suspend failed ('+r.status+')');
+}
+/* M4c · approve a pending demo workspace.
+
+   POST .../approve, and NOT the Set-plan control. `set_organization_plan` with
+   plan="free" grants a trial and leaves `approval_status` untouched, so the org
+   stays locked, the applicant stays blocked, and the staff member walks away
+   believing they helped. Approve is the only route that starts the 7 days.
+
+   No step-up handling here on purpose: `api()` intercepts a 403 carrying
+   step_up_required, opens the emailed-code modal and retries once. A second
+   step-up path would be a second thing to keep in step. */
+function orgApprove(id,name){
+  openModal({eyebrow:'org action', title:'Approve demo workspace',
+    bodyHTML:'<div class="sub" style="line-height:1.65;">Approving <b>'+esc(name||'this workspace')+'</b>'
+      +' lets it capture events and open its dashboard straight away.<br><br>'
+      +'<b>The 7 days start the moment this lands</b> — not at signup, and there is no undo.'
+      +' If the review needs longer, leave it in the queue: waiting costs the applicant nothing.</div>',
+    footHTML:'<button class="btn" onclick="closeModal()">Cancel</button>'
+      +'<button class="btn pri" onclick="_doApprove(&quot;'+jsq(id)+'&quot;)">Approve</button>'});
+}
+async function _doApprove(id){
+  let r; try{ r=await api('/admin/v1/organizations/'+id+'/approve',{method:'POST'}); }catch(e){ r=null; }
+  closeModal();
+  if(!r){ toast('could not reach the server'); return; }
+  const d=await r.json().catch(()=>({}));
+  if(r.ok){ toast('approved · 7 days start now','success'); _orgActionDone(); return; }
+  /* This route's 409 body is an OBJECT ({code,message}), not a string. Reading
+     `d.detail` straight into toast() renders "[object Object]" — which is exactly
+     what the older handlers on this page would do with it. */
+  const det=d&&d.detail;
+  toast((det&&det.message)||(typeof det==='string'?det:'')||('approve failed ('+r.status+')'));
+  if(r.status===409) _orgActionDone();   // somebody else already cleared it
+}
+/* Decline is the SUSPEND control reached by another name. M4a considered a
+   `rejected` state and chose against it: suspend + suspended_reason already
+   refuses a workspace on every auth channel and carries its own message, and a
+   second vocabulary would put a new reason string on three surfaces to say one
+   word. The modal it opens still reads "Suspend organization", deliberately —
+   the button should not be the last place the real action is named. */
+function orgDecline(id){
+  orgSuspend(id);
+  const t=$('mReason'); if(t)t.value='demo request declined';
 }
 async function _doPlan(id){
   const sel=document.querySelector('#mPlan .segbtn[aria-pressed="true"]');

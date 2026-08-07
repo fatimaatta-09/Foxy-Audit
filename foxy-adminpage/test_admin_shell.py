@@ -3951,5 +3951,249 @@ def test_the_paddle_feed_has_a_fault_state_that_retries_itself() -> None:
     assert m.group(2) == "loadPaddleEvents", "the retry calls something else"
 
 
+
+
+# ── M4c · the approvals queue ────────────────────────────────────────────────
+# M4a made demo signups land in a `pending` state that cannot capture and cannot
+# read its dashboard, and nothing surfaced the queue, so nobody could clear it.
+# The 7-day clock starts at APPROVAL, which makes every hour of an unseen queue
+# an hour of somebody else's demo.
+#
+# These read function bodies via _js_code (comments stripped), because this file
+# explains its own guards in prose and a guard that greps a body greps the
+# sentence describing it — which has bitten this surface twice.
+
+
+def test_approve_posts_to_the_approve_route_and_not_the_plan_route() -> None:
+    """THE one that had to exist.
+
+    `set_organization_plan` with plan="free" grants a trial and leaves
+    `approval_status` untouched: the org stays locked, the applicant stays
+    blocked, and the staff member walks away believing they helped. Approve is
+    the only route that starts the clock, and M4a's own report flags the
+    confusion as the likely mistake.
+    """
+    body = _js_code("_doApprove")
+    assert "/approve'" in body or '/approve"' in body, (
+        "_doApprove no longer posts to the approve route")
+    assert "'/admin/v1/organizations/'+id+'/approve'" in body.replace('"', "'"), (
+        "the approve call is not built from the org id and the approve path")
+    assert "method:'POST'" in body.replace('"', "'"), "approve is not a POST"
+    for wrong in ("/plan", "/suspend", "/trial", "/enable", "/offboard"):
+        assert wrong not in body, f"_doApprove reaches for {wrong}"
+
+
+def test_the_approve_button_is_wired_to_approve() -> None:
+    """A6's lesson: guarding a helper is not guarding its use. A perfect
+    `_doApprove` nobody calls is exactly as broken as no `_doApprove`."""
+    header = _js_code("renderO3Header")
+    assert "orgApprove(" in header, "the org header renders no approve control"
+    modal = _js_code("orgApprove")
+    assert "_doApprove(" in modal, (
+        "the approve modal's button does not call _doApprove — it is wired to "
+        "something else, or to nothing")
+
+
+def test_approve_is_offered_only_to_a_workspace_that_is_waiting() -> None:
+    """An approve button on an active tenant is a button that restarts a trial
+    somebody is already using. The route 409s, but the console should not be
+    offering it."""
+    header = _js_code("renderO3Header")
+    m = re.search(r"if\(_orgIsPending\(d\)\)\{(.*?)\}", header, re.S)
+    assert m, "the approve control is not gated on the workspace being pending"
+    assert "orgApprove(" in m.group(1), "approve is rendered outside the pending gate"
+
+
+def test_pending_is_read_as_pending_and_never_as_not_approved() -> None:
+    """NULL is not a state this feature owns — it means the organisation never
+    came through the demo route, which is true of every row created before M4a
+    and of every org a purchase makes. Asking the negative puts the whole tenant
+    list in the queue."""
+    body = _js_code("_orgIsPending")
+    assert "==='pending'" in body.replace('"', "'").replace(" ", ""), (
+        "the pending test is no longer an equality against 'pending'")
+    assert "!==" not in body, "the pending test is phrased as a negation"
+    assert "approved" not in body, (
+        "the pending test reasons about 'approved', so NULL rows fall into the queue")
+
+
+def test_the_queue_is_a_client_side_filter_over_the_list_already_loaded() -> None:
+    """A7's pattern, reused rather than re-invented. `loadOrgs` already holds
+    every row and pages locally, so the queue needs no endpoint, no query
+    parameter and no index."""
+    filt = _js_code("_orgsFiltered")
+    assert "ORG_PENDING_ONLY" in filt, "the filter does not consult the queue toggle"
+    assert "_orgIsPending" in filt, "the filter does not use the shared predicate"
+    loader = _js_code("loadOrgs")
+    for param in ("approval_status=", "pending=", "&status="):
+        assert param not in loader, (
+            f"loadOrgs sends {param} — the queue became a backend query")
+
+
+def test_changing_the_queue_filter_resets_the_page() -> None:
+    """Filter to two rows while sitting on page three and the table is empty
+    under a pager insisting there are results. The search control already had to
+    learn this."""
+    body = _js_code("orgPendingChanged")
+    assert "pgReset('orgs')" in body.replace('"', "'"), "the pager is not reset"
+    assert "renderOrgs()" in body, "the table is not re-rendered"
+
+
+def test_a_waiting_workspace_is_marked_as_the_exception_it_is() -> None:
+    """The status vocabulary is EXPECTED / EXCEPTION / ABSENCE, and a workspace
+    waiting on a human is the definition of the row somebody has to look at.
+
+    NOT `.dim`: that tier is ABSENCE, its ~1.5:1 mark is exempt precisely
+    because it carries no meaning, and the note is explicit that the exemption
+    does not cover a meaning-bearing state. A6 found exactly this mislabel on
+    MFA-off and moved it to `.warn`.
+    """
+    for fn in ("renderOrgs", "renderO3Header"):
+        body = _js_code(fn)
+        m = re.search(r"_orgIsPending\([od]\)\?'<span class=\"chip (\w+)\"", body)
+        assert m, f"{fn} does not render a chip for a waiting workspace"
+        assert m.group(1) == "warn", (
+            f"{fn} marks a waiting workspace `.{m.group(1)}` — the queue's own "
+            "status is in the wrong tier")
+
+
+def test_approve_confirms_before_it_fires_and_says_what_it_starts() -> None:
+    """Irreversible-shaped: the 7 days begin the moment it lands, and leaving a
+    workspace in the queue costs the applicant nothing. Both facts belong in
+    front of the button, not in a runbook."""
+    body = _js_code("orgApprove")
+    assert "openModal(" in body, "approve fires without a confirmation step"
+    # A token being PRESENT is not the same as it being REACHED — the A6 lesson
+    # in a new costume. `_doApprove(id); return; openModal(...)` satisfied the
+    # line above with the confirmation left as dead code, and this file has a
+    # whole section about that shape. With string literals stripped, the only
+    # reference to _doApprove in this function lives inside footHTML, so seeing
+    # it in the executable part means something calls it directly.
+    code = re.sub(r"'[^']*'", "", body)
+    assert "_doApprove(" not in code, (
+        "approve is invoked directly, so the confirmation never gates it")
+    assert "7 days start" in body, "the confirmation does not say what it starts"
+    assert "no undo" in body, "the confirmation does not say it cannot be taken back"
+
+
+def test_declining_reuses_suspend_rather_than_inventing_a_state() -> None:
+    """M4a considered a `rejected` value and chose against it: suspend plus
+    suspended_reason already refuses a workspace on every auth channel, and a
+    second vocabulary would put a new reason string on three surfaces to say one
+    word."""
+    body = _js_code("orgDecline")
+    assert "orgSuspend(" in body, "decline does not delegate to the suspend control"
+    assert "/reject" not in SRC, "a reject endpoint was invented"
+    assert "'rejected'" not in SRC and '"rejected"' not in SRC, (
+        "a `rejected` approval state was invented")
+
+
+def test_approve_reuses_the_consoles_own_step_up_path() -> None:
+    """`api()` intercepts a 403 carrying step_up_required, opens the emailed-code
+    modal and retries once. A second implementation is a second thing to keep in
+    step — and the route is step-up gated, so a handler that bypassed `api()`
+    would simply fail."""
+    body = _js_code("_doApprove")
+    assert re.search(r"\bapi\(", body), "approve does not go through api()"
+    assert "_apiRaw(" not in body, "approve bypasses the step-up interceptor"
+    assert "step-up/request" not in body, "approve rolls its own step-up"
+
+
+def test_the_approve_failure_message_is_readable_by_a_human() -> None:
+    """This route answers 409 with an OBJECT ({code,message}), unlike the string
+    detail every older handler here expects. Reading `d.detail` straight into
+    toast() renders "[object Object]" on the one screen that has to explain why
+    nothing happened."""
+    body = _js_code("_doApprove")
+    assert "det.message" in body.replace(" ", ""), (
+        "the structured detail's message is never read")
+    assert "r.status" in body, "the status code is never surfaced as a fallback"
+
+
+def test_the_empty_queue_states_what_it_observed_and_not_why() -> None:
+    """DEMO_APPROVAL_REQUIRED ships OFF, so on most deployments this is the
+    NORMAL state, not an edge case.
+
+    "nobody is waiting" and "approval is switched off" are different facts and
+    the console cannot tell them apart — the flag is not in CONFIG_SCHEMA, so
+    /admin/v1/config does not carry it and no admin route returns it. So the
+    sentence claims only the observation and points at where the rest of the
+    answer lives. A confident wrong reason here is worse than a narrow one.
+    """
+    # BLOCK comments stripped too, not just `//`. `_js_code` removes line
+    # comments only, and the prose explaining this very decision sits in a /* */
+    # above the branch and contains the phrases below — so the first run of this
+    # guard failed on its own explanation. Third time on this surface; the fix is
+    # to read what the branch RENDERS, never what it says about itself.
+    body = re.sub(r"/\*.*?\*/", "", _js_code("renderOrgs"), flags=re.S)
+    # The BRANCH, not just the sentence. `if(false){…}` left the wording in the
+    # file as dead code and the assertion below passed while a filtered-empty
+    # queue fell through to "no organizations match" — blaming a search nobody
+    # typed. Same shape as the approve survivor above.
+    assert "if(!rows.length&&ORG_PENDING_ONLY&&!ORG_Q){" in body.replace(" ", ""), (
+        "the queue-empty branch is gone or no longer reachable")
+    assert "No organizations are awaiting approval." in body, (
+        "the queue has no empty state of its own, so it falls through to the "
+        "search wording and blames a query nobody typed")
+    assert "DEMO_APPROVAL_REQUIRED" in body, (
+        "the empty state does not say where the other half of the answer lives")
+    assert "cannot read" in body, (
+        "the empty state does not admit which half of it the console knows")
+    for guess in ("approval is off", "approvals are disabled", "is switched off"):
+        assert guess not in body, (
+            f"the empty state asserts {guess!r} — a state this console cannot observe")
+
+
+def test_the_overview_count_only_appears_when_somebody_is_waiting() -> None:
+    """It rides on the Organizations KPI footer, which already enumerates access
+    states. A standing "0 awaiting approval" would be noise on every deployment
+    that has not turned the flag on — which is all of them today — and a bento
+    panel of its own would be the unearned system this surface has been burned
+    by before."""
+    body = _js_code("loadOverviewExtras")
+    assert "kOrgsFoot" in body, "the overview never reports the queue"
+    assert re.search(r"if\(n&&foot\)", body.replace(" ", "")), (
+        "the count is rendered unconditionally, so an empty queue writes a zero")
+    assert "goApprovals()" in body, "the overview count is not a way into the queue"
+
+
+def test_the_overview_count_does_not_use_link_ink_on_a_tinted_face() -> None:
+    """`.linklike` paints `--fox2`, which is tuned against the flat panel. On the
+    Organizations KPI — a saturated `k-azure` face — it measures 1.10:1 dark and
+    1.67:1 light against the gradient stops. Measured on the real card, not
+    guessed: `.kfoot`'s own ink, mixed by A1 for exactly these surfaces, holds
+    8.54 / 5.56, and inheriting it means the two cannot drift apart.
+
+    This is the trap this surface keeps re-learning — a token correct on one
+    surface is not thereby correct on another — so it gets a guard rather than a
+    comment.
+    """
+    body = _js_code("loadOverviewExtras")
+    seg = body[body.index("kOrgsFoot"):]
+    assert "color:inherit" in seg.replace(" ", ""), (
+        "the queue link paints its own colour on a tinted KPI face")
+    assert "text-decoration:underline" in seg.replace(" ", ""), (
+        "with the colour inherited, nothing marks the link as actionable")
+
+def test_the_overview_count_cannot_break_the_page_it_enriches() -> None:
+    """Same best-effort contract as the health and alerts blocks beside it: the
+    footer the stats endpoint already wrote must survive this failing."""
+    body = _js_code("loadOverviewExtras")
+    seg = body[: body.index("kOrgsFoot")]
+    assert "try{" in seg, "the queue count is not wrapped"
+    assert "insertAdjacentHTML" in body, (
+        "the count replaces the footer instead of appending to it, so a failure "
+        "or a re-render loses the stats line")
+
+
+def test_the_jump_ticks_the_control_the_operator_can_see() -> None:
+    """Setting the state behind the checkbox would leave the table filtered and
+    the control saying otherwise."""
+    body = _js_code("goApprovals")
+    assert "orgPendingOnly" in body, "the jump does not touch the visible control"
+    assert ".checked=true" in body.replace(" ", ""), "the checkbox is not ticked"
+    assert "orgPendingChanged()" in body, "the jump does not re-render through the filter"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))
