@@ -688,6 +688,84 @@ def send_trial_ending_notices(db: Session, *, today: date | None = None) -> int:
     return sent
 
 
+# ── (f) "ask an admin to upgrade" — raised by a REQUEST, not by the sweep ───
+#
+# Every other sender here runs on the background thread and decides for itself
+# that something happened. This one is raised by a person pressing a button
+# (`POST /v1/billing/upgrade-request`), because buying a plan is admin-only and
+# a member who wanted one had no in-product path at all (#56).
+#
+# It lives in this module rather than the router so the marker logic stays where
+# markers live. `latest_upgrade_request` is `_marker_since` widened to hand back
+# the row instead of a bool — the caller needs the timestamp to tell somebody
+# *when* the admins were told — and not a fourth dedupe pattern.
+#
+# NO EMAIL, and that is why `_wants` is not consulted. The three preference keys
+# in this module gate emails; the in-app row is written unconditionally for every
+# kind (`breach` in account.py, `key_rotation` above). Emailing would need a
+# fourth preference and a fourth Settings toggle to switch it off, and shipping
+# an unswitchable email is the wrong half of that trade — so this sends none, and
+# reaches admins the way `billing_change` already does.
+UPGRADE_REQUEST_KIND = "upgrade_request"
+UPGRADE_REQUEST_COOLDOWN_HOURS = 24
+
+
+def latest_upgrade_request(db: Session, org_id) -> Notification | None:
+    """The most recent ask still inside the cooldown, or None."""
+    since = (datetime.now(timezone.utc)
+             - timedelta(hours=UPGRADE_REQUEST_COOLDOWN_HOURS))
+    return db.execute(
+        select(Notification).where(
+            Notification.org_id == org_id,
+            Notification.kind == UPGRADE_REQUEST_KIND,
+            Notification.created_at >= since)
+        .order_by(Notification.created_at.desc()).limit(1)
+    ).scalars().first()
+
+
+def record_upgrade_request(db: Session, org_id, requester: User
+                           ) -> tuple[Notification, bool]:
+    """Tell the admins once. Returns (the notification, whether it was new).
+
+    ONE ROW PER ORG PER COOLDOWN, per ORG rather than per member on purpose:
+    three colleagues hitting the same wall on the same workspace is one fact, and
+    three copies of it is what makes a notification list worth ignoring. The
+    later callers are not silently dropped — they get the existing row back, so
+    the page can say the admins were already told, and when.
+
+    ONE ROW, ORG-WIDE (`user_id=None`), rather than one per admin. Every other
+    customer notification kind is org-wide, so a second convention here would be
+    one more thing to remember; per-admin rows would also mean one admin reading
+    it leaves it unread for everyone else, so the team could not tell an ask had
+    been picked up. It is also what lets the member who sent it see their own.
+
+    The org row is locked first. Two members pressing the button in the same
+    moment would otherwise both read "no marker" and both write one — the same
+    read-then-write race `logs.py` takes this same lock for. It is held across
+    one insert, on a route the limiter caps.
+    """
+    db.execute(select(Organization).where(Organization.id == org_id)
+               .with_for_update()).scalar_one()
+    existing = latest_upgrade_request(db, org_id)
+    if existing is not None:
+        db.rollback()               # release the lock; nothing was written
+        return existing, False
+    row = Notification(
+        org_id=org_id, user_id=None, kind=UPGRADE_REQUEST_KIND, level="info",
+        title="Someone on your team asked about upgrading",
+        # Naming them is the point: an admin who cannot tell who asked cannot go
+        # and talk to them. It is a colleague's work email, inside their own
+        # workspace, put there by that colleague pressing a button that says so.
+        body=(f"{requester.email} asked for this workspace's plan to be "
+              f"upgraded. Buying or changing a plan is an admin-only action. "
+              f"The options are on the Billing page."),
+        target_type="billing", target_id=None)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row, True
+
+
 def run_once(db: Session, *, today: date | None = None) -> None:
     """One digest + rotation + billing-notice pass. Every job dedupes, so any call
     frequency is safe (the breach queue is drained separately, on a shorter tick)."""

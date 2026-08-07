@@ -6004,9 +6004,14 @@ async function loadLoginHistory(scope){
   function chooser(btn,say){
     var box=$('billLockPlans'), label=btn.textContent;
     btn.disabled=true; btn.textContent='loading…'; say('');
-    api('/v1/billing/plans').then(function(r){ return r.ok?r.json():null; },
-                                  function(){ return null; })
-      .then(function(d){
+    /* Both, because the answer to "what can this person do" needs both halves:
+       what this deployment sells, and whether this person may buy any of it. */
+    Promise.all([
+      api('/v1/billing/plans').then(function(r){ return r.ok?r.json():null; },
+                                    function(){ return null; }),
+      window.foxAskAdmin.load()
+    ]).then(function(both){
+        var d=both[0], who=both[1];
         if(!d){
           btn.disabled=false; btn.textContent=label;
           say('Could not load the plans. Check your connection and try again.');
@@ -6014,6 +6019,25 @@ async function loadLoginHistory(scope){
         }
         var list=Array.isArray(d.plans)?d.plans:[];
         btn.style.display='none';
+        /* A member cannot complete any of these, so they are shown as facts
+           rather than as controls, and the one thing they CAN do goes under
+           them. Removed, not disabled-looking-clickable: this file already
+           decided that a control which cannot work is worse than no control
+           (the `wait` row in REASON above). */
+        if(who&&who.can_purchase===false){
+          box.innerHTML=list.map(function(p){
+            var q=(p.monthly_log_quota==null)?'unlimited events'
+                 :(num(p.monthly_log_quota)+' events / month');
+            return '<div class="lock-plan" aria-disabled="true">'
+              +'<span class="lock-plan-t">'+esc(p.tier)+'</span>'
+              +'<span class="lock-plan-q">'+esc(q)+'</span></div>';
+          }).join('');
+          var ask=document.createElement('div');
+          box.appendChild(ask);
+          window.foxAskAdmin.render(ask,who,'lock');
+          try{ (box.querySelector('button')||box).focus(); }catch(e){}
+          return;
+        }
         if(!list.length){
           /* Honest, and it matches the upgrade page's wording for the same
              deployment state rather than inventing a second explanation. */
@@ -6036,6 +6060,105 @@ async function loadLoginHistory(scope){
         try{ box.querySelector('button').focus(); }catch(e){}
       });
   }
+
+  /* ── "ask an admin" (P4 · #56) ─────────────────────────────────────────────
+     Buying a plan is admin-only, correctly — spending the workspace's money is
+     not something everyone on a team should be able to do. What that left was a
+     member with no path at all: three places in this file could only answer a
+     403 with "ask an admin on your team", which is an instruction, not a door.
+
+     This is the door, and it is shared rather than written twice because the two
+     screens that need it are the SAME situation from either side of a lock: the
+     upgrade page while the workspace runs, this overlay once it does not. A
+     locked member is the person who needs it most — the overlay IS their whole
+     dashboard, and every plan button on it is admin-only.
+
+     The state is the SERVER's, read back from the notification row itself. A
+     flag in a variable here would say "sent" until the tab closed and then
+     forget, on the one control whose entire job is telling somebody where they
+     stand. `can_purchase` comes from the same place for the same reason: it is
+     the test `require_role("admin")` applies, so this can never offer a button
+     the route will refuse. */
+  window.foxAskAdmin={
+    load:function(){
+      return api('/v1/billing/upgrade-request')
+        .then(function(r){ return r.ok?r.json():null; },function(){ return null; })
+        .catch(function(){ return null; });
+    },
+    render:function(box,state,variant){
+      if(!box)return;
+      var lock=(variant==='lock');
+      function ago(iso){
+        if(!iso)return '';
+        try{
+          var d=(Date.now()-new Date(iso).getTime())/1000;
+          if(d<60)return 'just now';
+          if(d<3600)return Math.floor(d/60)+' minutes ago';
+          if(d<86400)return Math.floor(d/3600)+' hours ago';
+          return Math.floor(d/86400)+' days ago';
+        }catch(e){ return ''; }
+      }
+      function errLine(msg){
+        var el=document.createElement('div');
+        el.setAttribute('role','status');
+        el.style.cssText='margin-top:10px;font-size:11.5px;line-height:1.5;'
+          +'color:var(--breach-ink);font-weight:600;';
+        el.textContent=msg;
+        return el;
+      }
+      function draw(st,announce){
+        var asked=!!(st&&st.requested_at);
+        /* Two states, and the second is written so it is true for whoever reads
+           it — the member who pressed the button, and the colleague who arrives
+           afterwards and finds it already sent. Neither promises a timeframe:
+           nobody here knows when an admin next opens the dashboard. */
+        var title=asked?'The admins have been told':'Only an admin can buy a plan';
+        var detail=asked
+          ? 'Asked '+ago(st.requested_at)+'. It is in their notifications — '
+            +'buying the plan is still theirs to do.'
+          : 'Buying or changing a plan spends money for the whole workspace, so '
+            +'it is an admin action. You can let your admins know you need one.';
+        /* `.btn` is `width:100%` by design — every other one on this page sits
+           in a card that gives it a sensible width. On the upgrade page the
+           container is the whole page, and a 1,100px primary button for a
+           secondary ask reads as the loudest thing on screen. So the page
+           variant takes its width from its label; inside the lock card the
+           incumbent full width is right and is what `#billLockGo` above it
+           already does. The floor keeps it a 44px touch target, which the
+           label alone leaves 2px short. */
+        var act=asked?'':'<button class="btn pri" type="button" data-ask="1" style="'
+                         +(lock?'margin-top:12px;'
+                               :'margin-top:12px;width:auto;min-height:44px;')
+                         +'">Notify the admins</button>';
+        box.innerHTML=lock
+          ? '<div class="lock-none"><b>'+esc(title)+'</b><br>'+esc(detail)+'</div>'+act
+          : '<div class="empty"><div class="empty-t">'+esc(title)+'</div>'
+            +'<div class="empty-d">'+esc(detail)+'</div>'+act+'</div>';
+        /* Announced only when it CHANGES. Marking the container live on first
+           paint would read the whole block out on every page load. */
+        if(announce)box.setAttribute('role','status');
+        var btn=box.querySelector('button[data-ask]');
+        if(!btn)return;
+        btn.onclick=function(){
+          var label=btn.textContent;
+          btn.disabled=true; btn.textContent='notifying…';
+          api('/v1/billing/upgrade-request',{method:'POST'})
+            .then(function(r){ return r.ok?r.json():null; })
+            .then(function(d){
+              if(d){ draw(d,true); return; }
+              btn.disabled=false; btn.textContent=label;
+              box.appendChild(errLine('Could not send that. Try again in a moment.'));
+            })
+            .catch(function(){
+              btn.disabled=false; btn.textContent=label;
+              box.appendChild(errLine('Could not reach the server. Check your '
+                                      +'connection and try again.'));
+            });
+        };
+      }
+      draw(state,false);
+    }
+  };
 
   function banner(tone,c,st){
     var ban=$('billBanner');
@@ -6323,7 +6446,14 @@ async function loadLoginHistory(scope){
     digest:{
       what:'Your weekly summary of captured events and breaches. It is generated once per week from the ledger you already have.',
       todo:'Nothing to act on here. The individual events behind these numbers are on the Ledger and Threats pages.',
-      go:null}
+      go:null},
+    /* P4 · #56 — the one kind a CUSTOMER raises rather than the system. It is
+       org-wide, so the member who sent it sees it too; the copy is written for
+       whoever opens it. */
+    upgrade_request:{
+      what:'Someone on your team ran into something their plan does not cover and asked for it to be upgraded. Nothing has been bought and nothing has changed.',
+      todo:'Look at the plans on Billing and decide. Only an admin can complete a purchase, which is why this arrived as a message rather than a charge.',
+      go:'billing', goLabel:'Open billing'}
   };
   var LEVEL_WORD={info:'Info',warning:'Warning',critical:'Critical'};
 
@@ -7011,14 +7141,38 @@ async function loadLoginHistory(scope){
 
   window.loadUpgrade=async function(){
     var box=$('upgradeList'); if(!box)return;
-    var d=null;
+    var d=null, who=null;
     try{ var r=await api('/v1/billing/plans'); if(r.ok)d=await r.json(); }catch(e){}
+    /* P4 · #56 — who is reading this page, answered by the server rather than
+       by a role check here. `require_role("admin")` is what actually decides
+       whether the buttons below can work, and this is that same test. */
+    try{ who=await window.foxAskAdmin.load(); }catch(e){}
     if(!d){
       box.innerHTML='<div class="empty"><div class="empty-t">Could not reach the server</div>'
         +'<div class="empty-d">Your plan is unchanged — this is a connection problem.</div></div>';
       return;
     }
     var plans=Array.isArray(d.plans)?d.plans:[];
+    if(plans.length&&who&&who.can_purchase===false){
+      /* The tiers stay visible: knowing what is on offer is exactly what makes
+         "ask an admin" a specific request rather than a vague one. What goes is
+         the button, because a member pressing it gets a 403 and nothing else. */
+      box.innerHTML='<div class="stats" style="margin-bottom:0;">'+plans.map(function(pl,i){
+        var q=pl.monthly_log_quota;
+        var cad=cadence(pl.anchor_cadence_hours);
+        return '<div class="stat kpi '+TONE[i%TONE.length]+'"><span class="beam" aria-hidden="true"></span><div class="face">'
+          +'<svg class="dglyph" aria-hidden="true"><use href="#dg-passport"/></svg>'
+          +'<div class="v" style="font-size:clamp(15px,2vw,20px);text-transform:capitalize;">'+esc(pl.tier)+'</div>'
+          +'<div class="l">'+(q==null?'unlimited credits':(num(q)+' credits / month'))+'</div>'
+          +(cad?'<div class="kpi-trend">'+esc(cad)+'</div>':'')
+          +(pl.current?'<div class="kpi-trend" style="opacity:1;font-weight:800;">your plan</div>':'')
+          +'</div></div>';
+      }).join('')+'</div>';
+      var ask=document.createElement('div');
+      box.appendChild(ask);
+      window.foxAskAdmin.render(ask,who,'page');
+      return;
+    }
     if(!plans.length){
       box.innerHTML='<div class="empty"><div class="empty-t">No upgrade options available</div>'
         +'<div class="empty-d">This workspace is billed outside self-serve checkout. '

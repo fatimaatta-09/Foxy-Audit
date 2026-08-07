@@ -33,8 +33,10 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_200_OK
 
-from .. import account_audit, billing_state, paddle, password_reset
-from ..auth import hash_key, require_role, require_step_up_user, resolve_org
+from .. import account_audit, billing_state, paddle, password_reset, user_notifications
+from ..auth import (
+    hash_key, require_role, require_step_up_user, require_user, resolve_org,
+)
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..models import (
@@ -369,6 +371,77 @@ def checkout_session(payload: CheckoutRequest, request: Request):
 
 class UpgradeRequest(BaseModel):
     plan: str = "pro"
+
+
+# ── "ask an admin to upgrade" (P4 · #56) ────────────────────────────────────
+#
+# `upgrade-session` below is `require_role("admin")`, correctly: buying a plan
+# spends company money and not everyone on a team should be able to. The cost
+# was that a member who wanted a bigger plan had no in-product path at all —
+# a 403 that says "ask an admin" is an instruction, not a door.
+#
+# So this is the door, and it deliberately does NOT start a purchase. It writes
+# one notification and nothing else; the admin still decides and still pays.
+# The two guards on this file's tests exist to keep that true.
+#
+# `require_user`, not `require_role`, because a member IS the audience. It is
+# the same dependency the gate itself hangs off, so nothing new was invented to
+# express "any signed-in member of this org".
+#
+# REACHABLE WHILE LOCKED, and that took no change to `auth._GATE_EXEMPT`:
+# `/v1/billing/` is already exempt and has to be — a lock whose only remedy sits
+# behind the lock is a brick. That prefix already carries every route in this
+# file, including two that move money (`upgrade-session`, `checkout-session`),
+# so a rate-limited write that creates one notification widens nothing. A locked
+# member is precisely who most needs to reach it: the lock overlay is the whole
+# dashboard for them, and the plan buttons on it are admin-only.
+
+
+def _upgrade_request_view(user: User, row, *, created: bool | None = None) -> dict:
+    """The one shape both verbs answer with.
+
+    `can_purchase` is the SERVER's answer to "may this person buy", so the page
+    cannot drift from the route the way a client-side role check would. It is
+    the same test `require_role("admin")` applies one route down.
+    """
+    view = {
+        "can_purchase": user.role == "admin",
+        "requested_at": row.created_at.isoformat() if row is not None else None,
+        "cooldown_hours": user_notifications.UPGRADE_REQUEST_COOLDOWN_HOURS,
+    }
+    if created is not None:
+        view["created"] = created
+    return view
+
+
+@router.get("/v1/billing/upgrade-request")
+@limiter.limit("60/minute")
+def upgrade_request_state(request: Request, user: User = Depends(require_user),
+                          db: Session = Depends(get_db)):
+    """Has anyone here already asked, and when. A pure read.
+
+    The control has to survive a refresh, and the only honest place for that
+    state is the row itself — a flag in a page variable would say "sent" until
+    the tab closed and then forget, on the one screen whose whole job is telling
+    somebody where they stand.
+    """
+    return _upgrade_request_view(
+        user, user_notifications.latest_upgrade_request(db, user.org_id))
+
+
+@router.post("/v1/billing/upgrade-request")
+@limiter.limit("5/minute")
+def upgrade_request_create(request: Request, user: User = Depends(require_user),
+                           db: Session = Depends(get_db)):
+    """Notify this workspace's admins that somebody wants a bigger plan.
+
+    Writes at most one notification per org per cooldown window. A second press
+    is answered, not ignored: same 200, same timestamp, `created: false`, so the
+    page can say the admins were already told and when rather than pretending
+    to send again or appearing to do nothing.
+    """
+    row, created = user_notifications.record_upgrade_request(db, user.org_id, user)
+    return _upgrade_request_view(user, row, created=created)
 
 
 @router.post("/v1/billing/upgrade-session")
