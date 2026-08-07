@@ -930,6 +930,46 @@ html[data-theme="light"] .pg-wm{opacity:.06}
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--neutral) 26%,transparent);
 }
 .kpi .face .tag{background:var(--foxink);color:var(--face-ink-dim);box-shadow:none}
+/* ── C4 · the active-filter row. ────────────────────────────────────────────
+   A pill here is a CATEGORY, not a status, so it is built ON `.tag` rather
+   than beside it — R2's ladder (safe/warn/bad/dim) answers "is this the state
+   you expected", and "search: acme" is not a state at all. The detail-pair
+   renderer above already reuses `.tag` for the same reason; this is the second
+   caller, not a second vocabulary.
+
+   WHAT THIS ADDS TO THE SCOPE LINE IT SITS BESIDE, and why it is not a
+   duplicate of it: A7's sentence says HOW MANY rows the filters left
+   ("matching X · 12 of 40 organizations"). The pills say WHICH filters did it,
+   and each one is removable in a single action. Count and cause, not the same
+   fact twice.
+
+   The key is uppercase like every other `.tag`; the VALUE is not — it is the
+   operator's own typing, and upper-casing somebody's search term makes it look
+   like a constant. Same split the detail-pair renderer landed on. */
+.fpills{display:flex;flex-wrap:wrap;gap:var(--s-2);align-items:center;margin:0 0 10px}
+.fpill{padding-right:var(--s-1);gap:var(--s-1)}
+.fpill-v{text-transform:none;letter-spacing:0;font-weight:600;opacity:.92;max-width:22ch;overflow:hidden;text-overflow:ellipsis}
+/* The remove control is a real button with its own accessible name. 24px is
+   the POINTER hit area; the 44x44 touch minimum is applied at the breakpoint
+   where taps actually happen, below, because a 44px target inside a 9.5px pill
+   would be the row rather than the control on a desktop ops console. */
+.fpill-x{display:inline-flex;align-items:center;justify-content:center;
+  width:20px;height:20px;padding:0;border:0;border-radius:var(--r-xs);
+  background:none;color:inherit;cursor:pointer;opacity:.7;
+  transition:opacity var(--dur) ease,background var(--dur) ease}
+.fpill-x:hover{opacity:1;background:color-mix(in srgb,var(--neutral) 22%,transparent)}
+.fpill-x:focus-visible{outline:2px solid var(--accent);outline-offset:1px;opacity:1}
+.fpill-x svg{width:11px;height:11px;stroke:currentColor;stroke-width:3;fill:none;
+  stroke-linecap:round}
+/* `clear all` is a BUTTON. A5 found three <a href="#"> wearing a control's
+   clothes on this surface; this is not the fourth. It only appears at two or
+   more pills — with one, it is a second way to press the button beside it. */
+.fpill-clear{font-family:var(--mono);font-size:9.5px;font-weight:700;
+  letter-spacing:.5px;text-transform:uppercase;color:var(--muted);
+  background:none;border:0;padding:var(--s-1) var(--s-2);border-radius:var(--r-xs);
+  cursor:pointer;transition:color var(--dur) ease}
+.fpill-clear:hover{color:var(--ink)}
+.fpill-clear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 /* One key/value pair from an admin_actions `detail` blob (M3c · #93).
    `detail` is JSONB and every action writes a different shape, so this renders
    PAIRS rather than columns — it has to stay readable without pretending there
@@ -1729,6 +1769,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
    exception in this file is .pg-wm under 620px — a 72px word behind a 44px
    band is decoration, and it says so where it is defined. */
 @media(max-width:760px){
+  /* C4 · the touch minimum. 44x44 is a TOUCH rule, so it is applied where
+     touch is what happens; the pointer size stays 20px above. */
+  .fpill-x{width:44px;height:44px}
+  .fpills{gap:var(--s-3)}
   /* the rail turns on its side. Same items, same order, so muscle memory from
      the desktop layout still points at the right thing; it scrolls rather than
      dropping whatever did not fit. */
@@ -2293,6 +2337,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <input class="cin" id="orgSearch" placeholder="search name, id, contact…" oninput="orgSearchChanged()" style="max-width:250px;margin-bottom:0;"></div>
           </div>
         </div>
+        <div class="fpills" id="orgPills"></div>
         <table class="tbl cardify" id="orgTbl">
           <thead><tr>
             <th scope="col">Org</th><th scope="col">Plan</th><th scope="col">This month</th><th scope="col">Subscription</th><th scope="col">Access</th><th scope="col">Contact</th><th scope="col">Created</th>
@@ -2428,6 +2473,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <div><label class="sr-only" for="staffSearch">Search staff accounts</label>
               <input class="cin" id="staffSearch" placeholder="search email or role…" oninput="staffSearchChanged()" style="max-width:230px;margin-bottom:0;"></div>
           </div>
+          <div class="fpills" id="staffPills"></div>
           <table class="tbl cardify">
             <!-- Every column binds itself. Under 760px this table drops its header
                  row entirely, so the binding and the per-cell label are the only
@@ -4628,6 +4674,43 @@ async function loadOrgs(){
    backend change. Resetting the page is not optional — filter to three results
    while sitting on page three and the table is empty under a pager insisting
    there are results. */
+/* ── C4 · the active-filter row, one renderer for every page that has one. ──
+   The console already SAYS what its filters did — A7 gave orgs and staff
+   "matching X · 12 of 40 organizations", and the leads board says the same
+   thing for the same reason. What it could not do is UNDO one of them without
+   hunting for the control that set it. These pills are that sentence made
+   operable: the sentence keeps the count, a pill names the cause and removes it.
+
+   ⚠ REMOVAL ROUTES THROUGH THE PAGE'S OWN HANDLERS, never through state set
+   here. Every one of those handlers already calls pgReset before it renders,
+   and A7 paid for that: narrow to two rows while sitting on page three and the
+   table is empty under a pager insisting there are results. A second path that
+   forgot the reset would rebuild exactly that, and it would only show up on a
+   filter applied from page two or later. Clearing the control and calling the
+   handler keeps ONE place that knows how each filter is turned off.
+
+   The scope line beside it is already role="status" aria-live="polite" — the
+   idiom this file established for "a table that silently loses rows is not
+   acceptable". Re-rendering it after a removal announces the new count without
+   a second live region competing with it. */
+var _FPILL_X='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+function renderFilterPills(hostId,pills,clearExpr){
+  const el=$(hostId); if(!el)return;
+  pills=(pills||[]).filter(Boolean);
+  /* No filters, no row. An empty pill row would be a permanent strip of
+     nothing above every table, which is how "at a glance" becomes furniture. */
+  if(!pills.length){ el.innerHTML=''; return; }
+  el.innerHTML=pills.map(function(p){
+    return '<span class="tag fpill">'+esc(p.key)
+      +'<span class="fpill-v">'+esc(p.val)+'</span>'
+      +'<button type="button" class="fpill-x" aria-label="'
+      +esc('Remove the '+p.key+' filter '+p.val)+'" onclick="'+p.off+'">'
+      +_FPILL_X+'</button></span>';
+  }).join('')
+  /* At one pill "clear all" is a second way to press the button beside it. */
+  +(pills.length>1?'<button type="button" class="fpill-clear" onclick="'
+    +clearExpr+'">clear all</button>':'');
+}
 function orgSearchChanged(){
   ORG_Q=($('orgSearch')?$('orgSearch').value:'').trim().toLowerCase();
   pgReset('orgs'); renderOrgs();
@@ -4654,6 +4737,14 @@ function orgPendingChanged(){
    makes. Asking the negative would put the entire tenant list in the queue. */
 function _orgIsPending(o){ return (o&&o.approval_status)==='pending'; }
 function _orgsPending(){ return ORGS_ALL.filter(_orgIsPending); }
+function orgPillClear(which){
+  if(!which||which==='q'){ const e=$('orgSearch'); if(e)e.value=''; }
+  if(!which||which==='pending'){ const c=$('orgPendingOnly'); if(c)c.checked=false; }
+  /* Both handlers, always: each re-reads its own control, and calling them is
+     what guarantees the pgReset. The second render is a client-side re-draw of
+     a table already in memory. */
+  orgSearchChanged(); orgPendingChanged();
+}
 function _orgsFiltered(){
   let rows=ORGS_ALL;
   if(ORG_PENDING_ONLY) rows=rows.filter(_orgIsPending);
@@ -4738,6 +4829,17 @@ function renderOrgs(){
   if(sc) sc.textContent=(ORG_Q
     ? 'matching “'+ORG_Q+'” · '+rows.length+' of '+all.length+' organization'+(all.length===1?'':'s')
     : all.length+' organization'+(all.length===1?'':'s'))+off+wait;
+  /* The two CLIENT-SIDE filters only. `showDeleted` is deliberately absent:
+     M4c split these controls by what they DO — it re-requests the list with
+     include_deleted, these two narrow what has already arrived — and a pill
+     that silently costs a round trip sitting next to two that cost nothing is
+     that same conflation one layer up. Its state is still named in the
+     sentence above ("offboarded included") and its checkbox is in the
+     pagehead, where M4c deliberately put it. */
+  renderFilterPills('orgPills',[
+    ORG_Q?{key:'search',val:ORG_Q,off:"orgPillClear('q')"}:null,
+    ORG_PENDING_ONLY?{key:'status',val:'awaiting approval',off:"orgPillClear('pending')"}:null
+  ],'orgPillClear()');
   /* The pager is handed the FILTERED array, so "1-25 of N" counts what the
      table contains rather than what the fetch returned. */
   const orgs=window.foxPageSlice(rows,pgState('orgs',25),'orgPager',renderOrgs,'Organization pages');
@@ -5301,6 +5403,10 @@ function _lastSeen(iso){
     ? '<span class="chip warn">dormant · '+days+'d</span> <span class="sub mono" style="font-size:10px;">'+when+'</span>'
     : when;
 }
+function staffPillClear(){
+  const e=$('staffSearch'); if(e)e.value='';
+  staffSearchChanged();
+}
 function staffSearchChanged(){
   STAFF_Q=($('staffSearch')?$('staffSearch').value:'').trim().toLowerCase();
   pgReset('staff'); renderStaff();
@@ -5317,6 +5423,11 @@ function renderStaff(){
   if(sc) sc.textContent=STAFF_Q
     ? 'matching “'+STAFF_Q+'” · '+match.length+' of '+all.length+' account'+(all.length===1?'':'s')
     : all.length+' account'+(all.length===1?'':'s');
+  /* One filter, so no "clear all" — renderFilterPills withholds it below two,
+     where it would only be a second way to press the button beside it. */
+  renderFilterPills('staffPills',[
+    STAFF_Q?{key:'search',val:STAFF_Q,off:'staffPillClear()'}:null
+  ],'staffPillClear()');
   const rows=window.foxPageSlice(match,pgState('staff',25),'staffPager',renderStaff,'Staff pages');
   if(!all.length){$('staffRows').innerHTML='<tr><td colspan="6" class="sub mono">no staff accounts</td></tr>';return}
   if(!match.length){$('staffRows').innerHTML='<tr><td colspan="6" class="sub mono">no accounts match “'+esc(STAFF_Q)+'”</td></tr>';return}

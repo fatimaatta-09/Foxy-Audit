@@ -5307,3 +5307,250 @@ def test_every_empty_state_on_the_org_table_spans_its_new_width() -> None:
     assert 'colspan="6"' not in body, "an empty state still spans the old width"
     assert "faultRow(7," in _js_func("loadOrgs"), (
         "the fault row still spans six of seven columns")
+
+
+# ── C4 · the active-filter pill row ──────────────────────────────────────────
+# A7 gave orgs and staff a sentence saying HOW MANY rows their filters left.
+# These pills say WHICH filters did it and remove one in a single action. The
+# sentence keeps the count; the pills carry the cause.
+#
+# Most of these RUN the renderer. The states differ by one comparison each
+# (`pills.length > 1` decides "clear all"), and a grep for the string "clear
+# all" would pass with that threshold rewired to zero.
+
+_PILL_SHIM = """
+var EL={}; function mk(id){return EL[id]={id:id,innerHTML:''};}
+mk('orgPills'); mk('staffPills');
+function $(id){return EL[id]||null;}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+var _FPILL_X='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+"""
+
+
+def _pills(cases: dict) -> dict:
+    """Run the shipped renderFilterPills over each case; report what it built."""
+    import json
+    import os
+    import tempfile
+    probe = (_PILL_SHIM + _js_decl("renderFilterPills")
+             + "\nvar CASES=" + json.dumps(cases) + ", R={};\n"
+             + r"""
+for(var k in CASES){
+  renderFilterPills('orgPills', CASES[k], 'demoClear()');
+  var h=EL.orgPills.innerHTML;
+  R[k]={html:h,
+        pills:(h.match(/class="tag fpill"/g)||[]).length,
+        clear:/class="fpill-clear"/.test(h),
+        buttons:(h.match(/<button/g)||[]).length,
+        anchors:(h.match(/<a[ >]/g)||[]).length,
+        labels:(h.match(/aria-label="[^"]*"/g)||[]),
+        statusClass:/fpill[^"]*\b(safe|warn|bad|dim|info)\b/.test(h)};
+}
+console.log(JSON.stringify(R));
+""")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        # encoding="utf-8": text=True alone decodes cp1252 here, and the curly
+        # quotes the scope line uses come back as mojibake.
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True, encoding="utf-8")
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+
+_ONE = [{"key": "search", "val": "acme", "off": "orgPillClear('q')"}]
+_TWO = _ONE + [{"key": "status", "val": "awaiting approval",
+                "off": "orgPillClear('pending')"}]
+
+pytestmark_c4 = pytest.mark.skipif(shutil.which("node") is None,
+                                   reason="node not on PATH")
+
+
+@pytestmark_c4
+def test_no_filters_draws_no_row_at_all() -> None:
+    """An empty pill row would be a permanent strip of nothing above every
+    table, which is how "at a glance" turns into furniture. Both the empty list
+    and a list that is only nulls -- the callers build theirs with inline
+    conditionals, so an all-off page hands over [null, null]."""
+    r = _pills({"empty": [], "nulls": [None, None]})
+    for k in ("empty", "nulls"):
+        assert r[k]["html"] == "", "%s drew %r" % (k, r[k]["html"])
+
+
+@pytestmark_c4
+def test_clear_all_appears_only_once_it_saves_an_action() -> None:
+    """At one pill "clear all" is a second way to press the button beside it.
+    Asserted from BOTH sides: a threshold rewired to zero would satisfy "two
+    pills have it" and put a redundant control on every single-filter page."""
+    r = _pills({"one": _ONE, "two": _TWO})
+    assert r["one"]["pills"] == 1 and not r["one"]["clear"], (
+        "a single filter was given a clear-all: %s" % r["one"]["html"])
+    assert r["two"]["pills"] == 2 and r["two"]["clear"], (
+        "two filters got no clear-all: %s" % r["two"]["html"])
+    # 2 removals + 1 clear-all
+    assert r["two"]["buttons"] == 3, r["two"]["buttons"]
+
+
+@pytestmark_c4
+def test_every_control_in_the_row_is_a_real_button() -> None:
+    """A5 found three <a href="#"> wearing a control's clothes on this surface.
+    A link that does not navigate is a keyboard and screen-reader lie, and
+    "clear all" is the obvious place to add a fourth."""
+    r = _pills({"two": _TWO})["two"]
+    assert r["anchors"] == 0, "the pill row grew an anchor: %s" % r["html"]
+    assert r["buttons"] == 3
+    assert 'type="button"' in r["html"], (
+        "a button in a row that may sit inside a form defaults to submit")
+
+
+@pytestmark_c4
+def test_the_remove_control_names_what_it_removes() -> None:
+    """The x is icon-only, so its accessible name is the only thing a screen
+    reader has. "Remove" alone would be three identical buttons in a row; the
+    name has to carry the field AND the value."""
+    labels = _pills({"two": _TWO})["two"]["labels"]
+    assert len(labels) == 2, labels
+    assert any("search" in l and "acme" in l for l in labels), labels
+    assert any("status" in l and "awaiting approval" in l for l in labels), labels
+    for l in labels:
+        assert l.lower().startswith('aria-label="remove'), (
+            "the name does not say what pressing it does: %s" % l)
+
+
+@pytestmark_c4
+def test_an_operators_own_typing_cannot_become_markup() -> None:
+    """The value is whatever was typed into a search box, and it lands in TWO
+    places -- the visible text and the aria-label. Escaping one and not the
+    other is the easy half-fix."""
+    r = _pills({"x": [{"key": "search", "val": '<img src=x onerror=alert(1)>',
+                       "off": "orgPillClear('q')"}]})["x"]
+    assert "<img" not in r["html"], "a search term reached the DOM as markup"
+    assert "&lt;img" in r["html"]
+    assert r["html"].count("&lt;img") == 2, (
+        "the value is escaped in one place but not the other: %s" % r["html"])
+
+
+@pytestmark_c4
+def test_removing_a_pill_goes_through_the_page_that_owns_the_filter() -> None:
+    """THE COUNTING TRAP, and why this is guarded on the CALL and not the body.
+
+    A7's handlers each pgReset before they render. Narrow to two rows while
+    sitting on page three and the table is empty under a pager insisting there
+    are results -- so a removal path that set state directly would rebuild that
+    defect, and only on a filter cleared from page two or later.
+
+    Run, not grepped: orgPillClear is asserted to CALL both handlers, which is
+    what carries the reset. Guarding that pgReset appears somewhere in the file
+    would say nothing about whether this path reaches it (A6).
+    """
+    import json
+    import os
+    import tempfile
+    probe = ("""
+var CALLED=[], V={};
+function $(id){ return V[id] || (V[id]={value:'x',checked:true}); }
+function orgSearchChanged(){ CALLED.push('search'); }
+function orgPendingChanged(){ CALLED.push('pending'); }
+"""
+             + _js_decl("orgPillClear")
+             + """
+var R={};
+orgPillClear('q');   R.q={called:CALLED.slice(), search:V.orgSearch.value};
+CALLED.length=0;
+orgPillClear('pending'); R.pending={called:CALLED.slice(), checked:V.orgPendingOnly.checked};
+CALLED.length=0; V.orgSearch.value='y'; V.orgPendingOnly.checked=true;
+orgPillClear();      R.all={called:CALLED.slice(), search:V.orgSearch.value,
+                            checked:V.orgPendingOnly.checked};
+console.log(JSON.stringify(R));
+""")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True, encoding="utf-8")
+        assert proc.returncode == 0, proc.stderr
+        r = json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+    for case in ("q", "pending", "all"):
+        assert "search" in r[case]["called"] and "pending" in r[case]["called"], (
+            "%s did not route through the handlers that pgReset: %s"
+            % (case, r[case]["called"]))
+    assert r["q"]["search"] == "", "removing the search pill left the box filled"
+    assert r["pending"]["checked"] is False, "removing the status pill left it ticked"
+    assert r["all"]["search"] == "" and r["all"]["checked"] is False, (
+        "clear all left a control set: %s" % r["all"])
+
+
+def test_the_pill_is_a_category_and_not_a_status() -> None:
+    """R2's ladder answers "is this the state you expected" -- safe/warn/bad are
+    margin marks for rows a human has to look at. "search: acme" is not a state
+    at all, it is a category, and `.tag` is what this file already has for
+    those. The detail-pair renderer reuses `.tag` for the same reason, so this
+    is the second caller rather than a second vocabulary.
+    """
+    js = " ".join(_script_blocks())
+    assert 'class="tag fpill"' in js, (
+        "the pill stopped being built on .tag, so it is a lookalike of the "
+        "category vocabulary instead of the thing itself")
+    body = _js_func("renderFilterPills")
+    for status in ("chip", "safe", "warn", " bad", "dim"):
+        assert 'class="%s' % status not in body, (
+            "the pill row is emitting a status class (%s); a filter is a "
+            "category" % status)
+
+
+def test_the_refetching_filter_is_deliberately_not_a_pill() -> None:
+    """M4c split the org controls by what they DO: `showDeleted` re-requests the
+    list with include_deleted, while the search and the approvals toggle narrow
+    what has already arrived -- and it says so in the markup, "keeps 'this
+    refetches' and 'this filters' from looking alike".
+
+    A pill costing a round trip beside two that cost nothing is that same
+    conflation one layer up, so showDeleted is absent BY DECISION. Its state is
+    still named in the scope sentence and its checkbox is in the pagehead.
+    Guarded because "add the missing one" is the obvious next edit.
+    """
+    body = re.sub(r"/\*.*?\*/", "", _js_func("renderOrgs"), flags=re.S)
+    # sliced to the CALL, not the whole function: renderOrgs mentions
+    # showDeleted legitimately elsewhere (it reads the checkbox for the scope
+    # sentence), so a body-wide grep would fail on correct code.
+    call = body[body.index("renderFilterPills('orgPills'"):]
+    call = call[: call.index("');") + 3]
+    assert "showDeleted" not in call, (
+        "showDeleted was added to the pill row; it refetches, and M4c grouped "
+        "these controls by that difference on purpose")
+    # and the sentence still carries it, which is what makes the omission safe
+    assert "offboarded included" in body, (
+        "the scope line stopped naming the offboarded toggle, so nothing does")
+
+
+def test_both_pill_rows_are_rendered_by_the_one_renderer() -> None:
+    """One grammar. Register #116/#119 already record three KPI-footer grammars
+    on this console; a second pill implementation would be the same mistake in
+    a new place. Anchored to the ids, not to position."""
+    mk = _nocomment(SRC)
+    for host in ("orgPills", "staffPills"):
+        assert 'id="%s"' % host in mk, "%s has no host in the markup" % host
+    for fn, host in (("renderOrgs", "orgPills"), ("renderStaff", "staffPills")):
+        body = _js_func(fn)
+        assert "renderFilterPills('%s'" % host in body, (
+            "%s does not render its pill row through the shared renderer" % fn)
+
+
+def test_the_remove_target_meets_the_touch_minimum_where_touch_happens() -> None:
+    """44x44 is a TOUCH rule. The pointer size is 20px, which is right for a
+    9.5px pill on a desktop ops console; the minimum is applied at the same
+    breakpoint the tables restack at, and measured there it is 44x44."""
+    css = _css()
+    mq = css[css.index("@media(max-width:760px){"):]
+    mq = mq[: mq.index("\n}")]
+    assert ".fpill-x{width:44px;height:44px}" in mq.replace(" ", ""), (
+        "the touch target is not raised at the breakpoint where taps happen")
