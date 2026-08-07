@@ -5527,6 +5527,19 @@ def test_the_refetching_filter_is_deliberately_not_a_pill() -> None:
     assert "showDeleted" not in call, (
         "showDeleted was added to the pill row; it refetches, and M4c grouped "
         "these controls by that difference on purpose")
+    # ⚠ STRENGTHENED AT THE MERGE GATE. The line above searches for a TOKEN, not
+    # for the thing. A refetching pill added as
+    #   {key:'access', val:'offboarded included', off:"orgPillClear('deleted')"}
+    # never spells `showDeleted` and sails through — I wrote exactly that at the
+    # gate and all 347 passed. Assert the WHOLE SET of keys the call passes, so
+    # any new pill has to be added here deliberately rather than by not
+    # mentioning a string.
+    keys = set(re.findall(r"key:'([a-z]+)'", call))
+    assert keys == {"search", "status"}, (
+        "the org pill row gained or lost a filter: expected {'search','status'}, "
+        f"found {keys or '{}'}. Both narrow what has ALREADY ARRIVED; anything "
+        "that refetches belongs with showDeleted in the pagehead, per M4c."
+    )
     # and the sentence still carries it, which is what makes the omission safe
     assert "offboarded included" in body, (
         "the scope line stopped naming the offboarded toggle, so nothing does")
