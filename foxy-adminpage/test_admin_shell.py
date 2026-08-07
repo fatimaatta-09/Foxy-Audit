@@ -851,10 +851,11 @@ def test_every_table_cardifies() -> None:
     tables = _tables()
     # 18 since round-2 item 9 removed the Settings self-activity card, whose
     # loader built the nineteenth. 19 since M3d added the Paddle events feed
-    # beside the Stripe one on the revenue page. The count has to move with a
-    # legitimate table; the real assertion — that every one of them opts in to
-    # cardify — is the loop below and is unchanged.
-    assert len(tables) == 19, f"expected 19 tables, found {len(tables)}"
+    # beside the Stripe one on the revenue page. Back to 18 since S1 removed
+    # the Stripe feed, leaving Paddle as the only webhook log. The count has to
+    # move with a legitimate table; the real assertion — that every one of them
+    # opts in to cardify — is the loop below and is unchanged.
+    assert len(tables) == 18, f"expected 18 tables, found {len(tables)}"
     missing = [t[:70] for t in tables if "tbl cardify" not in t[:60]]
     assert not missing, f"tables that still scroll sideways instead of stacking: {missing}"
 
@@ -2881,8 +2882,15 @@ def test_the_mask_control_is_legible_on_the_face_it_lands_on() -> None:
 def test_the_revenue_page_says_when_it_cannot_answer() -> None:
     """The last toast()-and-return loader in any phase's scope, and the worst,
     because this page is never blank on a failed RELOAD: measured under Node,
-    a 500 left the previous poll's money on screen with #sePager still reading
-    "1-25 of 240" over it."""
+    a 500 left the previous poll's money on screen with the webhook pager still
+    reading "1-25 of 240" over it.
+
+    S1 re-pointed the feed half at Paddle. The contract was written against the
+    Stripe feed and M3d never extended it when it added the Paddle one, so on a
+    failed /revenue the Paddle table sat on "loading..." indefinitely — both
+    feeds load only after the early return this guard covers. The Stripe feed is
+    gone; the assertion follows the feed that is still here rather than leaving
+    the page with no webhook fault state at all."""
     body = _js_func("loadRevenue")
     assert "toast(" not in body.split("const d=")[0], "revenue still fails by toast alone"
     for slot in ("rvMonthly", "rvByPlan"):
@@ -2890,36 +2898,53 @@ def test_the_revenue_page_says_when_it_cannot_answer() -> None:
             "%s does not report the failure" % slot
         )
     assert "loadRevenue()" in body, "the revenue fault offers no retry"
-    assert re.search(r"\$\('sePager'\)\.innerHTML=''", body), (
+    assert re.search(r"\$\('peRows'\)\.innerHTML=faultRow\(", body), (
+        "the webhook feed sits on 'loading...' forever when /revenue fails"
+    )
+    assert re.search(r"\$\('pePager'\)\.innerHTML=''", body), (
         "a stale '1-25 of 240' can still sit above a fault row"
     )
 
 
-def test_a_new_stripe_filter_is_a_new_question() -> None:
+def test_a_new_webhook_filter_is_a_new_question() -> None:
     """_fauxCommit invokes data-onchange as window[cb](root), so naming
     loadStripeEvents there put the select ELEMENT into its `page` parameter and
     the query string went out as offset=NaN. Driven through a real option
     click, picking "failed" answered "no stripe events with status failed"
-    while three failed events existed."""
-    m = re.search(r'id="seStatus"[^>]*data-onchange="([a-zA-Z]+)"', _nocomment(SRC))
-    assert m, "the Stripe status select is gone"
-    assert m.group(1) != "loadStripeEvents", (
+    while three failed events existed.
+
+    RE-AIMED AT PADDLE BY S1, NOT DELETED. The Stripe feed is gone, but M3d
+    built the Paddle select in the same shape and NOTHING guarded it — the
+    measured gap: no test in this file mentioned #peStatus or
+    paddleFilterChanged. Deleting this guard with its subject would have left
+    the one webhook filter that still ships free to reproduce a false negative
+    about failed payments, on the money page, with 306 guards green."""
+    m = re.search(r'id="peStatus"[^>]*data-onchange="([a-zA-Z]+)"', _nocomment(SRC))
+    assert m, "the Paddle status select is gone"
+    assert m.group(1) != "loadPaddleEvents", (
         "the status select still hands the select element to a `page` parameter"
     )
     body = _js_func(m.group(1))
-    assert "pgReset('stripe')" in body, "a new Stripe filter still keeps the old offset"
-    assert "loadStripeEvents()" in body, "the filter no longer reloads the table"
+    assert "pgReset('paddle')" in body, "a new Paddle filter still keeps the old offset"
+    assert "loadPaddleEvents()" in body, "the filter no longer reloads the table"
 
 
-def test_replaying_a_stripe_webhook_is_confirmed_first() -> None:
-    """Replay re-runs a webhook inside Stripe — A3's re-anchor case: a write to
-    a system Foxy does not control, and one that can move money. It had no
-    confirmation and no busy guard, and three rapid clicks sent three POSTs."""
-    gate = _js_func("replayStripe")
-    assert "openModal(" in gate, "replay fires straight at Stripe with no confirmation"
+def test_replaying_a_webhook_cannot_double_submit() -> None:
+    """Replay re-runs a webhook inside the processor — A3's re-anchor case: a
+    write to a system Foxy does not control, and one that can move money. It had
+    no confirmation and no busy guard, and three rapid clicks sent three POSTs.
+
+    RE-AIMED AT PADDLE BY S1, NOT DELETED. `_doReplayPaddle` carries busy() and
+    a try/catch, but no guard read its body — measured: no test in this file
+    passed "_doReplayPaddle" to _js_func or _pe_code, so both remedies were
+    unprotected on the only replay path that still ships. The confirmation
+    STEP is covered by test_the_replay_button_goes_through_a_confirmation; what
+    only lived here is the double-submit guard, the try/catch, and the rule that
+    the confirmation itself must not call the API."""
+    gate = _js_func("replayPaddle")
+    assert "openModal(" in gate, "replay fires straight at the processor with no confirmation"
     assert "api(" not in gate, "the confirmation step still calls the API itself"
-    assert "_doReplayStripe(" in gate, "the modal does not lead anywhere"
-    run = _js_func("_doReplayStripe")
+    run = _js_func("_doReplayPaddle")
     assert "await busy(btn," in run, (
         "replay is not wrapped in busy() — the aria-busy it sets IS the double-submit guard"
     )
@@ -2984,14 +3009,29 @@ def test_every_campaign_field_has_exactly_one_label() -> None:
         assert page.count('for="%s"' % field) == 1, "%s is not labelled exactly once" % field
 
 
-def test_the_stripe_table_binds_its_columns() -> None:
+def test_the_webhook_table_binds_its_columns() -> None:
     """Under 760px .tbl.cardify removes the header row, so scope + data-label
     are the only things left tying a value to its column. All six headers here
-    carried neither half."""
-    head = re.search(r"<thead><tr>(.*?)</tr></thead>", _a2_page("revenue"), re.S).group(1)
-    ths = re.findall(r"<th\b([^>]*)>", head)
-    assert len(ths) == 6, "the Stripe events table no longer has six columns"
-    assert all('scope="col"' in t for t in ths), "a Stripe events column does not name itself"
+    carried neither half.
+
+    RE-AIMED AT PADDLE BY S1, NOT DELETED. `revenue` is in A4_PAGES, NOT
+    A2_PAGES, so test_every_column_on_an_a2_surface_names_itself never reached
+    this page — checked, not assumed. This is the only scope= guard the revenue
+    page has, and after S1 the table it lands on is the Paddle feed.
+
+    It is anchored to #peRows rather than to "the first thead on the page",
+    which is how the original found the Stripe table. That anchor is why the
+    guard would have kept passing while silently changing subject: remove the
+    panel above and the same regex quietly starts measuring the next table
+    down. Naming the tbody makes the subject explicit."""
+    page = _a2_page("revenue")
+    end = page.index('id="peRows"')
+    start = page.rindex("<table", 0, end)
+    head = re.search(r"<thead><tr>(.*?)</tr></thead>", page[start:end], re.S)
+    assert head, "the Paddle events table has no header row"
+    ths = re.findall(r"<th\b([^>]*)>", head.group(1))
+    assert len(ths) == 6, "the Paddle events table no longer has six columns"
+    assert all('scope="col"' in t for t in ths), "a Paddle events column does not name itself"
 
 
 def test_the_campaign_list_says_what_to_do_next() -> None:
@@ -3869,13 +3909,49 @@ def _pe_code(name: str) -> str:
 
 
 def test_the_revenue_page_shows_the_paddle_feed() -> None:
-    """Paddle is the processor that actually takes money here; Stripe has never
-    taken one and has had a feed since P4."""
+    """Paddle is the processor that actually takes money here. It had a feed
+    beside Stripe's from M3d; S1 removed Stripe's, so this is now the only
+    webhook log on the console — which is why the seRows assertion this guard
+    used to carry ("the Stripe feed was displaced rather than joined") is gone
+    rather than inverted. Absence is asserted by
+    test_the_revenue_page_does_not_name_stripe_as_the_processor below."""
     mk = _nocomment(_page("revenue"))
     assert 'id="peRows"' in mk, "the Paddle events table is gone"
     assert 'id="pePager"' in mk
     assert "Paddle events" in mk
-    assert 'id="seRows"' in mk, "the Stripe feed was displaced rather than joined"
+
+
+def test_the_revenue_page_does_not_name_stripe_as_the_processor() -> None:
+    """S1 · Paddle takes the money. Two KPI tooltips on this page still read
+    "Invoices Stripe marked paid" and "Orgs whose Stripe subscription status" —
+    false sentences over correct numbers, because /admin/v1/revenue applies NO
+    provider filter at all: it sums every Invoice whose status is 'paid',
+    whoever recorded it, and groups Organization.subscription_status the same
+    way. The defect class this console has now produced seven times is a true
+    figure under a caption that describes something else.
+
+    SCOPED TO THE REVENUE PAGE ON PURPOSE. A file-wide search would fight the
+    data browser, which still lists `stripe_events` and the `stripe_*` columns —
+    correctly, because the table and the columns still exist. Only the surface
+    that tells an operator who took the money is covered.
+
+    COMMENTS ARE STRIPPED IN BOTH SYNTAXES. This file argues with itself in
+    prose, and S1's own comments say the word "Stripe" repeatedly precisely
+    because Stripe is what they are about — including one INSIDE loadRevenue's
+    body, which _js_func returns verbatim. A guard that greps raw source here
+    finds its own explanation and calls it the defect.
+    """
+    parts = [_page("revenue")]
+    # the loaders that paint this page — the tooltips are markup, but a caption
+    # naming a vendor is just as false when a loader writes it into .kfoot.
+    parts += [_js_func(fn) for fn in ("loadRevenue", "paddleFilterChanged",
+                                      "loadPaddleEvents", "replayPaddle",
+                                      "_doReplayPaddle")]
+    prose = re.sub(r"<!--.*?-->|/\*.*?\*/", "", "\n".join(parts), flags=re.S)
+    assert "stripe" not in prose.lower(), (
+        "the revenue page still names Stripe as the processor: %s"
+        % [ln.strip()[:90] for ln in prose.splitlines() if "stripe" in ln.lower()]
+    )
 
 
 def test_the_paddle_feed_is_actually_loaded() -> None:

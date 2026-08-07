@@ -2504,29 +2504,26 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            supporting counts go .quiet — hue in the surface, accent bar at full
            saturation, glyph in the card's deep stop, beam untouched. -->
       <div class="grid kpis">
-        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Invoices Stripe marked paid whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-revenue"/></svg></button><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
-        <div class="clay kpi k-magenta"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose Stripe subscription status is active right now, offboarded orgs excluded." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-subscription"/></svg></button><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
+        <div class="clay kpi k-violet"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Revenue over 30 days" data-tip="Every invoice marked paid — whichever processor or staff action recorded it — whose created date falls inside the last 30 days. Masked by default: use the eye to reveal it." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-revenue"/></svg></button><div class="klabel">Revenue · 30 days</div><div class="kval" id="rvRev30">—</div><div class="kfoot">paid invoices</div></span></div>
+        <div class="clay kpi k-magenta"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Active subscriptions" data-tip="Orgs whose subscription status is active right now — the status held on the org, whichever processor last wrote it. Offboarded orgs excluded." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-subscription"/></svg></button><div class="klabel">Active subscriptions</div><div class="kval" id="rvActive">—</div><div class="kfoot" id="rvSubFoot">&nbsp;</div></span></div>
         <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Trialing orgs" data-tip="Orgs whose trial window has not closed yet. This is independent of subscription status, so an org can be counted here and under active." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-trial"/></svg></button><div class="klabel">Trialing</div><div class="kval" id="rvTrial">—</div><div class="kfoot">in trial window</div></span></div>
       </div>
       <div class="split">
         <div class="clay pad k-violet"><div class="panel-h"><div><div class="eyebrow">monthly</div><div class="panel-t">Revenue trend</div></div></div><div id="rvMonthly" style="min-height:200px;"></div></div>
         <div class="clay pad k-violet"><div class="panel-h"><div><div class="eyebrow">by plan · 6 months</div><div class="panel-t">Revenue by plan</div></div></div><div id="rvByPlan" style="min-height:200px;"></div></div>
       </div>
-      <div class="clay pad" style="margin-top:16px;">
-        <div class="panel-h"><div><div class="eyebrow">webhooks</div><div class="panel-t">Stripe events</div></div>
-          <div class="fauxselect" id="seStatus" data-value="" data-onchange="stripeFilterChanged" style="min-width:150px;">
-            <button type="button" class="cin fauxselect-trigger"><span class="fauxselect-label">all statuses</span><svg class="fauxselect-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
-            <div class="fauxselect-list"><div class="fauxselect-opt sel" data-value="">all statuses</div><div class="fauxselect-opt" data-value="failed">failed</div><div class="fauxselect-opt" data-value="processed">processed</div><div class="fauxselect-opt" data-value="ignored">ignored</div><div class="fauxselect-opt" data-value="received">received</div></div>
-          </div>
-        </div>
-        <div class="twrap"><table class="tbl cardify"><thead><tr><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Org</th><th scope="col">Received</th><th scope="col">Error</th><th scope="col" style="text-align:right;">Action</th></tr></thead><tbody id="seRows" aria-live="polite"><tr><td colspan="6" class="sub mono">loading…</td></tr></tbody></table><div id="sePager"></div></div>
-      </div>
-
-      <!-- Paddle events (M3d · #98). Beside the Stripe feed rather than on a new
-           page: same router, same question, and this is where staff already look
-           for billing. Paddle is the processor that actually takes money here;
-           Stripe has never taken one. Presented exactly like the feed above, so
-           there is one visual language for "a webhook log" on this console. -->
+      <!-- Paddle events (M3d · #98). On the revenue page rather than a new one:
+           same router, same question, and this is where staff already look for
+           billing. Paddle is the processor that actually takes money here.
+           S1 · a Stripe events feed sat above this one until 2026-08-07, in the
+           same shape. It is gone: the stripe_events table never held a row, so
+           the panel could only ever render its own empty state, and a webhook
+           log for a processor that has taken no payment reads as a second
+           billing system an operator has to rule out. The BACKEND route, the
+           StripeEvent model and the stripe_* columns all stay — the vault's
+           standing decision is that they go when Paddle takes its first live
+           payment, which has not happened yet. This removed a dead panel, not
+           a system, which is why the data browser still lists that table. -->
       <div class="clay pad" style="margin-top:16px;">
         <div class="panel-h"><div><div class="eyebrow">webhooks</div><div class="panel-t">Paddle events</div></div>
           <div class="fauxselect" id="peStatus" data-value="" data-onchange="paddleFilterChanged" style="min-width:150px;">
@@ -3445,9 +3442,13 @@ function fault(what,why,retry){
     +(why?'<span class="why">'+esc(why)+'</span>':'')
     +(retry?'<button class="btn sm" onclick="'+retry+'">Try again</button>':'')+'</div>';
 }
-/* `why` is appended rather than slotted third so the two callers that predate
-   it (loadStripeEvents, loadAudit — other phases' pages) keep working
-   unchanged. The awkward order is the price of not reaching into them. */
+/* `why` is appended rather than slotted third so the caller that predates it
+   (loadAudit — another phase's page) keeps working unchanged. The awkward order
+   is the price of not reaching into it.
+   S1 · loadStripeEvents was the second such caller and is gone. DO NOT "tidy"
+   the signature now: loadAudit is still here and still passes three positional
+   arguments, so moving `why` into third place would silently feed it a retry
+   expression as a reason and a reason as an onclick. */
 function faultRow(cols,what,retry,why){
   return '<tr><td colspan="'+cols+'">'+fault(what,why||'',retry)+'</td></tr>';
 }
@@ -5633,13 +5634,19 @@ function _cents(c){return '$'+num(Math.round((c||0)/100));}
 /* A4 · the last toast()-and-return loader in any phase's scope, and the worst
    of them, because this page is never empty on a failed RELOAD. Measured under
    Node against a 500: the three KPI slots kept the numbers from the previous
-   poll, both charts kept the previous series, and #sePager went on reading
-   "1–25 of 240" over them. So a dead /revenue rendered as a healthy revenue
-   page showing yesterday's money, behind a toast that expired in 3.2 seconds —
-   the confident-wrong-answer shape, on the money page.
+   poll, both charts kept the previous series, and the webhook pager went on
+   reading "1–25 of 240" over them. So a dead /revenue rendered as a healthy
+   revenue page showing yesterday's money, behind a toast that expired in 3.2
+   seconds — the confident-wrong-answer shape, on the money page.
    Same contract as the other five: the value slots go to "—", the charts and
    the table say what failed and offer a retry, and every pager the call
-   invalidates is cleared so no count can sit above a fault row. */
+   invalidates is cleared so no count can sit above a fault row.
+   S1 · this contract was written against the Stripe feed and never extended
+   when M3d added the Paddle one beside it. Both feeds load only AFTER the early
+   return below, so on a failed /revenue the Paddle table sat on "loading…"
+   indefinitely while #pePager kept the previous poll's count — the same defect,
+   one panel to the right. Removing the Stripe feed moved the contract onto the
+   feed that is actually here rather than dropping it. */
 async function loadRevenue(){
   let r; try{ r=await api('/admin/v1/revenue'); }catch(e){ r=null; }
   if(!r||!r.ok){
@@ -5648,8 +5655,8 @@ async function loadRevenue(){
     $('rvSubFoot').textContent='revenue figures unavailable';
     $('rvMonthly').innerHTML=fault('The revenue trend did not load.',why,'loadRevenue()');
     $('rvByPlan').innerHTML=fault('Revenue by plan did not load.',why,'loadRevenue()');
-    $('seRows').innerHTML=faultRow(6,'Stripe events were not requested — the revenue call failed first.','loadRevenue()',why);
-    $('sePager').innerHTML='';
+    $('peRows').innerHTML=faultRow(6,'Paddle events were not requested — the revenue call failed first.','loadRevenue()',why);
+    $('pePager').innerHTML='';
     return;
   }
   const d=await r.json();
@@ -5674,71 +5681,14 @@ async function loadRevenue(){
   chart('rvByPlan',{type:'stackedbar',height:200,labels:bmonths,xFormat:v=>String(v).slice(2),
     series:plans.map(p=>({name:p,values:bpm.map(x=>(x.plans[p]||0)/100)})),
     yFormat:v=>'$'+num(Math.round(v)), ariaLabel:'revenue by plan', empty:'No paid invoices yet'});
-  loadStripeEvents();
   loadPaddleEvents();
 }
-/* A4 · the status select named loadStripeEvents as its own data-onchange, and
-   _fauxCommit invokes that callback as window[cb](root) — it passes the SELECT
-   ELEMENT. loadStripeEvents' first parameter is `page`, so a div landed in
-   pg.page and (element-1)*size made the query string `offset=NaN`.
-   Driven through a real option click on the shipped file: with three failed
-   events present, picking "failed" requested offset=NaN and the table answered
-   "no stripe events with status failed" — a false negative about failed
-   payments, on the money page, and it also stranded pg.page so every later
-   page request from that pager was NaN too.
-   Both halves are the same fix: the callback gets its own name, ignores the
-   element the dispatcher hands it, and resets the page — a new filter is a new
-   question. renderTrafficFiltered is the same shape A3 landed on traffic. */
-function stripeFilterChanged(){ pgReset('stripe'); loadStripeEvents(); }
-async function loadStripeEvents(page){
-  const st=fauxVal('seStatus');
-  const pg=pgState('stripe',25); if(page)pg.page=page;
-  const off=(pg.page-1)*pg.size;
-  let r; try{ r=await api('/admin/v1/billing/stripe-events?limit='+pg.size+'&offset='+off+(st?('&status='+st):'')); }catch(e){ r=null; }
-  if(!r||!r.ok){ $('seRows').innerHTML=faultRow(6,'Stripe events did not load.',"loadStripeEvents()"); window.foxPager('sePager',{total:0}); return; }
-  const _d=await r.json(), items=_d.items||[];
-  window.foxPager('sePager',{page:pg.page,pageSize:pg.size,total:_d.total||items.length,
-    label:'Stripe event pages',onPage:loadStripeEvents});
-  if(!items.length){ $('seRows').innerHTML='<tr><td colspan="6" class="sub mono">no stripe events'+(st?(' with status '+esc(st)):'')+'</td></tr>'; return; }
-  const canReplay=can('operator');
-  $('seRows').innerHTML=items.map(e=>{
-    const cls=e.status==='processed'?'safe':e.status==='failed'?'bad':e.status==='ignored'?'dim':'warn';
-    /* jsq, not raw interpolation: every other inline handler in this file that
-       carries an id through an attribute goes through it, and this one did not. */
-    const act=(canReplay&&(e.status==='failed'))?`<button class="btn sm pri" onclick="replayStripe('${jsq(e.id)}','${jsq(e.type||'this event')}')">Replay</button>`:'';
-    return `<tr><td data-label="Type" class="mono" style="font-size:11px;">${esc(e.type||'—')}</td><td data-label="Status"><span class="chip ${cls}">${esc(e.status)}</span></td><td data-label="Org" class="mono" style="font-size:10px;">${e.org_id?sens(e.org_id,{short:e.org_id.slice(0,8)+'…'}):'—'}</td><td data-label="Received" class="mono" style="font-size:10px;white-space:nowrap;">${fmtTime(e.received_at)}</td><td data-label="Error" class="sub" style="max-width:240px;font-size:10.5px;">${esc((e.error||'').slice(0,120))}</td><td data-label="Action" style="text-align:right;">${act}</td></tr>`;
-  }).join('');
-}
-/* A4 · replay re-runs a Stripe webhook, which is A3's re-anchor case exactly:
-   a write into a system Foxy does not control, and one that can move money —
-   a payment_failed handler can downgrade a plan, an invoice handler can dunning-
-   mail a customer. It had no confirmation and no busy guard, and three rapid
-   clicks sent three POSTs (counted under Node). Same two remedies A3 gave
-   re-anchor, in the same shapes: the modal states what will happen and which
-   event, and busy() sets aria-busy, which A0's .btn[aria-busy] already turns
-   into pointer-events:none — so the attribute IS the double-submit guard.
-   The bare `await api(...)` also had no try/catch: a dropped connection threw
-   past the caller and the row simply never answered. */
-function replayStripe(id,type){
-  openModal({eyebrow:'ops · re-sends a Stripe webhook', title:'Replay this event',
-    bodyHTML:`<div class="sub">Foxy will process <b>${esc(type||'this event')}</b> again as if Stripe had just delivered it. Anything that handler does — a plan change, an invoice email, a dunning step — happens a second time.</div>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doReplayStripe('${jsq(id)}',this)">Replay event</button>`});
-}
-async function _doReplayStripe(id,btn){
-  await busy(btn,async function(){
-    let r;try{ r=await api('/admin/v1/billing/stripe-events/'+encodeURIComponent(id)+'/replay',{method:'POST'}); }catch(e){ r=null; }
-    closeModal();
-    if(!r){ toast('replay failed — no response from the API','error'); return; }
-    const d=await r.json().catch(()=>({}));
-    if(r.ok){ toast('event replayed · '+(d.result||d.event_status||'ok'),'success'); loadStripeEvents(); }
-    else toast(d.detail||('replay failed ('+r.status+')'),'error');
-  });
-}
-
-/* ── Paddle events + replay (M3d · #98 · #103) ───────────────────────────────
-   Deliberately the same shape as loadStripeEvents above: same table, same chip
-   vocabulary, same pager, same operator gate. One visual language for "a
-   webhook log" beats a second one invented for the processor that matters. */
+/* ── Paddle events + replay (M3d · #98 · #103 · S1) ──────────────────────────
+   Built in the same shape as the Stripe feed that used to sit above it: same
+   table, same chip vocabulary, same pager, same operator gate. One visual
+   language for "a webhook log" beat a second one invented for the processor
+   that matters. S1 removed that feed on 2026-08-07, so this is now the only
+   webhook log on the console and the shape is simply the shape. */
 function paddleFilterChanged(){ pgReset('paddle'); loadPaddleEvents(); }
 async function loadPaddleEvents(page){
   const st=fauxVal('peStatus');
