@@ -4197,3 +4197,135 @@ def test_the_jump_ticks_the_control_the_operator_can_see() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ── P2 · #96 · a second click must not become a second request ───────────────
+# `busy()` was written in A0 with an `aria-busy` guard, a spinner and
+# `pointer-events:none`, and the register recorded it as never called. That was
+# TRUE when written and is not now — A3 and A4 wired eleven row-level actions to
+# it. What stayed unguarded was the MODAL family, and that is where the money is:
+# Apply on Set-plan writes an `org.plan.set` audit row citing a payment
+# reference, so a double-click makes the trail double-count one payment.
+#
+# Bodies are read with comments stripped: this file explains its own guards in
+# prose and so does the console, and a guard that greps a body greps the sentence
+# describing it — three phases running on this surface.
+
+#: Every handler a modal footer can fire that changes something server-side.
+_MODAL_WRITERS = (
+    "_doApprove", "_doDeleteRow", "_doIp", "_doMfaConfirm", "_doMfaDisable",
+    "_doOffboard", "_doPlan", "_doSuspend", "_doTrial", "_doRevoke",
+    "_stepUpSubmit", "saveDataEdit",
+)
+
+
+def test_every_modal_write_is_guarded_against_a_second_click() -> None:
+    """The whole family, not one button. Asserted at the CALL SITE — `busy()`
+    being correct proved nothing for four phases while nothing invoked it."""
+    for fn in _MODAL_WRITERS:
+        body = _js_code(fn)
+        assert re.search(r"(?<![\w-])busy\s*\(\s*btn\s*,", body), (
+            f"{fn} can be fired twice — it does not route through busy()")
+
+
+def test_every_modal_write_is_handed_the_button_it_must_disable() -> None:
+    """`busy(btn, …)` is inert when `btn` is undefined, so the footer has to pass
+    `this`. A handler that takes the argument and is never given it reads as
+    guarded and is not — the same shape as the helper nobody called."""
+    for fn in _MODAL_WRITERS:
+        sig = re.search(r"function\s+" + fn + r"\s*\(([^)]*)\)", SRC)
+        assert sig and sig.group(1).strip().endswith("btn"), (
+            f"{fn} does not take a button as its last argument")
+        calls = re.findall(r'onclick="' + fn + r'\(([^"]*)\)"', SRC)
+        assert calls, f"{fn} is not reachable from any control"
+        for args in calls:
+            assert args.strip().endswith("this"), (
+                f"a control calls {fn}({args}) without passing itself, so the "
+                "guard is handed nothing to disable")
+
+
+def test_no_modal_footer_gained_a_writer_that_skipped_the_pattern() -> None:
+    """The list above is a snapshot; this is what stops the NEXT modal being the
+    unguarded one.
+
+    Asserts the INVARIANT, not membership of that list. The first version
+    demanded the name appear in `_MODAL_WRITERS` and immediately failed on
+    `_doReanchor` — which A3 had already wired correctly, and which my own footer
+    scan had missed because its regex stopped at the first backtick. A guard that
+    fails on code doing the right thing teaches people to edit the guard.
+    """
+    # Cancel and close write nothing and must never go inert: a modal whose
+    # dismiss button is disabled mid-request is a trap.
+    benign = {"closeModal", "closeDataEdit", "_stepUpDone"}
+    # Every `footHTML:` up to the `})` that closes its openModal call. The first
+    # version stopped at the next backtick, which truncated every footer built
+    # from a template literal — so it silently scanned almost nothing, and the
+    # `checked >=` floor below is what would have caught that.
+    foots = re.findall(r"footHTML\s*:\s*(.*?)\}\)\s*;", SRC, re.S)
+    named = set()
+    for foot in foots:
+        named |= set(re.findall(r'onclick="([A-Za-z_$][\w$]*)\(', foot))
+    checked = 0
+    for fn in sorted(named - benign):
+        body = _js_code(fn)
+        if not re.search(r"method\s*:\s*['\"](POST|PUT|DELETE|PATCH)", body):
+            continue
+        checked += 1
+        assert re.search(r"(?<![\w-])busy\s*\(\s*btn\s*,", body), (
+            f"{fn} writes from a modal footer and can be fired twice")
+    assert checked >= len(_MODAL_WRITERS), (
+        f"only {checked} modal writers found; expected at least "
+        f"{len(_MODAL_WRITERS)} — the scan has rotted, so this guard is passing "
+        "by finding nothing")
+
+
+def test_busy_refuses_a_second_call_while_the_first_is_in_flight() -> None:
+    """The guarantee itself. Everything else about this state is presentation."""
+    # BLOCK comments stripped as well: `_js_code` removes `//` only, and the
+    # comments inside `busy()` name the very identifiers asserted here — the
+    # first version of this passed on its own prose. Fourth time on this surface.
+    body = re.sub(r"/\*.*?\*/", "", _js_code("busy"), flags=re.S)
+    assert re.search(r"aria-busy'\)==='true'\)\s*return", body.replace('"', "'")), (
+        "busy() no longer refuses a second call, so the attribute is decoration")
+    assert re.search(r"setAttribute\(\s*'aria-busy'\s*,\s*'true'\s*\)",
+                     body.replace('"', "'")), "the attribute is never set"
+    assert re.search(r"finally\s*\{[^}]*removeAttribute", body), (
+        "a throw leaves the control permanently inert")
+
+
+def test_going_busy_does_not_move_the_layout() -> None:
+    """Measured, not reasoned about, and it took three attempts.
+
+    In flow the mark added 9px plus the flex gap and the button grew 86px -> 99px
+    — and the modal footer is `justify-content:flex-end`, so its neighbour slides
+    too. Pinning the width in `busy()` was worse: the label wrapped to two lines
+    and the button grew TALLER. What holds is taking the mark out of flow
+    entirely, so the fix belongs in CSS and `busy()` stays a behaviour helper.
+    """
+    css = _style_block().replace(" ", "").replace("\n", "")
+    rule = re.search(r"\.btn\[aria-busy=\"true\"\]::after\{(.*?)\}", css)
+    assert rule, "the busy mark is gone"
+    assert "position:absolute" in rule.group(1), (
+        "the busy mark is back in flow, so the button widens and its neighbours "
+        "move the moment it is pressed")
+    assert ".btn{position:relative}" in css or "position:relative" in (
+        re.search(r"(?<![\w.\[-])\.btn\{(.*?)\}", css).group(1)), (
+        "the mark is absolute against something other than its own button")
+    body = re.sub(r"/\*.*?\*/", "", _js_code("busy"), flags=re.S)
+    assert "offsetWidth" not in body and "style.width" not in body, (
+        "busy() is measuring geometry again — that attempt wrapped the label")
+
+
+def test_the_busy_state_keeps_its_label_readable_on_every_plate() -> None:
+    """A3 measured this the first time the state got a caller: `--muted` on a
+    coloured plate put the label at 1.45:1. P2 gives `.pri` and `.danger` many
+    more callers, so the overrides that fixed it are pinned rather than trusted."""
+    css = _style_block()
+    for sel, ink in (("pri", "--on-pri"), ("danger", "#fff"), ("safe", "--safe-tx")):
+        # `var(` is optional because two of the three are tokens and one is a
+        # literal — asserting the token NAME without it silently matched nothing.
+        pat = r"\.btn\." + sel + r"\[aria-busy=\"true\"\]\{color:(var\()?" + re.escape(ink)
+        assert re.search(pat, css.replace(" ", "")), (
+            f".btn.{sel} lost its busy-state ink and falls back to --muted")
+    assert 'aria-busy="true"]{cursor:progress' in css.replace(" ", ""), (
+        "the busy state no longer marks itself non-interactive")

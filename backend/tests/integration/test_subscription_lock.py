@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import json
 import time
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -98,7 +99,13 @@ def test_incomplete_locks_immediately(make_org, login):
     assert r.status_code == 402
     assert r.json()["detail"]["code"] == "subscription_incomplete"
     d = c.get("/v1/billing/access").json()
-    assert d["locked"] is True and d["grace_ends_at"] is None
+    assert d["locked"] is True
+    # P2 · was `d["grace_ends_at"] is None`. That field is gone (#48) because
+    # nothing read it while the same date was already in `message`. The intent
+    # is unchanged and now asserted at the surviving home: nothing was ever
+    # paid, so there is no window and the sentence must not name a date.
+    assert "Update it by" not in d["message"], (
+        "an incomplete subscription was given a grace deadline")
 
 
 def test_a_healthy_paid_org_is_untouched(make_org, login):
@@ -124,7 +131,12 @@ def test_past_due_inside_the_grace_window_is_not_locked(make_org, login):
     assert d["locked"] is False
     assert d["reason"] == "subscription_past_due", \
         "inside the window is still worth telling them about — that is what it is for"
-    assert d["grace_ends_at"], "the UI cannot say 'update it by' without a date"
+    # P2 · this assertion's own message said what it was really protecting —
+    # "the UI cannot say 'update it by' without a date" — so it now reads the
+    # sentence the UI actually renders instead of a field the UI never read.
+    assert re.search(r"Update it by \d{4}-\d{2}-\d{2} to keep your dashboard",
+                     d["message"]), (
+        f"the customer is not told when the window closes: {d['message']!r}")
 
 
 def test_past_due_beyond_the_grace_window_locks(make_org, login):
@@ -164,7 +176,11 @@ def test_past_due_with_no_recorded_start_is_never_locked(make_org, login):
     c = login(org["admin_email"], org["admin_password"])
     assert c.get("/v1/logs").status_code == 200
     d = c.get("/v1/billing/access").json()
-    assert d["locked"] is False and d["grace_ends_at"] is None
+    assert d["locked"] is False
+    # P2 · same swap. No recorded start means no window to name, and the
+    # message falls back to the undated branch rather than inventing one.
+    assert "Update it by" not in d["message"]
+    assert "Update your payment method." in d["message"]
     assert d["reason"] == "subscription_past_due"
 
 

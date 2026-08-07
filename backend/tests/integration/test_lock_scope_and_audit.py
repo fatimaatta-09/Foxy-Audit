@@ -442,3 +442,127 @@ def test_no_router_clears_an_evaluation_without_recording_it():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# ── 5 · P2 · #105 · the charge that locked you is part of the remedy ────────
+
+def test_a_locked_org_can_see_the_invoices_that_locked_it(make_org, login):
+    """P1 sorted this gate into remedy, property and service. `/v1/invoices` is
+    remedy — a customer locked BECAUSE of a payment could not look at the
+    payment — and it sat outside the `/v1/billing/` prefix that carries the rest,
+    so the sweep never covered it."""
+    org = make_org()
+    _lock_expired_evaluation(org["org_id"])
+    c = login(org["admin_email"], org["admin_password"])
+    assert c.get("/v1/logs").status_code == 402, "the fixture is not locked"
+    assert c.get("/v1/invoices").status_code == 200
+
+
+def _declared_routes():
+    """(method, path) for every customer route, read off the decorators.
+
+    By AST, not by importing the app: the routers are not attached to
+    `customer_api` at import time, so walking `app.routes` finds 16 paths and
+    silently answers "nothing matches" to any question asked of it — which is
+    how the first version of the guard below passed on an empty list.
+    """
+    import ast
+    import pathlib
+
+    out = []
+    routers = pathlib.Path(auth_mod.__file__).parent / "routers"
+    for path in sorted(routers.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for n in ast.walk(tree):
+            if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for d in n.decorator_list:
+                if not (isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)):
+                    continue
+                if d.func.attr not in ("get", "post", "put", "patch", "delete"):
+                    continue
+                if d.args and isinstance(d.args[0], ast.Constant):
+                    out.append((d.func.attr.upper(), d.args[0].value))
+    assert len(out) > 150, f"the route scan found only {len(out)} routes"
+    return out
+
+
+def test_the_invoices_prefix_takes_nothing_else_with_it():
+    """`startswith`, so the prefix is the whole risk. Enumerated against the real
+    decorators rather than reasoned about: exactly two routes begin with it, both
+    GET, and every other exempt path is one somebody named."""
+    routes = _declared_routes()
+    caught = sorted({(m, p) for m, p in routes if p.startswith("/v1/invoices")})
+    assert caught == [("GET", "/v1/invoices"),
+                      ("GET", "/v1/invoices/{invoice_id}/link")], (
+        f"the invoices prefix now covers {caught}")
+
+    named = ("/v1/auth/", "/v1/billing/", "/v1/account/preferences",
+             "/v1/invoices", "/v1/logs/export", "/v1/verify", "/v1/coverage")
+    assert set(auth_mod._GATE_EXEMPT) == set(named), (
+        "the exempt tuple changed without this guard being told")
+    stray = sorted({p for _m, p in routes
+                    if p.startswith(auth_mod._GATE_EXEMPT) and not p.startswith(named)})
+    assert not stray, f"a prefix caught a route nobody named: {stray}"
+    for path in ("/v1/logs", "/v1/logs/batch", "/v1/keys", "/v1/exports",
+                 "/v1/passport", "/v1/stats"):
+        assert not path.startswith(auth_mod._GATE_EXEMPT), (
+            f"{path} became exempt by prefix accident")
+
+def test_the_invoice_routes_still_only_read(make_org, login):
+    """The exemption rests on it. A later edit that made either write would put a
+    mutation behind a lock that is supposed to stop mutations."""
+    import ast
+    import inspect
+
+    from app.routers import account as account_mod
+
+    for fn in (account_mod.list_invoices, account_mod.invoice_link):
+        src = inspect.getsource(fn)
+        tree = ast.parse(src.lstrip())
+        calls = {
+            f"{getattr(n.func.value, 'id', '')}.{n.func.attr}"
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+        }
+        for banned in ("db.add", "db.commit", "db.delete", "db.flush"):
+            assert banned not in calls, f"{fn.__name__} now writes via {banned}"
+
+
+# ── 6 · P2 · #48 · one fact, one home ───────────────────────────────────────
+
+def test_the_grace_deadline_has_exactly_one_representation(make_org, login):
+    """It had two: an ISO `grace_ends_at` field and the same date built into
+    `message`. The field was read by nothing — not the dashboard, not the admin
+    console, and not `desktop/`, which never calls this route at all — while the
+    sentence is what `#billBanner` renders. Two representations of one fact is
+    how they drift, so the unread one is gone."""
+    org = make_org()
+    _set(org["org_id"], plan_tier="pro", subscription_status="past_due",
+         past_due_since=datetime.now(timezone.utc) - timedelta(days=2))
+    c = login(org["admin_email"], org["admin_password"])
+    body = c.get("/v1/billing/access").json()
+
+    assert "grace_ends_at" not in body, (
+        "the structured twin is back; one of the two will drift")
+    assert re.search(r"Update it by \d{4}-\d{2}-\d{2} to keep your dashboard",
+                     body["message"]), (
+        "the surviving home stopped carrying the date, so the customer is now "
+        "told nothing about when the window closes")
+
+
+def test_no_surface_reads_the_field_that_was_removed():
+    """The check that made removing it safe, kept so it stays safe. A client that
+    starts reading `grace_ends_at` would be reading something the server no
+    longer sends."""
+    import pathlib
+
+    root = pathlib.Path(auth_mod.__file__).resolve().parents[2]
+    offenders = []
+    for sub in ("desktop", "foxy-dashboard", "foxy-adminpage"):
+        for path in (root / sub).rglob("*"):
+            if path.suffix not in (".py", ".html") or path.name.startswith("test_"):
+                continue
+            if "grace_ends_at" in path.read_text(encoding="utf-8", errors="ignore"):
+                offenders.append(str(path.relative_to(root)))
+    assert not offenders, f"a client reads a field the server does not send: {offenders}"

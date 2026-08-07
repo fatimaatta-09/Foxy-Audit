@@ -1126,8 +1126,18 @@ html[data-theme="light"] .pg-wm{opacity:.06}
 .btn.pri[aria-busy="true"]{color:var(--on-pri)}
 .btn.danger[aria-busy="true"]{color:#fff}
 .btn.safe[aria-busy="true"]{color:var(--safe-tx)}
+/* P2 · OUT OF FLOW, and the layer matters. In flow this mark added 9px plus the
+   flex gap, so a button grew 86px -> 99px the instant it went busy and its
+   neighbours jumped — measured, at the exact moment somebody is watching to see
+   whether their click landed. Pinning the width in JS was tried first and is
+   worse: the label wrapped to two lines and the button grew TALLER instead.
+   Absolute is the only version where nothing moves. It sits in the trailing
+   padding; `top:50%` with a margin rather than a transform, because the spin
+   keyframe owns `transform` and would drop a translate. */
+.btn{position:relative}
 .btn[aria-busy="true"]::after{
-  content:'';width:9px;height:9px;flex-shrink:0;border-radius:50%;
+  content:'';position:absolute;right:5px;top:4px;
+  width:7px;height:7px;border-radius:50%;
   border:1.5px solid currentColor;border-top-color:transparent;
   animation:btnspin .7s linear infinite;
 }
@@ -2750,20 +2760,23 @@ function stepUp(){
       bodyHTML:'<div class="sub" style="margin-bottom:12px;">A 6-digit code was emailed to <b>'+esc(ME?ME.email:'you')+'</b>. It authorises this and the next few minutes of sensitive actions.</div>'
         +'<input class="cin" id="suCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-size:20px;">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;"><a href="#" onclick="_stepUpResend();return false;" class="sub" style="font-size:11px;color:var(--fox2);">Resend code</a><span id="suMsg" class="sub" style="font-size:11px;"></span></div>',
-      footHTML:'<button class="btn" onclick="_stepUpDone(false)">Cancel</button><button class="btn pri" onclick="_stepUpSubmit()">Confirm</button>',
+      footHTML:'<button class="btn" onclick="_stepUpDone(false)">Cancel</button><button class="btn pri" onclick="_stepUpSubmit(this)">Confirm</button>',
       onOpen:function(){ document.addEventListener('keydown',_stepUpEsc); var i=$('suCode'); if(i){ i.focus(); i.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _stepUpSubmit(); } }); } }});
   });
 }
 function _stepUpEsc(e){ if(e.key==='Escape') _stepUpDone(false); }
 function _stepUpDone(ok){ document.removeEventListener('keydown',_stepUpEsc); const res=_stepUpResolve; _stepUpResolve=null; closeModal(); if(res) res(ok); }
 function _stepUpResend(){ _apiRaw('/admin/v1/auth/step-up/request',{method:'POST'}).catch(()=>{}); const m=$('suMsg'); if(m) m.textContent='New code sent.'; }
-async function _stepUpSubmit(){
-  const m=$('suMsg'), code=($('suCode')?$('suCode').value:'').trim();
-  if(!/^\d{6}$/.test(code)){ if(m) m.textContent='Enter the 6-digit code.'; return; }
-  if(m) m.textContent='Verifying…';
-  let r; try{ r=await _apiRaw('/admin/v1/auth/step-up/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})}); }catch(e){ r=null; }
-  if(r&&r.ok){ _stepUpDone(true); }
-  else { const d=r?await r.json().catch(()=>({})):{}; if(m) m.textContent=(d.detail||'Invalid or expired code'); }
+async function _stepUpSubmit(btn){
+  return busy(btn,async function(){
+    const m=$('suMsg'), code=($('suCode')?$('suCode').value:'').trim();
+    if(!/^\d{6}$/.test(code)){ if(m) m.textContent='Enter the 6-digit code.'; return; }
+    if(m) m.textContent='Verifying…';
+    let r; try{ r=await _apiRaw('/admin/v1/auth/step-up/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})}); }catch(e){ r=null; }
+    if(r&&r.ok){ _stepUpDone(true); }
+    else { const d=r?await r.json().catch(()=>({})):{}; if(m) m.textContent=(d.detail||'Invalid or expired code'); }
+
+  });
 }
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* An admin_actions `detail` blob, rendered as key/value pairs (M3c · #93).
@@ -3164,33 +3177,39 @@ function openDataEdit(pk){
   openModal({eyebrow:DATA_TABLE, title:'Edit '+_dataRowLabel(pk),
     bodyHTML:'<div id="dataEditFields">'+fields+'</div>',
     footHTML:'<button class="btn" onclick="closeDataEdit()">Cancel</button>'
-      +'<button class="btn pri" onclick="saveDataEdit()">Save changes</button>'});
+      +'<button class="btn pri" onclick="saveDataEdit(this)">Save changes</button>'});
 }
 function closeDataEdit(){closeModal();DATA_EDIT_ID=null}
-async function saveDataEdit(){
-  if(!DATA_META)return;
-  const fields={};
-  for(const f of DATA_META.editable_fields){
-    const el=$('dedit_'+f);
-    if(el.type==='checkbox')fields[f]=el.checked;
-    else fields[f]=(el.value.trim()!==''&&!isNaN(el.value))?Number(el.value):el.value;
-  }
-  const r=await api(`/admin/v1/data/${DATA_TABLE}/${DATA_EDIT_ID}`,{method:'PATCH',
-    headers:{'content-type':'application/json'},body:JSON.stringify({fields})});
-  const d=await r.json().catch(()=>({}));
-  if(r.ok){toast('saved','success');closeDataEdit();refreshData()}
-  else toast(d.detail||('save failed ('+r.status+')'));
+async function saveDataEdit(btn){
+  return busy(btn,async function(){
+    if(!DATA_META)return;
+    const fields={};
+    for(const f of DATA_META.editable_fields){
+      const el=$('dedit_'+f);
+      if(el.type==='checkbox')fields[f]=el.checked;
+      else fields[f]=(el.value.trim()!==''&&!isNaN(el.value))?Number(el.value):el.value;
+    }
+    const r=await api(`/admin/v1/data/${DATA_TABLE}/${DATA_EDIT_ID}`,{method:'PATCH',
+      headers:{'content-type':'application/json'},body:JSON.stringify({fields})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){toast('saved','success');closeDataEdit();refreshData()}
+    else toast(d.detail||('save failed ('+r.status+')'));
+
+  });
 }
 function deleteDataRow(pk){
   openModal({eyebrow:'danger · '+DATA_TABLE, title:'Delete '+_dataRowLabel(pk),
     bodyHTML:'<div class="sub">A snapshot is kept in the append-only audit trail, but this cannot be undone from the UI.</div>',
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doDeleteRow('${pk}')">Delete row</button>`});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doDeleteRow('${pk}',this)">Delete row</button>`});
 }
-async function _doDeleteRow(pk){
-  const r=await api(`/admin/v1/data/${DATA_TABLE}/${pk}`,{method:'DELETE'});
-  const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('deleted','success');refreshData()}
-  else toast(d.detail||('delete failed ('+r.status+')'));
+async function _doDeleteRow(pk,btn){
+  return busy(btn,async function(){
+    const r=await api(`/admin/v1/data/${DATA_TABLE}/${pk}`,{method:'DELETE'});
+    const d=await r.json().catch(()=>({})); closeModal();
+    if(r.ok){toast('deleted','success');refreshData()}
+    else toast(d.detail||('delete failed ('+r.status+')'));
+
+  });
 }
 
 function toast(m,type){const t=$('toast');t.className='';if(type)t.classList.add(type);
@@ -3442,7 +3461,9 @@ function faultRow(cols,what,retry,why){
    a row permanently inert. */
 async function busy(btn,fn){
   if(btn&&btn.getAttribute('aria-busy')==='true')return;
-  if(btn)btn.setAttribute('aria-busy','true');
+  if(btn){
+    btn.setAttribute('aria-busy','true');
+  }
   try{ return await fn(); }
   finally{ if(btn)btn.removeAttribute('aria-busy'); }
 }
@@ -4034,7 +4055,7 @@ function loadSettings(){
   const mfaOn=!!(ME&&ME.mfa_enabled);
   $('setMfaBtns').innerHTML=mfaOn
     ? '<button class="btn sm" onclick="mfaDisable()">Disable MFA</button> <span class="chip safe">MFA on</span>'
-    : '<button class="btn sm pri" onclick="mfaEnableFlow()">Enable MFA</button> <span class="chip warn">MFA off</span>';
+    : '<button class="btn sm pri" onclick="mfaEnableFlow(this)">Enable MFA</button> <span class="chip warn">MFA off</span>';
   const isSuper=can('superadmin');
   $('setConfigCard').style.display=isSuper?'':'none';
   $('setBroadcastCard').style.display=isSuper?'':'none';
@@ -4529,7 +4550,7 @@ function renderOrgs(){
 async function orgSuspend(id){
   openModal({eyebrow:'org action', title:'Suspend organization',
     bodyHTML:`<div class="sub" style="margin-bottom:12px;">A staff access-hold, independent of Stripe. The reason is recorded in the audit trail.</div><label class="flabel" style="margin-top:0;" for="mReason">reason (optional)</label><textarea id="mReason" class="cin" style="min-height:72px;" placeholder="e.g. fraud review"></textarea>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doSuspend('${id}')">Suspend</button>`});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doSuspend('${id}',this)">Suspend</button>`});
 }
 
 async function orgEnable(id){
@@ -4540,7 +4561,7 @@ async function orgPlan(id,current){
   const opts=['free','pro','max','premium'].map(p=>`<button type="button" class="segbtn" style="min-height:34px;padding:6px 12px;font-size:11px;" data-plan="${p}" aria-pressed="${p===current?'true':'false'}" onclick="_segPick(this)">${p}</button>`).join('');
   openModal({eyebrow:'org action', title:'Set plan',
     bodyHTML:`<div class="flabel" style="margin-top:0;">plan tier</div><div class="segmented" id="mPlan" role="group" aria-label="plan" style="flex-wrap:wrap;">${opts}</div><label class="flabel" for="mQuota">monthly credits override</label><input class="cin" id="mQuota" inputmode="numeric" placeholder="blank = plan default"><div class="sub" style="font-size:10.5px;margin-top:4px;">Leave blank to use the plan's default quota (0 is a real limit, not unlimited).</div><label class="flabel" for="mPayRef">payment reference</label><input class="cin" id="mPayRef" maxlength="128" placeholder="blank = none recorded"><div class="sub" style="font-size:10.5px;margin-top:4px;">For a tenant who paid outside the payment processor — an invoice number or a payment-request id. Recorded on this action's audit entry.</div>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doPlan('${id}')">Apply plan</button>`});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doPlan('${id}',this)">Apply plan</button>`});
 }
 
 /* ──────────── org 360 (tenant drill-down) ──────────── */
@@ -5057,10 +5078,13 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('fxmodal').class
 function _segPick(el){ const p=el.closest('.segmented'); if(p)p.querySelectorAll('.segbtn').forEach(b=>b.setAttribute('aria-pressed',b===el?'true':'false')); }
 
 /* org lifecycle */
-async function _doSuspend(id){
-  const reason=($('mReason')?$('mReason').value:'').trim();
-  const r=await api('/admin/v1/organizations/'+id+'/suspend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
-  closeModal(); if(r.ok){toast('org suspended','success');_orgActionDone()}else toast('suspend failed ('+r.status+')');
+async function _doSuspend(id,btn){
+  return busy(btn,async function(){
+    const reason=($('mReason')?$('mReason').value:'').trim();
+    const r=await api('/admin/v1/organizations/'+id+'/suspend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
+    closeModal(); if(r.ok){toast('org suspended','success');_orgActionDone()}else toast('suspend failed ('+r.status+')');
+
+  });
 }
 /* M4c · approve a pending demo workspace.
 
@@ -5079,20 +5103,23 @@ function orgApprove(id,name){
       +'<b>The 7 days start the moment this lands</b> — not at signup, and there is no undo.'
       +' If the review needs longer, leave it in the queue: waiting costs the applicant nothing.</div>',
     footHTML:'<button class="btn" onclick="closeModal()">Cancel</button>'
-      +'<button class="btn pri" onclick="_doApprove(&quot;'+jsq(id)+'&quot;)">Approve</button>'});
+      +'<button class="btn pri" onclick="_doApprove(&quot;'+jsq(id)+'&quot;,this)">Approve</button>'});
 }
-async function _doApprove(id){
-  let r; try{ r=await api('/admin/v1/organizations/'+id+'/approve',{method:'POST'}); }catch(e){ r=null; }
-  closeModal();
-  if(!r){ toast('could not reach the server'); return; }
-  const d=await r.json().catch(()=>({}));
-  if(r.ok){ toast('approved · 7 days start now','success'); _orgActionDone(); return; }
-  /* This route's 409 body is an OBJECT ({code,message}), not a string. Reading
-     `d.detail` straight into toast() renders "[object Object]" — which is exactly
-     what the older handlers on this page would do with it. */
-  const det=d&&d.detail;
-  toast((det&&det.message)||(typeof det==='string'?det:'')||('approve failed ('+r.status+')'));
-  if(r.status===409) _orgActionDone();   // somebody else already cleared it
+async function _doApprove(id,btn){
+  return busy(btn,async function(){
+    let r; try{ r=await api('/admin/v1/organizations/'+id+'/approve',{method:'POST'}); }catch(e){ r=null; }
+    closeModal();
+    if(!r){ toast('could not reach the server'); return; }
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ toast('approved · 7 days start now','success'); _orgActionDone(); return; }
+    /* This route's 409 body is an OBJECT ({code,message}), not a string. Reading
+       `d.detail` straight into toast() renders "[object Object]" — which is exactly
+       what the older handlers on this page would do with it. */
+    const det=d&&d.detail;
+    toast((det&&det.message)||(typeof det==='string'?det:'')||('approve failed ('+r.status+')'));
+    if(r.status===409) _orgActionDone();   // somebody else already cleared it
+
+  });
 }
 /* Decline is the SUSPEND control reached by another name. M4a considered a
    `rejected` state and chose against it: suspend + suspended_reason already
@@ -5104,38 +5131,44 @@ function orgDecline(id){
   orgSuspend(id);
   const t=$('mReason'); if(t)t.value='demo request declined';
 }
-async function _doPlan(id){
-  const sel=document.querySelector('#mPlan .segbtn[aria-pressed="true"]');
-  const plan=sel?sel.dataset.plan:'';
-  if(!plan){toast('choose a plan','warn');return}
-  const q=($('mQuota')?$('mQuota').value:'').trim(); const body={plan};
-  if(q){ const n=Number(q); if(!Number.isInteger(n)||n<0){toast('enter a non-negative whole-number quota','warn');return} body.monthly_log_quota=n; }
-  // Omitted entirely when nothing was typed. Sending "" would record an empty
-  // reference on the audit row, which reads as a reference we looked for and
-  // did not find — a different claim from never having one.
-  const ref=($('mPayRef')?$('mPayRef').value:'').trim();
-  if(ref){ body.payment_reference=ref; }
-  const r=await api('/admin/v1/organizations/'+id+'/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('plan updated','success');_orgActionDone()}else toast(d.detail||('plan update failed ('+r.status+')'));
+async function _doPlan(id,btn){
+  return busy(btn,async function(){
+    const sel=document.querySelector('#mPlan .segbtn[aria-pressed="true"]');
+    const plan=sel?sel.dataset.plan:'';
+    if(!plan){toast('choose a plan','warn');return}
+    const q=($('mQuota')?$('mQuota').value:'').trim(); const body={plan};
+    if(q){ const n=Number(q); if(!Number.isInteger(n)||n<0){toast('enter a non-negative whole-number quota','warn');return} body.monthly_log_quota=n; }
+    // Omitted entirely when nothing was typed. Sending "" would record an empty
+    // reference on the audit row, which reads as a reference we looked for and
+    // did not find — a different claim from never having one.
+    const ref=($('mPayRef')?$('mPayRef').value:'').trim();
+    if(ref){ body.payment_reference=ref; }
+    const r=await api('/admin/v1/organizations/'+id+'/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({})); closeModal();
+    if(r.ok){toast('plan updated','success');_orgActionDone()}else toast(d.detail||('plan update failed ('+r.status+')'));
+
+  });
 }
 function orgTrial(id){
   const quick=[7,14,30,90].map(n=>`<button type="button" class="btn sm" onclick="$('mDays').value=${n}">+${n}</button>`).join('');
   openModal({eyebrow:'org action', title:'Extend trial / comp',
     bodyHTML:`<div class="sub" style="margin-bottom:12px;">Add days to this tenant's trial window (a negative number shortens it).</div><label class="flabel" style="margin-top:0;" for="mDays">days</label><input class="cin" id="mDays" inputmode="numeric" value="14"><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">${quick}</div>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doTrial('${id}')">Apply</button>`});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doTrial('${id}',this)">Apply</button>`});
 }
-async function _doTrial(id){
-  const n=Number(($('mDays')?$('mDays').value:'').trim());
-  if(!Number.isInteger(n)||n===0){toast('enter a non-zero whole number of days','warn');return}
-  const r=await api('/admin/v1/organizations/'+id+'/trial',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({days:n})});
-  const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('trial updated','success');_orgActionDone()}else toast(d.detail||('trial update failed ('+r.status+')'));
+async function _doTrial(id,btn){
+  return busy(btn,async function(){
+    const n=Number(($('mDays')?$('mDays').value:'').trim());
+    if(!Number.isInteger(n)||n===0){toast('enter a non-zero whole number of days','warn');return}
+    const r=await api('/admin/v1/organizations/'+id+'/trial',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({days:n})});
+    const d=await r.json().catch(()=>({})); closeModal();
+    if(r.ok){toast('trial updated','success');_orgActionDone()}else toast(d.detail||('trial update failed ('+r.status+')'));
+
+  });
 }
 function orgIp(id){
   openModal({eyebrow:'org action', title:'Dashboard IP allow-list',
     bodyHTML:`<div class="sub" style="margin-bottom:10px;">One IP or CIDR per line. Empty = no restriction. Applies to dashboard sessions only, never the SDK key.</div><textarea id="mIp" class="cin" style="min-height:120px;font-family:var(--mono);" placeholder="203.0.113.0/24">loading…</textarea>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" id="mIpSave" onclick="_doIp('${id}')">Save allow-list</button>`,
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" id="mIpSave" onclick="_doIp('${id}',this)">Save allow-list</button>`,
     /* ⚠ A failed GET used to fall through to t.value='' — an empty textarea
        that reads exactly like "this tenant has no restrictions". Pressing Save
        then PUT an empty list and DELETED a live allow-list the operator never
@@ -5158,31 +5191,40 @@ function orgIp(id){
       t.after(msg);
     }});
 }
-async function _doIp(id){
-  const raw=($('mIp')?$('mIp').value:'');
-  const r=await api('/admin/v1/organizations/'+id+'/ip-allowlist',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({raw})});
-  const d=await r.json().catch(()=>({}));
-  if(r.ok){closeModal();toast('allow-list saved','success');_orgActionDone()}else toast(d.detail||('save failed ('+r.status+')'));
+async function _doIp(id,btn){
+  return busy(btn,async function(){
+    const raw=($('mIp')?$('mIp').value:'');
+    const r=await api('/admin/v1/organizations/'+id+'/ip-allowlist',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({raw})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){closeModal();toast('allow-list saved','success');_orgActionDone()}else toast(d.detail||('save failed ('+r.status+')'));
+
+  });
 }
 function orgOffboard(id,name){
   openModal({eyebrow:'danger · superadmin', title:'Offboard '+name,
     bodyHTML:`<div class="sub" style="margin-bottom:12px;">This soft-deletes the tenant (recoverable via “show offboarded”), places an access hold, and <b>revokes every live API key</b>. Type the org name to confirm.</div><input class="cin" id="mConfirm" placeholder="${esc(name)}" oninput="var b=$('mOffBtn'); if(b)b.disabled=(this.value.trim()!==${JSON.stringify(name)});">`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" id="mOffBtn" disabled onclick="_doOffboard('${id}')">Offboard tenant</button>`});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" id="mOffBtn" disabled onclick="_doOffboard('${id}',this)">Offboard tenant</button>`});
 }
-async function _doOffboard(id){
-  const r=await api('/admin/v1/organizations/'+id+'/offboard',{method:'POST'});
-  const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('tenant offboarded ('+(d.keys_revoked||0)+' keys revoked)');_orgActionDone()}else toast(d.detail||('offboard failed ('+r.status+')'));
+async function _doOffboard(id,btn){
+  return busy(btn,async function(){
+    const r=await api('/admin/v1/organizations/'+id+'/offboard',{method:'POST'});
+    const d=await r.json().catch(()=>({})); closeModal();
+    if(r.ok){toast('tenant offboarded ('+(d.keys_revoked||0)+' keys revoked)');_orgActionDone()}else toast(d.detail||('offboard failed ('+r.status+')'));
+
+  });
 }
 function keyRevoke(orgId,keyId,name){
   openModal({eyebrow:'danger · org key', title:'Revoke API key',
     bodyHTML:`<div class="sub">Revoke <b>${esc(name)}</b>? Any SDK using this key stops working immediately. This cannot be undone.</div>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doRevoke('${orgId}','${keyId}')">Revoke key</button>`});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doRevoke('${orgId}','${keyId}',this)">Revoke key</button>`});
 }
-async function _doRevoke(orgId,keyId){
-  const r=await api('/admin/v1/organizations/'+orgId+'/keys/'+keyId+'/revoke',{method:'POST'});
-  const d=await r.json().catch(()=>({})); closeModal();
-  if(r.ok){toast('key revoked','success');_orgActionDone()}else toast(d.detail||('revoke failed ('+r.status+')'));
+async function _doRevoke(orgId,keyId,btn){
+  return busy(btn,async function(){
+    const r=await api('/admin/v1/organizations/'+orgId+'/keys/'+keyId+'/revoke',{method:'POST'});
+    const d=await r.json().catch(()=>({})); closeModal();
+    if(r.ok){toast('key revoked','success');_orgActionDone()}else toast(d.detail||('revoke failed ('+r.status+')'));
+
+  });
 }
 
 /* staff management */
@@ -5404,31 +5446,45 @@ async function _doChangePw(){
   closeModal();
   toast('password changed — check your manager saved the new one','success');
 }
-async function mfaEnableFlow(){
-  let r; try{ r=await api('/admin/v1/auth/mfa/enable',{method:'POST'}); }catch(e){ r=null; }
-  if(!r||!r.ok){ toast(r?('Could not start MFA enrolment (HTTP '+r.status+').'):'No response from the API — enrolment did not start.','error'); return; }
-  openModal({eyebrow:'your account', title:'Enable MFA',
-    bodyHTML:`<div class="sub" style="margin-bottom:12px;">We emailed a 6-digit code to <b>${esc(ME?ME.email:'')}</b>. Enter it to turn on MFA.</div><label class="flabel" style="margin-top:0;" for="mfaCode">code</label><input class="cin" id="mfaCode" inputmode="numeric" placeholder="123456"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doMfaConfirm()">Confirm</button>`});
+/* P2 · not a modal footer, so it is outside the family below — guarded anyway,
+   because a second click re-enrols and REGENERATES the secret: anybody who has
+   already scanned the first QR is silently holding a code that no longer works.
+   Found by the footer guard mis-scoping onto it, which is a better reason to
+   look at something than a hunch. */
+async function mfaEnableFlow(btn){
+  return busy(btn,async function(){
+    let r; try{ r=await api('/admin/v1/auth/mfa/enable',{method:'POST'}); }catch(e){ r=null; }
+    if(!r||!r.ok){ toast(r?('Could not start MFA enrolment (HTTP '+r.status+').'):'No response from the API — enrolment did not start.','error'); return; }
+    openModal({eyebrow:'your account', title:'Enable MFA',
+      bodyHTML:`<div class="sub" style="margin-bottom:12px;">We emailed a 6-digit code to <b>${esc(ME?ME.email:'')}</b>. Enter it to turn on MFA.</div><label class="flabel" style="margin-top:0;" for="mfaCode">code</label><input class="cin" id="mfaCode" inputmode="numeric" placeholder="123456"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
+      footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="_doMfaConfirm(this)">Confirm</button>`});
+
+  });
 }
-async function _doMfaConfirm(){
-  const code=($('mfaCode').value||'').trim();
-  let r; try{ r=await api('/admin/v1/auth/mfa/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})}); }catch(e){ r=null; }
-  if(!r){ $('mfaErr').textContent='No response from the API — MFA was not enabled.'; return; }
-  const d=await r.json().catch(()=>({}));
-  if(r.ok){ closeModal(); toast('MFA enabled','success'); if(ME)ME.mfa_enabled=true; loadSettings(); } else $('mfaErr').textContent=d.detail||'Invalid code.';
+async function _doMfaConfirm(btn){
+  return busy(btn,async function(){
+    const code=($('mfaCode').value||'').trim();
+    let r; try{ r=await api('/admin/v1/auth/mfa/confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})}); }catch(e){ r=null; }
+    if(!r){ $('mfaErr').textContent='No response from the API — MFA was not enabled.'; return; }
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ closeModal(); toast('MFA enabled','success'); if(ME)ME.mfa_enabled=true; loadSettings(); } else $('mfaErr').textContent=d.detail||'Invalid code.';
+
+  });
 }
 function mfaDisable(){
   openModal({eyebrow:'your account', title:'Disable MFA',
     bodyHTML:`<div class="sub" style="margin-bottom:12px;">Confirm your password to turn off MFA.</div><label class="flabel" style="margin-top:0;" for="mfaPw">password</label><input class="cin" id="mfaPw" type="password" autocomplete="current-password"><div id="mfaErr" class="sub" style="color:var(--danger);font-size:11px;margin-top:6px;"></div>`,
-    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doMfaDisable()">Disable MFA</button>`});
+    footHTML:`<button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="_doMfaDisable(this)">Disable MFA</button>`});
 }
-async function _doMfaDisable(){
-  const pw=$('mfaPw').value;
-  let r; try{ r=await api('/admin/v1/auth/mfa/disable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})}); }catch(e){ r=null; }
-  if(!r){ $('mfaErr').textContent='No response from the API — MFA is still on.'; return; }
-  const d=await r.json().catch(()=>({}));
-  if(r.ok){ closeModal(); toast('MFA disabled','success'); if(ME)ME.mfa_enabled=false; loadSettings(); } else $('mfaErr').textContent=d.detail||'Failed.';
+async function _doMfaDisable(btn){
+  return busy(btn,async function(){
+    const pw=$('mfaPw').value;
+    let r; try{ r=await api('/admin/v1/auth/mfa/disable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})}); }catch(e){ r=null; }
+    if(!r){ $('mfaErr').textContent='No response from the API — MFA is still on.'; return; }
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ closeModal(); toast('MFA disabled','success'); if(ME)ME.mfa_enabled=false; loadSettings(); } else $('mfaErr').textContent=d.detail||'Failed.';
+
+  });
 }
 let CONFIG_META={};
 async function loadConfig(){

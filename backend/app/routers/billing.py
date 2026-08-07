@@ -1411,7 +1411,6 @@ def billing_access(org: Organization = Depends(resolve_org)):
     now = datetime.now(timezone.utc)
     lock = billing_state.dashboard_lock(org, now)
     condition = billing_state.describe(org, now)
-    grace = billing_state.grace_ends_at(org)
     return {
         "card_required": required,
         "card_on_file": bool(org.card_on_file),
@@ -1423,13 +1422,20 @@ def billing_access(org: Organization = Depends(resolve_org)):
         "plan_tier": org.plan_tier,
         "subscription_status": org.subscription_status,
         "free_tier_is_free": True,
-        # Only meaningful while `reason` is subscription_past_due; null otherwise,
-        # and null WHILE past_due means no start was ever recorded — which is
-        # exactly why that org is not locked.
-        "grace_ends_at": (grace.isoformat()
-                          if grace is not None and lock is None
-                          and condition.reason == billing_state.SUBSCRIPTION_PAST_DUE
-                          else None),
+        # P2 · `grace_ends_at` WAS here and is gone (register #48). One fact had
+        # two representations: this ISO string, and the same date built into
+        # `message` by `billing_state.describe` ("Update it by 2026-08-14 to keep
+        # your dashboard."). The sentence is the one anybody reads — the
+        # dashboard renders `message` verbatim into #billBanner — and the field
+        # was read by NOTHING: not the dashboard, not the admin console, and not
+        # `desktop/`, which never calls this route at all. Checked all three
+        # before deleting rather than after.
+        #
+        # Two representations of one fact is how they drift, and this project
+        # already decided which home wins: the sentence that names a condition is
+        # written once, by the code that decided it, and every surface renders it
+        # verbatim rather than keeping a copy. Sending a machine-readable twin
+        # that nobody consumes is the shape of that rule, without the substance.
         "capture_blocked": billing_state.capture_block(org, now) is not None,
         "message": condition.message,
     }

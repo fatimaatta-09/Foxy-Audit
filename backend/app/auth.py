@@ -169,6 +169,19 @@ def require_org(
 _GATE_EXEMPT = (
     # the remedy — without these the lock is a brick
     "/v1/auth/", "/v1/billing/", "/v1/account/preferences",
+    # P2 · remedy too, and it sat outside the prefix that carries the rest.
+    # A customer locked BECAUSE of a payment could not look at the payment:
+    # `/v1/invoices` is billing, but it is not under `/v1/billing/`, so P1's
+    # sweep never covered it. Two routes, both GET, neither writes — checked,
+    # not assumed. `/v1/invoices` catches the list and `/{id}/link`, and
+    # nothing else: no other path on this API begins with it.
+    #
+    # ⚠ `/{id}/link` makes an OUTBOUND call (`stripe.Invoice.retrieve`) and is
+    # NOT rate-limited. Harmless on this deployment — `stripe_secret_key` is
+    # empty and the 503 is the function's first statement, before the DB read
+    # and before `import stripe` — but if Stripe is ever configured, this is an
+    # exempt, unlimited route that calls a third party. Rate-limit it then.
+    "/v1/invoices",
     # the property — the customer's own evidence, and proving it is intact
     "/v1/logs/export", "/v1/verify", "/v1/coverage",
 )
