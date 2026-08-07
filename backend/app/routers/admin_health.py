@@ -13,7 +13,8 @@ from ..config import Settings, get_settings
 from ..db import get_db
 from ..platform_config import get_int
 from ..models import (
-    AdminAction, AuditLog, ChainAnchor, StaffUser, UsageDaily, WorkerHeartbeat,
+    AdminAction, AuditLog, ChainAnchor, Organization, StaffUser, UsageDaily,
+    WorkerHeartbeat,
 )
 
 router = APIRouter()
@@ -120,6 +121,34 @@ def build_health(db: Session, settings: Settings | None = None) -> dict:
         and (now - value).total_seconds() > stale_after_anchor
     )
     failed_latest = sum(1 for row in latest_by_org.values() if row.status == "failed")
+
+    # C5 · THE DENOMINATOR. Everything above counts organisations that have
+    # anchored at least once, so an org that has NEVER anchored is invisible on
+    # this page — which is the one an operator most needs to see. Anchoring is
+    # not opt-in per org: anchor_all_due sweeps `select(Organization.id)` and
+    # there is no per-org flag anywhere (OrgPolicy has none); the per-plan
+    # `anchor_cadence_*` settings change the INTERVAL, never whether. So with
+    # anchoring enabled, every org whose chain has advanced should have one.
+    #
+    # "Orgs whose chain has advanced" is the honest denominator, not "all orgs":
+    # a workspace that has never recorded an event has nothing to anchor, and
+    # counting it as a gap would make the number permanently wrong on any
+    # deployment with signups.
+    #
+    # ⚠ SHAPE MEASURED, NOT ASSUMED. `SELECT DISTINCT org_id FROM audit_logs`
+    # scans the whole index — 112ms over 1.5M events. Driving from
+    # `organizations` and probing per org stops at the first matching row:
+    # 1.46ms for the same answer, and it scales with the ORG count rather than
+    # the event count, which is the right shape for a metric on a polled page.
+    live_event_orgs = set(db.execute(
+        select(Organization.id).where(
+            Organization.deleted_at.is_(None),
+            select(AuditLog.org_id).where(AuditLog.org_id == Organization.id)
+            .exists(),
+        )
+    ).scalars().all())
+    anchored_orgs = len(live_event_orgs & set(latest_by_org))
+
     result["anchors"] = {
         "status": "ok" if failed_latest == 0 and stale_latest == 0 else "degraded",
         "provider": settings.anchor_provider,
@@ -129,6 +158,11 @@ def build_health(db: Session, settings: Settings | None = None) -> dict:
         "failed_latest": failed_latest,
         "stale_latest": stale_latest,
         "stale_after_seconds": stale_after_anchor,
+        # C5 · coverage. `expected` is 0 on a deployment where nothing has been
+        # captured yet — that is an absence, not 0%, and the console renders the
+        # two differently.
+        "expected_orgs": len(live_event_orgs),
+        "anchored_orgs": anchored_orgs,
     }
 
     degraded = (

@@ -2263,7 +2263,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            all four in one pass — see .segmented.opsnav in the stylesheet for why
            the obvious fix (just move it to .segmented) would NOT have worked. -->
       <nav class="segmented opsnav" aria-label="Operations" style="margin-bottom:18px;"><button type="button" class="segbtn" aria-current="page" onclick="goOps('health')">Health</button><button type="button" class="segbtn" onclick="goOps('deadletter')">Dead letters</button><button type="button" class="segbtn" onclick="goOps('anchors')">Anchors</button><button type="button" class="segbtn" onclick="goOps('alerts')">Alerts</button></nav>
-      <div class="grid kpis"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-health"/></svg></button><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-worker"/></svg></button><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-failed"/></svg></button><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot" id="hFailedFoot">dead-letter rows</div><div id="hFailedSpark" style="height:30px;margin-top:6px;"></div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is optional per org." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-anchor"/></svg></button><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot" id="hAnchorsFoot">failed or stale latest</div><div id="hAnchorsSpark" style="height:30px;margin-top:6px;"></div></span></div></div>
+      <div class="grid kpis"><div class="clay kpi k-teal"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Overall health" data-tip="A roll-up of the other three, not its own probe. It reads degraded if the database check fails, the worker heartbeat is stale, any grading failed, or any org has a failed or stale latest anchor." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-health"/></svg></button><div class="klabel">Overall</div><div class="kval" id="hStatus" role="status" aria-live="polite">—</div><div class="kfoot">database + worker + queue</div></span></div><div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Worker health" data-tip="Whether the outbox worker has written a heartbeat recently. It turns stale after five poll intervals plus the judge timeout." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-worker"/></svg></button><div class="klabel">Worker</div><div class="kval" id="hWorker" role="status" aria-live="polite">—</div><div class="kfoot" id="hWorkerFoot">heartbeat</div></span></div><div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Failed grading" data-tip="Audit rows sitting at grading_status = failed: the judge could not grade them after its retries. They stay here until replayed." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-failed"/></svg></button><div class="klabel">Failed grading</div><div class="kval" id="hFailed">—</div><div class="kfoot" id="hFailedFoot">dead-letter rows</div><div id="hFailedSpark" style="height:30px;margin-top:6px;"></div></span></div><div class="clay kpi k-coral"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Anchor issues" data-tip="Orgs whose newest anchor receipt failed, plus those whose newest confirmed anchor is older than the staleness threshold. Anchoring is switched on for the whole platform, never per organisation — a plan changes only how often it runs. Orgs that have never anchored at all are counted separately, under Anchor activity." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-anchor"/></svg></button><div class="klabel">Anchor issues</div><div class="kval" id="hAnchors">—</div><div class="kfoot" id="hAnchorsFoot">failed or stale latest</div><div id="hAnchorsSpark" style="height:30px;margin-top:6px;"></div></span></div></div>
       <div class="split"><div class="clay pad"><div class="eyebrow">checks</div><div id="healthChecks" aria-live="polite" class="grid" style="gap:10px;"><div class="sub mono">loading…</div></div></div><div class="clay pad"><div class="eyebrow">grading queue</div><div id="healthQueue" aria-live="polite" class="sub mono">loading…</div></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px;">
         <div class="clay pad k-orange">
@@ -2272,6 +2272,7 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
         </div>
         <div class="clay pad k-coral">
           <div class="panel-h"><div><div class="eyebrow">last 14 days</div><h2 class="panel-t">Anchor activity</h2></div></div>
+          <div id="hAnchorCoverage" style="margin-bottom:12px;"></div>
           <div id="hAnchorTrend" style="min-height:170px;"></div>
         </div>
       </div>
@@ -3657,6 +3658,7 @@ async function loadHealth(){
     $('hFailed').textContent='—'; $('hAnchors').textContent='—';
     _kpiTrendOff('hFailedFoot','hFailedSpark','trend unavailable');
     _kpiTrendOff('hAnchorsFoot','hAnchorsSpark','trend unavailable');
+    $('hAnchorCoverage').innerHTML='';
     $('hWorkerFoot').textContent='health check unavailable';
     $('healthChecks').innerHTML=fault('The health probe did not answer.',why,'loadHealth()');
     $('healthQueue').innerHTML=fault('The grading queue could not be read.',why,'loadHealth()');
@@ -3666,6 +3668,7 @@ async function loadHealth(){
   $('hStatus').innerHTML=opsChip(d.status||'unknown');$('hWorker').innerHTML=opsChip(w.status||'unknown');
   $('hWorkerFoot').textContent=w.beat_at?'last '+fmtTime(w.beat_at):'no heartbeat yet';$('hFailed').textContent=num(g.failed||0);
   $('hAnchors').textContent=num((a.failed_latest||0)+(a.stale_latest||0));
+  renderAnchorCoverage(a);
   $('healthChecks').innerHTML=opsCheck('database',d.database&&d.database.status,'readiness query')+opsCheck('worker heartbeat',w.status,w.beat_at?(w.age_seconds+'s old'):'no beat recorded')+opsCheck('anchor freshness',a.status,(a.failed_latest||0)+' failed · '+(a.stale_latest||0)+' stale')+opsCheck('circuit breaker',cb.state,cb.detail,true);
   loadHealthTrends();
   const counts=g.counts||{};$('healthQueue').innerHTML='<div style="display:grid;gap:8px;">'+['pending','in_progress','graded','failed'].map(k=>`<div style="display:flex;justify-content:space-between;"><span>${esc(k)}</span><b>${num(counts[k]||0)}</b></div>`).join('')+'</div>';
@@ -3779,6 +3782,72 @@ async function ackAlert(id,btn){
 }
 
 /* ──────────── health trends + alert history (Phase 1) ──────────── */
+/* ── C5 · anchor coverage. ─────────────────────────────────────
+   The card above counts orgs whose anchor is BROKEN. It cannot count an org
+   that has never anchored at all: every figure on it comes from
+   `latest_by_org`, which only contains orgs that have anchored at least once —
+   so the workspace with no anchor, the one an operator most needs to find, was
+   the single thing this page could not show. That gap is what this closes.
+
+   ⚠ NOT A WAFFLE, and that is this phase's finding rather than a shortcut.
+   The plan proposed a dot grid. `dataviz` carries no waffle at all and routes
+   "a single ratio against a limit" to a METER, warning specifically against a
+   two-slice proportional display; `ui-ux-pro-max`'s waffle entry excludes the
+   case where "exact values matter over visual proportion", which is exactly an
+   ops console whose actionable fact is WHICH orgs are missing. A grid also
+   cannot be honest at both ends of the scale — one cell per org is a sparse
+   scatter at six tenants and unreadable at four hundred.
+
+   So it reuses `.qmeter`, C3's component, already measured against both themes,
+   the same way C4's pills reuse `.tag` and the detail-pair renderer did before
+   them. The CSS is the shared vocabulary; only the caller is new. `quotaMeter`
+   is not touched.
+
+   NO TIER COLOURS. C3's meter turns amber at 80% because a quota has a
+   conventional danger zone. Coverage has none: on a tamper-evidence product any
+   org without an anchor is worth naming, and a threshold invented here would be
+   colour standing in for a judgement nobody made. The gap is stated in words.
+
+   TWO STATES THAT ARE NOT A NUMBER, written before the happy one:
+     · anchoring switched off platform-wide — `anchor_enabled` defaults to
+       false, so this is the COMMON case, not an edge one. An empty bar would
+       read "nothing is anchored" when the truth is "nothing is meant to be".
+     · nothing captured yet — no denominator. Not 0%. */
+function renderAnchorCoverage(a){
+  const el=$('hAnchorCoverage'); if(!el)return;
+  if(a.enabled===false){
+    el.innerHTML='<div class="qmeter-abs">anchoring is switched off for the platform</div>';
+    return;
+  }
+  const expected=a.expected_orgs||0, done=a.anchored_orgs||0;
+  if(!expected){
+    el.innerHTML='<div class="qmeter-abs">no organization has recorded an event yet</div>';
+    return;
+  }
+  const missing=Math.max(0,expected-done);
+  const pct=done/expected*100;
+  /* Same floor as C3, and A5 before it: above zero draws, zero draws an empty
+     track. One anchored org in four hundred rendering as nothing would say
+     "none", which is a different and worse answer. */
+  const bar=done>0?'<i style="width:'+Math.min(100,pct).toFixed(1)+'%"></i>':'';
+  /* The gap in words, because it is the part somebody acts on. failed and stale
+     describe orgs that DID anchor, so they are named apart from `never`. */
+  const parts=[];
+  if(missing) parts.push(num(missing)+' never anchored');
+  if(a.failed_latest) parts.push(num(a.failed_latest)+' failed');
+  if(a.stale_latest) parts.push(num(a.stale_latest)+' stale');
+  /* ONE role="img" over the whole meter, not a label per cell. The fact base
+     asks a waffle to label every cell; at a hundred of them that is a hundred
+     announcements for one number, which is noise wearing accessibility's
+     clothes. The count is also visible as text beside it. */
+  el.innerHTML='<div class="qmeter" role="img" aria-label="'
+    +esc(num(done)+' of '+num(expected)+' organizations anchored'
+         +(parts.length?', '+parts.join(', '):''))+'">'
+    +'<div class="qmeter-n"><b>'+num(done)+'</b> / '+num(expected)+' anchored</div>'
+    +'<div class="qmeter-t" aria-hidden="true">'+bar+'</div></div>'
+    +(parts.length?'<div class="qmeter-abs" style="margin-top:5px;">'
+      +esc(parts.join(' · '))+'</div>':'');
+}
 async function loadHealthTrends(){
   try{
     const r=await api('/admin/v1/health/trends?days=14');

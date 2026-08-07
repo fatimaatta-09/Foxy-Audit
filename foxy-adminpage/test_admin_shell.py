@@ -5567,3 +5567,189 @@ def test_the_remove_target_meets_the_touch_minimum_where_touch_happens() -> None
     mq = mq[: mq.index("\n}")]
     assert ".fpill-x{width:44px;height:44px}" in mq.replace(" ", ""), (
         "the touch target is not raised at the breakpoint where taps happen")
+
+
+# ── C5 · anchor coverage, and the sentence beside it ─────────────────────────
+# The health page could count orgs whose anchor is BROKEN and not orgs that have
+# never anchored at all, because every figure came from `latest_by_org`. These
+# guards cover the closing of that gap, the two states that are not a number,
+# and the tooltip that was stating something untrue.
+
+_COV_SHIM = """
+var EL={hAnchorCoverage:{innerHTML:''}};
+function $(id){return EL[id]||null;}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function num(n){return Number(n).toLocaleString('en-US');}
+"""
+
+
+def _coverage(cases: dict) -> dict:
+    """Run the shipped renderAnchorCoverage over each payload."""
+    import json
+    import os
+    import tempfile
+    probe = (_COV_SHIM + _js_decl("renderAnchorCoverage")
+             + "\nvar CASES=" + json.dumps(cases) + ", R={};\n"
+             + r"""
+for(var k in CASES){
+  renderAnchorCoverage(CASES[k]);
+  var h=EL.hAnchorCoverage.innerHTML, w=/width:([\d.]+)%/.exec(h);
+  R[k]={html:h, meter:/class="qmeter"/.test(h), bar:/<i /.test(h),
+        width:w?parseFloat(w[1]):null, abs:/qmeter-abs/.test(h),
+        arias:(h.match(/aria-label="[^"]*"/g)||[]),
+        text:h.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim()};
+}
+console.log(JSON.stringify(R));
+""")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        # encoding="utf-8": text=True alone decodes cp1252 here.
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True, encoding="utf-8")
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+
+pytestmark_c5 = pytest.mark.skipif(shutil.which("node") is None,
+                                   reason="node not on PATH")
+
+
+@pytestmark_c5
+def test_coverage_reports_the_orgs_that_never_anchored() -> None:
+    """THE GAP. failed_latest and stale_latest are both derived from
+    latest_by_org, so neither can describe an org with no anchor row at all --
+    which is the one an operator is looking for. The difference between the two
+    new fields has to reach the screen as a number, in words."""
+    r = _coverage({"partial": {"enabled": True, "expected_orgs": 42,
+                               "anchored_orgs": 37, "failed_latest": 2,
+                               "stale_latest": 1}})["partial"]
+    assert "37 / 42" in r["text"], r["text"]
+    assert "5 never anchored" in r["text"], (
+        "the orgs with no anchor are not named: %r" % r["text"])
+    # failed and stale describe orgs that DID anchor, so they are named apart
+    assert "2 failed" in r["text"] and "1 stale" in r["text"], r["text"]
+
+
+@pytestmark_c5
+def test_the_two_states_that_are_not_a_number_draw_no_bar() -> None:
+    """Both were designed before the happy path.
+
+    `anchor_enabled` defaults to FALSE, so "switched off" is the common state on
+    a fresh deployment, not an edge case -- an empty bar there reads "nothing is
+    anchored" when the truth is "nothing is meant to be". And with no events
+    anywhere there is no denominator at all, which is not 0%.
+    """
+    r = _coverage({
+        "off": {"enabled": False, "expected_orgs": 42, "anchored_orgs": 0},
+        "noorgs": {"enabled": True, "expected_orgs": 0, "anchored_orgs": 0},
+    })
+    for k, needle in (("off", "switched off"), ("noorgs", "no organization")):
+        assert not r[k]["meter"], "%s drew a meter: %s" % (k, r[k]["html"])
+        assert not r[k]["bar"], "%s drew a bar" % k
+        assert needle in r[k]["text"], "%s says %r" % (k, r[k]["text"])
+        assert "%" not in r[k]["text"], (
+            "%s rendered a percentage of nothing: %r" % (k, r[k]["text"]))
+
+
+@pytestmark_c5
+def test_a_measured_zero_is_not_the_same_as_no_denominator() -> None:
+    """0 of 42 is a real measurement and must render as one -- an empty TRACK
+    with the count beside it. Only the no-events case is a sentence. Asserted
+    together, because the pair is the point."""
+    r = _coverage({
+        "zero": {"enabled": True, "expected_orgs": 42, "anchored_orgs": 0},
+        "noorgs": {"enabled": True, "expected_orgs": 0, "anchored_orgs": 0},
+    })
+    assert r["zero"]["meter"] and "0 / 42" in r["zero"]["text"], r["zero"]["text"]
+    assert not r["zero"]["bar"], (
+        "zero anchored drew a fill; A5 already paid for a stub that reads as "
+        "'a few' beside a numeral saying 0")
+    assert not r["noorgs"]["meter"], "the two states render identically"
+
+
+@pytestmark_c5
+def test_one_anchored_org_in_four_hundred_is_still_drawn() -> None:
+    """C0's thin-mark rule pointed at a fill: 1/400 is 0.25%, which rounds to a
+    0.3% width and would be invisible without the floor .qmeter-t i carries.
+    Drawing nothing there would say "none", which is a different answer."""
+    r = _coverage({"tiny": {"enabled": True, "expected_orgs": 400,
+                            "anchored_orgs": 1}})["tiny"]
+    assert r["bar"], "a lone anchored org drew no fill at all"
+    assert r["width"] is not None and r["width"] < 1, r["width"]
+    assert "399 never anchored" in r["text"], r["text"]
+
+
+@pytestmark_c5
+def test_the_grid_speaks_once_not_once_per_cell() -> None:
+    """The fact base asks a waffle to give every cell an aria-label. At a
+    hundred cells that is a hundred announcements for one number -- noise
+    wearing accessibility's clothes, and the reason this is a meter rather than
+    a grid. ONE role="img" carries the whole statement, and the count is visible
+    as text beside it."""
+    r = _coverage({"partial": {"enabled": True, "expected_orgs": 42,
+                               "anchored_orgs": 37, "failed_latest": 2}})["partial"]
+    assert len(r["arias"]) == 1, (
+        "expected exactly one accessible name, found %d: %s"
+        % (len(r["arias"]), r["arias"]))
+    label = r["arias"][0]
+    assert "37 of 42" in label and "never anchored" in label, label
+    assert 'role="img"' in r["html"]
+    assert 'aria-hidden="true"' in r["html"], "the track announces itself as well"
+
+
+def test_coverage_reuses_the_measured_meter_rather_than_a_new_component() -> None:
+    """C3's .qmeter was measured against both themes; C4's pills reuse .tag the
+    same way. The CSS is the shared vocabulary and only the caller is new, so
+    this adds no fourth bespoke component to a register that already tracks
+    grammar proliferation.
+
+    quotaMeter is NOT touched -- asserted, because "extract a shared helper"
+    would be the tempting edit and it would put C3.1's meter in this phase's
+    blast radius.
+    """
+    body = _js_func("renderAnchorCoverage")
+    assert 'class="qmeter"' in body and "qmeter-t" in body, (
+        "coverage stopped using the measured meter")
+    assert "quotaMeter" not in body, "coverage calls into C3's builder"
+    css = _css()
+    # the component it borrows still exists and still carries its floor
+    assert "min-width:3px" in re.search(r"\.qmeter-t i\{([^}]*)\}", css).group(1)
+
+
+def test_coverage_is_rendered_from_the_health_payload() -> None:
+    """GUARD THE USE. A builder nothing calls is A6's defect exactly, and this
+    one is easy to leave stranded because the page already looks complete."""
+    body = _js_func("loadHealth")
+    assert "renderAnchorCoverage(a)" in body, (
+        "loadHealth never renders the coverage line")
+    assert "$('hAnchorCoverage').innerHTML=''" in body, (
+        "the fault path leaves the previous poll's coverage under a page that "
+        "just failed to load")
+    assert 'id="hAnchorCoverage"' in _nocomment(SRC), "the host is missing"
+
+
+def test_the_anchor_card_no_longer_claims_anchoring_is_optional() -> None:
+    """It said "Anchoring is optional per org." It is not: anchor_all_due sweeps
+    select(Organization.id), no per-org flag exists anywhere (OrgPolicy has
+    none), and the per-plan anchor_cadence_* settings change the INTERVAL and
+    never whether. Same class as the Stripe sentences S1 removed from the
+    revenue page -- a surface stating something untrue.
+
+    Asserted on the whole claim, not on the absence of one word: C4 learned that
+    a guard checking a single token passes while the same thing returns under
+    another name.
+    """
+    mk = _nocomment(SRC)
+    at = mk.index('aria-label="More about Anchor issues"')
+    tip = re.search(r'data-tip="([^"]*)"', mk[at:]).group(1)
+    assert "optional per org" not in tip, "the false sentence is back"
+    for claim in ("whole platform", "never per organisation"):
+        assert claim in tip, (
+            "the tooltip no longer says what IS true (%r): %s" % (claim, tip))
+    # and it points at where the never-anchored count now lives
+    assert "never anchored" in tip.lower(), tip
