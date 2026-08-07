@@ -124,7 +124,54 @@ def require_org(
 # SDK ingest authenticates with an API key and never passes through here, so
 # neither a missing card nor a failed payment can cause a customer to silently
 # lose audit evidence.
-_GATE_EXEMPT = ("/v1/auth/", "/v1/billing/", "/v1/account/preferences")
+#
+# P1 · THE RULE THIS TUPLE ENCODES, now that it has grown past "unbrick it":
+#
+#     A lock may withhold the SERVICE. It must never withhold the customer's
+#     existing PROPERTY, or their means of removing the lock.
+#
+# The first three are the remedy half — a lock whose only cure sits behind the
+# lock is a brick. The last three are the property half (register #49): evidence
+# a customer has already recorded is theirs, and a billing state standing between
+# them and their own ledger is the sharpest contradiction available on a product
+# whose argument is *do not trust our dashboard, verify the evidence yourself*.
+#
+# Exactly what each new prefix catches, because this is `startswith` and a
+# careless prefix is how a gate quietly disappears:
+#
+#   /v1/logs/export   ONE route, GET. It does NOT catch /v1/logs (the browsable
+#                     list), /v1/logs/{seq}, /v1/logs/breaches, and — the one
+#                     that matters — it does NOT catch POST /v1/logs/batch.
+#                     Ingest never passed through here anyway: it authenticates
+#                     with `require_org`, which does not call the gate, and its
+#                     commercial gate is `capture_block` in logs.py, a different
+#                     mechanism with a different answer. Both facts are guarded.
+#   /v1/verify        TWO routes, both GET: /v1/verify and
+#                     /v1/verify/hash/{chain_hash}. Recomputing your own chain is
+#                     the product's central claim; a bill must not suspend it.
+#                     Bounded at 50k rows inside `verify_chain` itself.
+#   /v1/coverage      ONE route, GET. Without it "here is your evidence" is an
+#                     unqualified claim — coverage is what says whether the
+#                     export is complete.
+#
+# All three are pure reads; none writes a row. Nothing that mutates is exempt,
+# and nothing that merely BROWSES is either — the ledger list, breaches, stats,
+# analytics and usage stay behind the lock, because a convenience UI over the
+# evidence is service, while leaving with the evidence and checking it without us
+# is property.
+#
+# ⚠ All three authenticate through `resolve_org`, which takes the SDK Bearer key
+# as well as the session cookie — and the Bearer path has never been gated. So a
+# locked org could already reach every one of them with its own API key. What
+# changes here is WHICH CREDENTIAL works, not what is reachable, which is why
+# this widening is small: it removes an inconsistency rather than granting a new
+# capability.
+_GATE_EXEMPT = (
+    # the remedy — without these the lock is a brick
+    "/v1/auth/", "/v1/billing/", "/v1/account/preferences",
+    # the property — the customer's own evidence, and proving it is intact
+    "/v1/logs/export", "/v1/verify", "/v1/coverage",
+)
 
 
 def _enforce_dashboard_gates(request: Request, org: Organization) -> None:

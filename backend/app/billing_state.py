@@ -385,6 +385,54 @@ def end_evaluation(org) -> None:
     org.evaluation_ends_at = None
 
 
+def end_evaluation_audited(db, org, *, via: str) -> None:
+    """``end_evaluation``, plus the row that says it happened (register #57).
+
+    THE GRANT WAS AUDITED AND THE EXIT WAS NOT, which is the wrong way round:
+    redeeming an offer writes ``billing.redeem_evaluation``, while ending one
+    rewrites ``plan_tier``, ``monthly_log_quota`` and ``subscription_status`` and
+    clears four evaluation fields — a strictly larger change, at the moment a
+    prospect becomes a customer. On a product whose subject is audit trails, that
+    was a hole at the most consequential transition an account has.
+
+    WHY THIS IS A WRAPPER AND NOT A CHANGE TO ``end_evaluation``. That function
+    is pure — it takes an org and touches four attributes — and several tests and
+    the staff path rely on being able to call it without a session. Handing it a
+    ``db`` would make every caller of a field-clearing helper a caller of an
+    audit writer. Instead the two moves are bound together HERE, in one call, so
+    the order cannot be got wrong: the offer id has to be read BEFORE it is
+    cleared, and a caller doing that by hand is a caller who will one day do it
+    afterwards and record ``None``.
+
+    NOTHING IS RECORDED WHEN NOTHING ENDED. ``end_evaluation`` is deliberately
+    safe on an org that never had an offer, and all four call sites run
+    unconditionally — so writing a row every time would tell most customers their
+    evaluation ended when they never had one. That is fabricated history on the
+    one page that exists to be trustworthy.
+
+    THE CUSTOMER-SIDE TRAIL, not the staff one. ``record_admin_action`` answers
+    "which staff member did this" and is already written by
+    ``set_organization_plan``; this answers "what happened to my workspace", and
+    when a customer buys, no staff member was involved at all. It is the trail
+    the grant is on, so the exit belongs beside it.
+
+    ``actor_email`` is None on purpose. A webhook knows an organisation paid; it
+    does not know WHICH admin clicked buy, and naming the billing contact would
+    assert something unverified on an audit row. ``via`` records the mechanism,
+    which is the part that is actually known.
+    """
+    from .account_audit import record_account_action
+
+    offer_id = getattr(org, "evaluation_offer_id", None)
+    end_evaluation(org)
+    if not offer_id:
+        return
+    record_account_action(
+        db, org_id=org.id, actor_email=None,
+        action="billing.evaluation_ended", target=str(offer_id),
+        detail={"via": via},
+    )
+
 def end_trial(org) -> None:
     """A customer who has paid is not on a trial (M3b · register #101).
 

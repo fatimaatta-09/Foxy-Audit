@@ -205,6 +205,13 @@ AUDIT_LABELS = {
     # of the more consequential things a customer can do to their own account —
     # exactly the kind of entry that must not read as a raw action id.
     "billing.redeem_evaluation": "Redeemed an evaluation offer",
+    # And the exit, added by P1 (register #57). The grant was audited and the
+    # end was not, though ending one rewrites the tier, the quota and the
+    # subscription status and clears four fields — the larger change of the two.
+    # This label is not optional decoration: `test_every_recorded_action_has_a_label`
+    # scans the backend for every recorded action and fails without it, which is
+    # exactly why the backend change and this line ship together.
+    "billing.evaluation_ended": "Evaluation ended — plan purchased",
 }
 
 AUDIT_EMPTY = ("No account changes recorded yet",

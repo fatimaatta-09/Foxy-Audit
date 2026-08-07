@@ -795,7 +795,7 @@ def _paddle_renewal(db: Session, org: Organization,
 
     org.subscription_status = "active"
     org.past_due_since = None
-    billing_state.end_evaluation(org)
+    billing_state.end_evaluation_audited(db, org, via="paddle_renewal")
     billing_state.end_trial(org)
     # A renewal is money the customer paid, so it earns a receipt too. Without
     # this they would see month one and then silence.
@@ -872,7 +872,7 @@ def _paddle_apply_purchase(db: Session, data: dict) -> tuple[dict, str | None]:
     # The clear is the point — see billing_state.end_evaluation. Without it an
     # expired evaluator pays and stays locked, which is register #36 and the
     # exact defect M0 fixed on the staff path.
-    billing_state.end_evaluation(org)
+    billing_state.end_evaluation_audited(db, org, via="paddle_purchase")
     billing_state.end_trial(org)         # register #101 — they have paid
     # The customer-visible receipt (register #94). `payment_events` records the
     # webhook for staff; this is the row the person who paid can actually see.
@@ -917,6 +917,34 @@ def _paddle_apply_subscription(db: Session, data: dict) -> tuple[dict, str | Non
     log.info("Paddle: org %s subscription status → %s", org.id, mapped)
     return {"status": "updated", "subscription_status": mapped}, str(org.id)
 
+
+def _paddle_record_failure(db: Session, envelope: dict, event_id: str,
+                           event_type: str, reason: str) -> None:
+    """Persist a failed Paddle event AFTER its transaction has been rolled back.
+
+    RE-INSERTS rather than updating, and that is the whole point. The received
+    row is written inside the same transaction as the dispatch — deliberately, so
+    a ``processed`` stamp and the mutation it describes are atomic — which means
+    ``db.rollback()`` on a failure takes the row with it. The UPDATE that used to
+    follow therefore matched ZERO rows and committed nothing: the comment above
+    it said "persist the failure, never drop the record", and the record was
+    dropped.
+
+    Found by writing a test that asked the table what was in it (P1). Both the
+    register entry and this phase's brief described the path as stamping the
+    event ``failed``; it did not, and #99 could not be answered without this.
+
+    ON CONFLICT DO UPDATE rather than a bare insert, so it stays correct if a
+    future change commits the received row before dispatching.
+    """
+    db.execute(
+        pg_insert(PaymentEvent)
+        .values(provider="paddle", provider_event_id=event_id, type=event_type,
+                payload=envelope, status="failed", error=reason[:500])
+        .on_conflict_do_update(index_elements=["provider_event_id"],
+                               set_={"status": "failed", "error": reason[:500]})
+    )
+    db.commit()
 
 @router.post("/v1/webhooks/paddle", status_code=HTTP_200_OK)
 async def paddle_webhook(
@@ -1006,15 +1034,49 @@ async def paddle_webhook(
             if result.get("status") == "provisioned":
                 _deliver_credentials(db, org_id)
             return result
-        except Exception as exc:  # noqa: BLE001 — persist the failure, never drop the record
+        except IntegrityError as exc:
+            # A CONSTRAINT REFUSED THE WRITE, AND A RETRY CANNOT CHANGE THAT.
+            #
+            # `paddle_customer_id` is UNIQUE, so one Paddle customer mapping to
+            # two organisations lands here (register #99). The constraint stays:
+            # two workspaces sharing a billing customer is real corruption, and
+            # finding it late is worse than finding it loudly.
+            #
+            # What changes is the ANSWER. `paddle.py` records the contract —
+            # Paddle retries whenever the endpoint does not answer 200 within
+            # five seconds — so the old 500 bought a retry schedule that could
+            # only reproduce the same violation, forever, on the path money
+            # arrives on. Retrying is for a delivery that might succeed next
+            # time; a uniqueness violation is deterministic, and the thousandth
+            # attempt fails identically. So: keep the row, name the reason,
+            # answer 200, and let it surface on the payment-events page where a
+            # human can act on it.
+            #
+            # The reason carries the CONSTRAINT NAME and nothing else. `str(exc)`
+            # on an IntegrityError contains the statement and its bound
+            # parameters — customer ids, emails — and this row is read by staff.
+            # `diag.constraint_name` is a bare SQL identifier.
             db.rollback()
-            db.execute(
-                update(PaymentEvent).where(PaymentEvent.id == row_id)
-                .values(status="failed", error=type(exc).__name__[:500])
-            )
-            db.commit()
+            constraint = getattr(
+                getattr(getattr(exc, "orig", None), "diag", None),
+                "constraint_name", None)
+            reason = "integrity:" + (constraint or "unknown_constraint")
+            _paddle_record_failure(db, envelope, event_id, event_type, reason)
+            log.error("paddle event %s (%s) violated %s; not retryable, "
+                      "answering 200 so Paddle stops", event_id, event_type, reason)
+            return {"status": "failed", "reason": reason, "event_id": event_id}
+        except Exception as exc:  # noqa: BLE001 — persist the failure, never drop the record
+            # Same re-insert, same reason: the rollback above discarded the
+            # received row, so the UPDATE this used to run matched nothing and
+            # every failed Paddle event was silently lost.
+            db.rollback()
+            _paddle_record_failure(db, envelope, event_id, event_type,
+                                   type(exc).__name__)
             log.warning("paddle event %s (%s) failed: %s",
                         event_id, event_type, type(exc).__name__)
+            # Still a 500, still deliberately: anything that is NOT a constraint
+            # violation may well be transient — a lock timeout, a provider blip —
+            # and those are exactly what Paddle's retry schedule is for.
             raise HTTPException(status_code=500, detail="event processing failed")
     finally:
         db.close()
@@ -1056,7 +1118,7 @@ def _upgrade_existing_org(db: Session, org_id: str, customer_id: str,
         org.stripe_subscription_id = subscription_id
     org.subscription_status = "active"
     org.past_due_since = None            # nothing is owed the moment this lands
-    billing_state.end_evaluation(org)
+    billing_state.end_evaluation_audited(db, org, via="stripe_upgrade")
     billing_state.end_trial(org)         # register #101 — they have paid
 
     log.info("Upgraded org %s to %s for customer %s", org.id, plan_tier, customer_id)

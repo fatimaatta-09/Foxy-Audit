@@ -235,7 +235,10 @@ def set_organization_plan(
         billing_state.end_trial(org)
     org.subscription_status = "active"
     org.past_due_since = None            # no stale clock left behind a staff reactivation
-    billing_state.end_evaluation(org)    # or the paid customer stays locked — see above
+    # Audited on the CUSTOMER trail too. The AdminAction below answers "which
+    # staff member did this"; the org's own history still needs to show that its
+    # evaluation ended, whoever ended it. No-op when there was no offer.
+    billing_state.end_evaluation_audited(db, org, via="staff_activation")
     detail = {"plan": plan, "monthly_log_quota": org.monthly_log_quota}
     reference = (body.payment_reference or "").strip()
     if reference:
