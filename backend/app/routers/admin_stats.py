@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import Date, cast, func, select, text
+from sqlalchemy import Date, case, cast, func, select, text
 from sqlalchemy.orm import Session
 
 from ..auth import require_platform_role
@@ -137,6 +137,28 @@ def traffic_feed(
 _TS_METRICS = {"interactions", "breaches", "signups", "revenue"}
 
 
+def _zero_fill(counts: dict, start, end) -> list[dict]:
+    """One point per calendar day from `start` to `end`, missing days as 0.
+
+    C2 extracted this from stats_timeseries rather than writing a second copy:
+    a chart with a gap where a zero belongs reads as "no data" instead of
+    "nothing happened", and two implementations of that rule drift.
+    """
+    points, d = [], start
+    while d <= end:
+        points.append({"day": d.isoformat(), "value": counts.get(d, 0)})
+        d += timedelta(days=1)
+    return points
+
+
+def _delta_pct(total: int, prev_total: int) -> float | None:
+    """Percent change vs the prior window, or None when there is nothing to
+    compare against. NOT 0.0 -- a rise from nothing has no percentage, and the
+    front end renders None as 'no prior data' precisely so it cannot be read as
+    'unchanged'."""
+    return round((total - prev_total) / prev_total * 100, 1) if prev_total > 0 else None
+
+
 @router.get("/v1/stats/timeseries")
 def stats_timeseries(
     metric: str = Query(...),
@@ -181,18 +203,93 @@ def stats_timeseries(
         ).all()
         return {r[0]: int(r[1]) for r in rows}
 
-    cur = agg(start, today)
-    points, d = [], start
-    while d <= today:
-        points.append({"day": d.isoformat(), "value": cur.get(d, 0)})
-        d += timedelta(days=1)
+    points = _zero_fill(agg(start, today), start, today)
     total = sum(p["value"] for p in points)
     prev_total = sum(agg(prev_start, prev_end).values())
-    delta_pct = round((total - prev_total) / prev_total * 100, 1) if prev_total > 0 else None
     return {"metric": metric, "days": days,
             "unit": "cents" if metric == "revenue" else "count",
             "points": points, "total": total, "prev_total": prev_total,
-            "delta_pct": delta_pct}
+            "delta_pct": _delta_pct(total, prev_total)}
+
+
+#: The four series the traffic page's KPI row draws. `errors` cuts ACROSS the
+#: three sites (any status >= 400 anywhere), so it is not a fourth site value
+#: and never appears in `traffic_events.site`.
+_TRAFFIC_SERIES = ("errors", "marketing", "app", "admin")
+
+
+@router.get("/v1/stats/traffic-timeseries")
+def stats_traffic_timeseries(
+    days: int = Query(default=7, ge=1, le=90),
+    staff: StaffUser = Depends(require_platform_role("viewer")),
+    db: Session = Depends(get_db),
+):
+    """Per-day traffic by site + errors, with a total and delta% per series.
+
+    ONE ENDPOINT RETURNING FOUR SERIES, not four calls to an extended
+    _TS_METRICS. The existing metrics are genuinely independent -- a page asks
+    for revenue without asking for signups -- but these four are one row of
+    cards painted in a single render, out of ONE table under ONE date
+    expression. Four metrics would mean eight scans of `traffic_events`
+    (current + prior window, four times) to answer what two scans answer, on
+    the largest and fastest-growing table on the platform. It also leaves
+    _TS_METRICS at four, so the 422 naming its members in words stays true.
+
+    PARTITION PRUNING IS WHY THE FILTER IS ON THE RAW COLUMN. `traffic_events`
+    is RANGE-partitioned by `created_at` (migration 0012). A predicate on
+    cast(timezone('UTC', created_at) AS date) is a function OF the partition key
+    rather than the key itself, so the planner cannot prune with it and every
+    partition is scanned. Bounding `created_at` at UTC midnights is exactly
+    equivalent -- timezone('UTC', ts)::date IS the UTC calendar day, so
+    [d0 00:00Z, d1+1 00:00Z) is precisely days d0..d1 -- and it prunes. The
+    cast stays in SELECT/GROUP BY, where it does the bucketing.
+
+    CALENDAR DAYS, WHICH IS NOT THE WINDOW /v1/traffic USES. That endpoint
+    counts `now() - interval '7 days'`, a rolling 7x24h span; this one buckets
+    by UTC calendar day like stats_timeseries, so today is a partial bucket.
+    The two totals differ slightly and neither is wrong. The front end therefore
+    prints the PERCENTAGE only under these cards, so no figure here can
+    contradict the one above it.
+    """
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=days - 1)
+    prev_start = start - timedelta(days=days)
+    prev_end = start - timedelta(days=1)
+
+    dexpr = cast(func.timezone("UTC", TrafficEvent.created_at), Date)
+    is_err = case((TrafficEvent.status_code >= 400, 1), else_=0)
+
+    def agg(d0, d1) -> dict[str, dict]:
+        """{series: {date: count}} for one window, in a single pass."""
+        out: dict[str, dict] = {k: {} for k in _TRAFFIC_SERIES}
+        lo = datetime.combine(d0, datetime.min.time(), tzinfo=timezone.utc)
+        hi = datetime.combine(d1 + timedelta(days=1), datetime.min.time(),
+                              tzinfo=timezone.utc)
+        for day, site, total, errs in db.execute(
+            select(dexpr, TrafficEvent.site, func.count(),
+                   func.coalesce(func.sum(is_err), 0))
+            .where(TrafficEvent.created_at >= lo, TrafficEvent.created_at < hi)
+            .group_by(dexpr, TrafficEvent.site)
+        ).all():
+            if site in out:
+                out[site][day] = out[site].get(day, 0) + int(total)
+            # Errors sum across EVERY site, including a `site` value this
+            # console has no card for -- an error on a fourth site is still an
+            # error, and dropping it would understate the one number on this
+            # page whose job is to be alarming.
+            out["errors"][day] = out["errors"].get(day, 0) + int(errs)
+        return out
+
+    cur, prev = agg(start, today), agg(prev_start, prev_end)
+    series = {}
+    for key in _TRAFFIC_SERIES:
+        points = _zero_fill(cur[key], start, today)
+        total = sum(p["value"] for p in points)
+        prev_total = sum(prev[key].values())
+        series[key] = {"points": points, "total": total,
+                       "prev_total": prev_total,
+                       "delta_pct": _delta_pct(total, prev_total)}
+    return {"days": days, "unit": "count", "series": series}
 
 
 @router.get("/v1/stats/plan-mix")

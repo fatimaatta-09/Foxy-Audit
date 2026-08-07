@@ -4794,13 +4794,18 @@ def test_exactly_the_intended_cards_carry_a_trend() -> None:
     Six cards count a STOCK -- how many things exist right now -- and no daily
     history exists for any of them. A trend on "how many staff we have" would be
     noise even if the data did exist. They must stay bare, so a later phase
-    cannot quietly add one; the four that gained a spark must keep it.
+    cannot quietly add one; the ones that gained a spark must keep it.
+
+    C2 added the four traffic cards to the second list. This stays ONE guard on
+    purpose: it is the register of which cards carry a trend, and a second copy
+    elsewhere is how two lists drift apart.
     """
     mk = _nocomment(SRC)
     for card in ("kUsers", "kStaff", "rvActive", "rvTrial", "hStatus", "hWorker"):
         assert 'id="%sSpark"' % card not in mk, (
             "%s is a stock with no daily history and has been given a spark" % card)
-    for card in ("hFailed", "hAnchors", "rvRev30", "kOrgs", "kLogs", "kBreaches"):
+    for card in ("hFailed", "hAnchors", "rvRev30", "kOrgs", "kLogs", "kBreaches",
+                 "tErr", "tMkt", "tApp", "tAdm"):
         assert 'id="%sSpark"' % card in mk, "%s lost its spark host" % card
 
 
@@ -4862,3 +4867,186 @@ def test_a_failed_reload_takes_the_trend_down_with_the_value() -> None:
             assert re.search(r"_kpiTrendOff\('%s'" % foot, body), (
                 "%s's fault path leaves %s showing the previous poll's trend"
                 % (fn, foot))
+
+
+# ── C2 · trends on the four traffic KPI cards ────────────────────────────────
+# tErr / tMkt / tApp / tAdm, fed by ONE new aggregate rather than four calls.
+# All four had NO .kfoot before this phase -- klabel + kval only -- so unlike C1
+# there was nothing to displace and the delta slot is simply new markup.
+#
+# These run the loader. The one thing that cannot be checked by reading the file
+# is the series-to-card mapping: `errors` and `marketing` are both arrays of
+# numbers, and a swapped pair draws a perfectly plausible line on the wrong card.
+
+_TRAFFIC_SHIM = """
+var EL={};
+function mk(id){ return EL[id]={id:id,textContent:'',innerHTML:'',style:{},
+  classList:{add:function(){},remove:function(){}}}; }
+['tErr','tMkt','tApp','tAdm'].forEach(function(c){mk(c+'Foot');mk(c+'Spark');});
+function $(id){ return EL[id]||null; }
+var DREW=[], ASKED=[];
+function chart(id,o){ DREW.push({id:id, vals:(o.series[0].values)||[],
+  aria:o.ariaLabel||''}); }
+function _spark(){ return '#FF6A1A'; }
+function num(n){ return String(n); }
+"""
+
+# Four series whose values cannot be confused for one another: whichever host
+# receives [2,2] received `marketing`, and no other reading is possible.
+_TRAFFIC_OK = """
+var api=function(u){ ASKED.push(u); return Promise.resolve({ok:true,json:function(){
+  return Promise.resolve({days:7, unit:'count', series:{
+    errors   :{points:[{value:1},{value:1}], total:2, delta_pct: 11.0},
+    marketing:{points:[{value:2},{value:2}], total:4, delta_pct: 22.0},
+    app      :{points:[{value:3},{value:3}], total:6, delta_pct: null},
+    admin    :{points:[{value:4},{value:4}], total:8, delta_pct:-44.0}}}); }}); };
+"""
+
+
+def _run_traffic(api_js: str) -> dict:
+    """Run the shipped loadTrafficSparks over a DOM stub and report what it did."""
+    import json
+    import os
+    import tempfile
+    probe = (_TRAFFIC_SHIM + api_js
+             + "\n".join(_js_decl(f) for f in
+                         ("_kpiDelta", "_kpiTrendOff", "loadTrafficSparks"))
+             + """
+loadTrafficSparks().then(function(){
+  var R={drew:DREW, asked:ASKED, feet:{}, styled:{}};
+  ['tErr','tMkt','tApp','tAdm'].forEach(function(c){
+    R.feet[c]=EL[c+'Foot'].textContent;
+    R.styled[c]=Object.keys(EL[c+'Foot'].style).length;
+    R['spark_'+c]=EL[c+'Spark'].innerHTML; });
+  console.log(JSON.stringify(R));
+});
+""")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        # encoding="utf-8": text=True alone decodes cp1252 here and the ▲ / ▼
+        # that carry direction come back as mojibake, failing correct output.
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True, encoding="utf-8")
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+
+pytestmark_c2 = pytest.mark.skipif(shutil.which("node") is None,
+                                   reason="node not on PATH")
+
+
+@pytestmark_c2
+def test_each_traffic_card_is_fed_by_its_own_series() -> None:
+    """THE ONE NOTHING ELSE CAN CATCH. The series names and the card ids are
+    paired in exactly one place -- loadTrafficSparks' cfg table -- and both
+    sides are arrays of counts, so swapping `marketing` and `admin` draws a
+    plausible line on the wrong card and moves a plausible percentage under it.
+    Nothing about the rendered page would look wrong.
+
+    The probe returns four series whose values cannot be mistaken for one
+    another, so the host that received [2, 2] received marketing and there is no
+    other reading.
+    """
+    r = _run_traffic(_TRAFFIC_OK)
+    drew = {d["id"]: d for d in r["drew"]}
+    for host, value, series in (("tErrSpark", 1, "errors"),
+                                ("tMktSpark", 2, "marketing"),
+                                ("tAppSpark", 3, "app"),
+                                ("tAdmSpark", 4, "admin")):
+        assert host in drew, "%s was never drawn" % host
+        assert drew[host]["vals"] == [value, value], (
+            "%s drew %s; the %s series is %s -- the cfg table is cross-wired"
+            % (host, drew[host]["vals"], series, [value, value]))
+        assert series in drew[host]["aria"], (
+            "%s announces itself as %r" % (host, drew[host]["aria"]))
+    # and the deltas landed on the matching feet, not just the sparks
+    assert "11%" in r["feet"]["tErr"] and "22%" in r["feet"]["tMkt"], r["feet"]
+    assert "44%" in r["feet"]["tAdm"], r["feet"]
+
+
+@pytestmark_c2
+def test_the_traffic_feet_carry_no_total_and_no_colour() -> None:
+    """TWO RULES IN ONE PLACE because both are about what reaches the foot.
+
+    NO TOTAL: the face's number comes from /v1/traffic, which counts a ROLLING
+    `now() - interval '7 days'`. The trend endpoint buckets by UTC calendar day,
+    so today is partial and the two totals differ by a few hours of traffic.
+    "· 1,240 in 7d" under a card reading 1,192 is two answers to one question,
+    so the foot says the percentage and nothing else.
+
+    NO COLOUR: an inline colour beats `.kpi .face .kfoot{color:var(--foxink)}`
+    and measured 1.12:1 on .k-orange -- P4's defect. Asserted on `style` having
+    no keys at all, which also catches setProperty and cssText.
+    """
+    r = _run_traffic(_TRAFFIC_OK)
+    for card, foot in r["feet"].items():
+        assert r["styled"][card] == 0, "%s's foot was given an inline style" % card
+        if "no prior data" in foot:
+            continue
+        assert re.fullmatch(r"7d [▲▼]\d+%", foot), (
+            "%s's foot is %r; it must be the window, the glyph and the "
+            "percentage -- no total, because it would not match the face" % (card, foot))
+
+
+@pytestmark_c2
+def test_a_traffic_card_with_no_prior_window_says_so() -> None:
+    """delta_pct is null when the prior 7 days were empty -- a new site, or the
+    first week after deploy. That is not 0%, and a traffic card reading "7d ▲0%"
+    on a site that just started serving would be a flat line over a launch."""
+    r = _run_traffic(_TRAFFIC_OK)
+    assert r["feet"]["tApp"] == "no prior data", (
+        "a null delta rendered as %r" % r["feet"]["tApp"])
+    assert "%" not in r["feet"]["tApp"], "a null delta rendered as a rate"
+
+
+@pytestmark_c2
+def test_the_traffic_trend_asks_for_the_window_its_cards_promise() -> None:
+    """Every one of these four cards is labelled "· 7d". If the request asked
+    for a different window the label would be a lie about a real number, which
+    is the defect class this console has produced most often.
+    """
+    r = _run_traffic(_TRAFFIC_OK)
+    assert len(r["asked"]) == 1, (
+        "four cards issued %d requests; they share one aggregate" % len(r["asked"]))
+    url = r["asked"][0]
+    assert "days=7" in url, "the trend asks for %r while the cards say 7d" % url
+    assert "/admin/v1/stats/traffic-timeseries" in url
+    mk = _nocomment(SRC)
+    for card in ("Errors ≥400 · 7d", "Marketing · 7d",
+                 "Customer app · 7d", "Admin · 7d"):
+        assert card in mk, "the label %r changed; check the window with it" % card
+
+
+@pytestmark_c2
+def test_a_failed_trend_call_takes_all_four_cards_down() -> None:
+    """The trend is a SECOND request: /v1/traffic can succeed and paint the four
+    numbers while this one 500s. Leaving the previous poll's sparklines under
+    fresh numbers is A4's shape, and here it needs no reload at all to happen --
+    one call simply outlives the other."""
+    r = _run_traffic(
+        "var api=function(u){ ASKED.push(u); "
+        "return Promise.resolve({ok:false,status:500}); };")
+    for card, foot in r["feet"].items():
+        assert foot == "trend unavailable", "%s kept %r after a failed call" % (card, foot)
+        assert r["spark_" + card] == "", "%s kept its previous sparkline" % card
+
+
+def test_the_traffic_cards_gained_a_foot_they_did_not_have() -> None:
+    """All four were klabel + kval only -- no .kfoot anywhere on the traffic
+    page -- so unlike C1's cards there was nothing to displace and no tooltip
+    pointing at a line that had to survive. Recorded because the next phase
+    reading register #116's two-grammar split should know these four are neither
+    grammar: the delta slot IS the foot, because the foot is new.
+    """
+    mk = _nocomment(SRC)
+    for card in ("tErr", "tMkt", "tApp", "tAdm"):
+        assert 'id="%sFoot"' % card in mk, "%s has no delta slot" % card
+        assert 'id="%sSpark"' % card in mk, "%s has no spark host" % card
+    js = " ".join(_script_blocks())
+    for card in ("tErr", "tMkt", "tApp", "tAdm"):
+        assert "'%sFoot'" % card in js or '"%sFoot"' % card in js or \
+            "c[1]+'Foot'" in js, "%s's foot is markup nothing writes" % card

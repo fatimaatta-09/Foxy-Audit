@@ -2316,10 +2316,10 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            in the file uses the shared .kpis track, and this one had no reason
            to be narrower. -->
       <div class="grid kpis">
-        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Errors in the last 7 days" data-tip="Responses with a status of 400 or above in the last 7 days, counted across all three sites together." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-errors"/></svg></button><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr" role="status" aria-live="polite">—</div></span></div>
-        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Marketing traffic" data-tip="Requests to the public sale page in the last 7 days. Client IP and user-agent are HMAC-hashed at capture, so nothing here re-exposes them." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-marketing"/></svg></button><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div></span></div>
-        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer app traffic" data-tip="Requests to the customer dashboard and the /v1 API in the last 7 days." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-app"/></svg></button><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div></span></div>
-        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Admin traffic" data-tip="Requests to this console in the last 7 days — staff sessions only." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-admin"/></svg></button><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div></span></div>
+        <div class="clay kpi k-orange"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Errors in the last 7 days" data-tip="Responses with a status of 400 or above in the last 7 days, counted across all three sites together." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-errors"/></svg></button><div class="klabel">Errors ≥400 · 7d</div><div class="kval" id="tErr" role="status" aria-live="polite">—</div><div class="kfoot" id="tErrFoot">&nbsp;</div><div id="tErrSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-azure"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Marketing traffic" data-tip="Requests to the public sale page in the last 7 days. Client IP and user-agent are HMAC-hashed at capture, so nothing here re-exposes them." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-marketing"/></svg></button><div class="klabel">Marketing · 7d</div><div class="kval" id="tMkt">—</div><div class="kfoot" id="tMktFoot">&nbsp;</div><div id="tMktSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-blue"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Customer app traffic" data-tip="Requests to the customer dashboard and the /v1 API in the last 7 days." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-app"/></svg></button><div class="klabel">Customer app · 7d</div><div class="kval" id="tApp">—</div><div class="kfoot" id="tAppFoot">&nbsp;</div><div id="tAppSpark" style="height:30px;margin-top:6px;"></div></span></div>
+        <div class="clay kpi k-indigo"><span class="beam" aria-hidden="true"></span><span class="face"><button type="button" class="kinfo" aria-label="More about Admin traffic" data-tip="Requests to this console in the last 7 days — staff sessions only." onclick="kinfoTip(this)"><svg class="gly" aria-hidden="true" focusable="false"><use href="#g-admin"/></svg></button><div class="klabel">Admin · 7d</div><div class="kval" id="tAdm">—</div><div class="kfoot" id="tAdmFoot">&nbsp;</div><div id="tAdmSpark" style="height:30px;margin-top:6px;"></div></span></div>
       </div>
       <div class="clay pad">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:2.5px dashed var(--line);padding-bottom:18px;margin-bottom:18px;">
@@ -5055,7 +5055,8 @@ async function loadTraffic(){
   let r;try{r=await api('/admin/v1/traffic?limit=200')}catch(e){r=null}
   if(!r||!r.ok){
     TRAFFIC_ROWS=[];
-    ['tErr','tMkt','tApp','tAdm'].forEach(function(id){$(id).textContent='—';});
+    ['tErr','tMkt','tApp','tAdm'].forEach(function(id){ $(id).textContent='—';
+      _kpiTrendOff(id+'Foot',id+'Spark','trend unavailable'); });
     $('trafCount').textContent='';
     $('trafRows').innerHTML=faultRow(7,'Traffic did not load.','loadTraffic()',r?('HTTP '+r.status):'no response from the API');
     $('trafPager').innerHTML='';return;
@@ -5065,6 +5066,49 @@ async function loadTraffic(){
   $('tAdm').textContent=num(bs.admin);$('tErr').textContent=num(t.errors);
   TRAFFIC_ROWS=t.recent||[];
   renderTraffic();
+  loadTrafficSparks();
+}
+/* C2 · the trend under each of the four traffic KPIs.
+   ONE CALL FOR FOUR CARDS. /v1/stats/traffic-timeseries returns all four series
+   because they are one row painted in one render out of one table; four calls
+   to an extended _TS_METRICS would have scanned `traffic_events` eight times
+   (current + prior window, four times) for what two scans answer.
+
+   ⚠ THE SERIES NAMES AND THE CARD IDS ARE PAIRED HERE AND NOWHERE ELSE, so
+   this table is the whole mapping and a swap in it is silent — tMkt would
+   simply draw admin's shape and look entirely plausible. Guarded by running
+   this function against four distinguishable series and reading which host got
+   which.
+
+   EVERY ONE OF THESE MOVES WITH ITS OWN CARD, which is not automatic: C1 found
+   #hAnchors counting broken anchors while the obvious series counted anchoring
+   activity, so the line climbed when the number improved. Checked here rather
+   than assumed — `errors` is the one that points the other way (up is bad), and
+   the card above it counts the same thing in the same direction. Direction
+   carries no colour on this surface either way; _kpiDelta writes none.
+
+   ⚠ NO TOTAL IN THE FOOT, DELIBERATELY. The number on the face comes from
+   /v1/traffic, which counts `now() - interval '7 days'` — a rolling 7x24h
+   window. This endpoint buckets by UTC calendar day like every other series on
+   the console, so today is a partial bucket and the two totals differ by a few
+   hours of traffic. Printing "· 1,240 in 7d" under a card reading 1,192 would
+   be two numbers for one question. The percentage is self-consistent — it
+   compares this window to its own prior one — so that is all it says. */
+async function loadTrafficSparks(){
+  const cfg=[['errors','tErr'],['marketing','tMkt'],['app','tApp'],['admin','tAdm']];
+  let r; try{ r=await api('/admin/v1/stats/traffic-timeseries?days=7'); }catch(e){ r=null; }
+  if(!r||!r.ok){
+    cfg.forEach(function(c){ _kpiTrendOff(c[1]+'Foot',c[1]+'Spark','trend unavailable'); });
+    return;
+  }
+  const d=await r.json(), all=d.series||{};
+  cfg.forEach(function(c){
+    const s=all[c[0]]; if(!s)return;
+    chart(c[1]+'Spark',{type:'sparkline',height:30,
+      series:[{values:(s.points||[]).map(p=>p.value),color:_spark(c[1]+'Spark')}],
+      ariaLabel:c[0]+' per day over the last 7 days'});
+    _kpiDelta(c[1]+'Foot',s.delta_pct,'7d','');
+  });
 }
 function trafClear(){
   fauxSet('trafSite','');fauxSet('trafStatus','');$('trafPath').value='';renderTrafficFiltered();
