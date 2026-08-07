@@ -65,8 +65,8 @@ from console_chrome import (
     breach_pip, notification_target,
 )
 from chrome_widgets import (
-    AnnouncementBanner, CommandPalette, LiveDot, NotificationsPanel, Pip,
-    ShortcutsOverlay, Toast,
+    AnnouncementBanner, CommandPalette, LiveDot, LockOverlay,
+    NotificationsPanel, Pip, ShortcutsOverlay, Toast,
 )
 from charts import FoxChart
 import home_data as hd
@@ -645,6 +645,7 @@ class DashboardWindow(QWidget):
         self._init_billing()         # D10
         self._init_settings()        # D11a
         self._init_chrome()          # D3: banner, bell, palette, shortcuts, toasts
+        self._init_lock()            # P5: the billing lock overlay (#106)
         self._sync_title()
 
         self._tick = QTimer(self)
@@ -1762,6 +1763,11 @@ class DashboardWindow(QWidget):
         self._ping_health()
         self._refresh_breach_pip()
         self._refresh_announcement()
+        # The lock rides the chrome poller rather than a timer of its own: this
+        # is the one place in the file that already refuses to run while the
+        # window is hidden, and it is what CLEARS the overlay — a customer who
+        # has just paid must not be left looking at a wall that has lifted.
+        self.refresh_lock()
         if self.client.has_session():
             self._refresh_notifications()
 
@@ -3708,6 +3714,34 @@ class DashboardWindow(QWidget):
         # which needed neither — and bought the wrong workspace (#36).
         self.bil_upgrade.setVisible(admin and bool(self._bil_plan["known"])
                                     and not has_account)
+        # P5 · #107. Hiding it was right and stopping there was not: a member
+        # was left with no upgrade path and nothing saying why. The block below
+        # takes the button's place — never sits beside it — because they are two
+        # answers to the same question and only one of them applies to a person.
+        if not admin and bool(self._bil_plan["known"]) and not has_account:
+            self.refresh_ask_state()
+        else:
+            self.bil_ask.hide()
+
+    def refresh_ask_state(self):
+        """Who is reading, and has anyone already asked — from the SERVER.
+
+        `can_purchase` is `require_role("admin")` asked over the wire rather
+        than re-derived here. `_is_billing_admin` above reads `/v1/auth/me`, and
+        two copies of one rule is how they drift; this is the copy the route
+        itself enforces. `requested_at` is the other half: the ask survives a
+        restart because it is a row, not a flag in this process.
+        """
+        if not self.isVisible():
+            return
+        spawn_worker(
+            self.client, "GET", "/v1/billing/upgrade-request", timeout=15,
+            parent=self, track=self._page_workers,
+            on_ok=lambda d: self.bil_ask.show_ask(bd.ask_view(d)),
+            # No answer is not "you are a member". Drawing the block from a
+            # failed lookup would put "only an admin can buy a plan" in front of
+            # an admin whose connection dropped.
+            on_err=lambda _e: self.bil_ask.hide())
 
     def open_billing_portal(self):
         self.bil_manage.setEnabled(False)
@@ -4338,6 +4372,155 @@ class DashboardWindow(QWidget):
         box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         return box.clickedButton() is go
+
+    # ── the billing lock (P5 · #106) ────────────────────────────────────────
+    def _init_lock(self):
+        """One overlay, raised from one signal, cleared by one endpoint.
+
+        NOT 81 callback edits. `FoxyClient` already routes three app-wide
+        conditions centrally — step-up, session-expired, workspace-unavailable —
+        and a billing lock is the fourth of exactly that kind: it is true of the
+        whole session, not of the request that happened to notice it.
+
+        Connected HERE rather than in `omni_fox`, which owns the other three:
+        the console can be built with its own client (it is, in every test and
+        whenever `client=None`), and a lock the companion never sees would leave
+        this window exactly as silent as before.
+        """
+        self.lock_ov = LockOverlay(self)
+        self.lock_ov.remedy.connect(self._on_lock_remedy)
+        self.lock_ov.ask.connect(self._on_lock_ask)
+        self.lock_ov.sign_out.connect(self.sign_out_requested.emit)
+        self._lock_on = False
+        self._lock_checking = False
+        self._lock_throttle = QTimer(self)
+        self._lock_throttle.setSingleShot(True)
+        self._lock_ask = None
+        self.client.payment_required.connect(self._on_payment_required)
+
+    def _on_payment_required(self, code: str):
+        """A 402 with a machine-readable reason arrived from anywhere at all.
+
+        The code is checked against the billing vocabulary here rather than in
+        the client: 402 is also how the API says "out of API-key slots", and
+        that is a limit on a working workspace, not a shut one.
+
+        Throttled, because one page load can 402 on every panel at once — the
+        web takes the same 1.5s for the same reason. The check is what decides;
+        this signal only says "go and ask".
+        """
+        if not bd.is_lock(code) or self._lock_throttle.isActive():
+            return
+        self._lock_throttle.start(1500)
+        self.refresh_lock()
+
+    def refresh_lock(self):
+        """Ask the one endpoint that answers while everything else refuses.
+
+        `GET /v1/billing/access` is gate-exempt precisely because it is what
+        EXPLAINS the 402 — and it is also what clears the overlay, since a
+        customer who has just paid must not be left staring at a lock that has
+        already lifted. Paired with the member lookup so the card is drawn once,
+        with the right action on it, rather than flickering between two.
+        """
+        # Hidden means nobody is looking, and a window that is not on screen
+        # must not be spawning workers: a console built and torn down without
+        # ever being shown is every test in this tree.
+        if self._lock_checking or not self.isVisible():
+            return
+        self._lock_checking = True
+        state: dict = {}
+
+        def done():
+            self._lock_checking = False
+            if "access" not in state or "ask" not in state:
+                return
+            self._apply_lock(state["access"], state["ask"])
+
+        def got(key):
+            def _ok(data):
+                state[key] = data
+                done()
+
+            def _err(_err):
+                # A failed lookup is NOT a lock. Rendering one from a failure
+                # would put a payment wall in front of a customer whose wifi
+                # dropped, which is the same class of lie as a panel inventing
+                # a zero.
+                state[key] = None
+                done()
+            return _ok, _err
+
+        for key, path in (("access", "/v1/billing/access"),
+                          ("ask", "/v1/billing/upgrade-request")):
+            ok, err = got(key)
+            spawn_worker(self.client, "GET", path, timeout=15, parent=self,
+                         track=self._page_workers, on_ok=ok, on_err=err)
+
+    def _apply_lock(self, access, ask_state):
+        """`locked` decides whether the overlay is up. `reason` decides only
+        what it says. The two answer different questions and the web keeps them
+        apart with a guard; so does this."""
+        view = bd.lock_view(access)
+        if view is None:
+            self._clear_lock()
+            return
+        self._lock_ask = bd.ask_view(ask_state)
+        self.lock_ov.show_lock(view, self._lock_ask)
+        self.lock_ov.cover(self)
+        self._lock_on = True
+
+    def _clear_lock(self):
+        if not self._lock_on:
+            return
+        self._lock_on = False
+        self.lock_ov.hide()
+
+    def _on_lock_remedy(self, action: str):
+        """The reason's own remedy, and the same three P3 already built. `wait`
+        never arrives — it has no label, so no button was drawn — and this chain
+        is deliberately `elif` with no `else`, so an action this build does not
+        know does nothing rather than falling through to the portal."""
+        if action == "card":
+            self.open_card_setup()
+        elif action == "upgrade":
+            self.open_upgrade()
+        elif action == "portal":
+            self.open_billing_portal()
+
+    def _on_lock_ask(self):
+        self.ask_admin_to_upgrade(self.lock_ov)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if getattr(self, "_lock_on", False):
+            self.lock_ov.setGeometry(self.rect())
+
+    # ── the member path (P5 · #107) ─────────────────────────────────────────
+    def ask_admin_to_upgrade(self, surface):
+        """POST /v1/billing/upgrade-request — notify the admins, buy nothing.
+
+        `surface` is whichever screen asked (the lock overlay or the billing
+        page); both answer `busy` / `restore` / `say` and both redraw from the
+        SERVER's reply, never from a local flag. That matters more than it
+        looks: the server writes one notification per org per 24 hours and
+        answers a repeat with the SAME timestamp and `created: false`, so
+        stamping a local clock here would show a "just now" that a refresh then
+        contradicts.
+        """
+        surface.busy(bd.ASK_BUSY)
+
+        def ok(data):
+            self._lock_ask = bd.ask_view(data) or self._lock_ask
+            surface.show_asked(self._lock_ask)
+
+        def failed(err):
+            surface.restore(bd.ASK_CTA)
+            surface.say(bd.ASK_OFFLINE if status_of(err) is None else bd.ASK_FAILED)
+
+        spawn_worker(self.client, "POST", "/v1/billing/upgrade-request",
+                     timeout=15, parent=self, track=self._page_workers,
+                     on_ok=ok, on_err=failed)
 
     # -- Settings, admin half (D11b) ----------------------------------------
     def _init_settings_admin(self):

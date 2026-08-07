@@ -456,6 +456,7 @@ class FoxyClient(QObject):
     - step_up_required(StepUpRequired) → open the step-up dialog, then retry
     - session_expired(str)             → drop to the login screen
     - workspace_unavailable(str)       → terminal error state
+    - payment_required(str)            → the billing lock overlay (P5 · #106)
     """
 
     # `step_up_required` carries the StepUpRequired EXCEPTION, because the UI
@@ -471,6 +472,10 @@ class FoxyClient(QObject):
     step_up_required = pyqtSignal(object)
     session_expired = pyqtSignal(str)
     workspace_unavailable = pyqtSignal(str)
+    # P5 · the server refused a call for payment and named a machine-readable
+    # reason. A str, like the two above — the code is all that crosses, and the
+    # receiver looks the words up. See the `except ApiError` clause in request().
+    payment_required = pyqtSignal(str)
 
     def __init__(self, settings=None, http: FoxyHttp | None = None, parent=None):
         super().__init__(parent)
@@ -538,6 +543,27 @@ class FoxyClient(QObject):
             raise
         except WorkspaceUnavailable as e:
             self.workspace_unavailable.emit(e.detail)
+            raise
+        except ApiError as e:
+            # LAST, because the three above are subclasses and each has its own
+            # routing. This one observes rather than intercepts: the error is
+            # re-raised untouched, so every existing `on_err` keeps the string it
+            # was written against and P3's per-action dialogs still fire.
+            #
+            # It is the whole of #106. A locked workspace answers 402 on every
+            # gated route, so the console used to fail panel by panel into
+            # "couldn't load" and never once say the word locked. One signal
+            # here replaces the 81 callbacks that would otherwise each need to
+            # learn about billing.
+            #
+            # `payment_required`, not `workspace_locked`, because that is all
+            # this layer honestly knows: 402 is also how the API says "out of
+            # API-key slots". Whether a code means the dashboard is SHUT is a
+            # billing question, and it is answered by `billing_data.is_lock` at
+            # the receiver — which keeps the product vocabulary out of the one
+            # module every other module imports.
+            if e.status == 402 and isinstance(e.detail, dict):
+                self.payment_required.emit(str(e.detail.get("code") or ""))
             raise
 
     def get(self, path: str, timeout: float | None = None):

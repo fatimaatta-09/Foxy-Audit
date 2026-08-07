@@ -24,6 +24,7 @@ from charts import FoxChart
 from export_page import _combo_qss, _field_label
 from foxy_tokens import BAD_RED, OK_GREEN, RADIUS, WARN_AMBER, WEB, pick_font
 from home_page import _card, _elide_to_width, _label, _stat_tile, scroll_qss
+from chrome_widgets import AskAdminBlock
 from panel_state import StatusStrip
 import billing_data as bd
 
@@ -225,6 +226,15 @@ class BillingSections:
         o.bil_upgrade.clicked.connect(lambda: o.open_upgrade())
         o.bil_upgrade.hide()
         lay.addWidget(o.bil_upgrade)
+
+        # P5 · #107. E3 hid `bil_upgrade` from members on a sound rule — a
+        # control that cannot work is worse than no control — and left nothing
+        # in its place, so a member saw no upgrade path and no explanation. This
+        # is what stands there instead: the reason, and the one thing they can
+        # actually do about it.
+        o.bil_ask = AskAdminBlock()
+        o.bil_ask.ask.connect(lambda: o.ask_admin_to_upgrade(o.bil_ask))
+        lay.addWidget(o.bil_ask)
 
         o.bil_plan_state = StatusStrip(compact=True)
         o.bil_plan_state.retry.connect(lambda: o.refresh_billing())

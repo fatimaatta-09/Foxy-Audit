@@ -544,3 +544,422 @@ class ShortcutsOverlay(QDialog):
         self._fade.setEndValue(1.0)
         self._fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._fade.start()
+
+
+class ChainStrip(QWidget):
+    """Five links of the hash chain, dashed from `solid` onward.
+
+    The web's own device (`chain()`), and the chain is the product: how far it
+    got is the one fact the locked card exists to state.
+
+        5  every link solid    — capture is running
+        4  the last one dashed — capture has stopped
+        0  none of them solid  — capture has never started
+    """
+
+    def __init__(self, solid: int = 5, parent=None):
+        super().__init__(parent)
+        self._solid = solid
+        self.setFixedSize(62, 14)
+
+    def set_solid(self, solid: int):
+        self._solid = solid
+        self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        pen = p.pen()
+        pen.setColor(qcolor(WEB["ink2"]))
+        pen.setWidthF(1.7)
+        for i in range(5):
+            pen.setStyle(Qt.PenStyle.SolidLine if i < self._solid
+                         else Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.drawEllipse(QRectF(1 + i * 12, 1, 12, 12))
+        p.end()
+
+
+class LockOverlay(QWidget):
+    """The billing lock, over the whole window (P5 · #106).
+
+    A port of the web's `#billLock`, which is `position:fixed; inset:0` — it
+    covers the console AND the chrome, deliberately: a locked console is not a
+    console with one bad panel, and leaving the topbar reachable invites a
+    customer to keep pressing controls that all answer 402.
+
+    Before this, a locked workspace looked BROKEN. Every gated route answers
+    402, so each panel resolved to `PanelState.ERROR` — "couldn't load" — and
+    nothing on screen said the word locked until the customer tried to create
+    something.
+
+    Every sentence on it is the SERVER's, shaped by `billing_data.lock_view`.
+    Nothing here decides what a customer's account is doing.
+    """
+
+    remedy = pyqtSignal(str)       # the reason's action: card / portal / upgrade
+    ask = pyqtSignal()             # a member notifying the admins
+    sign_out = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("lockOv")
+        self.setAutoFillBackground(True)
+        self._action = ""
+        self._build()
+        self.hide()
+
+    # -- construction --------------------------------------------------------
+    def _build(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 20, 20, 20)
+        outer.addStretch()
+        row = QHBoxLayout()
+        row.addStretch()
+
+        self.card = QFrame()
+        self.card.setObjectName("lockCard")
+        self.card.setFixedWidth(470)                    # the web's .lockcard
+        v = QVBoxLayout(self.card)
+        v.setContentsMargins(24, 22, 24, 20)
+        v.setSpacing(0)
+
+        self.eyebrow = QLabel()
+        self.eyebrow.setObjectName("lockEyebrow")
+        self.title = QLabel()
+        self.title.setObjectName("lockTitle")
+        self.title.setWordWrap(True)
+        self.body = QLabel()
+        self.body.setObjectName("lockBody")
+        self.body.setWordWrap(True)
+
+        # The evidence strip. `capture_blocked` does NOT follow `locked`, and
+        # rendering them as one state would tell a customer their audit trail
+        # stopped when it had not — the worst sentence this product could show.
+        self.ev = QFrame()
+        self.ev.setObjectName("lockEv")
+        ev_row = QHBoxLayout(self.ev)
+        ev_row.setContentsMargins(14, 12, 14, 12)
+        ev_row.setSpacing(12)
+        self.chain = ChainStrip()
+        ev_text = QVBoxLayout()
+        ev_text.setSpacing(4)
+        self.ev_title = QLabel()
+        self.ev_title.setObjectName("lockEvT")
+        self.ev_title.setWordWrap(True)
+        self.ev_body = QLabel()
+        self.ev_body.setObjectName("lockEvD")
+        self.ev_body.setWordWrap(True)
+        ev_text.addWidget(self.ev_title)
+        ev_text.addWidget(self.ev_body)
+        ev_row.addWidget(self.chain, 0, Qt.AlignmentFlag.AlignTop)
+        ev_row.addLayout(ev_text, 1)
+
+        # The member block (#107) — the web's own words, out of billing_data,
+        # so the two products cannot describe one account two ways.
+        self.ask_title = QLabel()
+        self.ask_title.setObjectName("lockAskT")
+        self.ask_title.setWordWrap(True)
+        self.ask_body = QLabel()
+        self.ask_body.setObjectName("lockAskD")
+        self.ask_body.setWordWrap(True)
+
+        self.status = QLabel("")
+        self.status.setObjectName("lockErr")
+        self.status.setWordWrap(True)
+        self.status.setAccessibleName("Billing status")
+
+        self.cta = QPushButton()
+        self.cta.setObjectName("lockGo")
+        # Named before it has a label. Until `show_lock` runs it has no text at
+        # all, and a screen reader announces a textless button as "button" —
+        # the exact hole `test_d15_a11y` walks this tree for. `_set_cta` keeps
+        # the name equal to the label from then on, so the two cannot drift.
+        self.cta.setAccessibleName("Billing action")
+        self.cta.setMinimumHeight(44)
+        self.cta.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cta.clicked.connect(self._on_cta)
+
+        alt = QHBoxLayout()
+        alt.setSpacing(16)
+        alt.addStretch()
+        self.out_btn = QPushButton("Sign out")
+        self.out_btn.setObjectName("lockAlt")
+        self.out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.out_btn.setMinimumHeight(44)
+        self.out_btn.clicked.connect(self.sign_out.emit)
+        self.support = QLabel(
+            '<a href="mailto:foxyaudit@gmail.com?subject=Dashboard%20locked">'
+            "Contact support</a>")
+        self.support.setObjectName("lockAlt")
+        self.support.setOpenExternalLinks(True)
+        self.support.setMinimumHeight(44)
+        self.support.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        alt.addWidget(self.out_btn)
+        alt.addWidget(self.support)
+        alt.addStretch()
+
+        # Every row carries its own gap, and the gap is REMEMBERED so it can
+        # collapse with the row. Qt hides a widget but keeps a fixed spacer, and
+        # four hidden rows here is the ordinary case — a pending workspace has
+        # no ask, no status and no button — which left 48px of nothing above the
+        # sign-out line. The render pass is what showed it.
+        self._gaps: list[tuple] = []
+        for widget, top in ((self.eyebrow, 0), (self.title, 7), (self.body, 9),
+                            (self.ev, 16), (self.ask_title, 16),
+                            (self.ask_body, 6), (self.status, 12),
+                            (self.cta, 14)):
+            v.addSpacing(top)
+            self._gaps.append((v.itemAt(v.count() - 1), widget, top))
+            v.addWidget(widget)
+        v.addSpacing(15)
+        v.addLayout(alt)
+
+        row.addWidget(self.card)
+        row.addStretch()
+        outer.addLayout(row)
+        outer.addStretch()
+        self._style()
+
+    def _style(self):
+        disp, mono = pick_font("disp"), pick_font("mono")
+        link = WEB["muted"]
+        self.setStyleSheet(
+            # rgba(6,5,4,.88) — the web's scrim, so the console reads as behind
+            # this rather than beside it.
+            "QWidget#lockOv { background: rgba(6, 5, 4, 224); }"
+            f"QFrame#lockCard {{ background: {WEB['surf']};"
+            f" border: 1px solid {WEB['line']}; border-radius: {RADIUS['lg']}px; }}"
+            f"QLabel#lockEyebrow {{ color: {WEB['fox2']}; font-family: '{mono}';"
+            " font-size: 9px; font-weight: 800; letter-spacing: 1.4px; }"
+            f"QLabel#lockTitle {{ color: {WEB['ink']}; font-family: '{disp}';"
+            " font-size: 19px; font-weight: 800; }"
+            f"QLabel#lockBody {{ color: {WEB['ink2']}; font-family: '{disp}';"
+            " font-size: 12.5px; }"
+            f"QFrame#lockEv {{ border: 1px solid {WEB['line']};"
+            f" border-radius: {RADIUS['sm']}px; background: {WEB['surf2']}; }}"
+            f"QLabel#lockEvT {{ color: {WEB['ink']}; font-family: '{disp}';"
+            " font-size: 12px; font-weight: 800; background: transparent; }"
+            # --ink2, never --muted2: this is live text and muted2 is 3.01:1.
+            f"QLabel#lockEvD {{ color: {WEB['ink2']}; font-family: '{disp}';"
+            " font-size: 11.5px; background: transparent; }"
+            f"QLabel#lockAskT {{ color: {WEB['ink']}; font-family: '{disp}';"
+            " font-size: 12.5px; font-weight: 800; }"
+            f"QLabel#lockAskD {{ color: {WEB['ink2']}; font-family: '{disp}';"
+            " font-size: 11.5px; }"
+            f"QLabel#lockErr {{ color: {WEB['breach_tx']}; font-family: '{disp}';"
+            " font-size: 11.5px; font-weight: 600; }"
+            f"QPushButton#lockGo {{ background: {WEB['fox']}; color: {WEB['bg']};"
+            " border: none; border-radius: 14px; padding: 12px 18px;"
+            f" font-family: '{disp}'; font-size: 12.5px; font-weight: 800; }}"
+            f"QPushButton#lockGo:hover {{ background: {WEB['fox2']}; }}"
+            f"QPushButton#lockGo:disabled {{ color: {WEB['muted']}; }}"
+            f"QPushButton#lockGo:focus {{ border: 2px solid {WEB['ink']}; }}"
+            # A TRANSPARENT border at rest, not `none`: adding one on :focus
+            # grows the box and shoves the row along, so the control moves the
+            # moment a keyboard reaches it. Reserving the pixel is what keeps
+            # the focus ring free.
+            f"QPushButton#lockAlt {{ background: transparent;"
+            f" border: 1px solid transparent; border-radius: 4px;"
+            f" color: {link}; font-family: '{mono}'; font-size: 10px;"
+            " font-weight: 800; letter-spacing: .6px; padding: 0 6px; }"
+            f"QPushButton#lockAlt:hover {{ color: {WEB['ink']}; }}"
+            f"QPushButton#lockAlt:focus {{ border-color: {WEB['fox']}; }}"
+            f"QLabel#lockAlt {{ background: transparent; font-family: '{mono}';"
+            " font-size: 10px; font-weight: 800; letter-spacing: .6px; }")
+        # A QLabel link takes its colour from the anchor, not the stylesheet.
+        self.support.setText(
+            '<a href="mailto:foxyaudit@gmail.com?subject=Dashboard%20locked" '
+            f'style="color:{link};text-decoration:none;">Contact support</a>')
+
+    # -- rendering -----------------------------------------------------------
+    def show_lock(self, view: dict, ask: dict | None = None):
+        """Paint one lock. `view` is `billing_data.lock_view`; `ask` is
+        `billing_data.ask_view`, present only when this person cannot buy."""
+        self.eyebrow.setText(str(view["eyebrow"]).upper())
+        self.title.setText(view["lead"])
+        self.body.setText(view["rest"])
+        self.body.setVisible(bool(view["rest"]))
+
+        note = view.get("evidence")
+        if note:
+            self.ev_title.setText(note[0])
+            self.ev_body.setText(note[1])
+            self.chain.set_solid(note[2])
+        self.ev.setVisible(bool(note))
+
+        # A member cannot complete ANY lock remedy — card-setup, portal and
+        # upgrade-session are all admin-only — so the ask REPLACES the CTA
+        # rather than sitting under a button that would answer 403.
+        self._action = "" if ask else view["action"]
+        for widget, text in ((self.ask_title, ask and ask["title"]),
+                             (self.ask_body, ask and ask["body"])):
+            widget.setText(text or "")
+            widget.setVisible(bool(text))
+
+        label = (ask["cta"] if ask else view["cta"]) or ""
+        # Removed, not disabled. A disabled control still says "there is
+        # something here for you, just not yet", and there is not: a workspace
+        # waiting for a human reviewer has nothing to press, and neither has a
+        # member who has already asked.
+        self._set_cta(label)
+        self.cta.setVisible(bool(label))
+        self.cta.setEnabled(True)
+        self.say("")
+
+    def show_asked(self, ask: dict | None):
+        """Redraw the member block from the SERVER's reply after a send.
+
+        The button goes rather than greying out: there is nothing left to press
+        for 24 hours, and a disabled control invites the press anyway. The
+        wording comes from `billing_data`, which builds it round the server's
+        own timestamp — so a second colleague who never touched the button
+        reads the same true sentence.
+        """
+        if not ask:
+            return
+        self.ask_title.setText(ask["title"])
+        self.ask_body.setText(ask["body"])
+        self.ask_title.setVisible(True)
+        self.ask_body.setVisible(True)
+        self.cta.setVisible(bool(ask["cta"]))
+        self._set_cta(ask["cta"])
+        self.cta.setEnabled(True)
+        self.say("")
+
+    def _close_gaps(self):
+        """A hidden row contributes no space. Called after every visibility
+        change, because the card's shape is the sum of which rows apply."""
+        for spacer, widget, top in self._gaps:
+            spacer.changeSize(0, top if widget.isVisibleTo(self) else 0)
+        self.card.layout().invalidate()
+
+    def say(self, message: str):
+        self.status.setText(message or "")
+        self.status.setVisible(bool(message))
+        self._close_gaps()
+
+    def _set_cta(self, label: str):
+        """Label and accessible name together, always. A button whose name
+        says one thing and whose face says another is worse than either."""
+        self.cta.setText(label)
+        self.cta.setAccessibleName(label or "Billing action")
+
+    def busy(self, label: str):
+        self.cta.setEnabled(False)
+        self._set_cta(label)
+
+    def restore(self, label: str):
+        self.cta.setEnabled(True)
+        self._set_cta(label)
+
+    def _on_cta(self):
+        """One button, two meanings, and the empty action is the member's.
+        `_action` is cleared whenever an ask block is showing, so this cannot
+        fire a remedy the person is not allowed to complete."""
+        if self._action:
+            self.remedy.emit(self._action)
+        else:
+            self.ask.emit()
+
+    def cover(self, host: QWidget):
+        """Fill the host and take focus.
+
+        Focus has to land inside a modal surface, and with no CTA the first real
+        control is Sign out — which is also the only thing a pending workspace
+        can act on."""
+        self.setGeometry(host.rect())
+        self.show()
+        self.raise_()
+        target = self.cta if self.cta.isVisible() else self.out_btn
+        target.setFocus(Qt.FocusReason.OtherFocusReason)
+class AskAdminBlock(QFrame):
+    """"Only an admin can buy a plan" + the one thing a member CAN do (#107).
+
+    The billing page's half. The lock overlay draws the same two sentences into
+    its own card because it has to share one CTA with the reason's remedy — but
+    both take every word from `billing_data`, which takes them from the web.
+    Two renderings, one copy, so the products cannot drift into describing one
+    account two ways.
+
+    It answers the same four calls the overlay does (`busy` / `restore` / `say`
+    / `show_asked`), so `ask_admin_to_upgrade` does not care which surface asked.
+    """
+
+    ask = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("askBlock")
+        v = QVBoxLayout(self)
+        v.setContentsMargins(14, 13, 14, 13)
+        v.setSpacing(6)
+        self.title = QLabel()
+        self.title.setObjectName("askT")
+        self.title.setWordWrap(True)
+        self.body = QLabel()
+        self.body.setObjectName("askD")
+        self.body.setWordWrap(True)
+        self.status = QLabel("")
+        self.status.setObjectName("askErr")
+        self.status.setWordWrap(True)
+        self.status.setAccessibleName("Upgrade request status")
+        self.status.hide()
+        self.cta = QPushButton()
+        self.cta.setObjectName("askGo")
+        self.cta.setAccessibleName("Notify the admins")
+        self.cta.setMinimumHeight(44)
+        self.cta.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cta.clicked.connect(self.ask.emit)
+        for w in (self.title, self.body, self.status, self.cta):
+            v.addWidget(w)
+        disp = pick_font("disp")
+        self.setStyleSheet(
+            f"QFrame#askBlock {{ background: {WEB['surf2']};"
+            f" border: 1px solid {WEB['line']}; border-radius: {RADIUS['sm']}px; }}"
+            f"QLabel#askT {{ color: {WEB['ink']}; font-family: '{disp}';"
+            " font-size: 12.5px; font-weight: 800; background: transparent; }"
+            f"QLabel#askD {{ color: {WEB['ink2']}; font-family: '{disp}';"
+            " font-size: 11.5px; background: transparent; }"
+            f"QLabel#askErr {{ color: {WEB['breach_tx']}; font-family: '{disp}';"
+            " font-size: 11.5px; font-weight: 600; background: transparent; }"
+            f"QPushButton#askGo {{ background: {WEB['fox']}; color: {WEB['bg']};"
+            " border: none; border-radius: 12px; padding: 10px 16px;"
+            f" font-family: '{disp}'; font-size: 12px; font-weight: 800; }}"
+            f"QPushButton#askGo:hover {{ background: {WEB['fox2']}; }}"
+            f"QPushButton#askGo:disabled {{ color: {WEB['muted']}; }}"
+            f"QPushButton#askGo:focus {{ border: 2px solid {WEB['ink']}; }}")
+        self.hide()
+
+    def show_ask(self, ask: dict | None):
+        """`billing_data.ask_view`, or None for somebody who can just buy."""
+        if not ask:
+            self.hide()
+            return
+        self.title.setText(ask["title"])
+        self.body.setText(ask["body"])
+        self._set_cta(ask["cta"])
+        self.cta.setVisible(bool(ask["cta"]))
+        self.cta.setEnabled(True)
+        self.say("")
+        self.show()
+
+    show_asked = show_ask        # same redraw; the payload says which state
+
+    def _set_cta(self, label: str):
+        self.cta.setText(label)
+        self.cta.setAccessibleName(label or "Notify the admins")
+
+    def say(self, message: str):
+        self.status.setText(message or "")
+        self.status.setVisible(bool(message))
+
+    def busy(self, label: str):
+        self.cta.setEnabled(False)
+        self._set_cta(label)
+
+    def restore(self, label: str):
+        self.cta.setEnabled(True)
+        self._set_cta(label)
+

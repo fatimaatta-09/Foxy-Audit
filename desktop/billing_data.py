@@ -24,7 +24,9 @@ openBillingPortal / openInvoice) and checked against the endpoints it reads:
 
 from __future__ import annotations
 
-from home_data import _num, dict_rows, thousands
+import time
+
+from home_data import _epoch, _num, dict_rows, thousands
 
 #: Currencies whose smallest unit IS the major unit — Stripe sends 1000 for
 #: ¥1000, not ¥10.00 (stripe.com/docs/currencies#zero-decimal). Dividing these
@@ -480,6 +482,152 @@ def lock_split(message) -> tuple[str, str]:
     text = str(message or "").strip()
     cut = text.find(". ")
     return (text[:cut + 1], text[cut + 2:]) if cut > 0 else (text, "")
+
+
+# ── the locked console (P5 · #106) ──────────────────────────────────────────
+# P3 gave the desktop the reason and the remedy, but only where the customer had
+# already tried to create something. Everywhere else a locked workspace looked
+# BROKEN rather than locked: every gated route answers 402, so each panel failed
+# into `PanelState.ERROR` — "couldn't load" — and nothing on screen said why.
+#
+# `GET /v1/billing/access` is what fills this in, and it is the one route that
+# stays readable while everything else refuses: it is the endpoint that EXPLAINS
+# the 402, so `auth.py` exempts it. Its `locked` field is the ONLY thing that
+# decides whether the overlay is up. `reason` decides only what is said. The web
+# keeps those two apart with a guard, and so does this — they answer different
+# questions, and a `past_due` org inside its grace window reports a reason while
+# `locked` is false.
+
+
+def lock_view(access) -> dict | None:
+    """`GET /v1/billing/access` → what the overlay shows, or None when it is down.
+
+    Everything a person reads here comes off the response. `billing_state.py`
+    writes one sentence per condition and every surface renders it verbatim; a
+    second copy in this file would be a claim about a customer's account that no
+    server confirmed, and it would drift the way `policy_data`'s option labels
+    silently did for months.
+    """
+    if not isinstance(access, dict) or access.get("locked") is not True:
+        return None
+    reason = access.get("reason")
+    label, action = lock_action(reason) if is_lock(reason) else ("", "")
+    lead, rest = lock_split(access.get("message") or LOCK_FALLBACK)
+    return {
+        "reason": reason,
+        "lead": lead,
+        "rest": rest,
+        # The card is labelled for the CONDITION, not for the department. Every
+        # other state here really is billing; a workspace waiting for a human
+        # review has no billing at all, and "BILLING" over "we are reviewing your
+        # request" reads as "something is wrong with my payment". The web's own
+        # words, and its own rule.
+        "eyebrow": "access" if action == "wait" else "billing",
+        "cta": label,
+        "action": action,
+        "evidence": evidence_note(access.get("capture_blocked"), action == "wait"),
+    }
+
+
+#: The three states of the evidence strip, quoted from the web verbatim
+#: (`foxy-audit-premium.html`'s `evidence()`), because it is the same claim about
+#: the same ledger and a compliance product may not describe it two ways.
+#: `solid` is how many of the five chain links are drawn unbroken.
+_EV_WAIT = ("Nothing is being recorded yet",
+            "Capture begins when your workspace is approved. Your API key is "
+            "already issued and works from that moment.", 0)
+_EV_STOP = ("New evidence is not being recorded",
+            "Everything captured so far stays intact, verifiable and "
+            "exportable.", 4)
+_EV_REC = ("Your evidence is still being recorded",
+           "The chain keeps extending while this is open, and nothing already "
+           "captured is affected.", 5)
+
+
+def evidence_note(blocked, not_started: bool = False) -> tuple | None:
+    """(title, detail, solid_links) — or None when we have not been able to ask.
+
+    Read from `capture_blocked`, NEVER from `locked`. The two do not track each
+    other: `past_due` locks the dashboard and keeps recording, `cancelled` stops
+    recording and leaves the dashboard open. Rendering them as one state tells a
+    customer their audit trail stopped when it did not, which on this product is
+    the worst thing either screen could say.
+
+    `not_started` is checked FIRST and has to be. A workspace awaiting approval
+    is refused capture exactly like a cancelled one and arrives here with the
+    same `True`, so the stopped variant would have reassured it that "everything
+    captured so far stays intact" — about an empty ledger.
+    """
+    if not_started:
+        return _EV_WAIT
+    if blocked is True:
+        return _EV_STOP
+    if blocked is False:
+        return _EV_REC
+    return None                 # unknown: draw nothing rather than assert
+
+
+# ── the member path (P5 · #107) ─────────────────────────────────────────────
+# `bil_upgrade` was hidden from members in E3 on a sound rule — a control that
+# cannot work is worse than no control — and nothing replaced it. P4 built the
+# other half on the web: `GET/POST /v1/billing/upgrade-request`, which notifies
+# the admins and starts no purchase.
+#
+# EVERY SENTENCE BELOW IS THE WEB'S, VERBATIM (`window.foxAskAdmin`), and it is
+# pinned to `foxy-audit-premium.html` by test in both directions. Standing rule:
+# the web wins. A customer who reads one wording in the browser and another here
+# is being shown two products that disagree about their own account.
+ASK_TITLE = "Only an admin can buy a plan"
+ASK_BODY = ("Buying or changing a plan spends money for the whole workspace, so "
+            "it is an admin action. You can let your admins know you need one.")
+ASK_CTA = "Notify the admins"
+ASK_BUSY = "notifying…"
+ASKED_TITLE = "The admins have been told"
+#: `{when}` is filled from the SERVER's `requested_at`, never from a local clock.
+ASKED_BODY = ("Asked {when}. It is in their notifications — buying the plan is "
+              "still theirs to do.")
+ASK_FAILED = "Could not send that. Try again in a moment."
+ASK_OFFLINE = "Could not reach the server. Check your connection and try again."
+
+
+def ask_view(state) -> dict | None:
+    """`GET /v1/billing/upgrade-request` → the member's block, or None for an admin.
+
+    None means "this person can buy" and the ordinary controls apply. A failed
+    lookup also returns None: `can_purchase` is tested against False explicitly,
+    so a request that never arrived falls through to the path the ROUTE still
+    guards rather than blanking a working screen for an admin.
+    """
+    if not isinstance(state, dict) or state.get("can_purchase") is not False:
+        return None
+    when = state.get("requested_at")
+    if when:
+        return {"asked": True, "title": ASKED_TITLE,
+                "body": ASKED_BODY.format(when=ago(when)), "cta": ""}
+    return {"asked": False, "title": ASK_TITLE, "body": ASK_BODY, "cta": ASK_CTA}
+
+
+def ago(iso) -> str:
+    """"3 hours ago", from the server's stamp. Matches the web's own wording.
+
+    The confirmation has to read true for a colleague who did NOT send it — the
+    notification is org-wide, so the second member to open the page finds it
+    already asked. That is why it says when it was asked, never "you asked".
+
+    An unparseable stamp reads "just now" rather than leaving a gap: the whole
+    sentence is built around it, and the one thing we do know is a row exists.
+    """
+    stamp = _epoch(iso)
+    if not stamp:
+        return "just now"
+    seconds = time.time() - stamp
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} minutes ago"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)} hours ago"
+    return f"{int(seconds // 86400)} days ago"
 
 
 def card_setup_result(status: int | None) -> str:
