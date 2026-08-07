@@ -4680,6 +4680,19 @@ function _orgsFiltered(){
    a limit that will never be applied. A full bar is a lie about a plan that
    cannot fill.
 
+   ⚠ C3.1 · THE NUMBER COMES FROM THE LEDGER NOW, and one state went with it.
+   C3 summed usage_daily, which is only trustworthy for today and yesterday: its
+   rollup window is ROLLING, so it rewrites a complete day with a partial slice
+   and a day's final stored value covers its last few minutes. On a meter whose
+   job is "who is near their limit" understating is the dangerous direction — an
+   org at 95% could read as 20% on the one surface staff use to catch it before
+   a customer is blocked. It now counts audit_logs, the same rows
+   credits_exhausted counts, so the meter and the gate agree.
+   That DELETED the "awaiting rollup" state, and correctly: a count of the
+   ledger is always a real count, so there is no longer a moment where the
+   number is not yet an answer. One fewer state because one fewer thing can be
+   unknown — not because anything is being hidden.
+
    ⚠ ZERO USAGE DRAWS AN EMPTY TRACK, NOT A STUB. A5 already paid for this on
    the overview funnels: .funbar i carries min-width:3px, so a bucket of zero
    rendered a short coloured stub that reads as "a few" while the numeral beside
@@ -4693,10 +4706,7 @@ function _orgsFiltered(){
    value — 1,240 / 25,000 — and the tier is a word, so nothing here is carried
    by colour or by shape alone. */
 function quotaMeter(o){
-  const rolled=o.usage_rolled_up_at, used=o.usage_this_month||0, q=o.monthly_log_quota;
-  if(!rolled)
-    return '<div class="qmeter"><div class="qmeter-abs">awaiting rollup</div>'
-      +'<div class="qmeter-t" aria-hidden="true"></div></div>';
+  const used=o.usage_this_month||0, q=o.monthly_log_quota;
   if(q==null)
     return '<div class="qmeter" data-tip="No monthly cap is enforced on this workspace — '
       +'premium and guardian plans, and any org holding an evaluation offer.">'

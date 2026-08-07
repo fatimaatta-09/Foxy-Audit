@@ -57,11 +57,21 @@ class OrgListItem(BaseModel):
     #: Resolving a plan default here instead would print a denominator for
     #: exactly the organisations nothing is counting against.
     monthly_log_quota: int | None = None
-    #: C3 · month-to-date captured events, summed from the usage_daily rollup.
+    #: C3.1 · month-to-date captured events, counted from `audit_logs` — the
+    #: SAME source logs.py's credits_exhausted gate counts, so the meter and the
+    #: gate finally answer with one number.
+    #:
+    #: ⚠ NOT usage_daily, and "does that table keep history?" is the wrong
+    #: question — it does. The values do not survive. `_ROLLUP_SQL` selects
+    #: `created_at >= now() - interval '2 days'`, a ROLLING window, so it spans
+    #: three calendar days with a partial oldest slice, and ON CONFLICT DO
+    #: UPDATE writes that partial OVER a complete row. At a 300s interval a
+    #: day's final stored value covers only its last few minutes. The rollup is
+    #: trustworthy for today and yesterday and understates everything before.
+    #: Two other readers already escaped it and left the reason behind:
+    #: worker.py::_org_history and /v1/usage
+    #: (test_usage_reports_days_older_than_the_rollup_window).
     usage_this_month: int = 0
-    #: C3 · when the rollup last wrote anything, platform-wide. None means it has
-    #: never run, so `usage_this_month` is an absence and not a zero.
-    usage_rolled_up_at: str | None = None
 
 
 class OrgDetail(OrgListItem):
@@ -89,8 +99,7 @@ class PlanRequest(BaseModel):
     payment_reference: str | None = Field(default=None, max_length=128)
 
 
-def _list_item(o: Organization, usage: int = 0,
-               rolled_up_at: str | None = None) -> OrgListItem:
+def _list_item(o: Organization, usage: int = 0) -> OrgListItem:
     return OrgListItem(
         id=str(o.id), name=o.name, plan_tier=o.plan_tier,
         subscription_status=o.subscription_status, suspended=bool(o.suspended),
@@ -98,7 +107,7 @@ def _list_item(o: Organization, usage: int = 0,
         created_at=o.created_at.isoformat() if o.created_at else None,
         approval_status=o.approval_status,
         monthly_log_quota=o.monthly_log_quota,
-        usage_this_month=usage, usage_rolled_up_at=rolled_up_at,
+        usage_this_month=usage,
     )
 
 
@@ -115,29 +124,52 @@ def list_organizations(
         stmt = stmt.where(Organization.deleted_at.is_(None))
     orgs = db.execute(stmt).scalars().all()
 
-    # C3 · ONE grouped query for every row. This list is unpaginated server-side
-    # — the console holds all of it in ORGS_ALL and filters client-side — so a
-    # per-org sum would be N+1 against the platform's busiest rollup.
+    # C3.1 · ONE grouped count for every row, over the LEDGER. This list is
+    # unpaginated server-side — the console holds all of it in ORGS_ALL and
+    # filters client-side — so a per-org count would be N+1 against the largest
+    # table on the platform.
+    #
+    # MEASURED, not assumed. `ix_audit_logs_org_created` is (org_id, created_at)
+    # and this predicate filters the SECOND column, which looks like the wrong
+    # order. On PostgreSQL 18 it is not: the planner skip-scans it. Against
+    # 1.5M rows over 40 orgs, EXPLAIN (ANALYZE, BUFFERS) gives an INDEX ONLY
+    # SCAN, Heap Fetches: 0, Index Searches: 41 — 16ms cold, 11ms warm. No new
+    # index, so no migration. That index was added by migration 0054 for the
+    # PREVIOUS reader that had to escape this same rollup.
+    #
+    # ⚠ THAT PLAN DEPENDS ON THE VISIBILITY MAP. An index-only scan needs pages
+    # marked all-visible; measured on a freshly bulk-loaded table before VACUUM,
+    # the same query falls back to a bitmap heap scan at 227ms and does not
+    # improve when warm. Autovacuum keeps this true in normal operation, but a
+    # long vacuum stall on a heavy-ingest month is what would make this list
+    # slow, and Heap Fetches is the number that would say so.
     #
     # "This month" is decided in UTC, the same clock every other aggregate on
-    # this console uses (stats_timeseries, health trends, traffic). usage_daily.
-    # day is already a DATE, so the comparison is date-to-date and no cast can
-    # shift a row into the wrong month.
-    month_start = datetime.now(timezone.utc).date().replace(day=1)
+    # this console uses (stats_timeseries, health trends, traffic).
+    # ONE now(): two calls could straddle a month boundary between reading the
+    # year and reading the month, which is the kind of once-a-month red this
+    # repo has already had three of.
+    _now = datetime.now(timezone.utc)
+    month_start = datetime(_now.year, _now.month, 1, tzinfo=timezone.utc)
+    #
+    # RLS: audit_logs is ENABLE + FORCE ROW LEVEL SECURITY with org_isolation
+    # USING (org_id = current_setting('app.current_org', true)::uuid). No GUC is
+    # set here ON PURPOSE — set_org_scope_for_staff scopes to ONE org and is the
+    # wrong tool for a cross-org aggregate. This reads every row only because
+    # the role in DATABASE_URL is a SUPERUSER, which is exempt from RLS even
+    # under FORCE; admin_health.py's grading_status roll-up rests on exactly the
+    # same thing. ⚠ Under the confined `foxy_app` role this returns ZERO ROWS
+    # rather than erroring, and every meter would read 0 — a silent, reassuring
+    # failure on the surface whose job is to be alarming.
     used = {
         row[0]: int(row[1])
         for row in db.execute(
-            select(UsageDaily.org_id,
-                   func.coalesce(func.sum(UsageDaily.logs_count), 0))
-            .where(UsageDaily.day >= month_start)
-            .group_by(UsageDaily.org_id)
+            select(AuditLog.org_id, func.count())
+            .where(AuditLog.created_at >= month_start)
+            .group_by(AuditLog.org_id)
         ).all()
     }
-    # Whether the rollup has EVER produced a figure. A zero from a rollup that
-    # has never run is an absence, not a measurement, and the console renders
-    # the two differently — the same rule C1 applied to a null delta_pct.
-    rolled_up_at = _iso(db.execute(select(func.max(UsageDaily.computed_at))).scalar())
-    return [_list_item(o, used.get(o.id, 0), rolled_up_at) for o in orgs]
+    return [_list_item(o, used.get(o.id, 0)) for o in orgs]
 
 
 @router.get("/v1/organizations/{org_id}", response_model=OrgDetail)

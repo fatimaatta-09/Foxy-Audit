@@ -5107,9 +5107,8 @@ console.log(JSON.stringify(R));
         os.unlink(path)
 
 
-def _case(used, quota, rolled="2026-08-08T00:00:00Z"):
-    return {"usage_rolled_up_at": rolled, "usage_this_month": used,
-            "monthly_log_quota": quota}
+def _case(used, quota):
+    return {"usage_this_month": used, "monthly_log_quota": quota}
 
 
 pytestmark_c3 = pytest.mark.skipif(shutil.which("node") is None,
@@ -5219,19 +5218,31 @@ def test_an_unmetered_workspace_gets_no_bar_at_all() -> None:
     assert "%" not in r["text"], "a percentage of nothing was rendered"
 
 
+
+# test_usage_with_no_rollup_behind_it_is_an_absence_not_a_zero lived here.
+# C3.1 DELETED THE STATE IT GUARDED, on purpose. The meter counted usage_daily
+# and needed usage_rolled_up_at to say "this zero is not a measurement yet"; it
+# now counts audit_logs, where a count is always a real count. There is no
+# moment when the number is not an answer, so there is nothing left to assert.
+# Removed rather than weakened -- a guard kept alive against a branch that no
+# longer exists is the A6 shape, asserting a definition nothing reaches.
+
 @pytestmark_c3
-def test_usage_with_no_rollup_behind_it_is_an_absence_not_a_zero() -> None:
-    """C1's null-delta rule, one component over: absence is not zero. With no
-    usage_daily rows at all, every org's sum is 0 -- and "0 / 500" reads as a
-    customer sending nothing, on a console where somebody is deciding whether to
-    chase them. The row carries usage_rolled_up_at so the two can be told apart.
-    """
-    r = _meter({"never": _case(0, 500, rolled=None)})["never"]
-    assert "awaiting rollup" in r["text"], r["text"]
-    assert "0 / 500" not in r["text"], "an unmeasured org is being shown as zero"
-    assert "%" not in r["text"], "an unmeasured org is being given a percentage"
-    assert not r["hasFill"], "an unmeasured org drew a fill"
-    assert r["hasTrack"], "the empty track that says a scale exists is gone"
+@pytestmark_c3
+def test_the_meter_has_no_awaiting_rollup_state_left() -> None:
+    """The removal, asserted rather than assumed. C3's branch keyed on
+    usage_rolled_up_at, a field the endpoint no longer sends -- so if the branch
+    survived, `!undefined` is TRUE and EVERY row would render "awaiting rollup"
+    instead of its number. A deletion whose leftover fails open like that is
+    worth a guard even though it is a deletion."""
+    body = re.sub(r"/\*.*?\*/", "", _js_func("quotaMeter"), flags=re.S)
+    assert "usage_rolled_up_at" not in body, (
+        "quotaMeter still reads a field the API stopped sending; every row "
+        "would take that branch")
+    assert "awaiting rollup" not in body
+    r = _meter({"zero": _case(0, 500)})["zero"]
+    assert "0 / 500" in r["text"], (
+        "a zero no longer renders as a measured zero: %r" % r["text"])
 
 
 @pytestmark_c3
