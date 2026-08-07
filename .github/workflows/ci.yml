@@ -146,6 +146,13 @@ jobs:
       # nothing when a merge breaks them. Same runner, no new dependency.
       - name: Admin console guards
         run: pytest foxy-adminpage -q
+      # The sale page's guards, flagged as unrun in M4b and still unrun through
+      # M4d. They cover the published prices, the tier set, and the pending-signup
+      # copy that has to stay verbatim-identical to the dashboard's locked state —
+      # a cross-surface assertion, which is the kind that goes red on main and is
+      # noticed by nobody. Same shape as the two above.
+      - name: Sale page guards
+        run: pytest foxy-sale-page -q
       - name: Offline judge demo
         run: python demo/offline_demo.py
       - name: Live OpenAI demo boundary tests
