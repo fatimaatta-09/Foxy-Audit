@@ -1614,7 +1614,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           </button>
           <div class="notif-panel" id="topNotifPanel" role="dialog" aria-label="Notifications">
             <div class="notif-head"><span>Notifications</span><span style="display:flex;gap:10px;align-items:center;"><a href="#" id="topNotifReadAll" onclick="return false;">Mark all read</a><a href="#" onclick="closeMenus();go('notifications',null);return false;">See all</a></span></div>
-            <div class="notif-list" id="topNotifList"><div class="empty" style="padding:24px 14px;"><div class="empty-t">No notifications yet</div><div class="empty-d">Breaches, quota and account events will show up here.</div></div></div>
+            <div class="notif-list" id="topNotifList"><div class="empty" style="padding:24px 14px;"><div class="empty-t">No notifications yet</div><div class="empty-d">Breaches, weekly summaries and account events will show up here.</div></div></div>
           </div>
         </div>
         <button class="topbtn" type="button" id="topBreachBtn" data-tip="Threats" aria-label="Open threats" onclick="go('analytics',null)">
@@ -2286,12 +2286,25 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
         <button class="btn ghost sm" type="button" onclick="notifReadAll()">Mark all read</button>
       </div>
       <div class="clay pad">
+        <!-- P6 · Quota and Account are gone, and neither was ever going to work.
+             `loadNotifPage` filters on an EXACT `kind` match, and the backend
+             writes five: breach · digest · key_rotation · billing_change ·
+             upgrade_request. Neither of those two is among them, so both chips
+             could only ever answer "Nothing here" — a control whose whole job is
+             finding things, guaranteed to find none.
+
+             The other four kinds get NO chip, which is the smaller honest set
+             rather than one chip each. The filter runs client-side over the page
+             the server returned, so a chip for a kind that arrives at most
+             weekly (digest), monthly (key_rotation) or daily (upgrade_request)
+             would find nothing on page 1 and read as "you have none" — the same
+             lie in a new place. Breaches are the only kind with the volume to
+             need filtering. A real per-kind filter wants `kind=` on the
+             endpoint, which is server work and is filed. -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
           <button type="button" class="seg-chip" data-nfilter="" onclick="setNotifFilter('')">All</button>
           <button type="button" class="seg-chip" data-nfilter="unread" onclick="setNotifFilter('unread')">Unread</button>
           <button type="button" class="seg-chip" data-nfilter="breach" onclick="setNotifFilter('breach')">Breaches</button>
-          <button type="button" class="seg-chip" data-nfilter="quota" onclick="setNotifFilter('quota')">Quota</button>
-          <button type="button" class="seg-chip" data-nfilter="account" onclick="setNotifFilter('account')">Account</button>
         </div>
         <div id="notifPageList"><div class="skel-row"><div class="skel circ"></div><div class="grow"><div class="skel h" style="width:44%"></div><div class="skel line" style="width:70%;margin-top:6px"></div></div></div></div>
         <div id="notifPager"></div>
@@ -5209,6 +5222,17 @@ async function loadLoginHistory(scope){
   };
 
   const _cap=s=>String(s||'').replace(/^\w/,c=>c.toUpperCase());
+  /* THE definition of "is this workspace paying", shared by the two places
+     that ask (P6 · #101). It is `billing_state.on_a_paid_plan` transliterated —
+     `plan_tier` not in {"", "free"} — rather than a second rule invented here.
+     A dashboard that disagrees with the server about who is paying is how the
+     next three register entries get filed. On `window` because its two callers
+     live in different <script> blocks, and two copies of one predicate is
+     exactly the drift this file keeps logging. */
+  window.foxPaidTier=function(tier){
+    return ['','free'].indexOf(String(tier==null?'':tier).trim().toLowerCase())<0;
+  };
+
   window.loadPlan=async function(){
     try{ const r=await api('/v1/billing/plan'); if(!r.ok)return; const p=await r.json();
       const tier=p.plan_tier||'free';
@@ -5216,7 +5240,18 @@ async function loadLoginHistory(scope){
       if($('planStatus'))$('planStatus').textContent=_cap(p.subscription_status||((tier==='free')?'free tier':'active'));
       if($('planQuota'))$('planQuota').textContent=p.monthly_log_quota==null?'unlimited':num(p.monthly_log_quota);
       const tr=$('planTrialRow');
-      if(p.trial_ends_at){ if($('planTrial'))$('planTrial').textContent=fmtD(p.trial_ends_at); if(tr)tr.style.display=''; }
+      /* P6 · #101, the UI half. A PAID workspace has no trial, whatever is on
+         the row — and rows stamped before M3b cleared `trial_ends_at` on
+         purchase still exist in production, so this has to be right
+         independently of the data. That is the point of fixing it here as well:
+         the backend stopped writing the stamp, and this repairs the history.
+         A FREE org inside its trial still sees both this row and the banner —
+         that warning is the whole reason they exist. The condition is the TIER,
+         never the field. */
+      if(p.trial_ends_at&&!window.foxPaidTier(p.plan_tier)){
+        if($('planTrial'))$('planTrial').textContent=fmtD(p.trial_ends_at);
+        if(tr)tr.style.display='';
+      }
       else if(tr)tr.style.display='none';
       const manage=$('managePlanBtn'), up=$('upgradePlanBtn');
       if(p.has_billing_account){ if(manage)manage.style.display=''; if(up)up.style.display='none'; }
@@ -5547,7 +5582,11 @@ async function loadLoginHistory(scope){
       if(Array.isArray(rows)&&rows.length){ var bid='breach:'+(rows[0].seq||0);
         if(!d[bid]) msg={id:bid,tone:'bad',ic:'warn',html:'A policy breach was recorded on your workspace.',actLabel:'Review threats',act:"go('analytics',null)"}; } }catch(e){}
     if(!msg){ try{ var plan=await api('/v1/billing/plan').then(function(r){return r.ok?r.json():null;});
-      if(plan&&plan.trial_ends_at){ var days=Math.ceil((new Date(plan.trial_ends_at).getTime()-Date.now())/86400000);
+      /* Same rule as the plan row above, and the same reason: a Pro / Max /
+         Premium workspace carrying a pre-M3b stamp was being told its trial ends
+         in six days. `/v1/billing/plan` returns `plan_tier` in the very object
+         this already holds. */
+      if(plan&&plan.trial_ends_at&&!window.foxPaidTier(plan.plan_tier)){ var days=Math.ceil((new Date(plan.trial_ends_at).getTime()-Date.now())/86400000);
         if(days>=0&&days<=7){ var tid='trial:'+String(plan.trial_ends_at).slice(0,10);
           if(!d[tid]) msg={id:tid,tone:'warn',ic:'info',html:'Your trial ends in '+days+' day'+(days===1?'':'s')+'.',actLabel:'View billing',act:"go('billing',null)"}; } } }catch(e){} }
     if(!msg){ try{ var u=await api('/v1/usage?days=1').then(function(r){return r.ok?r.json():null;}); var q=u&&u.quota;
@@ -5930,6 +5969,45 @@ async function loadLoginHistory(scope){
 
   /* Every action POSTs to /v1/billing/*, which auth.py exempts from the gate, so
      they work from inside the locked state. That is the point of the exemption. */
+  /* Who is pressing this, asked ONCE and remembered (P6 · #108).
+
+     All three remedies below are `require_role("admin")` on the server —
+     `card-setup-session`, `portal` and `upgrade-session` alike — so for a member
+     every one of them ends at the same 403. P4 gave them a door for `upgrade`
+     and left the other two dead-ending on a sentence that tells somebody to go
+     and do a thing the product gives them no way to do. The desktop already
+     replaces the CTA for every reason; the standing rule is that the web wins,
+     so the web comes up to it rather than the desktop going back.
+
+     A promise, not a flag: one request ever, and a press that lands before it
+     resolves waits for the answer instead of racing it into an admin-only
+     route. An empty answer is NOT "you are a member" — it falls through to the
+     path the ROUTE still guards, which is the only safe direction to fail. */
+  var _whoP=null;
+  function who(){
+    if(!_whoP)_whoP=window.foxAskAdmin.load().then(function(w){ return w||{}; },
+                                                   function(){ return {}; });
+    return _whoP;
+  }
+
+  function offerAsk(btn,say){
+    /* P4's block, reused rather than rewritten — one copy of those sentences,
+       and they are pinned to the desktop and to welcome.html by test. */
+    say('');
+    if(!$('billLock').classList.contains('on')){
+      /* Not locked: the upgrade page is reachable and already carries the ask,
+         which is exactly what the `upgrade` branch below does for an admin. */
+      window.go('upgrade',null);
+      return;
+    }
+    var box=$('billLockPlans');
+    btn.style.display='none';
+    who().then(function(w){
+      window.foxAskAdmin.render(box,w,'lock');
+      try{ (box.querySelector('button')||box).focus(); }catch(e){}
+    });
+  }
+
   function run(kind,btn,say){
     /* `wait` has no action and must never acquire one by falling through. The
        default below is a POST to /v1/billing/portal, and the workspace this
@@ -5939,6 +6017,16 @@ async function loadLoginHistory(scope){
        second lock on the same door, because a future caller of `run` will not
        be reading the table. */
     if(kind==='wait')return;
+    var _label=btn.textContent;
+    btn.disabled=true; btn.textContent='checking…'; say('');
+    who().then(function(w){
+      btn.disabled=false; btn.textContent=_label;
+      if(w.can_purchase===false)return offerAsk(btn,say);
+      return act(kind,btn,say);
+    });
+  }
+
+  function act(kind,btn,say){
     if(kind==='upgrade'){
       /* Not locked: the upgrade page is reachable and is the fuller surface. */
       if(!$('billLock').classList.contains('on')){ window.go('upgrade',null); return; }
@@ -6417,7 +6505,7 @@ async function loadLoginHistory(scope){
     var pip=$('notifPip');
     if(pip){ if(unread>0){ pip.textContent=unread>9?'9+':String(unread); pip.style.display=''; } else pip.style.display='none'; }
     list.innerHTML=items.length?items.map(notifRow).join('')
-      :'<div class="empty" style="padding:24px 14px;"><div class="empty-t">No notifications yet</div><div class="empty-d">Breaches, quota and account events will show up here.</div></div>';
+      :'<div class="empty" style="padding:24px 14px;"><div class="empty-t">No notifications yet</div><div class="empty-d">Breaches, weekly summaries and account events will show up here.</div></div>';
   };
   /* Static product copy, one entry per kind the backend actually emits
      (breach · digest · key_rotation · billing_change — see user_notifications.py
@@ -6522,7 +6610,7 @@ async function loadLoginHistory(scope){
     if(_nFilter&&_nFilter!=='unread')items=items.filter(function(x){ return x.kind===_nFilter; });
     box.innerHTML=items.length?items.map(notifRow).join('')
       :'<div class="empty"><div class="empty-t">Nothing here</div><div class="empty-d">'
-       +(_nFilter?'No notifications match this filter.':'Breaches, quota and account events will show up here.')
+       +(_nFilter?'No notifications match this filter.':'Breaches, weekly summaries and account events will show up here.')
        +'</div></div>';
     if(window.foxPager)window.foxPager('notifPager',{
       page:_nPage.page, pageSize:_nPage.size, total:(_nFilter&&_nFilter!=='unread')?items.length:total,
