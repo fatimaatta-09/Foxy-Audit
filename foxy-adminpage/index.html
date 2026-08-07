@@ -3248,6 +3248,45 @@ function skeleton(el,kind,cnt){el=(typeof el==='string')?$(el):el;if(!el)return;
   var one={kpi:'<div class="skel skel-kpi"></div>',row:'<div class="skel skel-line"></div>',chart:'<div class="skel skel-chart"></div>'}[kind||'row'];
   el.innerHTML=new Array((cnt||3)+1).join(one);}
 function _cssvar(n,f){try{var v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||f;}catch(e){return f;}}
+/* C0 · register #91 — the colour a segment boundary is drawn IN.
+   It has to be the panel the chart actually sits on, read at runtime, and NOT
+   --line and NOT a constant: a stacked bar on --surf and one on --surf2 need
+   different hairlines, and --line is a third value that matches neither. Same
+   discipline _spark() uses when it reads --spark off the face instead of off
+   :root — the element knows what is behind it and :root does not.
+   Walks up for the first ancestor that actually PAINTS. A transparent or
+   semi-transparent background is not an answer: compositing a hairline over a
+   fill it is 7% opaque against is what the dashboard was already doing, and it
+   measured 1.03:1 of separation — present in the markup, invisible on screen. */
+function _panelBg(el){
+  try{
+    for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+      var c=getComputedStyle(n).backgroundColor;
+      if(!c||c==='transparent')continue;
+      var m=/^rgba?\(([^)]+)\)/.exec(c);
+      if(!m)continue;
+      var p=m[1].split(',');
+      if(p.length<4||parseFloat(p[3])>0.99)return c;
+    }
+  }catch(e){}
+  return _cssvar('--surf','#1b1a19');
+}
+/* C0 · the separator itself. Every status hue was tuned to clear 3:1 against the
+   PANEL; passing that test pins them all into one luminance band, so measured
+   against EACH OTHER 0 of 15 pairs clear 3:1 — in BOTH themes (dark safe/warn
+   1.15:1, warn/bad 2.12:1; light safe/bad 1.01:1). Hue therefore cannot be the
+   only thing dividing two fills that touch, so the boundary gets drawn. This
+   changes no token, so nothing eight merged phases measured moves.
+   ⚠ THIN SEGMENTS GET NO STROKE, AND THAT IS THE DESIGN. An SVG stroke is
+   CENTRED on the edge, so a 1px stroke eats 0.5px of fill top and bottom: on a
+   2px segment it consumes the whole thing. A "1 failed" that renders as nothing
+   is a worse defect than the one being fixed — it is the confident-wrong-answer
+   shape, and the value would read as 0. Below 3px the fill keeps its entire
+   extent; the taller neighbours on either side are stroked and their own
+   hairlines still bound it. */
+function _segSep(extent,panel){
+  return (extent>=3)?(' stroke="'+panel+'" stroke-width="1" stroke-linejoin="round"'):'';
+}
 /* categorical order (dataviz skill): orange, blue, green, violet, teal, amber — the CVD-optimal
    ordering (worst adjacent normal-vision ΔE ≥ 24; the first four slots are maximally separated for
    the common ≤4-series case). Multi-series charts (plan-mix donut, revenue-by-plan) cycle through it. */
@@ -3332,6 +3371,9 @@ function _chartXY(el,opts,W,H,pal,yFmt,xFmt,type){
     });
   } else if(type==='bar'||stacked){
     var bw=Math.max(2,(iw/n)*0.62);
+    /* C0 · read once per chart, not per segment: _panelBg walks the ancestors
+       and getComputedStyle is the expensive call in this loop. */
+    var panel=_panelBg(el), touches=series.length>1;
     for(var bi=0;bi<n;bi++){ var acc=0;
       series.forEach(function(s,si){
         var v=s.values?s.values[bi]:null; if(v==null)return;
@@ -3339,7 +3381,13 @@ function _chartXY(el,opts,W,H,pal,yFmt,xFmt,type){
         if(stacked){ y0=Y(acc); acc+=v; y1=Y(acc); x=Xb(bi)-bw/2; w=bw; }
         else { y0=Y(Math.max(0,v)); y1=Y(Math.min(0,v)); w=bw/series.length; x=Xb(bi)-bw/2+si*w; }
         var hb=Math.max(1,Math.abs(y1-y0));
-        body+='<rect class="chart-dpt" tabindex="0" role="img" style="animation-delay:'+(bi*0.03).toFixed(2)+'s" x="'+x.toFixed(1)+'" y="'+Math.min(y0,y1).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+hb.toFixed(1)+'" rx="2" fill="'+col+'" aria-label="'+esc((s.name?s.name+', ':'')+xFmt(labels[bi])+', '+yFmt(v))+'" data-x="'+(x+w/2).toFixed(1)+'" data-y="'+Math.min(y0,y1).toFixed(1)+'" data-tt="'+esc((s.name?s.name+' \u00b7 ':'')+xFmt(labels[bi])+': '+yFmt(v))+'"/>';
+        /* Stacked segments touch VERTICALLY, so the extent that has to survive
+           the stroke is the height. Grouped bars touch HORIZONTALLY — w is
+           exactly bw/series.length with no gap between them, which the brief
+           for this phase did not account for — so there the extent is the
+           width. One series never touches anything, hence `touches`. */
+        var sep=touches?_segSep(stacked?hb:w,panel):'';
+        body+='<rect class="chart-dpt" tabindex="0" role="img" style="animation-delay:'+(bi*0.03).toFixed(2)+'s" x="'+x.toFixed(1)+'" y="'+Math.min(y0,y1).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+hb.toFixed(1)+'" rx="2" fill="'+col+'"'+sep+' aria-label="'+esc((s.name?s.name+', ':'')+xFmt(labels[bi])+', '+yFmt(v))+'" data-x="'+(x+w/2).toFixed(1)+'" data-y="'+Math.min(y0,y1).toFixed(1)+'" data-tt="'+esc((s.name?s.name+' \u00b7 ':'')+xFmt(labels[bi])+': '+yFmt(v))+'"/>';
       });
       if(series.length===1&&!stacked&&n<=12){ var sv=series[0].values[bi]; if(sv!=null) body+='<text x="'+Xb(bi).toFixed(1)+'" y="'+(Y(Math.max(0,sv))-5).toFixed(1)+'" text-anchor="middle" font-size="9" fill="'+muted+'">'+esc(yFmt(sv))+'</text>'; }
     }
@@ -3357,8 +3405,14 @@ function _chartDonut(el,opts,W,H,pal,yFmt){
   var total=data.reduce(function(a,s){return a+s.value;},0);
   if(!total){ el.classList.remove('chart-wrap'); el.innerHTML='<div class="chart-empty">'+esc(opts.empty||'No data yet')+'</div>'; return el; }
   var cx=W/2, cy=H/2, r=Math.min(cx,cy)-6, ri=r*0.6, a0=-Math.PI/2, body='';
+  /* C0 · adjacent arcs share a radial edge, so the plan-mix donut is the other
+     place two status hues touch. The thin test is the arc's own OUTER length:
+     a 1% slice is a few pixels wide and a stroke on both of its radial edges
+     would close over it, which would drop a real plan from the mix entirely. */
+  var panel=_panelBg(el), touches=data.length>1;
   data.forEach(function(s,i){ var frac=s.value/total, a1=a0+frac*2*Math.PI, col=s.color||pal[i%pal.length];
-    body+='<path class="chart-dpt" tabindex="0" role="img" style="animation-delay:'+(i*0.05).toFixed(2)+'s" d="'+_arc(cx,cy,r,ri,a0,a1)+'" fill="'+col+'" aria-label="'+esc(s.name+', '+yFmt(s.value)+', '+Math.round(frac*100)+' percent')+'" data-x="'+cx+'" data-y="'+(cy-r).toFixed(1)+'" data-tt="'+esc(s.name+' \u00b7 '+yFmt(s.value)+' ('+Math.round(frac*100)+'%)')+'"/>';
+    var sep=touches?_segSep(frac*2*Math.PI*r,panel):'';
+    body+='<path class="chart-dpt" tabindex="0" role="img" style="animation-delay:'+(i*0.05).toFixed(2)+'s" d="'+_arc(cx,cy,r,ri,a0,a1)+'" fill="'+col+'"'+sep+' aria-label="'+esc(s.name+', '+yFmt(s.value)+', '+Math.round(frac*100)+' percent')+'" data-x="'+cx+'" data-y="'+(cy-r).toFixed(1)+'" data-tt="'+esc(s.name+' \u00b7 '+yFmt(s.value)+' ('+Math.round(frac*100)+'%)')+'"/>';
     a0=a1; });
   body+='<text x="'+cx+'" y="'+(cy-1).toFixed(1)+'" text-anchor="middle" font-size="17" font-weight="600" fill="'+_cssvar('--ink','#222')+'">'+esc(yFmt(total))+'</text>';
   body+='<text x="'+cx+'" y="'+(cy+14).toFixed(1)+'" text-anchor="middle" font-size="9" fill="'+_cssvar('--muted','#888')+'">'+esc(opts.centerLabel||'total')+'</text>';

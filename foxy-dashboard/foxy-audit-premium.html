@@ -3222,6 +3222,44 @@ async function loadLoginHistory(scope){
   var ICON_EMPTY='<div class="empty-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M3 12l9 4 9-4"/></svg></div>';
   function emptyMarkup(o){ var e=(o&&o.empty)||{}; return '<div class="empty">'+ICON_EMPTY+'<div class="empty-t">'+esc(e.title||'No data yet')+'</div>'+(e.desc?'<div class="empty-d">'+esc(e.desc)+'</div>':'')+'</div>'; }
   function cw(host,min){ return Math.max(min||160, host.clientWidth||320); }
+  /* C0 · register #91 — the colour a boundary between two touching fills is
+     drawn in. Read off the panel the chart actually sits on, at runtime.
+
+     THIS FILE ALREADY EMITTED A STROKE AND IT SEPARATED NOTHING. drawStacked
+     and drawDonut shipped `stroke:var(--bc)`, and --bc is rgba(255,250,245,.07)
+     dark / rgba(120,105,90,.13) light — a hairline 7% opaque against the fill
+     it is drawn over. Measured, composited: 1.03:1 dark and 1.03-1.12:1 light
+     of separation from its own fill. Present in the markup, invisible on
+     screen. A guard asserting `stroke:var(--bc)` exists would have passed
+     while the defect shipped, which is why the guard for this asserts the
+     OPACITY of what is emitted, not its presence.
+
+     --bc is right for a border ON a panel and wrong for a divider BETWEEN two
+     saturated fills; it is left alone everywhere else. */
+  function panelBg(host){
+    try{
+      for(var n=host;n&&n.nodeType===1;n=n.parentElement){
+        var c=getComputedStyle(n).backgroundColor;
+        if(!c||c==='transparent')continue;
+        var m=/^rgba?\(([^)]+)\)/.exec(c);
+        if(!m)continue;
+        var p=m[1].split(',');
+        if(p.length<4||parseFloat(p[3])>0.99)return c;
+      }
+    }catch(e){}
+    return 'var(--surf)';
+  }
+  /* C0 · every status hue here was tuned to clear 3:1 against the PANEL, which
+     pins them into one luminance band: against EACH OTHER, 0 of 15 pairs clear
+     3:1 in either theme (dark safe/warn 1.15:1, warn/bad 2.12:1; light
+     safe/bad 1.01:1). So a boundary between two fills that touch gets drawn.
+     ⚠ THIN SEGMENTS GET NO STROKE. An SVG stroke is CENTRED on the edge, so it
+     eats half its width of fill on each side and would erase a segment thinner
+     than itself. On "Breaches over time" that would turn one High-risk day into
+     no High-risk day — a false zero on the ledger, which is worse than the
+     defect being fixed. Below the threshold the fill keeps its whole extent. */
+  var SEP_W=1.5;
+  function segSep(extent,panel){ return (extent>=SEP_W*2)?(';stroke:'+panel+';stroke-width:'+SEP_W):''; }
   function norm(o){
     if(o.series)return {labels:o.labels||[],series:o.series.map(function(s){return {name:s.name,tone:s.tone,values:(s.values||[]).map(function(v){return +v||0;})};})};
     var d=o.data||[]; return {labels:d.map(function(x){return x.label!=null?x.label:'';}),series:[{name:o.name,tone:o.tone,values:d.map(function(x){return +x.value||0;})}]};
@@ -3422,9 +3460,12 @@ async function loadLoginHistory(scope){
     var W=cw(host,200), H=o.height||150, pb=20, pt=12,
         _m=barMetrics(W,n), gap=_m.gap, bw=_m.bw;
     var marks='', labs='', tips=[];
+    /* C0 · once per chart: panelBg walks ancestors and getComputedStyle is the
+       expensive call in this loop. One series stacks against nothing. */
+    var panel=panelBg(host), touches=series.length>1;
     for(i=0;i<n;i++){ var yb=H-pb, bx=i*(bw+gap), parts=[];
       series.forEach(function(s,si){ var v=+s.values[i]||0; if(v>0){ var seg=(v/max)*(H-pb-pt); yb-=seg;
-        marks+=S('rect',{x:bx.toFixed(1),y:yb.toFixed(1),width:bw.toFixed(1),height:seg.toFixed(1),class:'cx-bar','data-cxi':i,style:'fill:'+(s.tone?toneColor(s.tone,si):toneColor(null,si))+';stroke:var(--bc);stroke-width:1.5'}); }
+        marks+=S('rect',{x:bx.toFixed(1),y:yb.toFixed(1),width:bw.toFixed(1),height:seg.toFixed(1),class:'cx-bar','data-cxi':i,style:'fill:'+(s.tone?toneColor(s.tone,si):toneColor(null,si))+(touches?segSep(seg,panel):'')}); }
         if(v>0)parts.push(esc(s.name||('S'+(si+1)))+': '+v); });
       labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(H-6).toFixed(1),'text-anchor':'middle',class:'cx-axis'},esc(String(labels[i]!=null?labels[i]:'')));
       tips.push('<b>'+esc(String(labels[i]!=null?labels[i]:''))+'</b><br>'+parts.join('<br>')+'<br>total '+totals[i]); }
@@ -3436,11 +3477,15 @@ async function loadLoginHistory(scope){
     var d=(o.data||[]).filter(function(x){return (+x.value||0)>0;}); if(!d.length){host.innerHTML=emptyMarkup(o);return;}
     var total=d.reduce(function(a,x){return a+(+x.value||0);},0);
     var size=o.height||150, cx=size/2, cy=size/2, r=size/2-6, rin=r*0.58, ang=-Math.PI/2, arcs='', tips=[];
+    /* C0 · adjacent arcs share a radial edge. The thin test is the arc's own
+       OUTER length, not its value: a 1% slice is a few px wide and a stroke on
+       both radial edges would close over it, dropping a real grading status. */
+    var panel=panelBg(host), touches=d.length>1;
     d.forEach(function(x,i){ var frac=(+x.value||0)/total, a2=ang+frac*Math.PI*2, large=frac>0.5?1:0;
       var x1=cx+r*Math.cos(ang),y1=cy+r*Math.sin(ang),x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);
       var ix2=cx+rin*Math.cos(a2),iy2=cy+rin*Math.sin(a2),ix1=cx+rin*Math.cos(ang),iy1=cy+rin*Math.sin(ang);
       var p='M'+x1.toFixed(2)+','+y1.toFixed(2)+'A'+r+','+r+' 0 '+large+' 1 '+x2.toFixed(2)+','+y2.toFixed(2)+'L'+ix2.toFixed(2)+','+iy2.toFixed(2)+'A'+rin+','+rin+' 0 '+large+' 0 '+ix1.toFixed(2)+','+iy1.toFixed(2)+'Z';
-      arcs+=S('path',{d:p,class:'cx-arc','data-cxi':i,style:'fill:'+toneColor(x.tone,i)+';stroke:var(--bc);stroke-width:2'});
+      arcs+=S('path',{d:p,class:'cx-arc','data-cxi':i,style:'fill:'+toneColor(x.tone,i)+(touches?segSep(frac*Math.PI*2*r,panel):'')});
       tips.push('<b>'+esc(String(x.label))+'</b> · '+esc(String(+x.value||0))+' ('+Math.round(frac*100)+'%)'); ang=a2; });
     host.__tips=tips;
     var center=o.center!=null?S('text',{x:cx,y:(cy+size*0.05).toFixed(1),'text-anchor':'middle',style:'fill:var(--ink);font-family:var(--disp);font-weight:800;font-size:'+(size*0.16).toFixed(0)+'px'},esc(String(o.center))):'';

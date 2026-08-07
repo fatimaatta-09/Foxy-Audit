@@ -4405,3 +4405,191 @@ def test_the_busy_state_keeps_its_label_readable_on_every_plate() -> None:
             f".btn.{sel} lost its busy-state ink and falls back to --muted")
     assert 'aria-busy="true"]{cursor:progress' in css.replace(" ", ""), (
         "the busy state no longer marks itself non-interactive")
+
+
+# ── C0 · register #91 · the hairline between two touching chart segments ─────
+# Every status hue in this file was tuned to clear 3:1 against the PANEL.
+# Passing that pins them all into one luminance band, so measured against EACH
+# OTHER: dark safe/warn 1.15:1, safe/bad 1.83:1, warn/bad 2.12:1; light
+# safe/bad 1.01:1, warn/bad 1.04:1, safe/warn 1.05:1. 0 of 15 pairs clear 3:1,
+# in BOTH themes. Line and area charts are fine -- the series are physically
+# apart and the legend names them. The exposure is fills that TOUCH, where hue
+# is the only thing dividing them: stacked bars, grouped bars, donut arcs.
+#
+# THESE GUARDS RUN THE REAL ENGINE AND READ THE SVG IT EMITS. Asserting that
+# _segSep contains the word "stroke" would stay green the moment a draw call
+# stopped calling it -- the A6 lesson, guard the USE. And asserting that a
+# stroke attribute merely EXISTS is exactly what the dashboard already had: it
+# shipped stroke:var(--bc) at 7% alpha, which measures 1.03:1 of separation
+# from its own fill. Present in the markup, invisible on screen. So the
+# assertion is on the emitted VALUE.
+
+_CHART_SHIM = """
+// PANEL is what the parent actually PAINTS. --surf and --line are stubbed to
+// two OTHER values deliberately: a _panelBg that gave up and read a token off
+// :root, or a _segSep that reached for --line, each comes back as a value this
+// probe can name and reject. Making any of the three equal would let one of
+// those mutations through green.
+var PANEL='rgb(27, 26, 25)', LINE='rgb(255, 0, 255)', ROOTSURF='rgb(9, 9, 9)';
+function El(bg,parent){ return {nodeType:1,parentElement:parent||null,__bg:bg,
+  clientWidth:600, style:{}, innerHTML:'',
+  classList:{add:function(){},remove:function(){}},
+  querySelector:function(){return null;}, querySelectorAll:function(){return [];}}; }
+global.getComputedStyle=function(n){ return {backgroundColor:n.__bg,
+  getPropertyValue:function(p){ return p==='--line'?LINE:(p==='--surf'?ROOTSURF:'#888'); }}; };
+global.document={documentElement:{},getElementById:function(){return null;}};
+global.window={};
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function _drawIn(){} function _bindChartTT(){}
+var _RM={matches:true}; function reduced(){return true;}
+var _DASH=['0','5 4','2 3','8 3 2 3','1 4'];
+"""
+
+_CHART_FNS = ("_cssvar", "_panelBg", "_segSep", "_niceMax", "_fmtNum",
+              "_chartPalette", "chart", "_chartXY", "_chartDonut", "_arc")
+
+
+def _js_decl(name: str) -> str:
+    """`function name(...){...}` INCLUDING its header -- _js_func returns only
+    the body, which cannot be re-declared inside a probe."""
+    m = re.search(r"(?:async\s+)?function\s+" + re.escape(name) + r"\s*\(", SRC)
+    assert m, "%s() is gone" % name
+    i = SRC.index("{", m.end() - 1)
+    depth, j = 0, i
+    while j < len(SRC):
+        if SRC[j] == "{":
+            depth += 1
+        elif SRC[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return SRC[m.start(): j + 1]
+        j += 1
+    raise AssertionError("%s() never closes" % name)
+
+
+def _draw(opts: dict) -> list:
+    """Run the SHIPPED chart() over a stubbed DOM and return one dict per
+    emitted data mark: whether it carries a stroke, that stroke's colour, and
+    the extents a stroke would have to fit inside.
+
+    The host is deliberately TRANSPARENT and its PARENT paints, so a result
+    carrying the panel colour also proves _panelBg walked up rather than
+    reading the element it was handed. --line is stubbed to magenta and must
+    appear nowhere in a correct result.
+    """
+    import json
+    import os
+    import tempfile
+    probe = (_CHART_SHIM
+             + "\n".join(_js_decl(f) for f in _CHART_FNS)
+             + "\nvar parent=El(PANEL,null), host=El('rgba(0, 0, 0, 0)', parent);\n"
+             + "chart(host, " + json.dumps(opts) + ");\n"
+             + "console.log(JSON.stringify(host.innerHTML));\n")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stderr
+        html = json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+    marks = []
+    for tag in re.findall(r'<(?:rect|path) class="chart-dpt"[^>]*>', html):
+        st = re.search(r'\sstroke="([^"]*)"', tag)
+        h = re.search(r'\sheight="([\d.]+)"', tag)
+        w = re.search(r'\swidth="([\d.]+)"', tag)
+        marks.append({"tag": tag,
+                      "stroke": st.group(1) if st else None,
+                      "height": float(h.group(1)) if h else None,
+                      "width": float(w.group(1)) if w else None})
+    assert marks, "the engine emitted no data marks at all"
+    return marks
+
+
+_STACKED = {"type": "stackedbar", "height": 200, "labels": ["a", "b", "c"],
+            "series": [{"name": "graded", "values": [50, 60, 55]},
+                       {"name": "failed", "values": [10, 8, 12]},
+                       {"name": "pending", "values": [5, 7, 6]}]}
+_DONUT = {"type": "donut", "height": 200,
+          "series": [{"name": "free", "value": 40},
+                     {"name": "pro", "value": 30},
+                     {"name": "max", "value": 30}]}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_touching_chart_segments_are_drawn_with_a_boundary() -> None:
+    """Grading throughput is graded/failed/pending in ONE bar and plan mix is
+    one donut, so the only thing between two segments is hue -- and warn/bad
+    measure 2.12:1 against each other in dark, 1.04:1 in light."""
+    for label, opts in (("stacked", _STACKED), ("donut", _DONUT)):
+        marks = _draw(opts)
+        bare = [m["tag"][:80] for m in marks if not m["stroke"]]
+        assert not bare, "%s: segments touch with no boundary: %s" % (label, bare)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_grouped_bars_are_separated_too() -> None:
+    """NOT in this phase's brief, and it is the same defect. _chartXY gives each
+    series w=bw/series.length at x=Xb(bi)-bw/2+si*w -- exactly adjacent, with no
+    gap between them, so a grouped bar chart stands two status hues edge to edge
+    just as a stacked one does."""
+    marks = _draw({"type": "bar", "height": 200, "labels": ["a", "b"],
+                   "series": [{"name": "x", "values": [5, 7]},
+                              {"name": "y", "values": [6, 4]},
+                              {"name": "z", "values": [3, 9]}]})
+    assert all(m["stroke"] for m in marks), "grouped bars still touch bare"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_the_boundary_is_the_panel_behind_the_chart() -> None:
+    """THE VALUE, not the presence. A boundary reads as a division only if it is
+    the panel: --line is a third colour matching neither the panel nor the
+    fills, and a constant cannot be right on both --surf and --surf2.
+
+    The probe paints the PARENT and leaves the host transparent, so passing this
+    also proves _panelBg walks up instead of reading the node it was handed.
+    """
+    for opts in (_STACKED, _DONUT):
+        for m in _draw(opts):
+            assert m["stroke"] == "rgb(27, 26, 25)", (
+                "the boundary is %r, not the panel behind the chart" % m["stroke"])
+            assert m["stroke"] != "rgb(255, 0, 255)", "the boundary is drawn in --line"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_a_segment_too_thin_for_a_stroke_keeps_its_whole_fill() -> None:
+    """THE ONE THAT PROTECTS THE DATA. An SVG stroke is CENTRED on the edge, so
+    a 1px stroke eats 0.5px of fill on each side and closes over any segment
+    thinner than itself. One failed grading against a thousand graded ones is
+    such a segment -- and it rendering as nothing would say "0 failed" on the
+    page whose job is reporting failures. Below the threshold the stroke is
+    dropped and the fill keeps its entire extent; the taller neighbours either
+    side are stroked and still bound it.
+    """
+    marks = _draw({"type": "stackedbar", "height": 200, "labels": ["a", "b"],
+                   "series": [{"name": "graded", "values": [1000, 1000]},
+                              {"name": "failed", "values": [1, 1]},
+                              {"name": "pending", "values": [400, 400]}]})
+    thin = [m for m in marks if not m["stroke"]]
+    assert thin, ("every segment was stroked, so the 1-in-1000 sliver carries a "
+                  "stroke wider than itself and is no longer visible")
+    for m in thin:
+        assert m["height"] and m["height"] > 0, "a real value was drawn with no height"
+    # and the thick ones still got theirs, or "nothing is stroked" passes this
+    assert [m for m in marks if m["stroke"]], "the thin case switched the fix off entirely"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_a_segment_that_touches_nothing_gets_no_boundary() -> None:
+    """A single-series bar chart leaves a gap between bars (bw is 62% of the
+    pitch) and a one-slice donut has no neighbour. Stroking those would draw a
+    panel-coloured outline around a lone mark for no reason."""
+    for opts in ({"type": "bar", "height": 200, "labels": ["a", "b"],
+                  "series": [{"name": "only", "values": [5, 7]}]},
+                 {"type": "donut", "height": 200,
+                  "series": [{"name": "all", "value": 9}]}):
+        assert not any(m["stroke"] for m in _draw(opts)), (
+            "a mark with no neighbour was given a boundary anyway")
