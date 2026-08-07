@@ -399,6 +399,108 @@ def portal_result(status: int | None) -> str:
     return f"Could not open the billing portal (HTTP {status})."
 
 
+# ── the lock reasons (P3 · #58) ─────────────────────────────────────────────
+# `auth.py::_enforce_dashboard_gates` answers 402 with {code, message} on every
+# gated route, and P3's `code_of` is what finally carries the `code` across the
+# worker's string boundary. This is the table that turns it into a verb.
+#
+# It is the WEB's table (`foxy-audit-premium.html`'s `REASON`), reason for
+# reason and word for word, because the standing rule is that the web wins and
+# because a customer who reads "See upgrade options" in the browser and
+# something else here is being told the two products disagree. Only the
+# mechanism differs: the web POSTs, the desktop calls the method it already had
+# for that remedy.
+#
+# The MESSAGE is not here and must never be copied here. `billing_state.py`
+# writes one sentence per condition and puts it on the wire; a second copy in
+# this file would be a claim about the customer's account that no server had
+# confirmed, and the two would drift the way `policy_data`'s option labels did.
+# This table stops at the verb.
+LOCK_ACTIONS = {
+    "card_required":           ("Add payment method",         "card"),
+    "subscription_incomplete": ("Finish setting up billing",  "portal"),
+    "subscription_past_due":   ("Update payment method",      "portal"),
+    "subscription_cancelled":  ("See upgrade options",        "upgrade"),
+    "trial_expired":           ("See upgrade options",        "upgrade"),
+    "evaluation_expired":      ("See upgrade options",        "upgrade"),
+    "evaluation_credits_exhausted": ("See upgrade options",   "upgrade"),
+    # The one condition with nothing behind it. A workspace waiting for a human
+    # reviewer has no card to add and no plan to buy, so it gets no button —
+    # removed, not disabled, exactly as the web draws it. `wait` is a real value
+    # and the dispatcher refuses it outright, so a future caller that does not
+    # read this comment still cannot fall through to the portal.
+    "account_pending":         ("",                           "wait"),
+}
+
+# The web keeps an `UNKNOWN` row for a reason it has not heard of, and the
+# desktop deliberately does NOT. The two are not in the same position: the web
+# reaches its table having already been told `locked: true` by
+# `/v1/billing/access`, so an unfamiliar reason is still certainly a lock. Here
+# the only evidence is the code on a 402 — and 402 is also how the API says
+# "out of key slots" and "out of credits". Treating an unrecognised code as a
+# lock would put a billing button under a plan limit; treating it as a lock only
+# when we recognise it leaves the customer exactly where P3 found them, reading
+# the server's own sentence, which names the remedy in words.
+#
+# Drift is caught at build time instead: `test_lock_402_reasons.py` pins this
+# table to `billing_state.py` in both directions, so a ninth reason turns the
+# suite red rather than quietly landing on a fallback.
+
+#: Only when the server sent a code but no sentence. Deliberately vaguer than
+#: anything `billing_state.py` writes, because at that point we know the
+#: condition's name and nothing else about it.
+LOCK_FALLBACK = ("This workspace needs a billing change before the console "
+                 "unlocks.")
+
+
+def is_lock(code) -> bool:
+    """Is this 402 the dashboard GATE rather than a plan limit?
+
+    Both are 402 and both arrive at the same handler, and they are opposite
+    problems: `api_key_limit_reached` means the workspace is running and out of
+    slots, `trial_expired` means the workspace itself is shut until billing
+    changes. Telling a locked customer their key limit is full would send them
+    to delete keys they still have room for.
+    """
+    return code in LOCK_ACTIONS
+
+
+def lock_action(code) -> tuple[str, str]:
+    """(button label, action) for a lock reason. Only ever called after `is_lock`."""
+    return LOCK_ACTIONS[code]
+
+
+def lock_split(message) -> tuple[str, str]:
+    """Split a lock message into (lead, rest), the way the web's `split` does.
+
+    Every message `billing_state.py` writes is two sentences — what happened,
+    then what to do about it — so the first becomes the dialog's heading and the
+    second its body. Splitting rather than storing keeps one copy of both.
+    """
+    text = str(message or "").strip()
+    cut = text.find(". ")
+    return (text[:cut + 1], text[cut + 2:]) if cut > 0 else (text, "")
+
+
+def card_setup_result(status: int | None) -> str:
+    """What `POST /v1/billing/card-setup-session` refusing means, in words.
+
+    Kept apart the way `portal_result` keeps its cases apart, and 502 earns its
+    own line: it is the payment provider failing, not this workspace being
+    misconfigured, so "try again" is the honest advice and "email support" is
+    not.
+    """
+    if status == 403:
+        return "Adding a payment method needs an admin account."
+    if status == 503:
+        return "Card capture isn't switched on for this workspace yet."
+    if status == 502:
+        return "The payment provider didn't respond. Try again in a moment."
+    if status is None or status == 0:
+        return "Could not reach the server."
+    return f"Could not start card setup (HTTP {status})."
+
+
 def invoice_link_result(status: int | None) -> str:
     if status == 503:
         return "Billing isn't enabled on this workspace yet."

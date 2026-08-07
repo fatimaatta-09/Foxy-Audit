@@ -305,12 +305,20 @@ def test_the_402_shows_the_servers_own_sentence_not_a_python_dict():
     toast as a raw `{'code': …}` repr, and the only shaped function for it
     (`limit_reached_message`) could never be called because nothing downstream
     of the worker ever holds the dict — so it is gone and the message travels
-    the way every other error does."""
+    the way every other error does.
+
+    P3 (#58) changed the expected string here, and only the string: `code` now
+    rides in the machine half so a handler can tell a plan limit apart from a
+    billing lock. What this test was written to protect — that a customer reads
+    the server's sentence and never a Python repr — is asserted below on
+    `detail_of`, which is what actually reaches the toast.
+    """
     err = ApiError(402, "Payment Required",
                    {"code": "api_key_limit_reached", "message": "No slots.",
                     "used": 3, "included": 3})
-    assert str(err) == "HTTP 402: No slots."
+    assert str(err) == "HTTP 402 [api_key_limit_reached]: No slots."
     assert status_of(err) == 402 and detail_of(err) == "No slots."
+    assert "'used'" not in str(err) and "{" not in str(err)
     assert not hasattr(ad, "limit_reached_message")
     assert ad.LIMIT_REACHED_FALLBACK        # the no-detail fallback stays
 

@@ -116,17 +116,31 @@ class ApiError(Exception):
         # ("Forbidden"). Workers hand str(exc) to the UI, so preferring reason
         # here silently threw away every message worth showing.
         detail = self.detail
+        code = ""
         if isinstance(detail, dict):
             # A few endpoints answer with a structured detail (keys.py:116's
-            # 402 is {code, message, used, included}). Interpolating the dict
-            # put a raw Python repr in a toast; its `message` is the half a
-            # human can act on. The machine-readable fields do not survive —
-            # only a str crosses the worker signal boundary (see ApiWorker).
+            # 402 is {code, message, used, included}, auth.py's dashboard gate
+            # is {code, message}). Interpolating the dict put a raw Python repr
+            # in a toast; its `message` is the half a human can act on.
+            #
+            # P3 (#58): `code` now travels too. Only a str crosses the worker
+            # signal boundary (see ApiWorker), so it rides INSIDE the string —
+            # in the machine half, between the status and the colon, where
+            # `detail_of` was already throwing everything away. That is why the
+            # human sentence is unchanged and `detail_of` needed no edit: a
+            # handler that wants the code asks `code_of`, and one that wants
+            # words never sees it.
+            code = str(detail.get("code") or "")
             detail = detail.get("message") or detail.get("code") or ""
         elif isinstance(detail, list):
             detail = _validation_summary(detail)
         if self.status:
-            return f"HTTP {self.status}: {detail or self.reason}"
+            # Validated, not trusted: the code is server-written, and one
+            # carrying "]" could forge the end of the marker and push machine
+            # text into the sentence a customer reads.
+            mark = f" [{code}]" if _CODE_RE.match(code) else ""
+            return f"HTTP {self.status}{mark}: {detail or self.reason}"
+        # No status means no server answered, so there is no code to carry.
         return detail or self.reason or "connection failed"
 
     def __str__(self) -> str:
@@ -651,7 +665,39 @@ class ApiWorker(QThread):
             self.failed.emit(str(e))
 
 
-_STATUS_RE = re.compile(r"^HTTP (\d{3})")
+#: The only shape a machine-readable code may take on the wire — a bounded
+#: lowercase identifier, which every code the backend writes already is
+#: (`billing_state.py`'s eight reasons, `api_key_limit_reached`,
+#: `seat_limit_reached`, `credits_exhausted`). Anything else is dropped rather
+#: than escaped, because a code is a branch key: one we cannot recognise is one
+#: we cannot act on, and passing it through would only widen the surface.
+_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,39}\Z")
+
+#: "HTTP 402 [card_required]: Your trial has ended. …" — and the marker is
+#: OPTIONAL, on purpose. An error from a route that sends no structured detail,
+#: or from a build that predates P3, is still "HTTP 402: …". Both shapes give
+#: the same status and the same sentence, because the status is group 1 either
+#: way and `detail_of` slices from `match.end()` — which lands after the digits
+#: when there is no marker and after the `]` when there is.
+_STATUS_RE = re.compile(r"^HTTP (\d{3})(?: \[([a-z][a-z0-9_]{0,39})\])?")
+
+
+def code_of(error) -> str | None:
+    """The server's machine-readable `code` inside a worker's error string.
+
+    The third reader of the same string, and the reason P3 exists: the desktop
+    could always print WHAT went wrong (`detail_of`) and how badly
+    (`status_of`), but not WHICH condition — so a 402 that means "this
+    workspace is locked until billing changes" was indistinguishable from one
+    that means "you are out of API-key slots", and the app could not offer the
+    remedy for either.
+
+    `None` when the string carries no marker, which is every error that is not
+    a structured detail and every error minted before this existed. Callers
+    must treat that as "unknown", never as "no problem".
+    """
+    match = _STATUS_RE.match(str(error or ""))
+    return match.group(2) if match else None
 
 
 def status_of(error) -> int | None:
@@ -672,10 +718,35 @@ def detail_of(error) -> str:
     The same one-way flattening as `status_of`: `ApiError` already put the
     actionable text there, and this is how a handler shows it without the
     status code repeated in front of a sentence.
+
+    It returns ONLY the sentence, and that is load-bearing. `_STATUS_RE` also
+    covers P3's `[code]` marker, so slicing from `match.end()` drops the whole
+    machine half in one cut — the code cannot reach a toast through here, and
+    this function needed no change to make that true.
     """
     text = str(error or "").strip()
     match = _STATUS_RE.match(text)
     return text[match.end():].lstrip(": ").strip() if match else text
+
+
+def human_error(error) -> str:
+    """A worker error string with the machine-only half removed.
+
+    The rule this file asks of every caller: a worker error is never shown to a
+    person raw. `detail_of` is the right tool when only the sentence belongs on
+    screen — a toast, a status line. This one is for the few places that
+    deliberately keep the status because it is diagnostic (the sandbox's "the
+    ledger answered 404", the export panel), and it exists so keeping the status
+    does not mean also showing `[trial_expired]`.
+
+    The marker is machine text. It is a branch key for `code_of`, and a customer
+    reading it would be reading our internal vocabulary for their own account.
+    """
+    text = str(error or "")
+    match = _STATUS_RE.match(text)
+    if match is None or match.group(2) is None:
+        return text
+    return f"HTTP {match.group(1)}{text[match.end():]}"
 
 
 def spawn_worker(client: FoxyClient, method: str, path: str, *, body=None,

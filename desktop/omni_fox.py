@@ -34,7 +34,9 @@ else:
 
 from clay_chat_popup import ChatPopup
 from fox_settings import FoxSettings
-from foxy_client import FoxyClient, shutdown_workers, spawn_worker
+from foxy_client import (
+    FoxyClient, human_error, shutdown_workers, spawn_worker,
+)
 from foxy_tokens import (
     matte_menu_qss as _matte_menu_qss, reduced_motion, resource_path,
 )
@@ -849,7 +851,8 @@ class OmniAwareFox(QWidget):
             self.dashboard._on_refresh_clicked()
 
     def _on_retry_failed(self, err: str):
-        self._notify("Foxy Audit", f"That change didn't go through: {err}",
+        self._notify("Foxy Audit",
+                     f"That change didn't go through: {human_error(err)}",
                      QSystemTrayIcon.MessageIcon.Warning)
 
     # ── Frame cache helper ─────────────────────────────────────────────────

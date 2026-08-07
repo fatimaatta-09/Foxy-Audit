@@ -54,7 +54,8 @@ from PyQt6.QtGui import (
 
 from fox_settings import FoxSettings
 from foxy_client import (
-    FoxyClient, spawn_worker, shutdown_workers, status_of, detail_of,
+    FoxyClient, spawn_worker, shutdown_workers, status_of, detail_of, code_of,
+    human_error,
 )
 from console_chrome import (
     relative_time,
@@ -1345,9 +1346,10 @@ class DashboardWindow(QWidget):
         # Only an HTTP status means the ledger actually answered; a transport
         # failure must not claim the record is missing.
         if err.startswith("HTTP "):
-            self._sb_on_result(False, f"{err} — seq {self._sb_seq} not found")
+            self._sb_on_result(False,
+                              f"{human_error(err)} — seq {self._sb_seq} not found")
         else:
-            self._sb_on_result(False, f"Error: {err}")
+            self._sb_on_result(False, f"Error: {human_error(err)}")
 
     def _sb_on_result(self, matched: bool, detail: str):
         self.sb_compare_btn.setText("Compare to Ledger")
@@ -1678,7 +1680,7 @@ class DashboardWindow(QWidget):
 
     def _on_refresh_failed(self, err: str):
         # Silently log — the table keeps its existing data
-        print(f"[Dashboard] Refresh failed: {err}")
+        print(f"[Dashboard] Refresh failed: {human_error(err)}")
 
 
     def _init_chrome(self):
@@ -2869,7 +2871,7 @@ class DashboardWindow(QWidget):
 
     def _on_export_failed(self, err):
         self.exp_run.setEnabled(True)
-        self.exp_progress.fail(f"Export failed — {err}")
+        self.exp_progress.fail(f"Export failed — {human_error(err)}")
 
     def _on_export_bytes(self, export_type: str, payload):
         from PyQt6.QtWidgets import QFileDialog
@@ -3071,14 +3073,21 @@ class DashboardWindow(QWidget):
                      on_err=self._on_key_create_failed)
 
     def _on_key_create_failed(self, err):
-        # The 402 body is a structured detail ({code, message, used, included});
-        # only its `message` survives the worker's string-only error contract,
-        # so prefer the server's own sentence and fall back to ours when the
-        # detail did not arrive at all (transport failure, empty body).
+        # TWO different 402s reach this line, and P3 is what tells them apart.
+        # `POST /v1/keys` runs behind the dashboard gate, so a locked workspace
+        # is refused BEFORE the key limit is ever counted — the fallback below
+        # would have told a customer whose trial expired that their key slots
+        # were full, which is both false and a dead end.
+        if self._handle_lock_402(err):
+            return
+        # The plan-limit 402: a structured detail ({code, message, used,
+        # included}) whose `message` is the half a human can act on. Ours is
+        # used only when the detail did not arrive (transport failure, empty
+        # body).
         if status_of(err) == 402:
             self.toast.show_message(detail_of(err) or ad.LIMIT_REACHED_FALLBACK)
             return
-        self.toast.show_message(f"Create failed — {err}")
+        self.toast.show_message(f"Create failed — {detail_of(err)}")
 
     def _show_new_key(self, title: str, data):
         """The ONE place a plaintext key is displayed.
@@ -3143,7 +3152,7 @@ class DashboardWindow(QWidget):
             self.toast.show_message("Confirm your identity to revoke this key")
             QTimer.singleShot(6000, self.refresh_keys)
             return
-        self.toast.show_message(f"Revoke failed — {err}")
+        self.toast.show_message(f"Revoke failed — {human_error(err)}")
 
     def regenerate_key(self):
         from PyQt6.QtWidgets import QInputDialog, QMessageBox
@@ -3166,12 +3175,12 @@ class DashboardWindow(QWidget):
                 body={"code": code.strip()}, timeout=15, parent=self,
                 track=self._page_workers,
                 on_ok=lambda d: self._show_new_key("Regenerated API key", d),
-                on_err=lambda err: self.toast.show_message(f"Regenerate failed — {err}"))
+                on_err=lambda err: self.toast.show_message(f"Regenerate failed — {human_error(err)}"))
 
         spawn_worker(self.client, "POST", "/v1/keys/regenerate/request",
                      body={}, timeout=15, parent=self,
                      track=self._page_workers, on_ok=code_step,
-                     on_err=lambda err: self.toast.show_message(f"Could not send a code — {err}"))
+                     on_err=lambda err: self.toast.show_message(f"Could not send a code — {human_error(err)}"))
 
     def test_sdk_connection(self):
         """Uses the stored org key against /v1/health, which is Bearer-only."""
@@ -3303,7 +3312,7 @@ class DashboardWindow(QWidget):
         # this is the D4 false-empty-state lesson on a page where the wrong
         # reading is "here is what protects you".
         status = status_of(err)
-        self._set_policy_panel(PanelState.ERROR, detail=str(err),
+        self._set_policy_panel(PanelState.ERROR, detail=human_error(err),
                                code=f"HTTP {status}" if status else "")
         self._set_policy_status("", "mute")
         self.pol_save.setEnabled(False)
@@ -3797,6 +3806,89 @@ class DashboardWindow(QWidget):
                      track=self._page_workers, on_ok=opened,
                      on_err=lambda err: self.toast.show_message(
                          bd.upgrade_result(status_of(err) or 0)))
+
+    def open_card_setup(self):
+        """The web's `card` action — `POST /v1/billing/card-setup-session`.
+
+        A $0 authorisation, not a charge, and the only remedy that clears
+        `card_required`: the portal is for a workspace that already has a
+        billing account, and one being asked for a card by definition does not.
+        The web has offered exactly this since D4; the desktop reads the same
+        `checkout_url` off the same route, so the two products ask for a card
+        the same way.
+        """
+        def opened(data):
+            url = (data or {}).get("checkout_url") if isinstance(data, dict) else ""
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+                self.toast.show_message(
+                    "Opening your browser to add a card — you will not be charged")
+            else:
+                self.toast.show_message(bd.card_setup_result(None))
+
+        spawn_worker(self.client, "POST", "/v1/billing/card-setup-session",
+                     timeout=20, parent=self, track=self._page_workers,
+                     on_ok=opened,
+                     on_err=lambda err: self.toast.show_message(
+                         bd.card_setup_result(status_of(err) or 0)))
+
+    def _handle_lock_402(self, err) -> bool:
+        """A 402 that is the dashboard GATE, not a plan limit. True if handled.
+
+        This is what #58 was waiting for. Both kinds of 402 land in the same
+        `on_err`, and until `code_of` existed the desktop could print the
+        server's sentence but not tell which condition it described — so it
+        could not offer the remedy, and every one of them ended at a toast that
+        named a problem and no way out.
+
+        The sentence is still the SERVER's, unchanged and unsplit in meaning:
+        `billing_state.py` wrote it once, per condition, and the web shows the
+        same words. What the code buys is the button underneath it.
+        """
+        code = code_of(err)
+        if not bd.is_lock(code):
+            return False
+        label, action = bd.lock_action(code)
+        lead, rest = bd.lock_split(detail_of(err) or bd.LOCK_FALLBACK)
+
+        from html import escape
+        from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setWindowTitle("Workspace locked")
+        # The lead is bold and the rest is not, which is how the web draws the
+        # same two sentences — and without it both lines land at one weight and
+        # the dialog has no heading at all.
+        #
+        # That means rich text, and rich text means the SERVER's sentence is
+        # markup. `setTextFormat` covers both halves, so both are escaped, here,
+        # beside the only markup in this method — the rule `badge_link_html`
+        # already follows for the same reason. A QLabel left to guess the format
+        # would render an `<img>` out of a response and go and fetch it.
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(f"<b>{escape(lead)}</b>")   # heading — what happened
+        box.setInformativeText(escape(rest))    # body — what to do about it
+        box.setIcon(QMessageBox.Icon.Warning)
+        go = box.addButton(label, QMessageBox.ButtonRole.AcceptRole) if label else None
+        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if go is None or box.clickedButton() is not go:
+            return True
+
+        # `wait` never reaches here — it has no label, so no button was drawn
+        # and the early return above already fired. It is named rather than left
+        # blank so the refusal reads as chosen, and this chain is deliberately
+        # `elif` with NO `else`: the web's own fall-through was a POST to the
+        # portal, which answers 400 to precisely the workspace that never paid.
+        # An action this build does not know does nothing, in one place.
+        if action == "card":
+            self.open_card_setup()
+        elif action == "upgrade":
+            self.go("billing")
+            self.open_upgrade()
+        elif action == "portal":
+            self.go("billing")
+            self.open_billing_portal()
+        return True
 
     # -- Settings, account half (D11a) --------------------------------------
     def _init_settings(self):
@@ -4346,9 +4438,13 @@ class DashboardWindow(QWidget):
         self.refresh_team()
 
     def _on_user_create_failed(self, err):
+        # Same two-402 split as `_on_key_create_failed`: the gate refuses a
+        # locked workspace before any seat is counted, so the seat fallback must
+        # not be what a locked admin reads.
+        if self._handle_lock_402(err):
+            return
         if status_of(err) == 402:
-            # The 402 detail is a dict; only its `message` survives the
-            # worker's string-only error contract (the D9 lesson).
+            # The seat-limit 402 is a dict; its `message` is the actionable half.
             self.toast.show_message(detail_of(err) or sa.SEAT_LIMIT_FALLBACK)
             return
         self.toast.show_message(
