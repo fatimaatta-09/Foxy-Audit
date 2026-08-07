@@ -353,3 +353,45 @@ billing test passing unedited through M1.
 **Watch CI *and* CD.** They are separate workflows; a green deploy is not a green
 gate. And `[skip ci]` substring-matches the whole commit body — do not write
 about the marker.
+
+---
+
+## 11 · The punch-list — P1–P6, and the close
+
+Six phases after M3d, from the owner's own read of the register. **All merged.**
+
+| Phase | SHA | What |
+|---|---|---|
+| **P1** | `af5b333` | the gate audit — 4 routes exempted on *property vs service* · #99 · #57 |
+| **P2** | `04f9f61` | #105 invoices exempt · #96 thirteen modal writers guarded · #48 one fact, one home |
+| **P3** | `1a45f83` | #58 — the desktop learns which lock |
+| **P4** | `370824c` | #56 — a member can ask the admins, and only ask |
+| **P5** | `9e0d5bf` | #106 + #107 — the console says it is locked; a member has somewhere to go |
+| **P6** | `3e430b4` | #108 the member gate · honest filter chips · the trial banner |
+
+**Closed as won't-fix, with reasons:** #41 (no processor reports retry
+exhaustion; the grace window is the proxy) and #104 (the same webhook defect on
+the unreachable Stripe path, which is scheduled for deletion).
+
+### The bug the punch-list was not looking for
+
+P1's real finding: **every failed Paddle webhook had been vanishing since M2.**
+The `received` row is inserted inside the dispatch transaction, so `db.rollback()`
+discarded it and the follow-up `UPDATE` matched zero rows — under a comment
+reading *"persist the failure, never drop the record."*
+
+Found by a test that asked the TABLE what was in it. Reading the code could not
+have caught it, because the code says the right thing, and MAIN had reviewed that
+exact block at M2's gate.
+
+### Still open, and not payments
+
+**#109** — the notification filter runs client-side over the one page the server
+returned, and the pager is fed `items.length` instead of the real total.
+
+### The remaining work is not code
+
+Paddle verification: the policy documents, a registered business address, a phone
+number. Plus the unset statement descriptor, and confirming the published $49 /
+$199 match Paddle's own catalogue — which no amount of code reading can settle,
+because the config stores `pri_…` identifiers, not amounts.
