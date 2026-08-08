@@ -5324,8 +5324,20 @@ mk('orgPills'); mk('staffPills');
 function $(id){return EL[id]||null;}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
   .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-var _FPILL_X='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 """
+
+
+def _var_decl(name: str) -> str:
+    """`var name = ...;` as shipped. _js_decl only slices functions, and a
+    constant shimmed by hand in a probe is a constant the probe cannot see
+    change -- F2 altered _FPILL_X and every guard below stayed green against
+    the old copy that used to be pasted here."""
+    m = re.search(r"^var\s+" + re.escape(name) + r"\s*=.*?;$", SRC, re.M)
+    assert m, "%s is gone" % name
+    return m.group(0)
+
+
+_PILL_SHIM += _var_decl("_FPILL_X") + "\n"
 
 
 def _pills(cases: dict) -> dict:
@@ -5853,3 +5865,300 @@ def test_the_anchor_card_no_longer_claims_anchoring_is_optional() -> None:
             "the tooltip no longer says what IS true (%r): %s" % (claim, tip))
     # and it points at where the never-anchored count now lives
     assert "never anchored" in tip.lower(), tip
+
+
+# ══ F2 · register #127 -- three filter-surface defects ═══════════════════════
+# All three were found by C4 while surveying which pages should get pills, and
+# left alone as out of its scope. Each guard below RUNS the shipped code where
+# it can: the states differ by one comparison apiece and a grep would pass with
+# any of those comparisons rewired.
+
+_DATA_SHIM = """
+var EL={}; function mk(id,v){return EL[id]={id:id,innerHTML:'',value:v||''};}
+mk('dataFilters'); mk('dataClearAll'); mk('dataSearch'); mk('dataCount');
+function $(id){return EL[id]||null;}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function num(n){return Number(n).toLocaleString('en-US');}
+function fauxSelectInit(){}
+var TABLE_COLUMNS={organizations:[['id'],['name'],['status']]};
+var DATA_FILTERS=[], DATA_TABLE='organizations', DATA_PAGE=1, DATA_TOTAL=0;
+var REFRESHED=0; function refreshData(){REFRESHED++;}
+"""
+
+
+def _data_probe(body: str, decls=()) -> dict:
+    """Run shipped data-browser code over a stubbed DOM and report the result."""
+    import json
+    import os
+    import tempfile
+    probe = (_DATA_SHIM + _var_decl("_FPILL_X") + "\n"
+             + "\n".join(_js_decl(d) for d in decls)
+             + "\nvar R={};\n" + body + "\nconsole.log(JSON.stringify(R));\n")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    os.close(fd)
+    try:
+        Path(path).write_text(probe, encoding="utf-8")
+        # encoding="utf-8": text=True alone decodes cp1252, and the curly quotes
+        # the count sentence uses come back as mojibake. (C1.)
+        proc = subprocess.run([shutil.which("node"), path],
+                              capture_output=True, text=True, encoding="utf-8")
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    finally:
+        os.unlink(path)
+
+
+_RENDER = ("_removeFilterLabel", "_dataCountText", "_dataNarrowings",
+           "_renderDataClearAll", "clearDataFilters", "renderDataFilters")
+
+pytestmark_f2 = pytest.mark.skipif(shutil.which("node") is None,
+                                   reason="node not on PATH")
+
+
+# ── a · the remove control ──────────────────────────────────────────────────
+@pytestmark_f2
+def test_each_remove_control_names_the_filter_it_removes() -> None:
+    """Three filter rows carry three identical buttons. "Remove" on all three
+    is barely better than the bare glyph it replaces -- a screen reader reads
+    the same words three times and names nothing -- so the label carries the
+    FIELD and the VALUE, which is C4's grammar next door ("Remove the search
+    filter acme"). Asserted as three DISTINCT names, because that is the
+    property that fails when somebody shortens it back to a constant."""
+    r = _data_probe("""
+DATA_FILTERS.push({col:'name',val:'acme'},{col:'status',val:'active'},
+                  {col:'id',val:'42'});
+renderDataFilters();
+R.labels=(EL.dataFilters.innerHTML.match(/aria-label="[^"]*"/g)||[]);
+""", _RENDER)
+    labels = r["labels"]
+    assert len(labels) == 3, labels
+    assert len(set(labels)) == 3, "the three buttons announce the same thing: %s" % labels
+    for field, value in (("name", "acme"), ("status", "active"), ("id", "42")):
+        assert any(field in l and value in l for l in labels), (
+            "no button names %s=%s: %s" % (field, value, labels))
+
+
+@pytestmark_f2
+def test_a_row_with_nothing_in_it_yet_does_not_announce_a_blank() -> None:
+    """+ filter pushes {col:'',val:''} and renders immediately, so the very
+    first thing a keyboard user meets is this row. Interpolating an empty field
+    into C4's sentence reads "Remove the  filter " out loud, which is worse
+    than the glyph -- it sounds like a bug rather than a control."""
+    r = _data_probe("""
+DATA_FILTERS.push({col:'',val:''},{col:'status',val:''});
+renderDataFilters();
+R.labels=(EL.dataFilters.innerHTML.match(/aria-label="([^"]*)"/g)||[]);
+""", _RENDER)
+    empty, half = r["labels"]
+    assert "Remove this empty filter" in empty, empty
+    assert "  " not in empty and "  " not in half, (
+        "a blank was interpolated into the name: %r / %r" % (empty, half))
+    assert "status" in half and half.rstrip('"').endswith("filter"), (
+        "a column with no value yet should name the column and stop: %r" % half)
+
+
+@pytestmark_f2
+def test_the_remove_control_draws_the_file_s_own_mark_and_not_a_glyph() -> None:
+    """craft-floor's ban: a unicode glyph standing in for an icon system. The
+    console has one, and C4 already authored the x in it. Asserted on what the
+    renderer EMITS, and against the shipped constant rather than a copy -- the
+    point is that there is exactly one x in this file, not two that can drift."""
+    r = _data_probe("""
+DATA_FILTERS.push({col:'name',val:'acme'});
+renderDataFilters();
+R.html=EL.dataFilters.innerHTML;
+""", _RENDER)
+    html = r["html"]
+    assert "\u00d7" not in html and "&times;" not in html, (
+        "the bare glyph is back in the emitted markup")
+    path = re.search(r'<path d="([^"]*)"/></svg>', _var_decl("_FPILL_X"))
+    assert path and path.group(1) in html, (
+        "the button is not drawing the shipped mark")
+    assert len(re.findall(r"M18 6 6 18M6 6l12 12", _nocomment(SRC))) == 1, (
+        "a second x was authored instead of reusing _FPILL_X")
+
+
+def test_the_shared_mark_still_paints_inside_a_pill() -> None:
+    """F2 put presentation attributes on _FPILL_X so the same mark works inside
+    a .btn, where no rule was painting it. That is only safe because .fpill-x
+    svg is CSS and beats a presentation attribute -- if that rule ever loses
+    its size or its stroke-width, the pill silently inherits the button's 2px
+    and the two marks stop matching."""
+    rule = re.search(r"\.fpill-x svg\{([^}]*)\}", _css())
+    assert rule, ".fpill-x svg is gone, so the pill now takes the button's attrs"
+    body = rule.group(1).replace(" ", "").replace("\n", "")
+    for decl in ("width:11px", "height:11px", "stroke-width:3", "fill:none"):
+        assert decl in body, "%s left .fpill-x svg: %s" % (decl, body)
+    assert 'class="ico"' in _var_decl("_FPILL_X"), (
+        "the mark lost the class that sizes it inside a button")
+
+
+# ── b · the leads scope line ────────────────────────────────────────────────
+def test_all_three_scope_lines_announce_on_the_same_contract() -> None:
+    """orgs and staff have said their count out loud since A7; leads was the
+    one that did not. Asserted as PARITY across the three rather than as an
+    attribute on one, because the invariant is that a console does not announce
+    two of its three filtered boards."""
+    markup = _nocomment(SRC)
+    for scope in ("orgScope", "staffScope", "ldScope"):
+        tag = re.search(r"<div[^>]*\bid=\"%s\"[^>]*>" % scope, markup)
+        assert tag, "#%s is gone" % scope
+        assert 'role="status"' in tag.group(0), "#%s has no role: %s" % (scope, tag.group(0))
+        assert 'aria-live="polite"' in tag.group(0), "#%s is not live" % scope
+
+
+def test_the_leads_scope_line_is_written_by_the_loader() -> None:
+    """GUARD THE USE (A6). role="status" on an element nothing writes to is not
+    an announcement, it is an attribute. loadLeads has to set it on the path
+    that has a query -- the whole reason the line exists -- and clear it on the
+    failure path so a stale scope does not sit over a board that did not load.
+    """
+    body = _js_func("loadLeads")
+    assert "$('ldScope').textContent=q?(" in body.replace(" ", "").replace(
+        "$('ldScope').textContent=q?(", "$('ldScope').textContent=q?("), body[:200]
+    assert "matching" in body, "the scope sentence is gone"
+    assert "$('ldScope').textContent='';" in body, (
+        "the failure path leaves the previous fetch's scope over a failed board")
+
+
+def test_the_leads_search_is_debounced_so_the_region_speaks_once() -> None:
+    """A live region that fires per keystroke is worse than none. This one is
+    safe because loadLeads runs once per typing PAUSE, and the guard is on the
+    debounce rather than on the aria attribute, because that is the thing whose
+    removal would make the announcement obnoxious. (For scale: the orgs search
+    is oninput -> orgSearchChanged with no debounce at all, and #orgScope has
+    announced on every keystroke since A7. This is the quieter of the two.)"""
+    body = _js_func("leadsDebounced")
+    assert "clearTimeout" in body, "leadsDebounced stopped coalescing"
+    delay = re.search(r"setTimeout\([^,]+,\s*(\d+)\)", body)
+    assert delay and int(delay.group(1)) >= 150, (
+        "the debounce dropped to %s ms, which is per-keystroke for most typists"
+        % (delay.group(1) if delay else "?"))
+    assert 'oninput="leadsDebounced()"' in _nocomment(SRC), (
+        "the search no longer routes through the debounce")
+
+
+# ── c · the count line, and getting back to an unfiltered view ──────────────
+@pytestmark_f2
+def test_the_count_line_says_what_it_is_a_count_of() -> None:
+    """It read "1,240 rows · organizations" whether or not anything was
+    narrowing it. The number was always honest -- the API filters before it
+    counts -- but the caption named the table rather than what was left of it.
+    Every state driven, because they differ by one conditional each."""
+    r = _data_probe("""
+function say(q,filters,total){ EL.dataSearch.value=q; DATA_FILTERS=filters;
+  DATA_TOTAL=(total==null?1240:total); return _dataCountText(); }
+R.plain=say('',[]);
+R.search=say('acme',[]);
+R.one=say('',[{col:'status',val:'active'}]);
+R.two=say('',[{col:'status',val:'active'},{col:'name',val:'x'}]);
+R.both=say('acme',[{col:'status',val:'active'}]);
+R.halfrow=say('',[{col:'status',val:''}]);
+R.singular=say('',[],1);
+""", _RENDER)
+    assert r["plain"] == "1,240 rows · organizations", r["plain"]
+    assert r["search"] == "matching “acme” · 1,240 rows · organizations", r["search"]
+    assert r["one"] == "matching 1 column filter · 1,240 rows · organizations", r["one"]
+    assert r["two"] == "matching 2 column filters · 1,240 rows · organizations", r["two"]
+    assert r["both"] == (
+        "matching “acme” + 1 column filter · 1,240 rows · organizations"), r["both"]
+    assert r["halfrow"] == "1,240 rows · organizations", (
+        "an unfinished row that narrows nothing was counted as a filter: %s"
+        % r["halfrow"])
+    assert r["singular"] == "1 row · organizations", r["singular"]
+
+
+@pytestmark_f2
+def test_the_count_line_never_invents_a_denominator() -> None:
+    """renderOrgs can say "12 of 40" because it holds the whole list. This
+    browser never fetches an unfiltered count, so an "N of M" here would be a
+    number nobody measured -- which is the failure this console keeps a
+    register for, and the tempting way to make the sentence match its siblings.
+    """
+    r = _data_probe("""
+EL.dataSearch.value='acme'; DATA_FILTERS=[{col:'status',val:'active'}];
+DATA_TOTAL=12; R.text=_dataCountText();
+""", _RENDER)
+    assert " of " not in r["text"], (
+        "a denominator appeared in a sentence that has none: %s" % r["text"])
+
+
+def test_the_count_line_announces_what_it_now_says() -> None:
+    """The sentence only helps somebody who can see it unless the element says
+    it. #dataCount joins the contract orgScope, staffScope, trafCount and
+    auNote already hold."""
+    tag = re.search(r"<div[^>]*\bid=\"dataCount\"[^>]*>", _nocomment(SRC))
+    assert tag, "#dataCount is gone"
+    assert 'role="status"' in tag.group(0) and 'aria-live="polite"' in tag.group(0), (
+        tag.group(0))
+    assert "$('dataCount').textContent=_dataCountText();" in _js_func("refreshData"), (
+        "refreshData stopped writing the sentence it announces")
+
+
+@pytestmark_f2
+def test_clear_all_appears_only_where_it_saves_an_action() -> None:
+    """C4's threshold for .fpill-clear, counted against what this page actually
+    makes you click: one press per filter row plus emptying the search by hand.
+    At one narrowing it is a second way to press the control beside it.
+
+    ⚠ ROWS, not applied filters. A row with no column chosen narrows nothing
+    but still costs a click to remove, and getting back to an unfiltered view
+    is what the button is for -- so it counts differently from the sentence
+    above, deliberately."""
+    r = _data_probe("""
+function at(q,n){ EL.dataSearch.value=q; DATA_FILTERS=[];
+  for(var i=0;i<n;i++)DATA_FILTERS.push({col:'',val:''});
+  _renderDataClearAll(); return EL.dataClearAll.innerHTML; }
+R.none=at('',0); R.searchOnly=at('acme',0); R.oneRow=at('',1);
+R.rowAndSearch=at('acme',1); R.twoRows=at('',2); R.three=at('acme',2);
+""", _RENDER)
+    for empty in ("none", "searchOnly", "oneRow"):
+        assert r[empty] == "", "clear all showed at one narrowing (%s): %r" % (
+            empty, r[empty])
+    for shown in ("rowAndSearch", "twoRows", "three"):
+        assert "fpill-clear" in r[shown], "clear all missing at %s: %r" % (
+            shown, r[shown])
+        assert "<button" in r[shown] and "<a " not in r[shown], (
+            "A5 found three <a href=# > wearing a control's clothes; not a fourth")
+
+
+@pytestmark_f2
+def test_clearing_resets_the_page_as_well_as_the_filters() -> None:
+    """A7 paid for this and renderFilterPills carries the warning: clear the
+    filters while sitting on page three and the table comes back empty under a
+    pager insisting there are results. Driven, because the reset is one
+    assignment that a refactor drops silently."""
+    r = _data_probe("""
+DATA_FILTERS.push({col:'status',val:'active'},{col:'name',val:'x'});
+EL.dataSearch.value='acme'; DATA_PAGE=3; REFRESHED=0;
+/* RENDER FIRST. Asserting the button is gone after a clear proves nothing if
+   the probe never put it on screen -- the first version of this guard did
+   exactly that and stayed green with _renderDataClearAll deleted. */
+renderDataFilters();
+R.before=EL.dataClearAll.innerHTML;
+R.rowsBefore=EL.dataFilters.innerHTML;
+clearDataFilters();
+R.page=DATA_PAGE; R.filters=DATA_FILTERS.length; R.search=EL.dataSearch.value;
+R.refreshed=REFRESHED; R.clearBtn=EL.dataClearAll.innerHTML;
+R.rows=EL.dataFilters.innerHTML;
+""", _RENDER)
+    assert "fpill-clear" in r["before"], (
+        "the probe never showed the button, so its absence below proves nothing")
+    assert "<button" in r["rowsBefore"], "the probe never drew the filter rows"
+    assert r["page"] == 1, "clearing left the pager on page %s" % r["page"]
+    assert r["filters"] == 0 and r["search"] == "", r
+    assert r["refreshed"] == 1, "the table was never re-fetched: %s" % r["refreshed"]
+    assert r["clearBtn"] == "", "the button stayed on screen with nothing to clear"
+    assert r["rows"] == "", "the filter rows survived the clear"
+
+
+def test_switching_tables_routes_through_the_same_clear() -> None:
+    """It was resetting exactly what clearDataFilters resets, one field at a
+    time, and the hand-written version would have left the new clear-all button
+    on screen after a table switch. One place that knows the four moves."""
+    body = _js_func("onDataTableChange")
+    assert "clearDataFilters()" in body, body
+    assert "DATA_FILTERS.length=0" not in body.replace(" ", ""), (
+        "a second path still resets the filters by hand")
+    assert "$('dataSearch').value=''" not in body.replace(" ", ""), body

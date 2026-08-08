@@ -2568,13 +2568,14 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
             <input class="cin" id="dataSearch" placeholder="free-text search…" oninput="dataRefreshDebounced()">
           </div>
           <button class="btn sm" type="button" onclick="addDataFilter()">+ filter</button>
+          <span id="dataClearAll"></span>
           <button class="btn sm" type="button" onclick="refreshData()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>refresh</button>
         </div>
         <div id="dataFilters" style="margin-top:6px;"></div>
       </div>
       <div class="clay pad twrap" id="dataResultsWrap" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
-          <div class="sub mono" id="dataCount"></div>
+          <div class="sub mono" id="dataCount" role="status" aria-live="polite"></div>
         </div>
         <div id="dataPager"></div>
         <table class="tbl cardify" id="dataTbl">
@@ -2711,8 +2712,22 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
            below and outside the panel, and sitting in the panel head it stated
            the wrong scope by proximity — while ALSO rescoping these four numbers
            silently, because the API filters before it counts. #ldScope now says
-           so in words whenever a query is active. -->
-      <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">pipeline</div><div class="panel-t">Leads by stage</div><div class="sub" id="ldScope" style="font-size:11.5px;margin-top:2px;"></div></div></div><div class="fun" id="ldFunnel"></div></div>
+           so in words whenever a query is active.
+
+           F2 · and it now ANNOUNCES it, the same role="status" aria-live the
+           orgs and staff scope lines have carried since A7. #ldKanban below was
+           already live, so the leads page was not silent — it was announcing
+           the wrong thing: a whole four-column board, every card, on every
+           re-render, with the one-line summary of what changed staying mute.
+
+           ⚠ MEASURED AGAINST THE DEBOUNCE BEFORE ADDING IT, because a live
+           region that fires per keystroke is worse than none. leadsDebounced
+           coalesces at 250ms and loadLeads writes this line exactly once per
+           fetch, so it speaks once per typing pause. For comparison the orgs
+           search is oninput -> orgSearchChanged with NO debounce at all, and
+           #orgScope has been announcing on every keystroke since A7. This is
+           the quieter of the two. -->
+      <div class="clay pad" style="margin-bottom:16px;"><div class="panel-h"><div><div class="eyebrow">pipeline</div><div class="panel-t">Leads by stage</div><div class="sub" id="ldScope" role="status" aria-live="polite" style="font-size:11.5px;margin-top:2px;"></div></div></div><div class="fun" id="ldFunnel"></div></div>
       <div class="panel-h" style="margin-bottom:10px;"><h2 class="panel-t" style="font-size:15px;">Board</h2><div><label class="sr-only" for="ldSearch">Search leads</label><input class="cin" id="ldSearch" placeholder="search leads…" oninput="leadsDebounced()" style="max-width:230px;"></div></div>
       <div id="ldKanban" aria-live="polite" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start;"><div class="sub mono">loading…</div></div>
     </section>
@@ -3149,11 +3164,18 @@ function goToData(){
   if(DATA_TABLE)refreshData();
 }
 function onDataTableChange(){
+  /* Switching tables was already resetting exactly what clearDataFilters
+     resets, one field at a time. Same four moves, one place that knows them —
+     and the clear-all button now disappears on a table switch, which the
+     hand-written version would have left on screen with nothing to clear. */
   DATA_TABLE=fauxVal('dataTable');
-  DATA_PAGE=1; DATA_FILTERS.length=0; $('dataFilters').innerHTML=''; $('dataSearch').value='';
-  refreshData();
+  clearDataFilters();
 }
 function dataRefreshDebounced(){
+  /* Synchronously, not inside the timeout: the button answers "can I undo
+     this", and making that answer arrive 300ms after the typing that caused it
+     is the kind of lag that reads as a bug. */
+  _renderDataClearAll();
   clearTimeout(_dataDebounce);
   _dataDebounce=setTimeout(()=>{DATA_PAGE=1;refreshData()},300);
 }
@@ -3168,6 +3190,76 @@ function onFilterColChange(root){
   DATA_FILTERS[i].col=fauxVal(root.id);
   DATA_PAGE=1;refreshData();
 }
+/* C4's grammar, verbatim: "Remove the search filter acme" names the FIELD and
+   the VALUE, not the verb. Three filter rows carry three identical buttons, so
+   "Remove" alone is barely better than the bare glyph it replaces — a screen
+   reader would read the same three words three times and name nothing.
+   A row that has just been added has neither field nor value yet, and reading
+   "Remove the  filter " out loud is worse than saying what it actually is. */
+function _removeFilterLabel(f){
+  if(!f.col)return 'Remove this empty filter';
+  return 'Remove the '+f.col+' filter'+(f.val?' '+f.val:'');
+}
+/* C4's rule for .fpill-clear was that it appears only where it SAVES an action,
+   which on a pill row meant two or more pills. The same rule, counted against
+   what this page actually makes you click: one press per filter row, plus
+   emptying the search box by hand. At a single narrowing "clear all" is a
+   second way to press the control already beside it.
+
+   ⚠ ROWS, NOT APPLIED FILTERS. A row with no column chosen narrows nothing but
+   still costs a click to get rid of, and getting back to an unfiltered view of
+   the table you are on is the whole point of the button. The COUNT LINE below
+   counts the applied ones instead, because "what is this a list of" and "how
+   much work is it to undo" are different questions with different answers. */
+/* A4/A5's class one notch milder. The number is honest -- the API filters
+   before it counts, so it IS the count of what matched -- but "1,240 rows ·
+   organizations" reads as the table rather than as what is left of it, and
+   nothing on the line said a filter was on.
+
+   A7's sentence, the one renderOrgs and loadLeads both print, rather than a
+   third phrasing: "matching X · N ...".
+
+   ⚠ THERE IS NO M HERE AND ONE IS NOT INVENTED. renderOrgs can say "12 of 40"
+   because it holds the whole list; this browser never fetches an unfiltered
+   count, so "N of M rows" would be a number nobody measured -- the exact
+   failure this console keeps a register for.
+
+   Column filters are COUNTED, not spelled out. Each one is on screen a few
+   inches above with its own field, value and remove button; repeating them
+   here would be the same fact twice, which is the thing the pill row's own
+   note warns against. */
+function _dataCountText(){
+  const s=$('dataSearch'), q=s?s.value.trim():'';
+  const applied=DATA_FILTERS.filter(f=>f.col&&f.val).length;
+  const why=[q?'“'+q+'”':null,
+             applied?applied+' column filter'+(applied===1?'':'s'):null]
+            .filter(Boolean).join(' + ');
+  return (why?'matching '+why+' · ':'')
+    +num(DATA_TOTAL)+' row'+(DATA_TOTAL===1?'':'s')+' · '+DATA_TABLE;
+}
+function _dataNarrowings(){
+  const s=$('dataSearch');
+  return DATA_FILTERS.length+((s&&s.value.trim())?1:0);
+}
+/* Its own host, deliberately. Rendering it inside #dataFilters would mean
+   re-rendering the filter ROWS every time the search box changes, which throws
+   away the caret of whoever is typing in one of them. */
+function _renderDataClearAll(){
+  const el=$('dataClearAll'); if(!el)return;
+  el.innerHTML=_dataNarrowings()>1
+    ?'<button type="button" class="fpill-clear" onclick="clearDataFilters()">clear all</button>':'';
+}
+/* ⚠ ROUTES THROUGH THE PAGE'S OWN HANDLERS. renderFilterPills carries the same
+   warning and A7 paid for it: every path that narrows or widens a table has to
+   reset the page first, or you clear the filters while sitting on page three
+   and get an empty table under a pager insisting there are results. */
+function clearDataFilters(){
+  DATA_FILTERS.length=0;
+  $('dataSearch').value='';
+  DATA_PAGE=1;
+  renderDataFilters();
+  refreshData();
+}
 function renderDataFilters(){
   const cols=(TABLE_COLUMNS[DATA_TABLE]||[]).map(c=>c[0]);
   $('dataFilters').innerHTML=DATA_FILTERS.map((f,i)=>`
@@ -3180,9 +3272,10 @@ function renderDataFilters(){
         <div class="fauxselect-list">${cols.map(c=>`<div class="fauxselect-opt ${f.col===c?'sel':''}" data-value="${esc(c)}">${esc(c)}</div>`).join('')}</div>
       </div>
       <input class="cin" style="flex:1;margin-bottom:0;" placeholder="value" value="${esc(f.val)}" oninput="DATA_FILTERS[${i}].val=this.value;dataRefreshDebounced()">
-      <button class="btn sm danger" type="button" onclick="removeDataFilter(${i})">×</button>
+      <button class="btn sm danger" type="button" aria-label="${esc(_removeFilterLabel(f))}" onclick="removeDataFilter(${i})">${_FPILL_X}</button>
     </div>`).join('');
   DATA_FILTERS.forEach((f,i)=>fauxSelectInit($('filterCol'+i)));
+  _renderDataClearAll();
 }
 /* #dataEmpty carries a permanent 20px padding, so emptying it with textContent
    left 40px of dead space under every populated table. It is a notice slot:
@@ -3199,6 +3292,7 @@ function _dataClear(){
 }
 async function refreshData(){
   if(!DATA_TABLE)return;
+  _renderDataClearAll();
   const params=new URLSearchParams();
   params.set('page',DATA_PAGE);params.set('limit',DATA_LIMIT);
   const q=$('dataSearch').value.trim(); if(q)params.set('q',q);
@@ -3267,7 +3361,18 @@ async function refreshData(){
     }
     return `<tr>${cells}${actionsCell}</tr>`;
   }).join('');
-  $('dataCount').textContent=num(DATA_TOTAL)+' row'+(DATA_TOTAL===1?'':'s')+' · '+DATA_TABLE;
+  /* A4/A5's class one notch milder. The number is honest — the API filters
+     before it counts, so it IS the count of what matched — but "1,240 rows ·
+     organizations" reads as the table rather than as what is left of it, and
+     nothing on the line says a filter is on.
+     A7's sentence, the one renderOrgs and loadLeads both print: "matching X ·
+     N ...". ⚠ THERE IS NO M HERE AND ONE IS NOT INVENTED — this browser never
+     fetches an unfiltered count, so "N of M rows" would be a number nobody
+     measured, which is the failure mode this console keeps a register for.
+     Column filters are counted rather than spelled out: each one is on screen
+     six inches above with its own field, value and remove button, and
+     repeating them here would be the same fact twice. */
+  $('dataCount').textContent=_dataCountText();
   window.foxPager('dataPager',{page:DATA_PAGE,pageSize:DATA_LIMIT,total:DATA_TOTAL,
     label:'Table rows',onPage:function(pg){ DATA_PAGE=pg; refreshData(); }});
 }
@@ -4804,7 +4909,14 @@ async function loadOrgs(){
    idiom this file established for "a table that silently loses rows is not
    acceptable". Re-rendering it after a removal announces the new count without
    a second live region competing with it. */
-var _FPILL_X='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+/* F2 · the SAME mark now also sits in a .btn. It gained `class="ico"` and the
+   stroke set every other button icon on this console writes inline, because
+   .fpill-x svg is the only rule that was painting it and that rule does not
+   reach outside a pill — dropped into the data browser's button bare, the path
+   would have rendered as a filled black blob. Inert where it already was:
+   these are PRESENTATION attributes and `.fpill-x svg` is CSS, which wins, so
+   a pill keeps its 11px and its stroke-width 3. One x in this file, not two. */
+var _FPILL_X='<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 function renderFilterPills(hostId,pills,clearExpr){
   const el=$(hostId); if(!el)return;
   pills=(pills||[]).filter(Boolean);
