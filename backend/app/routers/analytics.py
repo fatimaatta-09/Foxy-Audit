@@ -83,7 +83,13 @@ def get_threat_timeseries(
     /threats groups only by policy_tag. Real DB aggregation; days is clamped to [1,365] (an int, so the
     interval literal is injection-safe). Empty list when there are no breaches in the window."""
     d = max(1, min(365, int(days)))
-    day = func.to_char(func.date_trunc("day", AuditLog.created_at), "YYYY-MM-DD")
+    # #123 · PINNED TO UTC. date_trunc/::date on a timestamptz resolves in the
+    # SESSION timezone, and nothing in this project pins it — so this bucketed
+    # by the database server's local day. R3 fixed the same shape in usage.py;
+    # these labels are the days the dashboard's threat timeline draws, and F1
+    # gave its last bar a focal mark — a zone-shifted label moves the emphasis
+    # onto the wrong day as well as the count.
+    day = func.to_char(func.timezone("UTC", AuditLog.created_at), "YYYY-MM-DD")
     band = case((_RISK >= 70, "high"), (_RISK >= 40, "medium"), else_="low")
     rows = db.execute(
         select(day, band, func.count())

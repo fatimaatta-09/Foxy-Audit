@@ -179,6 +179,24 @@ jobs:
           POSTGRES_USER: foxy
           POSTGRES_PASSWORD: foxy
           POSTGRES_DB: foxy_pytest
+          # F4 · #123 · DELIBERATELY NOT UTC, AND DELIBERATELY WEST OF IT.
+          # date_trunc('day', <timestamptz>) resolves in the SESSION timezone and
+          # nothing in this project pins it, so the bug class reproduced on the
+          # developer's machine (Asia/Karachi, UTC+5) and vanished in CI, which
+          # was UTC — exactly backwards.
+          #
+          # The two zones skew in OPPOSITE directions, which is why CI does not
+          # simply copy the dev box. Measured:
+          #     Karachi  22:30Z on the 7th  ->  buckets to the 8th  (rolls early)
+          #     LA       02:30Z on the 8th  ->  buckets to the 7th  (rolls late)
+          #     UTC      both               ->  correct
+          # Sharing the dev zone would leave the whole early-morning-UTC half of
+          # the class invisible in both places.
+          #
+          # This is the SERVER default only. PGTZ is deliberately NOT set on the
+          # job, because a client-side override would make the assertion below
+          # pass while the server sat at UTC — a check that proves itself.
+          TZ: America/Los_Angeles
         ports:
           - 5432:5432
         options: >-
@@ -193,6 +211,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # ⚠ THE ONLY THING BETWEEN THE `TZ:` ABOVE AND A NO-OP. Setting TZ on the
+      # container is not the same as Postgres's TimeZone GUC: the image picks it
+      # up at initdb, so a cached volume or an image change could move the
+      # container clock while leaving the server at UTC. This fails the job
+      # loudly rather than letting the suite quietly run UTC-blind again.
+      - name: Verify Postgres took a non-UTC timezone
+        env:
+          PGPASSWORD: foxy
+        run: |
+          tz=$(psql -h localhost -U foxy -d foxy_pytest -At -c "SHOW TimeZone")
+          off=$(psql -h localhost -U foxy -d foxy_pytest -At -c "SELECT now() - (now() AT TIME ZONE 'UTC')")
+          echo "server TimeZone=$tz  offset=$off"
+          # ONE CHECK, AND IT IS THE OFFSET RATHER THAN THE NAME. A name list
+          # (UTC|Etc/UTC|GMT|…) was written here first and mutation testing
+          # proved it could never be the deciding branch: every zone it named
+          # has a zero offset, so the offset test had already fired. It was also
+          # unbounded — Africa/Abidjan and Atlantic/Reykjavik are UTC+0 and were
+          # not on it. The offset asks the question that actually matters: is
+          # there a skew for the suite to exercise?
+          if [ "$off" = "00:00:00" ]; then
+            echo "::error::Postgres is at $tz, whose offset from UTC is zero."
+            echo "::error::The TZ: on the postgres service was ignored, or names a"
+            echo "::error::UTC-equivalent zone, so this suite would not exercise the"
+            echo "::error::timezone bug class at all (register #123)."
+            exit 1
+          fi
+
       - name: Install backend deps + test tools
         run: |
           python -m pip install --upgrade pip

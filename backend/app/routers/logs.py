@@ -640,7 +640,13 @@ def stats(
         if status in gc:
             gc[status] = cnt
 
-    day = func.to_char(func.date_trunc("day", AuditLog.created_at), "YYYY-MM-DD")
+    # #123 · PINNED TO UTC. date_trunc/::date on a timestamptz resolves in the
+    # SESSION timezone, and nothing in this project pins it — so this bucketed
+    # by the database server's local day. R3 fixed the same shape in usage.py;
+    # activity_7d is the dashboard's seven-day bar chart, whose LAST bucket F1
+    # labels "today". West of UTC an early-morning event fell into yesterday's
+    # bar; east of it a late-evening one jumped into tomorrow's.
+    day = func.to_char(func.timezone("UTC", AuditLog.created_at), "YYYY-MM-DD")
     activity = [
         ActivityDay(date=d, count=c, breaches=b)
         for d, c, b in db.execute(

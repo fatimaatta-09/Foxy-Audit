@@ -21,7 +21,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import Date, func, select
+from sqlalchemy import Date, cast, func, select
 from sqlalchemy.orm import Session
 
 from .. import account_audit, billing_state, ip_allow
@@ -168,7 +168,15 @@ def get_usage(
     since = today - timedelta(days=days - 1)
     since_dt = datetime.combine(since, datetime.min.time(), tzinfo=timezone.utc)
 
-    day_col = func.date_trunc("day", AuditLog.created_at).cast(Date).label("day")
+    # #123 · PINNED TO UTC. date_trunc/::date on a timestamptz resolves in the
+    # SESSION timezone, and nothing in this project pins it — so this bucketed
+    # by the database server's local day. R3 fixed the same shape in usage.py;
+    # this endpoint's own docstring says it reuses "the rollup's own expressions",
+    # and it did not: the rollup pins UTC and this did not, so the window bound
+    # below (built with tzinfo=timezone.utc) and the buckets disagreed by up to a
+    # day. timezone('UTC', ts)::date IS the UTC calendar day — the idiom
+    # admin_stats.py documents and admin_health/admin_security already use.
+    day_col = cast(func.timezone("UTC", AuditLog.created_at), Date).label("day")
     rows = db.execute(
         select(
             day_col,

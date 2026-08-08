@@ -10,6 +10,27 @@ Run locally:
 
 The env below is set BEFORE importing the app so app.db binds the engine to the
 test database and auth uses a known pepper.
+
+⚠ THE TEST DATABASE'S TIMEZONE IS NOT PINNED HERE, AND THAT IS DELIBERATE
+(#123). `date_trunc('day', <timestamptz>)` resolves in the SESSION timezone, so
+where this suite runs used to decide whether it could see that class of bug at
+all — the developer's cluster is Asia/Karachi (UTC+5) and CI was UTC, which is
+why the class reproduced locally and vanished in the only place that gates.
+
+CI now runs the server at America/Los_Angeles (see ci.yml), west of UTC, because
+the two skew in OPPOSITE directions: east rolls a late-evening UTC event forward
+a day, west rolls an early-morning one back. Copying the dev zone would have
+left half the class invisible in both places.
+
+Nothing here pins the local cluster, for two reasons. A repo cannot set another
+machine's initdb timezone — it can only say what to expect. And more to the
+point, correctness no longer depends on it: test_timezone_independence.py sets
+the zone per session and drives each endpoint under all three. MEASURED, and it
+is the finding of that phase: with CI pinned but no such test, the full suite
+passed 1139/1139 under America/Los_Angeles. The ambient skew detected nothing,
+because no other test places an event near a UTC midnight. The pin is
+defence-in-depth for expressions nobody wrote a test for; the explicit tests are
+what actually catch the class.
 """
 
 from __future__ import annotations
