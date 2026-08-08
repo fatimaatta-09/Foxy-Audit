@@ -164,12 +164,13 @@ def test_a_segment_too_thin_for_a_stroke_is_not_closed_over_by_one() -> None:
     the same class of defect as the false empty state drawStacked already
     carries a comment about. Below the threshold the stroke is dropped.
 
-    ⚠ THIS DOES NOT MAKE THE SLIVER LEGIBLE, and it is not claimed to.
-    drawStacked has NO minimum segment height — seg is (v/max)*(H-pb-pt) with
-    no floor, so the 1-in-1000 case measured here renders 0.1px tall. The admin
-    engine floors its equivalent at Math.max(1,...); this one does not. That is
-    pre-existing and out of C0's scope; what is asserted here is only that the
-    hairline does not make it worse.
+    ⚠ THIS ALONE DOES NOT MAKE THE SLIVER LEGIBLE, and it never claimed to.
+    When this was written drawStacked had no minimum segment height at all —
+    seg was (v/max)*(H-pb-pt) with no floor, so the 1-in-1000 case measured here
+    rendered 0.1px tall, and that was recorded as pre-existing and out of C0's
+    scope. F1 (#112) closed it: the floor is MIN_SEG and the guard for it lives
+    in test_f1_chart_emphasis.py. What is still asserted HERE is only the other
+    half — that the hairline boundary does not eat the sliver.
     """
     marks = _draw({"type": "stacked", "height": 150, "labels": ["a", "b"],
                    "series": [{"name": "high", "tone": "bad", "values": [1, 1]},

@@ -3259,6 +3259,17 @@ async function loadLoginHistory(scope){
      no High-risk day — a false zero on the ledger, which is worse than the
      defect being fixed. Below the threshold the fill keeps its whole extent. */
   var SEP_W=1.5;
+  /* #112 · THE FLOOR ON A STACKED SEGMENT. drawStacked scaled straight off the
+     column total with no floor, so one High-risk day in a thousand drew at
+     0.1px — present in the markup, nothing on screen — on "Breaches over time",
+     the chart whose entire job is finding that day. drawBar has floored its
+     bars at 1px since it was written and the admin engine floors at
+     Math.max(1, ...); this one never did. A floor only ever lifts a segment
+     that is already > 0, so a real zero still draws nothing, and with three
+     bands the worst-case overshoot of the column is 3px. segSep already
+     refuses a stroke below SEP_W*2, so a floored segment keeps its whole
+     extent instead of being eaten by its own separator. */
+  var MIN_SEG=1;
   function segSep(extent,panel){ return (extent>=SEP_W*2)?(';stroke:'+panel+';stroke-width:'+SEP_W):''; }
   function norm(o){
     if(o.series)return {labels:o.labels||[],series:o.series.map(function(s){return {name:s.name,tone:s.tone,values:(s.values||[]).map(function(v){return +v||0;})};})};
@@ -3464,7 +3475,7 @@ async function loadLoginHistory(scope){
        expensive call in this loop. One series stacks against nothing. */
     var panel=panelBg(host), touches=series.length>1;
     for(i=0;i<n;i++){ var yb=H-pb, bx=i*(bw+gap), parts=[];
-      series.forEach(function(s,si){ var v=+s.values[i]||0; if(v>0){ var seg=(v/max)*(H-pb-pt); yb-=seg;
+      series.forEach(function(s,si){ var v=+s.values[i]||0; if(v>0){ var seg=Math.max(MIN_SEG,(v/max)*(H-pb-pt)); yb-=seg;
         marks+=S('rect',{x:bx.toFixed(1),y:yb.toFixed(1),width:bw.toFixed(1),height:seg.toFixed(1),class:'cx-bar','data-cxi':i,style:'fill:'+(s.tone?toneColor(s.tone,si):toneColor(null,si))+(touches?segSep(seg,panel):'')}); }
         if(v>0)parts.push(esc(s.name||('S'+(si+1)))+': '+v); });
       labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(H-6).toFixed(1),'text-anchor':'middle',class:'cx-axis'},esc(String(labels[i]!=null?labels[i]:'')));
