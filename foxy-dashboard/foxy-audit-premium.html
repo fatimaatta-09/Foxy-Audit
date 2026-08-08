@@ -135,7 +135,25 @@ button{border:0;}
   --lv-high:  #ff4d4d;
   --lv-ultra: #a06bff;
   /* categorical chart palette — token-driven so charts re-theme */
-  --c-1: var(--fox);
+  /* F1 · #113 · A CHART MARK IS NOT A BRAND TOKEN. Two names were doing two
+     jobs each: --fox is the brand fill AND --c-1 AND TONE.fox/TONE.brand, and
+     --muted2 is the disabled-text step (this block says so, thirty lines up)
+     AND TONE.mute. A brand fill is judged by the ink sitting on it; a chart
+     mark carries no ink at all and owes 3:1 to the panel behind it. Measured
+     in light against --bg they were 2.81:1 and 2.61:1 — the marks failed while
+     the brand was fine, so moving the brand token would have repainted sixty
+     consumers to fix six. Split instead, exactly as the admin console already
+     split --warn-series off --warn-bg. Dark values alias what they replace, so
+     dark renders byte-identically. */
+  --fox-series:  var(--fox);
+  /* ⚠ DARK IS NOT THE FREE CASE HERE. --fox is 7.14:1 against --bg in dark and
+     aliases straight through, but --muted2 measures 3.09:1 on --bg and only
+     2.90:1 on --surf — the Low band was failing in dark too, on the panel most
+     of these charts actually sit on. Lifted until it clears every dark surface:
+     3.97 / 3.72 / 3.60 on --bg / --surf / --surf2. It is still the quietest
+     mark on the chart, which is all "Low" has to be. */
+  --mute-series: #7a736b;
+  --c-1: var(--fox-series);
   --c-2: var(--dec1);
   --c-3: var(--safe-bg);
   --c-4: var(--dec3);
@@ -169,6 +187,10 @@ html[data-theme="light"]{
   --safe-bg:#12843c; --safe-tx:#FFFFFF; --breach-bg:#DC2626; --breach-tx:#FFFFFF;
   --warn-bg:#F59E0B; --warn-tx:#3A2A00;
   --safe-ink:#107435; --warn-ink:#8c5a06; --breach-ink:#c42020;
+  /* the chart-mark steps. 4.17:1 and 3.89:1 against --bg, 4.51 and 4.21
+     against --surf — the two failing fills, deepened only where they are a
+     mark. --muted2 keeps its disabled-only value; --fox keeps the brand. */
+  --fox-series:#c04500; --mute-series:#7a7167;
   --paper:#FFFFFF;
   --lv-low:#0550ff; --lv-med:#845f00; --lv-high:#ce0000; --lv-ultra:#772cff;
   /* the light source flips: a near-white highlight and a warm grey shadow */
@@ -918,6 +940,20 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .badge.ok{background:var(--safe-bg);color:var(--safe-tx);}
 .badge.bad{background:var(--breach-bg);color:var(--breach-tx);}
 .badge.warn{background:var(--warn-bg);color:var(--warn-tx);}
+/* F1 · #113 · the amber plate measures 1.74:1 against --bg on paper, so the
+   pill has no edge — the defect R2 measured one console over. R2's fix was to
+   deepen the fill to #B45309 and that value CANNOT be lifted across, because
+   here --warn-bg is also the Medium band of "Breaches over time", stacked
+   directly against --breach-bg. Deepening collapses their deutan separation
+   from dE 19.2 to 2.8 (normal vision 24.1 -> 9.9), and a 63-pair sweep of
+   (red, amber) found no pair that clears 3:1 against this page AND still
+   separates from each other — the two constraints are mutually exclusive in
+   this hue region. So the EDGE is restored rather than the fill moved: these
+   seven all already carry a 1px border, and it was --bc, the 1.03:1 hairline
+   C0 condemned. --warn-ink is 4.76:1 against --bg; in dark it is the same
+   value as --warn-bg, so this is a no-op there and the dark plate is
+   untouched. Layout is identical: same 1px, box-sizing is border-box. */
+.lockchip,.vstatus.warn .vstatus-ic,.ltag.warn,.pill.warn,.sev.med,.vres.unknown,.badge.warn{border:1px solid var(--warn-ink);}
 .badge.neutral{background:var(--surf3);color:var(--ink2);}
 .badge.live i{animation:blip 1.6s infinite;}
 
@@ -937,6 +973,11 @@ textarea.cin{font-family:var(--mono);font-size:11px;resize:vertical;min-height:7
 .chart-host svg{display:block;width:100%;overflow:visible;}
 .chart-host .cx-grid{stroke:var(--line);stroke-width:1;}
 .chart-host .cx-axis{fill:var(--muted);font-family:var(--mono);font-size:9px;}
+/* F1 · the focal mark. See focusIndex() for why emphasis is spent on type and
+   not on the fill. --ink is 13.35:1 light / 15.79:1 dark, so neither of these
+   needs a panel measurement. */
+.chart-host .cx-focus{fill:var(--ink);font-family:var(--mono);font-size:9px;font-weight:700;}
+.chart-host .cx-val{fill:var(--ink);font-family:var(--disp);font-size:10.5px;font-weight:800;}
 .chart-host .cx-bar,.chart-host .cx-arc{cursor:default;transition:opacity .12s;}
 .chart-host .cx-bar:hover,.chart-host .cx-arc:hover{opacity:.82;}
 .chart-host .cx-dot{transition:r .12s;}
@@ -1803,7 +1844,7 @@ html[data-theme="light"] .pg-wm{opacity:.06;}
           </div>
         </div>
         <div class="chart-host" id="threatTimeline" style="min-height:180px;"></div>
-        <div class="cx-legend" style="margin-top:4px;"><span><i style="background:var(--breach-bg)"></i>High (≥70)</span><span><i style="background:var(--warn-bg)"></i>Medium (40–69)</span><span><i style="background:var(--muted2)"></i>Low (&lt;40)</span></div>
+        <div class="cx-legend" style="margin-top:4px;"><span><i style="background:var(--breach-bg)"></i>High (≥70)</span><span><i style="background:var(--warn-bg)"></i>Medium (40–69)</span><span><i style="background:var(--mute-series)"></i>Low (&lt;40)</span></div>
       </div>
       <div class="g2">
         <div class="clay pad">
@@ -3215,7 +3256,7 @@ async function loadLoginHistory(scope){
 
   /* ───────── inline-SVG chart helper (token-driven, CSP-safe) ───────── */
   var GID=0;
-  var TONE={ok:'var(--safe-bg)',bad:'var(--breach-bg)',warn:'var(--warn-bg)',fox:'var(--fox)',brand:'var(--fox)',blue:'var(--c-2)',pink:'var(--c-4)',mute:'var(--muted2)'};
+  var TONE={ok:'var(--safe-bg)',bad:'var(--breach-bg)',warn:'var(--warn-bg)',fox:'var(--fox-series)',brand:'var(--fox-series)',blue:'var(--c-2)',pink:'var(--c-4)',mute:'var(--mute-series)'};
   var SER=['var(--c-1)','var(--c-2)','var(--c-3)','var(--c-4)','var(--c-5)','var(--c-6)'];
   function toneColor(t,i){ if(t){ if(TONE[t])return TONE[t]; if(/^(#|rgb|hsl|var\()/.test(t))return t; } return SER[(i||0)%SER.length]; }
   function S(tag,a,inner){ var s='<'+tag; for(var k in a){ var v=a[k]; if(v!=null&&v!=='')s+=' '+k+'="'+String(v).replace(/"/g,'&quot;')+'"'; } if(inner===undefined)return s+'/>'; return s+'>'+inner+'</'+tag+'>'; }
@@ -3305,15 +3346,45 @@ async function loadLoginHistory(scope){
     return {bw:Math.max(MIN_BAR,(W-gap*(n-1))/n),gap:gap};
   }
 
+  /* F1 · THE FOCAL MARK — the proposal's "lit bar". The ask was to de-emphasise
+     the bars nobody is looking at and spend the emphasis on the one that
+     matters. Both of the obvious channels were already spent or measurably
+     unsafe:
+       - HUE is taken. ana7d already sets tone per bar from breaches>0, and
+         threatTimeline's three bands ARE the hue. A second meaning on fill
+         would be two encodings on one mark.
+       - OPACITY, or mixing the other bars toward the panel, is the same
+         operation: it composites a status fill toward the background and drops
+         it under 3:1. That is the defect this very phase is fixing elsewhere,
+         and register #131 already recorded it — soften toward a NEUTRAL, never
+         toward the panel.
+     So emphasis goes to type, where it costs nothing to measure: the focal bar
+     gets a direct value label (dataviz's own "selective direct labels" — never
+     a number on every mark) and its axis label is promoted from --muted to
+     --ink. Every fill is byte-identical to before.
+     NOT APPLIED TO RANKINGS. On a sorted chart the top bar is already first;
+     lighting it states something position has said. Both admin hbars and
+     revenue-by-plan are excluded — see the phase notes.
+     pt grows from 12 to 22 only when a focus is set, so an unfocused chart
+     renders exactly as it did. */
+  function focusIndex(o,n){
+    if(o.focus==null||n<1)return -1;
+    var f=(o.focus==='last')?n-1:+o.focus;
+    return (f>=0&&f<n)?f:-1;
+  }
   function drawBar(host,o){
     var d=o.data||[]; if(!d.length){host.innerHTML=emptyMarkup(o);return;}
-    var W=cw(host,200), H=o.height||140, pb=20, pt=12;
+    var n=d.length, fi=focusIndex(o,n);
+    var W=cw(host,200), H=o.height||140, pb=20, pt=fi>=0?22:12;
     var vals=d.map(function(x){return +x.value||0;}), max=Math.max(1,Math.max.apply(null,vals));
-    var n=d.length, _m=barMetrics(W,n), gap=_m.gap, bw=_m.bw,
+    var _m=barMetrics(W,n), gap=_m.gap, bw=_m.bw,
         marks='', labs='', tips=[];
     d.forEach(function(x,i){ var v=+x.value||0, bh=Math.max(1,(v/max)*(H-pb-pt)), bx=i*(bw+gap), by=H-pb-bh;
       marks+=S('rect',{x:bx.toFixed(1),y:by.toFixed(1),width:bw.toFixed(1),height:bh.toFixed(1),rx:Math.min(6,bw/3).toFixed(1),class:'cx-bar','data-cxi':i,style:'fill:'+toneColor(x.tone,i)+';stroke:var(--bc);stroke-width:2'});
-      labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(H-6).toFixed(1),'text-anchor':'middle',class:'cx-axis'},esc(String(x.label!=null?x.label:'')));
+      labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(H-6).toFixed(1),'text-anchor':'middle',class:(i===fi?'cx-focus':'cx-axis')},esc(String(x.label!=null?x.label:'')));
+      // the direct label needs a bar wide enough to sit over; below that the
+      // promoted axis label carries the emphasis alone rather than colliding.
+      if(i===fi&&bw>=14)labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(by-6).toFixed(1),'text-anchor':'middle',class:'cx-val'},esc(String(v)));
       tips.push('<b>'+esc(String(x.label!=null?x.label:''))+'</b> · '+esc(String(v))+(x.sub?' · '+esc(x.sub):'')); });
     host.__tips=tips; host.innerHTML=svgWrap(W,H,marks+labs,o.aria||'bar chart'); wireTips(host,'.cx-bar');
   }
@@ -3468,7 +3539,8 @@ async function loadLoginHistory(scope){
     var n=Math.max.apply(null,series.map(function(s){return s.values.length;}));
     var totals=[]; for(var i=0;i<n;i++){ var t=0; series.forEach(function(s){t+=(+s.values[i]||0);}); totals.push(t); }
     var max=Math.max(1,Math.max.apply(null,totals));
-    var W=cw(host,200), H=o.height||150, pb=20, pt=12,
+    var fi=focusIndex(o,n);
+    var W=cw(host,200), H=o.height||150, pb=20, pt=fi>=0?22:12,
         _m=barMetrics(W,n), gap=_m.gap, bw=_m.bw;
     var marks='', labs='', tips=[];
     /* C0 · once per chart: panelBg walks ancestors and getComputedStyle is the
@@ -3478,7 +3550,10 @@ async function loadLoginHistory(scope){
       series.forEach(function(s,si){ var v=+s.values[i]||0; if(v>0){ var seg=Math.max(MIN_SEG,(v/max)*(H-pb-pt)); yb-=seg;
         marks+=S('rect',{x:bx.toFixed(1),y:yb.toFixed(1),width:bw.toFixed(1),height:seg.toFixed(1),class:'cx-bar','data-cxi':i,style:'fill:'+(s.tone?toneColor(s.tone,si):toneColor(null,si))+(touches?segSep(seg,panel):'')}); }
         if(v>0)parts.push(esc(s.name||('S'+(si+1)))+': '+v); });
-      labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(H-6).toFixed(1),'text-anchor':'middle',class:'cx-axis'},esc(String(labels[i]!=null?labels[i]:'')));
+      labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(H-6).toFixed(1),'text-anchor':'middle',class:(i===fi?'cx-focus':'cx-axis')},esc(String(labels[i]!=null?labels[i]:'')));
+      // a stack's direct label is its TOTAL — the per-band split is the tooltip's
+      // job and is already there. yb is the top of the stack at this point.
+      if(i===fi&&bw>=14&&totals[i]>0)labs+=S('text',{x:(bx+bw/2).toFixed(1),y:(yb-6).toFixed(1),'text-anchor':'middle',class:'cx-val'},esc(String(totals[i])));
       tips.push('<b>'+esc(String(labels[i]!=null?labels[i]:''))+'</b><br>'+parts.join('<br>')+'<br>total '+totals[i]); }
     host.__tips=tips; host.innerHTML=svgWrap(W,H,marks+labs,o.aria||'stacked bar chart');
     if(o.legend&&series.length>1){ host.insertAdjacentHTML('beforeend','<div class="cx-legend">'+series.map(function(s,i){return '<span><i style="background:'+(s.tone?toneColor(s.tone,i):toneColor(null,i))+'"></i>'+esc(s.name||('Series '+(i+1)))+'</span>';}).join('')+'</div>'); }
@@ -3508,7 +3583,7 @@ async function loadLoginHistory(scope){
   function drawGauge(host,o){
     var v=+o.value||0, max=o.max!=null?+o.max:100, frac=o.unlimited?1:(max?Math.max(0,Math.min(1,v/max)):0);
     var W=cw(host,120), H=o.height||14, r=H/2, gid='cxg'+(GID++);
-    var defs='<defs><linearGradient id="'+gid+'" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--fox)"/><stop offset="1" style="stop-color:var(--fox2)"/></linearGradient></defs>';
+    var defs='<defs><linearGradient id="'+gid+'" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--fox-series)"/><stop offset="1" style="stop-color:var(--fox2)"/></linearGradient></defs>';
     var track=S('rect',{x:1,y:1,width:(W-2).toFixed(1),height:(H-2).toFixed(1),rx:r,class:'cx-gauge-track'});
     var fw=Math.max(o.unlimited?W-2:0, frac*(W-2));
     var fill=fw>0?S('rect',{x:1,y:1,width:fw.toFixed(1),height:(H-2).toFixed(1),rx:r,style:'fill:'+(o.tone?toneColor(o.tone):'url(#'+gid+')')}):'';
@@ -3738,7 +3813,9 @@ async function loadLoginHistory(scope){
         const row=amap[key]||{count:0,breaches:0};
         out.push({label:['Su','Mo','Tu','We','Th','Fr','Sa'][dt.getDay()],value:row.count||0,tone:(row.breaches>0?'bad':'ok'),sub:(row.breaches>0?row.breaches+' breach':(row.count?'clean':'no events'))});
       }
-      window.foxChart('ana7d',{type:'bar',height:120,data:out,empty:{title:'No activity yet',desc:'Weekly volume appears as your SDK logs graded interactions.'}});
+      // focus:'last' is today — the loop above ends at i=0. A seven-day window
+      // has one bar anybody is actually asking about and it is this one.
+      window.foxChart('ana7d',{type:'bar',height:120,data:out,focus:'last',empty:{title:'No activity yet',desc:'Weekly volume appears as your SDK logs graded interactions.'}});
     }
   }
 
@@ -5498,7 +5575,7 @@ async function loadLoginHistory(scope){
       {name:'High',tone:'bad',values:days.map(x=>x.high||0)},
       {name:'Medium',tone:'warn',values:days.map(x=>x.medium||0)},
       {name:'Low',tone:'mute',values:days.map(x=>x.low||0)}
-    ],aria:'breaches per day by risk band'});
+    ],focus:'last',aria:'breaches per day by risk band'});
   }
   async function loadByAgent(){
     const host=$('threatByAgent'); if(!host||!window.foxChart)return;

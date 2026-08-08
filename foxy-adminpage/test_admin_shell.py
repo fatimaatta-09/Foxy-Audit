@@ -5594,9 +5594,11 @@ def _coverage(cases: dict) -> dict:
              + r"""
 for(var k in CASES){
   renderAnchorCoverage(CASES[k]);
-  var h=EL.hAnchorCoverage.innerHTML, w=/width:([\d.]+)%/.exec(h);
-  R[k]={html:h, meter:/class="qmeter"/.test(h), bar:/<i /.test(h),
-        width:w?parseFloat(w[1]):null, abs:/qmeter-abs/.test(h),
+  var h=EL.hAnchorCoverage.innerHTML;
+  R[k]={html:h, grid:/class="dotgrid"/.test(h),
+        cells:(h.match(/<i[ >]/g)||[]).length,
+        on:(h.match(/<i class="on">/g)||[]).length,
+        cap:/dotgrid-cap/.test(h), abs:/qmeter-abs/.test(h),
         arias:(h.match(/aria-label="[^"]*"/g)||[]),
         text:h.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim()};
 }
@@ -5649,8 +5651,8 @@ def test_the_two_states_that_are_not_a_number_draw_no_bar() -> None:
         "noorgs": {"enabled": True, "expected_orgs": 0, "anchored_orgs": 0},
     })
     for k, needle in (("off", "switched off"), ("noorgs", "no organization")):
-        assert not r[k]["meter"], "%s drew a meter: %s" % (k, r[k]["html"])
-        assert not r[k]["bar"], "%s drew a bar" % k
+        assert not r[k]["grid"], "%s drew a grid: %s" % (k, r[k]["html"])
+        assert not r[k]["cells"], "%s drew %d cells" % (k, r[k]["cells"])
         assert needle in r[k]["text"], "%s says %r" % (k, r[k]["text"])
         assert "%" not in r[k]["text"], (
             "%s rendered a percentage of nothing: %r" % (k, r[k]["text"]))
@@ -5658,29 +5660,35 @@ def test_the_two_states_that_are_not_a_number_draw_no_bar() -> None:
 
 @pytestmark_c5
 def test_a_measured_zero_is_not_the_same_as_no_denominator() -> None:
-    """0 of 42 is a real measurement and must render as one -- an empty TRACK
-    with the count beside it. Only the no-events case is a sentence. Asserted
-    together, because the pair is the point."""
+    """0 of 42 is a real measurement and must render as one -- forty-two empty
+    cells with the count beside them, so the DENOMINATOR is still on screen.
+    Only the no-events case is a sentence. Asserted together, because the pair
+    is the point."""
     r = _coverage({
         "zero": {"enabled": True, "expected_orgs": 42, "anchored_orgs": 0},
         "noorgs": {"enabled": True, "expected_orgs": 0, "anchored_orgs": 0},
     })
-    assert r["zero"]["meter"] and "0 / 42" in r["zero"]["text"], r["zero"]["text"]
-    assert not r["zero"]["bar"], (
-        "zero anchored drew a fill; A5 already paid for a stub that reads as "
+    assert r["zero"]["grid"] and "0 / 42" in r["zero"]["text"], r["zero"]["text"]
+    assert r["zero"]["cells"] == 42, (
+        "the grid dropped its empty slots, so nothing on screen says how many "
+        "organizations there are: %d cells" % r["zero"]["cells"])
+    assert r["zero"]["on"] == 0, (
+        "zero anchored filled a cell; A5 already paid for a stub that reads as "
         "'a few' beside a numeral saying 0")
-    assert not r["noorgs"]["meter"], "the two states render identically"
+    assert not r["noorgs"]["grid"], "the two states render identically"
 
 
 @pytestmark_c5
 def test_one_anchored_org_in_four_hundred_is_still_drawn() -> None:
-    """C0's thin-mark rule pointed at a fill: 1/400 is 0.25%, which rounds to a
-    0.3% width and would be invisible without the floor .qmeter-t i carries.
-    Drawing nothing there would say "none", which is a different answer."""
+    """C0's thin-mark rule pointed at a fill; on a grid it points at rounding.
+    400 orgs is past the cap, so a cell becomes one percent -- and 1/400 is
+    0.25%, which rounds to ZERO cells. Drawing nothing there would say "none",
+    which is a different and worse answer than the true one."""
     r = _coverage({"tiny": {"enabled": True, "expected_orgs": 400,
                             "anchored_orgs": 1}})["tiny"]
-    assert r["bar"], "a lone anchored org drew no fill at all"
-    assert r["width"] is not None and r["width"] < 1, r["width"]
+    assert r["cells"] == 100, "past the cap the grid is 100 cells: %d" % r["cells"]
+    assert r["on"] == 1, (
+        "a lone anchored org rounded away to %d filled cells" % r["on"])
     assert "399 never anchored" in r["text"], r["text"]
 
 
@@ -5688,9 +5696,9 @@ def test_one_anchored_org_in_four_hundred_is_still_drawn() -> None:
 def test_the_grid_speaks_once_not_once_per_cell() -> None:
     """The fact base asks a waffle to give every cell an aria-label. At a
     hundred cells that is a hundred announcements for one number -- noise
-    wearing accessibility's clothes, and the reason this is a meter rather than
-    a grid. ONE role="img" carries the whole statement, and the count is visible
-    as text beside it."""
+    wearing accessibility's clothes. This is a deliberate departure from it:
+    ONE role="img" carries the whole statement, the cells are decoration, and
+    the count is visible as text beside them."""
     r = _coverage({"partial": {"enabled": True, "expected_orgs": 42,
                                "anchored_orgs": 37, "failed_latest": 2}})["partial"]
     assert len(r["arias"]) == 1, (
@@ -5702,23 +5710,115 @@ def test_the_grid_speaks_once_not_once_per_cell() -> None:
     assert 'aria-hidden="true"' in r["html"], "the track announces itself as well"
 
 
-def test_coverage_reuses_the_measured_meter_rather_than_a_new_component() -> None:
-    """C3's .qmeter was measured against both themes; C4's pills reuse .tag the
-    same way. The CSS is the shared vocabulary and only the caller is new, so
-    this adds no fourth bespoke component to a register that already tracks
-    grammar proliferation.
+def test_the_quota_meter_is_not_in_this_phases_blast_radius() -> None:
+    """RE-AIMED, NOT DELETED. C5 reused .qmeter here and this guard held it to
+    that; F1 replaced the meter with a grid on the owner's call, and the half of
+    the guard that still matters is the half about the OTHER caller.
 
-    quotaMeter is NOT touched -- asserted, because "extract a shared helper"
-    would be the tempting edit and it would put C3.1's meter in this phase's
-    blast radius.
+    .qmeter has two callers and quotaMeter is the one that stayed. Register #130
+    warns about exactly this blast radius, so C3.1's measured meter is asserted
+    intact: its rules, its floor, and the fact that coverage never calls into
+    its builder.
     """
     body = _js_func("renderAnchorCoverage")
-    assert 'class="qmeter"' in body and "qmeter-t" in body, (
-        "coverage stopped using the measured meter")
     assert "quotaMeter" not in body, "coverage calls into C3's builder"
+    assert 'class="qmeter"' not in body, (
+        "the grid is still emitting a meter as well")
     css = _css()
-    # the component it borrows still exists and still carries its floor
-    assert "min-width:3px" in re.search(r"\.qmeter-t i\{([^}]*)\}", css).group(1)
+    assert "min-width:3px" in re.search(r"\.qmeter-t i\{([^}]*)\}", css).group(1), (
+        "C3.1's quota meter lost the floor F1 was not supposed to touch")
+    for sel in (r"\.qmeter\{", r"\.qmeter-t\{", r"\.qmeter\.warn \.qmeter-t i\{"):
+        assert re.search(sel, css), "a .qmeter rule went with the meter: %s" % sel
+    assert "quotaMeter" in _nocomment(SRC), "C3.1's builder itself is gone"
+
+
+# ── F1 · the grid the owner asked for ───────────────────────────────────────
+@pytestmark_c5
+def test_one_cell_is_one_organisation_while_that_is_countable() -> None:
+    """C5's objection to a grid was that it cannot be honest at both ends of the
+    scale. Below the cap it is exact: the cell IS an organisation, which is the
+    console's actionable unit, and no rounding happens at all."""
+    r = _coverage({"mid": {"enabled": True, "expected_orgs": 42,
+                           "anchored_orgs": 37}})["mid"]
+    assert r["cells"] == 42, "42 orgs drew %d cells" % r["cells"]
+    assert r["on"] == 37, "37 anchored filled %d cells" % r["on"]
+    assert not r["cap"], "an exact grid still claimed to be a percentage"
+
+
+@pytestmark_c5
+def test_past_a_hundred_a_cell_becomes_a_percent_and_says_so() -> None:
+    """The other end of C5's objection. Four hundred cells is unreadable, so the
+    grid caps -- and a reader who was told one cell is one org would otherwise
+    carry that rule into a picture where it is false. The caption is the fix."""
+    r = _coverage({"big": {"enabled": True, "expected_orgs": 400,
+                           "anchored_orgs": 300}})["big"]
+    assert r["cells"] == 100 and r["on"] == 75, (r["cells"], r["on"])
+    assert r["cap"] and "one percent" in r["text"], r["text"]
+    assert "about 4 organizations" in r["text"], r["text"]
+
+
+@pytestmark_c5
+def test_a_near_total_gap_does_not_round_the_grid_shut() -> None:
+    """The floor's twin, and the one nobody writes. 399 of 400 rounds UP to a
+    hundred filled cells, and a full grid states "all anchored" beside a
+    sentence saying one never has. Both directions or neither."""
+    r = _coverage({"almost": {"enabled": True, "expected_orgs": 400,
+                              "anchored_orgs": 399}})["almost"]
+    assert r["on"] == 99, "a real gap rounded shut: %d of 100 filled" % r["on"]
+    assert "1 never anchored" in r["text"], r["text"]
+
+
+@pytestmark_c5
+def test_the_grid_has_two_cell_states_and_not_three() -> None:
+    """C0 measured 0 of 15 status-hue pairs clearing 3:1 against EACH OTHER in
+    either theme, so the amber "stale" cell the proposal was drawn with was cut
+    after measurement. failed and stale reach the screen as text, where they are
+    exact -- asserted together, because the temptation is to bring the third
+    colour back the moment the numbers are there."""
+    r = _coverage({"all": {"enabled": True, "expected_orgs": 20,
+                           "anchored_orgs": 15, "failed_latest": 3,
+                           "stale_latest": 2}})["all"]
+    classes = set(re.findall(r'<i class="([^"]*)"', r["html"]))
+    assert classes <= {"on"}, (
+        "a third cell state appeared: %s" % (classes - {"on"}))
+    assert r["cells"] == 20 and r["on"] == 15, (r["cells"], r["on"])
+    assert "3 failed" in r["text"] and "2 stale" in r["text"], r["text"]
+
+
+def test_the_cells_borrow_the_pair_the_meter_already_measured() -> None:
+    """NO NEW COLOURS. C3 measured --muted in a --line slot for .qmeter-t and
+    wrote down why --line was the only track clearing 3:1 for every fill in both
+    themes while staying visible on the panel. The grid takes that pair rather
+    than inventing one, so the console keeps speaking one language -- and grey
+    rather than green, because an org that has anchored is DONE, not GOOD.
+
+    Measured here, both themes, because _token() defaults to dark.
+    """
+    css = _css()
+    slot = re.search(r"\.dotgrid-g i\{([^}]*)\}", css)
+    filled = re.search(r"\.dotgrid-g i\.on\{([^}]*)\}", css)
+    assert slot and filled, "the grid lost its cell rules"
+    assert "background:var(--line)" in slot.group(1), slot.group(1)
+    assert "background:var(--muted)" in filled.group(1), filled.group(1)
+    for theme in ("dark", "light"):
+        got = _ratio(_token("--muted", theme), _token("--line", theme))
+        assert got >= 3.0, (
+            "%s: a filled cell is %.2f:1 against an empty one" % (theme, got))
+        panel = _ratio(_token("--line", theme), _token("--surf", theme))
+        assert panel > 1.0, (
+            "%s: the empty slot is invisible on the panel, so the denominator "
+            "is not on screen" % theme)
+
+
+def test_the_grid_is_one_figure_and_not_a_hundred_tab_stops() -> None:
+    """The accessibility problem C5 raised and did not want to inherit. The
+    cells are decoration over a statement that is already made in words, so they
+    are aria-hidden and carry no role, no tabindex and no label of their own."""
+    body = _js_func("renderAnchorCoverage")
+    assert 'aria-hidden="true"' in body, "the cells announce themselves"
+    assert "tabindex" not in body, "the cells became tab stops"
+    assert body.count('aria-label') == 1, (
+        "more than one accessible name in the component")
 
 
 def test_coverage_is_rendered_from_the_health_payload() -> None:

@@ -1627,6 +1627,40 @@ html[data-density="compact"] .pad{padding:clamp(11px,1.1vw,15px)}
    placeholder waiting for a number that is coming. */
 .qmeter-abs{font-family:var(--mono);font-size:10.5px;color:var(--muted2);white-space:nowrap}
 
+/* ── F1 · ANCHOR COVERAGE AS A DOT GRID ──────────────────────────────────────
+   C5 built a meter in this slot and reported why. The owner has since seen both
+   and asked for the grid; that is a design call they are entitled to make, and
+   it wins. What C5's reasoning bought is kept rather than discarded with it:
+
+     TWO CATEGORIES, NOT THREE. C0 measured 0 of 15 status-hue pairs clearing
+     3:1 against EACH OTHER, in both themes, because every hue on this console
+     was tuned against the panel and they all sit in one luminance band. A third
+     cell colour for "stale" was drawn, measured and cut. failed and stale stay
+     beside the grid as text, where they are exact and countable.
+
+     ONE role="img" OVER THE WHOLE COMPONENT. The fact base's waffle entry asks
+     for an aria-label per cell; at a hundred cells that is a hundred
+     announcements for one number. The cells are aria-hidden decoration over a
+     figure that is already stated in words next to them. This is a deliberate
+     departure from the fact base, not an oversight.
+
+   NO NEW COLOURS, AND NO TIER COLOURS. The cells borrow the pair C3 already
+   measured for .qmeter-t twenty lines up: --muted filled in a --line slot,
+   4.25:1 light and 3.97:1 dark fill-vs-slot, with an empty slot still visible
+   on the panel at 1.25 / 1.30. Grey rather than green on purpose — an org that
+   has anchored is DONE, not GOOD, and inventing a threshold here would be
+   colour standing in for a judgement nobody has made.
+
+   .qmeter's own rules are untouched above. quotaMeter is their other caller and
+   C3.1's measured quota meter is not in this phase's blast radius. */
+.dotgrid{display:block;min-width:92px}
+.dotgrid-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:10.5px;color:var(--muted);white-space:nowrap}
+.dotgrid-n b{font-weight:700;color:var(--ink)}
+.dotgrid-g{display:grid;grid-template-columns:repeat(10,11px);gap:3px;margin-top:7px;width:max-content}
+.dotgrid-g i{width:11px;height:11px;border-radius:var(--r-xs);background:var(--line)}
+.dotgrid-g i.on{background:var(--muted)}
+.dotgrid-cap{font-family:var(--mono);font-size:9.5px;color:var(--muted2);margin-top:5px}
+
 /* `.drawer td` sat here, tinting the org list's inline detail row. That row was
    built only by toggleOrg, which had no call sites and is gone; the rule
    selected nothing. .dgrid/.dcell below are NOT dead — org360's Overview and
@@ -3789,19 +3823,13 @@ async function ackAlert(id,btn){
    so the workspace with no anchor, the one an operator most needs to find, was
    the single thing this page could not show. That gap is what this closes.
 
-   ⚠ NOT A WAFFLE, and that is this phase's finding rather than a shortcut.
-   The plan proposed a dot grid. `dataviz` carries no waffle at all and routes
-   "a single ratio against a limit" to a METER, warning specifically against a
-   two-slice proportional display; `ui-ux-pro-max`'s waffle entry excludes the
-   case where "exact values matter over visual proportion", which is exactly an
-   ops console whose actionable fact is WHICH orgs are missing. A grid also
-   cannot be honest at both ends of the scale — one cell per org is a sparse
-   scatter at six tenants and unreadable at four hundred.
-
-   So it reuses `.qmeter`, C3's component, already measured against both themes,
-   the same way C4's pills reuse `.tag` and the detail-pair renderer did before
-   them. The CSS is the shared vocabulary; only the caller is new. `quotaMeter`
-   is not touched.
+   F1 · IT IS NOW A DOT GRID. C5 shipped a meter here and recorded why; the
+   owner has seen both and asked for the grid. C5's one substantive objection —
+   that a grid cannot be honest at both ends of the scale, a sparse scatter at
+   six tenants and unreadable at four hundred — is answered rather than waved
+   off: one cell per ORGANISATION while that is countable, one cell per PERCENT
+   above a hundred with a caption saying so. At six tenants six cells is not a
+   scatter, it is a pictogram, which is what a small denominator wants.
 
    NO TIER COLOURS. C3's meter turns amber at 80% because a quota has a
    conventional danger zone. Coverage has none: on a tamper-evidence product any
@@ -3810,7 +3838,7 @@ async function ackAlert(id,btn){
 
    TWO STATES THAT ARE NOT A NUMBER, written before the happy one:
      · anchoring switched off platform-wide — `anchor_enabled` defaults to
-       false, so this is the COMMON case, not an edge one. An empty bar would
+       false, so this is the COMMON case, not an edge one. An empty grid would
        read "nothing is anchored" when the truth is "nothing is meant to be".
      · nothing captured yet — no denominator. Not 0%. */
 function renderAnchorCoverage(a){
@@ -3825,28 +3853,42 @@ function renderAnchorCoverage(a){
     return;
   }
   const missing=Math.max(0,expected-done);
-  const pct=done/expected*100;
-  /* Same floor as C3, and A5 before it: above zero draws, zero draws an empty
-     track. One anchored org in four hundred rendering as nothing would say
-     "none", which is a different and worse answer. */
-  const bar=done>0?'<i style="width:'+Math.min(100,pct).toFixed(1)+'%"></i>':'';
+  /* ONE CELL PER ORGANISATION while that is countable, so a cell IS an org and
+     the picture is exact instead of a rounded percent — which is the console's
+     actionable unit, since the operator's question is WHICH workspaces are
+     missing. Past a hundred a cell becomes one percent and the caption says so
+     rather than letting the reader assume the smaller rule still holds. */
+  const CAP=100, scaled=expected>CAP, cells=scaled?CAP:expected;
+  let on=done;
+  if(scaled){
+    on=Math.round(done/expected*CAP);
+    /* The floor A5 and C3 both paid for, one dimension over. One anchored org
+       in four hundred rounds to zero cells and would state "none"; one org
+       short of the whole platform rounds to a full grid and would state "all".
+       Both are a different and worse answer than the true one. */
+    if(done>0&&on===0)on=1;
+    if(missing>0&&on===cells)on=cells-1;
+  }
+  let g=''; for(let i=0;i<cells;i++)g+=(i<on?'<i class="on"></i>':'<i></i>');
   /* The gap in words, because it is the part somebody acts on. failed and stale
-     describe orgs that DID anchor, so they are named apart from `never`. */
+     describe orgs that DID anchor, so they are named apart from `never` — and
+     they are text rather than a third cell colour, which C0's measurement of
+     the status hues against each other already ruled out. */
   const parts=[];
   if(missing) parts.push(num(missing)+' never anchored');
   if(a.failed_latest) parts.push(num(a.failed_latest)+' failed');
   if(a.stale_latest) parts.push(num(a.stale_latest)+' stale');
-  /* ONE role="img" over the whole meter, not a label per cell. The fact base
-     asks a waffle to label every cell; at a hundred of them that is a hundred
-     announcements for one number, which is noise wearing accessibility's
-     clothes. The count is also visible as text beside it. */
-  el.innerHTML='<div class="qmeter" role="img" aria-label="'
+  /* ONE role="img" over the whole grid, not a label per cell — see the note
+     above the function. The count is also visible as text beside it. */
+  el.innerHTML='<div class="dotgrid" role="img" aria-label="'
     +esc(num(done)+' of '+num(expected)+' organizations anchored'
          +(parts.length?', '+parts.join(', '):''))+'">'
-    +'<div class="qmeter-n"><b>'+num(done)+'</b> / '+num(expected)+' anchored</div>'
-    +'<div class="qmeter-t" aria-hidden="true">'+bar+'</div></div>'
-    +(parts.length?'<div class="qmeter-abs" style="margin-top:5px;">'
-      +esc(parts.join(' · '))+'</div>':'');
+    +'<div class="dotgrid-n"><b>'+num(done)+'</b> / '+num(expected)+' anchored</div>'
+    +'<div class="dotgrid-g" aria-hidden="true">'+g+'</div></div>'
+    +(parts.length?'<div class="qmeter-abs" style="margin-top:7px;">'
+      +esc(parts.join(' · '))+'</div>':'')
+    +(scaled?'<div class="dotgrid-cap">one cell is one percent, about '
+      +esc(num(Math.round(expected/CAP)))+' organizations</div>':'');
 }
 async function loadHealthTrends(){
   try{
