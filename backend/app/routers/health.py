@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from ..auth import require_org
 from ..models import AuditLog, Organization
 from ..db import get_db
+from ..rls import cross_org_visibility
 from ..config import get_settings
 
 router = APIRouter()
@@ -86,6 +87,34 @@ def ready(db: Session = Depends(get_db)):
         age = (datetime.now(timezone.utc) - hb).total_seconds()
         worker_ok = age < stale_after
         checks["worker"] = f"last beat {int(age)}s ago" + ("" if worker_ok else " (STALE)")
+
+    # #122 · ASKED BEFORE THE TWO COUNTS BELOW, WHICH ARE THE DEFECT IN
+    # MINIATURE. audit_logs carries FORCE RLS and this probe sets no org GUC, so
+    # under a role that is neither superuser nor BYPASSRLS they come back 0 and
+    # this endpoint reports a perfectly healthy deployment. Inferring it FROM
+    # those zeros is impossible — zero pending is the healthy answer most of the
+    # time — so the capability is asked directly instead.
+    #
+    # And the counts are not published when the answer is no. A number that is
+    # knowably wrong is worse than a visible failure on this product, and here it
+    # may not even be computable: once any transaction on a pooled connection has
+    # run set_config('app.current_org', …, true), the GUC resets to '' rather
+    # than to unset, and ''::uuid RAISES instead of matching nothing. So the
+    # confined failure is silent zeros on a fresh connection and a 500 on a
+    # recycled one — measured, both.
+    #
+    # NOT READY rather than a warning: this is the smoke test the deploy gates
+    # on, and a rollback is the right outcome for a change that would make every
+    # staff figure silently understated. It is also the recoverable end of the
+    # scale — a boot-time assertion would take the API down hard, and a role can
+    # be altered under a process that has already started, which a check that
+    # only ran at startup would never see.
+    rls = cross_org_visibility(db)
+    if rls["status"] != "ok":
+        checks["rls"] = rls["detail"]
+        return JSONResponse(status_code=503,
+                            content={"status": "not_ready", "checks": checks})
+    checks["rls"] = "ok"
 
     checks["pending"] = db.execute(
         text("SELECT count(*) FROM audit_logs WHERE grading_status = 'pending'")

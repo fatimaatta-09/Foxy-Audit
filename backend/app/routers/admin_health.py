@@ -12,6 +12,7 @@ from ..auth import require_platform_role
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..platform_config import get_int
+from ..rls import cross_org_visibility
 from ..models import (
     AdminAction, AuditLog, ChainAnchor, Organization, StaffUser, UsageDaily,
     WorkerHeartbeat,
@@ -51,6 +52,10 @@ def _empty_health(now: datetime, db_status: str = "unavailable") -> dict:
             "state": "unavailable",
             "detail": "worker circuit-breaker state is process-local and not persisted",
         },
+        # #122 · present in the empty payload too. A key that only appears on the
+        # happy path cannot be read as "this was checked and was fine".
+        "rls": {"status": "unknown", "role": None, "blinded_tables": [],
+                "detail": "the database was not reachable"},
     }
 
 
@@ -67,6 +72,20 @@ def build_health(db: Session, settings: Settings | None = None) -> dict:
         return result
 
     result["database"] = {"status": "ok"}
+
+    # #122 · ASKED BEFORE EVERYTHING IT WOULD EXPLAIN. Every figure below is an
+    # unscoped read over a FORCE-RLS table, so under a role that cannot see
+    # across orgs they are all zero — and zero failed, zero stale, zero
+    # unanchored is exactly the shape of a healthy platform. They are not
+    # published at all in that case: a confident wrong answer ranks below a
+    # visible failure here, and on a recycled pooled connection they would not
+    # even compute (a transaction-local set_config leaves the GUC at '' rather
+    # than unset, and ''::uuid raises). worker/grading/anchors keep their
+    # "unavailable" from _empty_health, which is the honest word for not-measured.
+    result["rls"] = cross_org_visibility(db)
+    if result["rls"]["status"] != "ok":
+        result["status"] = "degraded"
+        return result
 
     stale_after = settings.grading_poll_interval * 5 + settings.gemini_timeout + 10
     heartbeat = db.execute(
